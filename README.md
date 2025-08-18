@@ -1,7 +1,5 @@
 # VyomaOS - Minimal WebAssembly Operating System
 
-# VyomaOS - Minimal WebAssembly Operating System
-
 A clean, modular Linux-based operating system designed to run WebAssembly applications. Built with minimal dependencies and a streamlined architecture.
 
 ## 🚀 Quick Start
