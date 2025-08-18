@@ -42,7 +42,7 @@ VyomaOS includes a dedicated `apps/` folder for Rust applications that compile t
 
 ```bash
 # Build WASM apps and integrate with OS
-./build-with-apps.sh
+./build.sh
 
 # Or build apps separately
 cd apps && ./build.sh
@@ -107,7 +107,7 @@ sudo apt-get install curl tar gzip make gcc flex bison bc
 | `./vyomaos.sh build` | Build kernel and root filesystem |
 | `./vyomaos.sh run` | Boot VyomaOS in QEMU |
 | `./vyomaos.sh clean` | Remove all build artifacts |
-| `./build-with-apps.sh` | Build WASM apps + integrate with OS |
+| `./build.sh` | Build WASM apps + integrate with OS |
 | `cd apps && ./build.sh` | Build only WebAssembly applications |
 
 ## 🛠️ Build Process
