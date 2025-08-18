@@ -38,7 +38,7 @@ cmd_run() {
 
 cmd_clean() {
     log_info "Cleaning up..."
-    rm -rf "$KERNEL_DIR" "$ROOTFS_DIR" "$KERNEL_FILE" "$INITRAMFS_FILE" &>/dev/null || true
+    rm -rf "$KERNEL_SOURCE_DIR" "$ROOTFS_DIR" "$KERNEL_FILE" "$INITRAMFS_FILE" "$OUTDIR/busybox" &>/dev/null || true
     log_success "Cleanup complete!"
 }
 
