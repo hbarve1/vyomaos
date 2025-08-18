@@ -4,7 +4,7 @@ use std::os::raw::c_char;
 /// Export a function that can be called from the WebAssembly host
 #[no_mangle]
 pub extern "C" fn hello() -> *mut c_char {
-    let message = CString::new("Hello from Rust WebAssembly!").unwrap();
+    let message = CString::new("Hello from Rust WebAssembly! 123 123 123 123").unwrap();
     message.into_raw()
 }
 
