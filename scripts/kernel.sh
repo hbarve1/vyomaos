@@ -6,7 +6,7 @@ set -euo pipefail
 
 # Configuration
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 readonly OUTDIR="$PROJECT_ROOT/out"
 readonly KERNEL_FILE="$OUTDIR/bzImage"
 
@@ -86,6 +86,7 @@ RUN apt-get update && apt-get install -y \
     flex \
     bison \
     wget \
+    bc \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /kernel

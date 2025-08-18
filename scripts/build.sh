@@ -142,7 +142,7 @@ setup_wasmtime() {
     if [[ ! -d "$wasmtime_dir" ]]; then
         if download_component "$wasmtime_url" "$wasmtime_tar" "Wasmtime"; then
             mkdir -p "$wasmtime_dir"
-            gtar -xJf "$wasmtime_tar" -C "$wasmtime_dir" --strip-components=1
+            tar -xJf "$wasmtime_tar" -C "$wasmtime_dir" --strip-components=1
             
             # Copy to rootfs
             cp "$wasmtime_dir/wasmtime" "$OUTDIR/rootfs/usr/bin/wasmtime"
@@ -174,17 +174,19 @@ EOF
 
 create_wasm_app() {
     local wasm_file="$OUTDIR/rootfs/wasm_app.wasm"
-    local wasm_base64="$OUTDIR/rootfs/wasm_app.wasm.base64"
     
-    # Create minimal WASM app (base64 encoded)
-    cat > "$wasm_base64" <<'EOF'
-AGFzbQEAAAABBgFgAX8BfwMCAQAFAgEABwEDZm4ABgABAAkK
-EOF
+    # Base64 encoded WASM binary (simple "hello world")
+    local wasm_base64="AGFzbQEAAAABBgFgAX8AAwIBAAQEAAEGBgEAfw8DAAEgACAAQQJIBEBBAW8gAmsNAAsGAQAHbWVtb3J5AgAIBnN0ZG91dAEAAQoJc3Rkb3V0X2dldAIACgtzdGRvdXRfd3JpdGUCAg=="
     
-    base64 -D -i "$wasm_base64" -o "$wasm_file"
-    chmod 644 "$wasm_file"
+    log_info "Creating sample WASM application..."
     
-    log_success "Created WASM application"
+    # Decode and create the WASM file
+    if ! echo "$wasm_base64" | base64 -d > "$wasm_file"; then
+        log_error "Failed to create WASM application"
+        exit 1
+    fi
+    
+    log_success "Created sample WASM application"
 }
 
 create_init_script() {

@@ -6,10 +6,11 @@ set -euo pipefail
 
 # Configuration
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-readonly OUTDIR="$PROJECT_ROOT/out"
-readonly KERNEL_FILE="$OUTDIR/bzImage"
-readonly INITRAMFS_FILE="$OUTDIR/initramfs.cpio.gz"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+OUTDIR="$PROJECT_ROOT/out"
+KERNEL_FILE="$OUTDIR/bzImage"
+INITRAMFS_FILE="$OUTDIR/initramfs.cpio.gz"
+CONFIG_FILE="$PROJECT_ROOT/config.sh"
 
 # Colors for output
 readonly RED='\033[0;31m'
@@ -25,9 +26,10 @@ log_warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
 log_error() { echo -e "${RED}❌ $1${NC}"; }
 
 # QEMU configuration
-readonly QEMU_MEMORY="512M"
-readonly QEMU_CPU="host"
-readonly QEMU_SMP="1"
+source "$CONFIG_FILE"
+readonly QEMU_ACCEL_OPTS=(
+    "-accel" "tcg"
+)
 
 # Utility functions
 check_dependencies() {
@@ -102,16 +104,16 @@ run_qemu() {
     log_info "Starting VyomaOS in QEMU..."
     echo ""
     
-    # QEMU command
+    # Boot QEMU
     qemu-system-x86_64 \
-        -machine accel="$ACCEL" \
-        -cpu "$QEMU_CPU" \
-        -smp "$QEMU_SMP" \
-        -m "$QEMU_MEMORY" \
         -kernel "$KERNEL_FILE" \
         -initrd "$INITRAMFS_FILE" \
+        -cpu "$QEMU_CPU" \
+        -m "$QEMU_MEMORY" \
+        -smp "$QEMU_SMP" \
+        "${QEMU_ACCEL_OPTS[@]}" \
+        -append "$QEMU_KERNEL_ARGS" \
         -nographic \
-        -append "console=ttyS0 loglevel=3" \
         -no-reboot \
         -no-shutdown
 }

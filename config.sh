@@ -2,6 +2,12 @@
 # VyomaOS Configuration File
 # Centralized configuration for all scripts
 
+# Include guard
+if [[ -n "${VYOMAOS_CONFIG_SOURCED:-}" ]]; then
+    return 0
+fi
+readonly VYOMAOS_CONFIG_SOURCED=1
+
 # Project information
 readonly PROJECT_NAME="VyomaOS"
 readonly PROJECT_VERSION="1.0.0"
@@ -15,7 +21,7 @@ readonly DOCS_DIR="$PROJECT_ROOT/docs"
 
 # Component URLs
 readonly BUSYBOX_URL="https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox"
-readonly WASMTIME_URL="https://github.com/bytecodealliance/wasmtime/releases/download/v16.0.0/wasmtime-v16.0.0-x86_64-macos.tar.xz"
+readonly WASMTIME_URL="https://github.com/bytecodealliance/wasmtime/releases/download/v16.0.0/wasmtime-v16.0.0-x86_64-linux.tar.xz"
 readonly KERNEL_SOURCE_URL="https://www.kernel.org/pub/linux/kernel/v5.x/linux-5.10.113.tar.xz"
 
 # Kernel configuration
@@ -29,7 +35,7 @@ readonly KERNEL_CONFIG_OPTS=(
 
 # QEMU configuration
 readonly QEMU_MEMORY="512M"
-readonly QEMU_CPU="host"
+readonly QEMU_CPU="qemu64"
 readonly QEMU_SMP="1"
 readonly QEMU_KERNEL_ARGS="console=ttyS0 loglevel=3"
 

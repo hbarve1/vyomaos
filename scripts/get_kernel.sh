@@ -5,7 +5,7 @@ set -euo pipefail
 # Downloads a working kernel from reliable sources
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 readonly OUTDIR="$PROJECT_ROOT/out"
 readonly KERNEL_FILE="$OUTDIR/bzImage"
 
