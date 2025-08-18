@@ -4,17 +4,17 @@ set -euo pipefail
 # Simple Kernel Download Script
 # Downloads a working kernel from reliable sources
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-readonly OUTDIR="$PROJECT_ROOT/out"
-readonly KERNEL_FILE="$OUTDIR/bzImage"
+OUTDIR="$PROJECT_ROOT/out"
+KERNEL_FILE="$OUTDIR/bzImage"
 
 # Colors
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly NC='\033[0m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
 log_info() { echo -e "${BLUE}ℹ️  $1${NC}"; }
 log_success() { echo -e "${GREEN}✅ $1${NC}"; }
