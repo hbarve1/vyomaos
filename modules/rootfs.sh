@@ -3,8 +3,12 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/../config.sh"
 
+# Get the absolute directory of this script at load time
+ROOTFS_MODULE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 create_wasm_runtime() {
-    local script_path="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/scripts/wasmtime"
+    local script_path="$ROOTFS_MODULE_DIR/scripts/wasmtime"
+    
     if [[ -f "$script_path" ]]; then
         cp "$script_path" "$ROOTFS_DIR/usr/bin/wasmtime"
         chmod +x "$ROOTFS_DIR/usr/bin/wasmtime"
@@ -15,7 +19,8 @@ create_wasm_runtime() {
 }
 
 create_init_script() {
-    local script_path="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/scripts/init"
+    local script_path="$ROOTFS_MODULE_DIR/scripts/init"
+    
     if [[ -f "$script_path" ]]; then
         cp "$script_path" "$ROOTFS_DIR/init"
         chmod +x "$ROOTFS_DIR/init"
