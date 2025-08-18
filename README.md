@@ -41,13 +41,23 @@ vyomaos/
 VyomaOS includes a dedicated `apps/` folder for Rust applications that compile to WebAssembly:
 
 ```bash
-# Build all WASM applications
+# Build WASM apps and integrate with OS
+./build-with-apps.sh
+
+# Or build apps separately
 cd apps && ./build.sh
+
+# Then rebuild OS to include apps
+./vyomaos.sh clean && ./vyomaos.sh build
 
 # Create new WASM app
 mkdir apps/my-app
 # See apps/README.md for detailed instructions
 ```
+
+**Current WASM Applications:**
+- `hello-world.wasm` (28KB) - String handling, arithmetic, recursion
+- `calculator.wasm` (3.2KB) - Mathematical operations and functions
 
 ## 🏗️ Architecture
 
@@ -97,6 +107,8 @@ sudo apt-get install curl tar gzip make gcc flex bison bc
 | `./vyomaos.sh build` | Build kernel and root filesystem |
 | `./vyomaos.sh run` | Boot VyomaOS in QEMU |
 | `./vyomaos.sh clean` | Remove all build artifacts |
+| `./build-with-apps.sh` | Build WASM apps + integrate with OS |
+| `cd apps && ./build.sh` | Build only WebAssembly applications |
 
 ## 🛠️ Build Process
 
