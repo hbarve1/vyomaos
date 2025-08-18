@@ -16,3 +16,5 @@ echo "🔄 Rebuilding VyomaOS with WASM apps..."
 echo ""
 echo "🚀 Ready to run VyomaOS with WebAssembly applications!"
 echo "   Run: ./vyomaos.sh run"
+
+./vyomaos.sh run
