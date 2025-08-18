@@ -26,10 +26,28 @@ vyomaos/
 │   ├── kernel.sh           # Kernel build (27 lines)
 │   ├── rootfs.sh           # Root filesystem (51 lines)
 │   └── qemu.sh             # QEMU boot (22 lines)
+├── apps/                   # WebAssembly applications
+│   ├── build.sh            # Build script for all apps
+│   ├── hello-world/        # Demo Rust→WASM app
+│   ├── calculator/         # Mathematical operations app
+│   └── build/              # Compiled WASM binaries
 └── out/                    # Build output (auto-generated)
 ```
 
 **Total codebase: 248 lines** - truly minimal!
+
+## 🦀 WebAssembly Applications
+
+VyomaOS includes a dedicated `apps/` folder for Rust applications that compile to WebAssembly:
+
+```bash
+# Build all WASM applications
+cd apps && ./build.sh
+
+# Create new WASM app
+mkdir apps/my-app
+# See apps/README.md for detailed instructions
+```
 
 ## 🏗️ Architecture
 
