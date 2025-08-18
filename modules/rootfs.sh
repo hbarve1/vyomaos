@@ -8,10 +8,41 @@ ROOTFS_MODULE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 create_wasm_runtime() {
     local script_path="$ROOTFS_MODULE_DIR/scripts/wasmtime"
+    local wasmtime_binary="/home/hbarve1/.wasmtime/bin/wasmtime"
     
-    if [[ -f "$script_path" ]]; then
+    # Option to include real Wasmtime (disabled by default due to size)
+    if [[ "${INCLUDE_REAL_WASMTIME:-false}" == "true" && -f "$wasmtime_binary" ]]; then
+        echo "Installing real Wasmtime runtime..."
+        cp "$wasmtime_binary" "$ROOTFS_DIR/usr/bin/wasmtime-real"
+        chmod +x "$ROOTFS_DIR/usr/bin/wasmtime-real"
+        echo "✅ Real Wasmtime runtime installed ($(du -h "$wasmtime_binary" | cut -f1))"
+        
+        # Also install our enhanced script as fallback
+        if [[ -f "$script_path" ]]; then
+            cp "$script_path" "$ROOTFS_DIR/usr/bin/wasmtime-sim"
+            chmod +x "$ROOTFS_DIR/usr/bin/wasmtime-sim"
+        fi
+        
+        # Create a smart wrapper that tries real first, falls back to simulation
+        cat > "$ROOTFS_DIR/usr/bin/wasmtime" << 'EOF'
+#!/bin/sh
+# VyomaOS Smart WebAssembly Runtime
+
+if [ -f "/usr/bin/wasmtime-real" ]; then
+    echo "🚀 Using real Wasmtime runtime"
+    /usr/bin/wasmtime-real "$@"
+else
+    echo "⚠️  Falling back to simulation mode"
+    /usr/bin/wasmtime-sim "$@"
+fi
+EOF
+        chmod +x "$ROOTFS_DIR/usr/bin/wasmtime"
+    elif [[ -f "$script_path" ]]; then
+        # Use our enhanced simulation script (default)
+        echo "Installing WebAssembly simulation runtime..."
         cp "$script_path" "$ROOTFS_DIR/usr/bin/wasmtime"
         chmod +x "$ROOTFS_DIR/usr/bin/wasmtime"
+        echo "✅ WebAssembly simulation runtime installed"
     else
         log_error "WASM runtime script not found: $script_path"
         return 1

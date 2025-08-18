@@ -29,7 +29,10 @@ for wasm in /apps/*.wasm; do
         app_name=$(basename "$wasm")
         echo "🏃 Running: $app_name"
         echo ""
+        
+        # Simply use the wasmtime wrapper (handles real vs simulation internally)
         /usr/bin/wasmtime "$wasm"
+        
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""

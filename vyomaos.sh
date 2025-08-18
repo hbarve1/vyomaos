@@ -29,6 +29,15 @@ cmd_build() {
     log_success "Build complete!"
 }
 
+cmd_build_full() {
+    log_info "Building VyomaOS with real Wasmtime runtime..."
+    export INCLUDE_REAL_WASMTIME=true
+    check_system_deps
+    build_kernel
+    build_rootfs
+    log_success "Full build complete with real Wasmtime!"
+}
+
 cmd_run() {
     boot_system
 }
@@ -44,9 +53,10 @@ main() {
     
     case "${1:-}" in
         build) cmd_build ;;
+        build-full) cmd_build_full ;;
         run) cmd_run ;;
         clean) cmd_clean ;;
-        *) echo "Usage: $0 {build|run|clean}"; exit 1 ;;
+        *) echo "Usage: $0 {build|build-full|run|clean}"; exit 1 ;;
     esac
 }
 
