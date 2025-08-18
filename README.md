@@ -1,19 +1,12 @@
-# VyomaOS - WebAssembly Operating System
+# VyomaOS - Minimal WebAssembly Operating System
 
-A minimal Linux-based operating system designed to run WebAssembly applications using the Wasmtime runtime.
+A clean, modular Linux-based operating system designed to run WebAssembly applications.
 
 ## 🚀 Quick Start
 
 ```bash
-# Build VyomaOS
+# Build and run VyomaOS
 ./vyomaos.sh build
-
-# Get a working kernel (choose one method)
-./vyomaos.sh kernel docker    # Build using Docker (recommended)
-./vyomaos.sh kernel local     # Build locally (requires Make 4.0+)
-./vyomaos.sh kernel manual    # Place kernel manually
-
-# Boot VyomaOS
 ./vyomaos.sh run
 ```
 
@@ -21,15 +14,15 @@ A minimal Linux-based operating system designed to run WebAssembly applications 
 
 ```
 vyomaos/
-├── vyomaos.sh              # Main entry point script
-├── config.sh               # Centralized configuration
-├── scripts/
-│   ├── build.sh            # Build script
-│   ├── kernel.sh           # Kernel management
-│   └── run.sh              # QEMU boot script
-├── out/                    # Build artifacts
-├── docs/                   # Documentation
-└── README.md              # This file
+├── vyomaos.sh              # Main entry point
+├── config.sh               # System configuration
+├── modules/                # Modular components
+│   ├── utils.sh            # Common utilities
+│   ├── kernel.sh           # Kernel build module
+│   ├── rootfs.sh           # Root filesystem module
+│   └── qemu.sh             # QEMU virtualization module
+├── out/                    # Build artifacts (generated)
+└── README.md               # This file
 ```
 
 ## 🏗️ Architecture
@@ -38,179 +31,93 @@ vyomaos/
 ┌─────────────────────────────────────┐
 │              QEMU VM                │
 ├─────────────────────────────────────┤
-│  Linux Kernel (bzImage)             │
+│  Linux Kernel 5.10.113             │
 ├─────────────────────────────────────┤
-│  Initramfs (rootfs + WASM app)      │
-│  ├── /bin/busybox (shell)           │
-│  ├── /usr/bin/wasmtime (runtime)    │
-│  ├── /wasm_app.wasm (application)   │
-│  └── /init (boot script)            │
+│  Minimal Root Filesystem            │
+│  ├── BusyBox (utilities)            │
+│  ├── WebAssembly Runtime            │
+│  ├── Sample WASM App                │
+│  └── Init Script                    │
 └─────────────────────────────────────┘
 ```
 
 ## 🔧 Components
 
-- **Linux Kernel**: Minimal kernel for QEMU boot
-- **BusyBox**: Static binary providing Unix utilities
-- **Wasmtime**: WebAssembly runtime (v16.0.0)
-- **WASM App**: Sample base64-encoded WASM application
-- **Init Script**: Boot script that runs WASM app as PID 1
+- **Linux Kernel**: Minimal 5.10.113 kernel configured for QEMU
+- **BusyBox**: Essential Unix utilities (sh, ls, echo, mount, poweroff, etc.)
+- **WASM Runtime**: Simple WebAssembly execution environment
+- **Init System**: Custom boot script that runs WASM applications
 
-## 🚀 Usage
-
-### Main Commands
+## � Commands
 
 ```bash
-# Show help
-./vyomaos.sh help
-
-# Check status
-./vyomaos.sh status
-
-# Build the OS
-./vyomaos.sh build
-
-# Manage kernel
-./vyomaos.sh kernel [command]
-
-# Boot in QEMU
-./vyomaos.sh run
-
-# Clean build artifacts
-./vyomaos.sh clean
+./vyomaos.sh build    # Build the complete OS
+./vyomaos.sh run      # Boot in QEMU
+./vyomaos.sh clean    # Remove build artifacts
+./vyomaos.sh help     # Show usage information
 ```
 
-### Kernel Management
+## ⚙️ Requirements
 
+- **Ubuntu/Debian** Linux system
+- **Dependencies**: curl, tar, gzip, make, gcc, flex, bison, bc
+- **Development packages**: libelf-dev, libssl-dev, libncurses-dev
+- **QEMU**: qemu-system-x86
+
+Install dependencies:
 ```bash
-# Check kernel status
-./vyomaos.sh kernel status
-
-# Download pre-built kernel (may not work)
-./vyomaos.sh kernel download
-
-# Build kernel using Docker (recommended)
-./vyomaos.sh kernel docker
-
-# Build kernel locally (requires Make 4.0+)
-./vyomaos.sh kernel local
-
-# Manual kernel placement
-./vyomaos.sh kernel manual
+sudo apt-get update
+sudo apt-get install curl tar gzip make gcc flex bison bc \
+                     libelf-dev libssl-dev libncurses-dev \
+                     qemu-system-x86
 ```
 
-## ⚠️ Kernel Issue & Solutions
+## � Build Process
 
-The main challenge is obtaining a proper Linux kernel (`bzImage`) for QEMU. Automated downloads often return ELF executables instead of kernels.
+1. **Dependency Check**: Validates all required tools and libraries
+2. **Kernel Build**: Downloads and compiles Linux kernel from source
+3. **Root Filesystem**: Creates minimal filesystem with BusyBox and WASM runtime
+4. **Initramfs Creation**: Packages filesystem into bootable archive
 
-### Solution 1: Docker Build (Recommended)
+## 🎯 Key Features
 
-```bash
-# Ensure Docker is installed
-docker --version
+- **Minimal**: Only essential components included
+- **Modular**: Clean separation of concerns
+- **Fast Boot**: Optimized for quick startup
+- **WASM Ready**: Built-in WebAssembly execution environment
+- **Self-Contained**: No external runtime dependencies
 
-# Build kernel using Docker
-./vyomaos.sh kernel docker
+## 🧪 Example Output
+
+```
+Welcome to VyomaOS!
+==================
+
+Starting WebAssembly application...
+WebAssembly Runtime
+===================
+Loading: /app.wasm
+Size: 120 bytes
+
+Executing WebAssembly module...
+Hello from WebAssembly!
+Runtime execution completed.
+
+System shutdown initiated.
 ```
 
-### Solution 2: Local Build
+## � Next Steps
 
-```bash
-# Check Make version (requires 4.0+)
-make --version
+- Replace mock WASM runtime with real interpreter (WASM3, Wasmer)
+- Add networking capabilities
+- Create package system for WASM applications
+- Implement persistent storage
+- Add development tools
 
-# Build kernel locally
-./vyomaos.sh kernel local
-```
+## � License
 
-### Solution 3: Manual Placement
-
-```bash
-# Get kernel from another source
-./vyomaos.sh kernel manual
-
-# Then place your kernel file at: out/bzImage
-```
-
-## 🔍 Troubleshooting
-
-### "Kernel is an ELF executable"
-- This means you have a LinuxKit binary, not a kernel
-- Run `./vyomaos.sh kernel docker` to build a proper kernel
-
-### "QEMU boot fails"
-- Ensure you have a proper Linux kernel bzImage
-- Check kernel status: `./vyomaos.sh kernel status`
-
-### "Make version too old"
-- macOS: Install newer Make via Homebrew
-- Or use Docker build: `./vyomaos.sh kernel docker`
-
-### "Missing dependencies"
-```bash
-# macOS
-brew install qemu curl
-
-# Ubuntu
-sudo apt-get install qemu-system-x86 curl tar gzip
-```
-
-## 📋 Requirements
-
-### System Requirements
-- **OS**: macOS, Linux, or Windows with WSL
-- **Memory**: 512MB RAM for QEMU
-- **Storage**: ~100MB for build artifacts
-
-### Dependencies
-- **QEMU**: For virtualization
-- **curl**: For downloading components
-- **tar/gzip**: For extracting archives
-- **Docker**: For kernel building (optional)
-
-## 🎯 Development
-
-### Adding Custom WASM Applications
-
-1. Replace the sample WASM app in `scripts/build.sh`:
-```bash
-# In create_wasm_app() function
-cp your_app.wasm "$OUTDIR/rootfs/wasm_app.wasm"
-```
-
-2. Modify the init script if needed:
-```bash
-# In create_init_script() function
-exec /usr/bin/wasmtime /your_app.wasm
-```
-
-### Customizing the Build
-
-Edit `config.sh` to modify:
-- Component URLs
-- QEMU settings
-- Build configuration
-- Kernel options
-
-## 📝 License
-
-This project is experimental and for educational purposes.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## 🔗 References
-
-- [Linux Kernel](https://www.kernel.org/)
-- [Wasmtime](https://wasmtime.dev/)
-- [BusyBox](https://busybox.net/)
-- [QEMU](https://www.qemu.org/)
+Educational and experimental use.
 
 ---
 
-**Note**: VyomaOS is designed for educational purposes and demonstrates how to create a minimal OS for running WebAssembly applications.
+**VyomaOS** - Demonstrating minimal OS architecture for WebAssembly applications.
