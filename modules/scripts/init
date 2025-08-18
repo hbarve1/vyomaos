@@ -23,20 +23,18 @@ if ls /apps/*.wasm &>/dev/null; then
     echo ""
 fi
 
-# Run default WASM application
-if [[ -f /apps/hello-world.wasm ]]; then
-    echo "🏃 Running: hello-world.wasm"
-    echo ""
-    /usr/bin/wasmtime /apps/hello-world.wasm
-elif [[ -f /apps/calculator.wasm ]]; then
-    echo "🏃 Running: calculator.wasm"
-    echo ""
-    /usr/bin/wasmtime /apps/calculator.wasm
-else
-    echo "🚀 Running: demo application"
-    echo ""
-    /usr/bin/wasmtime /dev/null
-fi
+# Run all WASM applications
+for wasm in /apps/*.wasm; do
+    if [[ -f "$wasm" ]]; then
+        app_name=$(basename "$wasm")
+        echo "🏃 Running: $app_name"
+        echo ""
+        /usr/bin/wasmtime "$wasm"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+    fi
+done
 
 echo "System shutdown initiated."
 poweroff -f
