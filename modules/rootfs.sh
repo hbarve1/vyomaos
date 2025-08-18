@@ -56,7 +56,7 @@ build_rootfs() {
     cp "$OUTDIR/busybox" "$ROOTFS_DIR/bin/busybox"
     
     # Create BusyBox symlinks
-    for cmd in sh echo mount poweroff wc od head strings tr grep tail; do
+    for cmd in sh echo mount poweroff wc od head strings tr grep tail sort basename cut; do
         ln -sf /bin/busybox "$ROOTFS_DIR/bin/$cmd"
     done
     
