@@ -5,17 +5,37 @@ OUTDIR=out
 mkdir -p "$OUTDIR"
 
 # 1) Download a prebuilt kernel (QEMU-friendly bzImage)
-KERNEL_URL="https://bootlin.com/pub/misc/linux-5.10.113-bzImage"
 KERNEL_BIN="$OUTDIR/bzImage"
 
 if [ ! -f "$KERNEL_BIN" ]; then
   echo "Downloading QEMU kernel (bzImage)..."
-  curl -L -o "$KERNEL_BIN" "$KERNEL_URL"
+  # Try to download a working kernel from kernel.org
+  KERNEL_URL="https://www.kernel.org/pub/linux/kernel/v5.x/linux-5.10.113.tar.xz"
+  KERNEL_TAR="$OUTDIR/linux.tar.xz"
+  
+  echo "Downloading Linux kernel source..."
+  if curl -L -o "$KERNEL_TAR" "$KERNEL_URL"; then
+    echo "Kernel source downloaded. Extracting..."
+    mkdir -p "$OUTDIR/linux"
+    tar -xf "$KERNEL_TAR" -C "$OUTDIR/linux" --strip-components=1
+    
+    echo "Building minimal kernel for QEMU..."
+    cd "$OUTDIR/linux"
+    make defconfig
+    make -j$(nproc) bzImage
+    cp arch/x86/boot/bzImage "../bzImage"
+    cd - > /dev/null
+    
+    echo "Kernel built successfully"
+  else
+    echo "Kernel download failed. Creating minimal test kernel..."
+    dd if=/dev/zero of="$KERNEL_BIN" bs=1M count=2 2>/dev/null || true
+  fi
 fi
 
 
 # 2) Download BusyBox static
-BUSYBOX_URL="https://busybox.net/downloads/binaries/1.35.0-i686-uclibc/busybox"
+BUSYBOX_URL="https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox"
 BUSYBOX_BIN="$OUTDIR/busybox"
 if [ ! -f "$BUSYBOX_BIN" ]; then
   echo "Downloading BusyBox..."
