@@ -137,17 +137,40 @@ setup_wasmtime() {
         fi
     fi
     
+    # Clean and recreate wasmtime directory
+    rm -rf "$WASMTIME_DIR"
     mkdir -p "$WASMTIME_DIR"
+    
+    log_info "Extracting Wasmtime archive..."
     tar -xJf "$wasmtime_tar" -C "$WASMTIME_DIR" --strip-components=1
+    
+    # Debug: List contents of extracted directory
+    log_info "Contents of Wasmtime directory:"
+    ls -la "$WASMTIME_DIR"
     
     # Verify the wasmtime binary exists and is executable
     if [[ ! -f "$WASMTIME_DIR/wasmtime" ]]; then
         log_error "Wasmtime binary not found in extracted archive."
+        log_info "Available files:"
+        find "$WASMTIME_DIR" -type f
+        exit 1
+    fi
+    
+    # Check if it's actually an executable
+    if ! file "$WASMTIME_DIR/wasmtime" | grep -q "executable"; then
+        log_error "Wasmtime file is not an executable binary."
+        file "$WASMTIME_DIR/wasmtime"
         exit 1
     fi
     
     cp "$WASMTIME_DIR/wasmtime" "$ROOTFS_DIR/usr/bin/wasmtime"
     chmod +x "$ROOTFS_DIR/usr/bin/wasmtime"
+    
+    # Debug: Verify the file was copied correctly
+    log_info "Verifying copied Wasmtime binary:"
+    ls -la "$ROOTFS_DIR/usr/bin/wasmtime"
+    file "$ROOTFS_DIR/usr/bin/wasmtime"
+    
     log_success "Wasmtime setup complete."
 }
 
