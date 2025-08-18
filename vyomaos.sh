@@ -3,11 +3,8 @@
 
 set -e
 
-# Load configuration
+# Load configuration and modules
 source "config.sh"
-
-# Load modules
-source "modules/utils.sh"
 source "modules/kernel.sh"
 source "modules/rootfs.sh"
 source "modules/qemu.sh"

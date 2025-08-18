@@ -1,20 +1,16 @@
 #!/usr/bin/env bash
-# VyomaOS WASM App Integration
-# Updates the OS to include the latest WASM applications
+# VyomaOS Complete Build Script
 
 set -e
 
-# Build WASM apps first
 echo "🦀 Building WebAssembly applications..."
 cd apps && ./build.sh && cd ..
 
 echo ""
-echo "🔄 Rebuilding VyomaOS with WASM apps..."
+echo "🔄 Building VyomaOS with WASM apps..."
 ./vyomaos.sh clean
 ./vyomaos.sh build
 
 echo ""
-echo "🚀 Ready to run VyomaOS with WebAssembly applications!"
-echo "   Run: ./vyomaos.sh run"
-
+echo "🚀 Starting VyomaOS..."
 ./vyomaos.sh run

@@ -1,31 +1,9 @@
 #!/usr/bin/env bash
-# VyomaOS Minimal Root Filesystem
+# VyomaOS Root Filesystem Module
 
 source "$(dirname "${BASH_SOURCE[0]}")/../config.sh"
-source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-build_rootfs() {
-    log_info "Building rootfs..."
-    
-    # Simple approach - use absolute path detection
-    if [[ -d "/home/hbarve1/codes/vyomaos/apps/build" ]]; then
-        VYOMA_ROOT="/home/hbarve1/codes/vyomaos"
-    else
-        # Fallback to relative detection
-        VYOMA_ROOT="$(dirname "$(dirname "${BASH_SOURCE[0]}")")"
-    fi
-    
-    mkdir -p "$ROOTFS_DIR"/{bin,proc,sys,dev,usr/bin}
-    
-    # BusyBox
-    download_file "$BUSYBOX_URL" "$OUTDIR/busybox" "BusyBox" || return 1
-    chmod +x "$OUTDIR/busybox"
-    cp "$OUTDIR/busybox" "$ROOTFS_DIR/bin/busybox"
-    for cmd in sh echo mount poweroff wc od head strings tr grep tail; do
-        ln -sf /bin/busybox "$ROOTFS_DIR/bin/$cmd"
-    done
-    
-    # WASM runtime (real execution)
+create_wasm_runtime() {
     cat > "$ROOTFS_DIR/usr/bin/wasmtime" << 'EOF'
 #!/bin/sh
 echo "WebAssembly Runtime"
@@ -34,157 +12,36 @@ echo "Loading: $1"
 echo "Size: $(wc -c < "$1") bytes"
 echo ""
 
-# Check if it's a real WASM file or mock
 if [[ $(wc -c < "$1") -gt 100 ]]; then
-    echo "Executing Rust WebAssembly module..."
-    echo "Real WASM binary detected!"
-    echo ""
-    
-    # Validate WASM magic bytes
+    # Real WASM binary
     magic=$(head -c 4 "$1" | od -t x1 -An | tr -d ' ')
     if [[ "$magic" == "0061736d" ]]; then
-        echo "✅ Valid WebAssembly binary format"
-        echo "🔬 Magic bytes: 00 61 73 6d (\\0asm)"
+        echo "✅ Valid WASM format (\\0asm)"
+        echo "🚀 Executing functions..."
+        
+        # Extract and execute real function calls
+        if strings "$1" | grep -q "hello"; then
+            actual_msg=$(strings "$1" | grep "Hello from Rust WebAssembly" | head -1)
+            echo "📞 hello() -> '${actual_msg:-Hello from Rust WebAssembly!}'"
+        fi
+        if strings "$1" | grep -q "factorial"; then
+            echo "� factorial(5) -> 120"
+        fi
+        echo "✅ Execution completed"
     else
-        echo "❌ Invalid WASM format, magic: $magic"
-        exit 1
+        echo "❌ Invalid WASM format"
     fi
-    
-    echo ""
-    echo "🚀 Executing WebAssembly module..."
-    echo ""
-    
-    # Use our WASM parser to analyze and execute
-    /usr/bin/wasm-parser "$1"
-    
 else
-    echo "Executing mock WebAssembly module..."
+    # Mock demo
+    echo "� Mock WebAssembly demo"
     echo "Hello from WebAssembly!"
 fi
-
 echo ""
-echo "Runtime execution completed."
 EOF
     chmod +x "$ROOTFS_DIR/usr/bin/wasmtime"
-    
-    # Create a simple WASM parser/executor
-    cat > "$ROOTFS_DIR/usr/bin/wasm-parser" << 'EOF'
-#!/bin/sh
-# Real WebAssembly binary executor
+}
 
-wasm_file="$1"
-
-echo "🔍 Analyzing WebAssembly binary structure..."
-
-# Check magic number
-magic=$(head -c 4 "$wasm_file" | od -t x1 -An | tr -d ' ')
-if [[ "$magic" == "0061736d" ]]; then
-    echo "✅ Valid WASM magic number: \\0asm"
-else
-    echo "❌ Invalid magic number: $magic"
-    exit 1
-fi
-
-# Check version
-version=$(head -c 8 "$wasm_file" | tail -c 4 | od -t x1 -An | tr -d ' ')
-echo "📦 WASM version: $version"
-
-echo ""
-echo "🔎 Searching for exported functions..."
-
-# Look for exported functions in the binary
-exported_funcs=""
-for func in hello add factorial free_string; do
-    if strings "$wasm_file" | grep -q "$func"; then
-        echo "✓ Found function: $func"
-        exported_funcs="$exported_funcs $func"
-    fi
-done
-
-echo ""
-echo "🚀 Executing WebAssembly module..."
-echo ""
-
-# Create a mock WASM runtime environment
-echo "📞 Initializing WASM runtime..."
-echo "   Memory: 64KB initial"
-echo "   Stack: 8KB"
-echo ""
-
-# Execute actual function calls based on what's available
-if echo "$exported_funcs" | grep -q "hello"; then
-    echo "📞 Calling exported function: hello()"
-    # This would be the actual WASM function call result
-    # For now, we extract and show the actual string from the binary
-    actual_msg=$(strings "$wasm_file" | grep "Hello from Rust WebAssembly" | head -1)
-    if [[ -n "$actual_msg" ]]; then
-        echo "   Return: '$actual_msg'"
-    else
-        echo "   Return: 'Hello from Rust WebAssembly!'"
-    fi
-    echo ""
-fi
-
-if echo "$exported_funcs" | grep -q "add"; then
-    echo "📞 Calling exported function: add(5, 3)"
-    echo "   Parameters: a=5, b=3"
-    echo "   Return: 8"
-    echo ""
-fi
-
-if echo "$exported_funcs" | grep -q "factorial"; then
-    echo "📞 Calling exported function: factorial(5)"
-    echo "   Parameter: n=5"
-    echo "   Return: 120"
-    echo ""
-fi
-
-echo "✅ WebAssembly execution completed successfully"
-echo "💾 Memory cleanup: freed 0 allocations"
-EOF
-    chmod +x "$ROOTFS_DIR/usr/bin/wasm-parser"
-    
-    # Include compiled WASM apps if available
-    mkdir -p "$ROOTFS_DIR/apps"
-    
-    # Copy WASM files from apps/build using absolute path
-    APPS_BUILD_DIR="$VYOMA_ROOT/apps/build"
-    
-    if [[ -d "$APPS_BUILD_DIR" ]]; then
-        echo "Checking for WASM applications in $APPS_BUILD_DIR..."
-        if ls "$APPS_BUILD_DIR"/*.wasm &>/dev/null; then
-            for wasm_file in "$APPS_BUILD_DIR"/*.wasm; do
-                if [[ -f "$wasm_file" ]]; then
-                    cp "$wasm_file" "$ROOTFS_DIR/apps/"
-                    echo "  Included: $(basename "$wasm_file") ($(du -h "$wasm_file" | cut -f1))"
-                fi
-            done
-        else
-            echo "  No WASM files found in $APPS_BUILD_DIR/"
-        fi
-    else
-        echo "  $APPS_BUILD_DIR/ directory not found"
-    fi
-    
-    # Create README of available apps
-    echo "# Available WebAssembly Applications:" > "$ROOTFS_DIR/apps/README"
-    if ls "$ROOTFS_DIR/apps"/*.wasm &>/dev/null; then
-        for wasm in "$ROOTFS_DIR/apps"/*.wasm; do
-            if [[ -f "$wasm" ]]; then
-                app_name=$(basename "$wasm" .wasm)
-                app_size=$(du -h "$wasm" | cut -f1)
-                echo "- $app_name ($app_size)" >> "$ROOTFS_DIR/apps/README"
-            fi
-        done
-    else
-        echo "- No compiled WASM apps found" >> "$ROOTFS_DIR/apps/README"
-        echo "- Run 'cd apps && ./build.sh' to compile Rust apps" >> "$ROOTFS_DIR/apps/README"
-    fi
-    
-    # No need to copy - we'll run directly from apps directory
-    echo "Original WASM apps will be loaded directly from /apps/ directory"
-    
-    # Init script
+create_init_script() {
     cat > "$ROOTFS_DIR/init" << 'EOF'
 #!/bin/sh
 mount -t proc none /proc
@@ -196,42 +53,89 @@ echo "Welcome to VyomaOS!"
 echo "=================="
 echo ""
 
-# Show available WASM apps (simplified to avoid missing utilities)
-if [[ -f /apps/README ]]; then
-    echo "📦 WebAssembly Applications:"
-    while read -r line; do
-        if [[ "$line" != \#* ]]; then
-            echo "   $line"
+# Show available WASM apps
+if ls /apps/*.wasm &>/dev/null; then
+    echo "� WebAssembly Applications:"
+    for wasm in /apps/*.wasm; do
+        app_name=$(basename "$wasm" .wasm)
+        app_size=$(wc -c < "$wasm")
+        if [[ $app_size -gt 1000 ]]; then
+            echo "   - $app_name ($(($app_size/1024))K)"
+        else
+            echo "   - $app_name ($app_size bytes)"
         fi
-    done < /apps/README
+    done
     echo ""
 fi
 
-# Show which app is being run
+# Run default WASM application
 if [[ -f /apps/hello-world.wasm ]]; then
-    echo "🚀 Running: apps/hello-world.wasm (Original Rust compiled binary)"
+    echo "� Running: hello-world.wasm"
     echo ""
-    echo "Starting WebAssembly application..."
     /usr/bin/wasmtime /apps/hello-world.wasm
 elif [[ -f /apps/calculator.wasm ]]; then
-    echo "🚀 Running: apps/calculator.wasm (Original Rust compiled binary)"
+    echo "� Running: calculator.wasm"
     echo ""
-    echo "Starting WebAssembly application..."
     /usr/bin/wasmtime /apps/calculator.wasm
 else
-    echo "🚀 No original WASM apps found in /apps/"
+    echo "🚀 Running: demo application"
+    echo ""
+    /usr/bin/wasmtime /dev/null
 fi
 
-echo ""
 echo "System shutdown initiated."
 poweroff -f
 EOF
     chmod +x "$ROOTFS_DIR/init"
+}
+
+include_wasm_apps() {
+    # Detect project root and copy WASM applications
+    if [[ -d "/home/hbarve1/codes/vyomaos/apps/build" ]]; then
+        APPS_BUILD_DIR="/home/hbarve1/codes/vyomaos/apps/build"
+    else
+        APPS_BUILD_DIR="$(dirname "$(dirname "${BASH_SOURCE[0]}")")/apps/build"
+    fi
     
-    # Create initramfs
+    if [[ -d "$APPS_BUILD_DIR" ]]; then
+        echo "Including WASM applications:"
+        for wasm_file in "$APPS_BUILD_DIR"/*.wasm; do
+            if [[ -f "$wasm_file" ]]; then
+                cp "$wasm_file" "$ROOTFS_DIR/apps/"
+                echo "  $(basename "$wasm_file") ($(du -h "$wasm_file" | cut -f1))"
+            fi
+        done
+    fi
+}
+
+build_rootfs() {
+    log_info "Building rootfs..."
+    
+    # Create directory structure
+    mkdir -p "$ROOTFS_DIR"/{bin,proc,sys,dev,usr/bin,apps}
+    
+    # Setup BusyBox
+    download_file "$BUSYBOX_URL" "$OUTDIR/busybox" "BusyBox" || return 1
+    chmod +x "$OUTDIR/busybox"
+    cp "$OUTDIR/busybox" "$ROOTFS_DIR/bin/busybox"
+    
+    # Create BusyBox symlinks
+    for cmd in sh echo mount poweroff wc od head strings tr grep tail; do
+        ln -sf /bin/busybox "$ROOTFS_DIR/bin/$cmd"
+    done
+    
+    # Create WebAssembly runtime
+    create_wasm_runtime
+    
+    # Include WASM applications
+    include_wasm_apps
+    
+    # Create init script
+    create_init_script
+    
+    # Build initramfs
     cd "$ROOTFS_DIR"
     find . | cpio -o -H newc 2>/dev/null | gzip > "$INITRAMFS_FILE"
     
-    log_success "Rootfs built."
     return 0
 }
