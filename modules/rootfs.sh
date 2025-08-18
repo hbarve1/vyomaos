@@ -55,6 +55,9 @@ build_rootfs() {
     # Create directory structure
     mkdir -p "$ROOTFS_DIR"/{bin,proc,sys,dev,usr/bin,apps}
     
+    # Create VyomaOS marker file
+    echo "VyomaOS $(date)" > "$ROOTFS_DIR/.vyomaos"
+    
     # Setup BusyBox
     download_file "$BUSYBOX_URL" "$OUTDIR/busybox" "BusyBox" || return 1
     chmod +x "$OUTDIR/busybox"
