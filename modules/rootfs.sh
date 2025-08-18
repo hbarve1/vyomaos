@@ -115,10 +115,14 @@ echo "Welcome to VyomaOS!"
 echo "=================="
 echo ""
 
-# Show available WASM apps
+# Show available WASM apps (simplified to avoid missing utilities)
 if [[ -f /apps/README ]]; then
     echo "📦 WebAssembly Applications:"
-    cat /apps/README | grep -v "^#" | sed 's/^/   /'
+    while read -r line; do
+        if [[ "$line" != \#* ]]; then
+            echo "   $line"
+        fi
+    done < /apps/README
     echo ""
 fi
 
