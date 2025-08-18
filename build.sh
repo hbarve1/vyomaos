@@ -4,32 +4,35 @@ set -euo pipefail
 OUTDIR=out
 mkdir -p "$OUTDIR"
 
-# 1) Download a prebuilt kernel (QEMU-friendly bzImage)
+# 1) Download a pre-built kernel (QEMU-friendly bzImage)
 KERNEL_BIN="$OUTDIR/bzImage"
 
 if [ ! -f "$KERNEL_BIN" ]; then
-  echo "Downloading QEMU kernel (bzImage)..."
-  # Try to download a working kernel from kernel.org
-  KERNEL_URL="https://www.kernel.org/pub/linux/kernel/v5.x/linux-5.10.113.tar.xz"
-  KERNEL_TAR="$OUTDIR/linux.tar.xz"
+  echo "Setting up QEMU kernel (bzImage)..."
   
-  echo "Downloading Linux kernel source..."
-  if curl -L -o "$KERNEL_TAR" "$KERNEL_URL"; then
-    echo "Kernel source downloaded. Extracting..."
-    mkdir -p "$OUTDIR/linux"
-    tar -xf "$KERNEL_TAR" -C "$OUTDIR/linux" --strip-components=1
-    
-    echo "Building minimal kernel for QEMU..."
-    cd "$OUTDIR/linux"
-    make defconfig
-    make -j$(nproc) bzImage
-    cp arch/x86/boot/bzImage "../bzImage"
-    cd - > /dev/null
-    
-    echo "Kernel built successfully"
+  echo "⚠️  Kernel build not available on this system"
+  echo "💡 The Linux kernel build requires Linux build tools"
+  echo "🔧 Run ./get_proper_kernel.sh for kernel options"
+  echo ""
+  echo "Creating placeholder kernel..."
+  dd if=/dev/zero of="$KERNEL_BIN" bs=1M count=2 2>/dev/null || true
+fi
+
+# Check kernel status
+if [ -f "$KERNEL_BIN" ]; then
+  echo "📋 Kernel file info:"
+  file "$KERNEL_BIN"
+  
+  if file "$KERNEL_BIN" | grep -q "ELF"; then
+    echo "⚠️  Warning: Kernel is an ELF executable (not a real kernel)"
+    echo "💡 This will cause QEMU boot issues."
+    echo "🔧 To fix this, run: ./get_proper_kernel.sh"
+  elif file "$KERNEL_BIN" | grep -q "data"; then
+    echo "⚠️  Warning: Kernel is a placeholder (not a real kernel)"
+    echo "💡 This will cause QEMU boot issues."
+    echo "🔧 To fix this, run: ./get_proper_kernel.sh"
   else
-    echo "Kernel download failed. Creating minimal test kernel..."
-    dd if=/dev/zero of="$KERNEL_BIN" bs=1M count=2 2>/dev/null || true
+    echo "✅ Kernel appears to be valid!"
   fi
 fi
 
