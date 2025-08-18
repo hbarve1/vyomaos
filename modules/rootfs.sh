@@ -163,17 +163,8 @@ EOF
         echo "- Run 'cd apps && ./build.sh' to compile Rust apps" >> "$ROOTFS_DIR/apps/README"
     fi
     
-    # Set default WASM app (prefer hello-world if available)
-    if [[ -f "$ROOTFS_DIR/apps/hello-world.wasm" ]]; then
-        cp "$ROOTFS_DIR/apps/hello-world.wasm" "$ROOTFS_DIR/app.wasm"
-        echo "Default app: hello-world.wasm"
-    elif [[ -f "$ROOTFS_DIR/apps/calculator.wasm" ]]; then
-        cp "$ROOTFS_DIR/apps/calculator.wasm" "$ROOTFS_DIR/app.wasm"
-        echo "Default app: calculator.wasm"
-    else
-        echo "# Mock WebAssembly Application" > "$ROOTFS_DIR/app.wasm"
-        echo "Default app: mock (no compiled WASM apps found)"
-    fi
+    # No need to copy - we'll run directly from apps directory
+    echo "Original WASM apps will be loaded directly from /apps/ directory"
     
     # Init script
     cat > "$ROOTFS_DIR/init" << 'EOF'
@@ -199,18 +190,19 @@ if [[ -f /apps/README ]]; then
 fi
 
 # Show which app is being run
-if [[ -f /app.wasm ]]; then
-    app_size=$(wc -c < /app.wasm)
-    if [[ $app_size -gt 100 ]]; then
-        echo "🚀 Running: hello-world.wasm (Rust compiled)"
-    else
-        echo "🚀 Running: mock WebAssembly demo"
-    fi
+if [[ -f /apps/hello-world.wasm ]]; then
+    echo "🚀 Running: apps/hello-world.wasm (Original Rust compiled binary)"
+    echo ""
+    echo "Starting WebAssembly application..."
+    /usr/bin/wasmtime /apps/hello-world.wasm
+elif [[ -f /apps/calculator.wasm ]]; then
+    echo "🚀 Running: apps/calculator.wasm (Original Rust compiled binary)"
+    echo ""
+    echo "Starting WebAssembly application..."
+    /usr/bin/wasmtime /apps/calculator.wasm
+else
+    echo "🚀 No original WASM apps found in /apps/"
 fi
-
-echo ""
-echo "Starting WebAssembly application..."
-/usr/bin/wasmtime /app.wasm
 
 echo ""
 echo "System shutdown initiated."
