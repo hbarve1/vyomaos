@@ -1,0 +1,42 @@
+#!/bin/sh
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs none /dev
+
+echo ""
+echo "Welcome to VyomaOS!"
+echo "=================="
+echo ""
+
+# Show available WASM apps
+if ls /apps/*.wasm &>/dev/null; then
+    echo "🚀 WebAssembly Applications:"
+    for wasm in /apps/*.wasm; do
+        app_name=$(basename "$wasm" .wasm)
+        app_size=$(wc -c < "$wasm")
+        if [[ $app_size -gt 1000 ]]; then
+            echo "   - $app_name ($(($app_size/1024))K)"
+        else
+            echo "   - $app_name ($app_size bytes)"
+        fi
+    done
+    echo ""
+fi
+
+# Run default WASM application
+if [[ -f /apps/hello-world.wasm ]]; then
+    echo "🏃 Running: hello-world.wasm"
+    echo ""
+    /usr/bin/wasmtime /apps/hello-world.wasm
+elif [[ -f /apps/calculator.wasm ]]; then
+    echo "🏃 Running: calculator.wasm"
+    echo ""
+    /usr/bin/wasmtime /apps/calculator.wasm
+else
+    echo "🚀 Running: demo application"
+    echo ""
+    /usr/bin/wasmtime /dev/null
+fi
+
+echo "System shutdown initiated."
+poweroff -f

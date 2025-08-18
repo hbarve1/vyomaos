@@ -4,89 +4,25 @@
 source "$(dirname "${BASH_SOURCE[0]}")/../config.sh"
 
 create_wasm_runtime() {
-    cat > "$ROOTFS_DIR/usr/bin/wasmtime" << 'EOF'
-#!/bin/sh
-echo "WebAssembly Runtime"
-echo "==================="
-echo "Loading: $1"
-echo "Size: $(wc -c < "$1") bytes"
-echo ""
-
-if [[ $(wc -c < "$1") -gt 100 ]]; then
-    # Real WASM binary
-    magic=$(head -c 4 "$1" | od -t x1 -An | tr -d ' ')
-    if [[ "$magic" == "0061736d" ]]; then
-        echo "✅ Valid WASM format (\\0asm)"
-        echo "🚀 Executing functions..."
-        
-        # Extract and execute real function calls
-        if strings "$1" | grep -q "hello"; then
-            actual_msg=$(strings "$1" | grep "Hello from Rust WebAssembly" | head -1)
-            echo "📞 hello() -> '${actual_msg:-Hello from Rust WebAssembly!}'"
-        fi
-        if strings "$1" | grep -q "factorial"; then
-            echo "� factorial(5) -> 120"
-        fi
-        echo "✅ Execution completed"
+    local script_path="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/scripts/wasmtime"
+    if [[ -f "$script_path" ]]; then
+        cp "$script_path" "$ROOTFS_DIR/usr/bin/wasmtime"
+        chmod +x "$ROOTFS_DIR/usr/bin/wasmtime"
     else
-        echo "❌ Invalid WASM format"
+        log_error "WASM runtime script not found: $script_path"
+        return 1
     fi
-else
-    # Mock demo
-    echo "� Mock WebAssembly demo"
-    echo "Hello from WebAssembly!"
-fi
-echo ""
-EOF
-    chmod +x "$ROOTFS_DIR/usr/bin/wasmtime"
 }
 
 create_init_script() {
-    cat > "$ROOTFS_DIR/init" << 'EOF'
-#!/bin/sh
-mount -t proc none /proc
-mount -t sysfs none /sys
-mount -t devtmpfs none /dev
-
-echo ""
-echo "Welcome to VyomaOS!"
-echo "=================="
-echo ""
-
-# Show available WASM apps
-if ls /apps/*.wasm &>/dev/null; then
-    echo "� WebAssembly Applications:"
-    for wasm in /apps/*.wasm; do
-        app_name=$(basename "$wasm" .wasm)
-        app_size=$(wc -c < "$wasm")
-        if [[ $app_size -gt 1000 ]]; then
-            echo "   - $app_name ($(($app_size/1024))K)"
-        else
-            echo "   - $app_name ($app_size bytes)"
-        fi
-    done
-    echo ""
-fi
-
-# Run default WASM application
-if [[ -f /apps/hello-world.wasm ]]; then
-    echo "� Running: hello-world.wasm"
-    echo ""
-    /usr/bin/wasmtime /apps/hello-world.wasm
-elif [[ -f /apps/calculator.wasm ]]; then
-    echo "� Running: calculator.wasm"
-    echo ""
-    /usr/bin/wasmtime /apps/calculator.wasm
-else
-    echo "🚀 Running: demo application"
-    echo ""
-    /usr/bin/wasmtime /dev/null
-fi
-
-echo "System shutdown initiated."
-poweroff -f
-EOF
-    chmod +x "$ROOTFS_DIR/init"
+    local script_path="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/scripts/init"
+    if [[ -f "$script_path" ]]; then
+        cp "$script_path" "$ROOTFS_DIR/init"
+        chmod +x "$ROOTFS_DIR/init"
+    else
+        log_error "Init script not found: $script_path"
+        return 1
+    fi
 }
 
 include_wasm_apps() {
@@ -125,13 +61,13 @@ build_rootfs() {
     done
     
     # Create WebAssembly runtime
-    create_wasm_runtime
+    create_wasm_runtime || return 1
     
     # Include WASM applications
     include_wasm_apps
     
     # Create init script
-    create_init_script
+    create_init_script || return 1
     
     # Build initramfs
     cd "$ROOTFS_DIR"

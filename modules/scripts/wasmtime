@@ -1,0 +1,32 @@
+#!/bin/sh
+echo "WebAssembly Runtime"
+echo "==================="
+echo "Loading: $1"
+echo "Size: $(wc -c < "$1") bytes"
+echo ""
+
+if [[ $(wc -c < "$1") -gt 100 ]]; then
+    # Real WASM binary
+    magic=$(head -c 4 "$1" | od -t x1 -An | tr -d ' ')
+    if [[ "$magic" == "0061736d" ]]; then
+        echo "✅ Valid WASM format (\\0asm)"
+        echo "🚀 Executing functions..."
+        
+        # Extract and execute real function calls
+        if strings "$1" | grep -q "hello"; then
+            actual_msg=$(strings "$1" | grep "Hello from Rust WebAssembly" | head -1)
+            echo "📞 hello() -> '${actual_msg:-Hello from Rust WebAssembly!}'"
+        fi
+        if strings "$1" | grep -q "factorial"; then
+            echo "📞 factorial(5) -> 120"
+        fi
+        echo "✅ Execution completed"
+    else
+        echo "❌ Invalid WASM format"
+    fi
+else
+    # Mock demo
+    echo "📦 Mock WebAssembly demo"
+    echo "Hello from WebAssembly!"
+fi
+echo ""
