@@ -111,7 +111,7 @@ setup_busybox() {
     cp "$BUSYBOX_FILE" "$ROOTFS_DIR/bin/busybox"
     
     # Create symlinks for essential commands
-    for cmd in sh ls echo mount; do
+    for cmd in sh ls echo mount poweroff halt reboot; do
         ln -sf /bin/busybox "$ROOTFS_DIR/bin/$cmd"
     done
     
@@ -124,8 +124,27 @@ setup_wasmtime() {
     
     download_component "$WASMTIME_URL" "$wasmtime_tar" "Wasmtime"
     
+    # Validate the downloaded file is actually a tar.xz archive
+    if ! file "$wasmtime_tar" | grep -q "XZ compressed data"; then
+        log_error "Downloaded Wasmtime file is not a valid archive. Removing and retrying..."
+        rm -f "$wasmtime_tar"
+        download_component "$WASMTIME_URL" "$wasmtime_tar" "Wasmtime"
+        
+        # Check again
+        if ! file "$wasmtime_tar" | grep -q "XZ compressed data"; then
+            log_error "Wasmtime download failed. The file is corrupted or URL is incorrect."
+            exit 1
+        fi
+    fi
+    
     mkdir -p "$WASMTIME_DIR"
     tar -xJf "$wasmtime_tar" -C "$WASMTIME_DIR" --strip-components=1
+    
+    # Verify the wasmtime binary exists and is executable
+    if [[ ! -f "$WASMTIME_DIR/wasmtime" ]]; then
+        log_error "Wasmtime binary not found in extracted archive."
+        exit 1
+    fi
     
     cp "$WASMTIME_DIR/wasmtime" "$ROOTFS_DIR/usr/bin/wasmtime"
     chmod +x "$ROOTFS_DIR/usr/bin/wasmtime"
