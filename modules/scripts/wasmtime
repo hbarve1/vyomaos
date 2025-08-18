@@ -5,9 +5,9 @@ echo "Loading: $1"
 echo "Size: $(wc -c < "$1") bytes"
 echo ""
 
-# Check if we're in VyomaOS (no real wasmtime available)
-if [ -f "/.vyomaos" ] || [ "$PWD" = "/" ]; then
-    WASMTIME_CMD=""
+# Check for available Wasmtime runtime
+if [ -f "/usr/bin/wasmtime-real" ]; then
+    WASMTIME_CMD="/usr/bin/wasmtime-real"
 elif command -v wasmtime-real >/dev/null 2>&1; then
     WASMTIME_CMD="wasmtime-real"
 elif [ -f "/home/hbarve1/.wasmtime/bin/wasmtime" ]; then
