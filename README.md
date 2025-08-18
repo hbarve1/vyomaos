@@ -1,63 +1,35 @@
 # VyomaOS - WebAssembly Operating System
 
-A minimal Linux-based operating system that runs WebAssembly applications using the Wasmtime runtime.
+A minimal Linux-based operating system designed to run WebAssembly applications using the Wasmtime runtime.
 
 ## 🚀 Quick Start
 
 ```bash
-# Build the OS
-./build.sh
+# Build VyomaOS
+./vyomaos.sh build
 
-# Fix kernel issue (if needed)
-./get_proper_kernel.sh
+# Get a working kernel (choose one method)
+./vyomaos.sh kernel docker    # Build using Docker (recommended)
+./vyomaos.sh kernel local     # Build locally (requires Make 4.0+)
+./vyomaos.sh kernel manual    # Place kernel manually
 
-# Boot in QEMU
-./run.sh
+# Boot VyomaOS
+./vyomaos.sh run
 ```
 
 ## 📁 Project Structure
 
-- **`build.sh`** - Main build script (downloads components, creates rootfs)
-- **`run.sh`** - QEMU boot script
-- **`get_proper_kernel.sh`** - Interactive kernel fixer
-- **`get_kernel.sh`** - Kernel diagnostic tool
-
-## ⚠️ Kernel Issue & Solution
-
-The main issue is getting a proper Linux kernel (`bzImage`) for QEMU. The build script currently creates a placeholder.
-
-### 🔧 How to Fix the Kernel Issue
-
-**Option 1: Use the Kernel Fixer (Recommended)**
-```bash
-./get_proper_kernel.sh
 ```
-
-This provides 4 options:
-1. **Download pre-built kernel** - Downloads from LinuxKit (but still ELF)
-2. **Use Docker to build kernel** - Builds kernel in Docker container
-3. **Manual kernel placement** - Place your own kernel file
-4. **Skip kernel** - Use placeholder (QEMU will fail)
-
-**Option 2: Manual Kernel Download**
-```bash
-# Download from kernel.org
-curl -L -o out/bzImage https://www.kernel.org/pub/linux/kernel/v5.x/linux-5.10.113.tar.xz
-
-# Or build your own
-git clone https://github.com/torvalds/linux.git
-cd linux
-make defconfig
-make -j$(nproc) bzImage
-cp arch/x86/boot/bzImage ../out/bzImage
-```
-
-**Option 3: Use Docker (if available)**
-```bash
-# Run the kernel fixer and choose option 2
-./get_proper_kernel.sh
-# Choose option 2, then run the generated script
-cd out && ./build_kernel_docker.sh
+vyomaos/
+├── vyomaos.sh              # Main entry point script
+├── config.sh               # Centralized configuration
+├── scripts/
+│   ├── build.sh            # Build script
+│   ├── kernel.sh           # Kernel management
+│   └── run.sh              # QEMU boot script
+├── out/                    # Build artifacts
+├── docs/                   # Documentation
+└── README.md              # This file
 ```
 
 ## 🏗️ Architecture
@@ -66,7 +38,7 @@ cd out && ./build_kernel_docker.sh
 ┌─────────────────────────────────────┐
 │              QEMU VM                │
 ├─────────────────────────────────────┤
-│  Linux Kernel (bzImage) - NEEDED    │
+│  Linux Kernel (bzImage)             │
 ├─────────────────────────────────────┤
 │  Initramfs (rootfs + WASM app)      │
 │  ├── /bin/busybox (shell)           │
@@ -78,43 +50,147 @@ cd out && ./build_kernel_docker.sh
 
 ## 🔧 Components
 
-- **Kernel**: Linux kernel (needs proper bzImage)
-- **BusyBox**: Static binary for Unix utilities
+- **Linux Kernel**: Minimal kernel for QEMU boot
+- **BusyBox**: Static binary providing Unix utilities
 - **Wasmtime**: WebAssembly runtime (v16.0.0)
 - **WASM App**: Sample base64-encoded WASM application
 - **Init Script**: Boot script that runs WASM app as PID 1
 
-## 🚀 Boot Process
+## 🚀 Usage
 
-1. **QEMU starts** with kernel and initramfs
-2. **Linux boots** and mounts filesystems
-3. **Init script runs** and starts Wasmtime
-4. **WASM app executes** as PID 1
-5. **Fallback to shell** if WASM fails
+### Main Commands
 
-## ✅ Current Status
+```bash
+# Show help
+./vyomaos.sh help
 
-- **Build Process**: ✅ Working
-- **BusyBox**: ✅ Downloads correctly
-- **Wasmtime**: ✅ Downloads correctly
-- **Initramfs**: ✅ Creates properly
-- **Error Detection**: ✅ Improved
-- **User Guidance**: ✅ Clear instructions
-- **Kernel**: ⚠️ Needs manual fix (but with clear guidance)
+# Check status
+./vyomaos.sh status
 
-## 🐛 Troubleshooting
+# Build the OS
+./vyomaos.sh build
+
+# Manage kernel
+./vyomaos.sh kernel [command]
+
+# Boot in QEMU
+./vyomaos.sh run
+
+# Clean build artifacts
+./vyomaos.sh clean
+```
+
+### Kernel Management
+
+```bash
+# Check kernel status
+./vyomaos.sh kernel status
+
+# Download pre-built kernel (may not work)
+./vyomaos.sh kernel download
+
+# Build kernel using Docker (recommended)
+./vyomaos.sh kernel docker
+
+# Build kernel locally (requires Make 4.0+)
+./vyomaos.sh kernel local
+
+# Manual kernel placement
+./vyomaos.sh kernel manual
+```
+
+## ⚠️ Kernel Issue & Solutions
+
+The main challenge is obtaining a proper Linux kernel (`bzImage`) for QEMU. Automated downloads often return ELF executables instead of kernels.
+
+### Solution 1: Docker Build (Recommended)
+
+```bash
+# Ensure Docker is installed
+docker --version
+
+# Build kernel using Docker
+./vyomaos.sh kernel docker
+```
+
+### Solution 2: Local Build
+
+```bash
+# Check Make version (requires 4.0+)
+make --version
+
+# Build kernel locally
+./vyomaos.sh kernel local
+```
+
+### Solution 3: Manual Placement
+
+```bash
+# Get kernel from another source
+./vyomaos.sh kernel manual
+
+# Then place your kernel file at: out/bzImage
+```
+
+## 🔍 Troubleshooting
 
 ### "Kernel is an ELF executable"
-- Run `./get_proper_kernel.sh` and choose option 3
-- Manually place a proper bzImage kernel file
+- This means you have a LinuxKit binary, not a kernel
+- Run `./vyomaos.sh kernel docker` to build a proper kernel
 
 ### "QEMU boot fails"
 - Ensure you have a proper Linux kernel bzImage
-- Check that the kernel supports initramfs
+- Check kernel status: `./vyomaos.sh kernel status`
 
-### "Build tools not found"
-- macOS: `xcode-select --install`
-- Linux: `sudo apt-get install build-essential`
+### "Make version too old"
+- macOS: Install newer Make via Homebrew
+- Or use Docker build: `./vyomaos.sh kernel docker`
+
+### "Missing dependencies"
+```bash
+# macOS
+brew install qemu curl
+
+# Ubuntu
+sudo apt-get install qemu-system-x86 curl tar gzip
+```
+
+## 📋 Requirements
+
+### System Requirements
+- **OS**: macOS, Linux, or Windows with WSL
+- **Memory**: 512MB RAM for QEMU
+- **Storage**: ~100MB for build artifacts
+
+### Dependencies
+- **QEMU**: For virtualization
+- **curl**: For downloading components
+- **tar/gzip**: For extracting archives
+- **Docker**: For kernel building (optional)
+
+## 🎯 Development
+
+### Adding Custom WASM Applications
+
+1. Replace the sample WASM app in `scripts/build.sh`:
+```bash
+# In create_wasm_app() function
+cp your_app.wasm "$OUTDIR/rootfs/wasm_app.wasm"
+```
+
+2. Modify the init script if needed:
+```bash
+# In create_init_script() function
+exec /usr/bin/wasmtime /your_app.wasm
+```
+
+### Customizing the Build
+
+Edit `config.sh` to modify:
+- Component URLs
+- QEMU settings
+- Build configuration
+- Kernel options
 
 ## 📝 License
 
@@ -122,4 +198,19 @@ This project is experimental and for educational purposes.
 
 ## 🤝 Contributing
 
-Feel free to submit issues and enhancement requests!
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## 🔗 References
+
+- [Linux Kernel](https://www.kernel.org/)
+- [Wasmtime](https://wasmtime.dev/)
+- [BusyBox](https://busybox.net/)
+- [QEMU](https://www.qemu.org/)
+
+---
+
+**Note**: VyomaOS is designed for educational purposes and demonstrates how to create a minimal OS for running WebAssembly applications.
