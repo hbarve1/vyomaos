@@ -12,15 +12,20 @@ if [ -x "/usr/bin/wasmtime-real" ]; then
     exec /usr/bin/wasmtime-real "$@"
 fi
 
-# Fallback to system-installed wasmtime if available
-if command -v wasmtime >/dev/null 2>&1; then
-    exec wasmtime "$@"
-fi
-
 # Fallback to user-local install
 if [ -x "$HOME/.wasmtime/bin/wasmtime" ]; then
     exec "$HOME/.wasmtime/bin/wasmtime" "$@"
 fi
 
-echo "❌ No Wasmtime runtime available (looked for /usr/bin/wasmtime-real, wasmtime in PATH, and $HOME/.wasmtime/bin/wasmtime)" >&2
+# Fallback to system-installed wasmtime if available, avoiding self-recursion
+WRAPPER_PATH=$(readlink -f "$0" 2>/dev/null || echo "$0")
+if command -v wasmtime >/dev/null 2>&1; then
+    CANDIDATE=$(command -v wasmtime)
+    CANDIDATE_REAL=$(readlink -f "$CANDIDATE" 2>/dev/null || echo "$CANDIDATE")
+    if [ "$CANDIDATE_REAL" != "$WRAPPER_PATH" ]; then
+        exec "$CANDIDATE" "$@"
+    fi
+fi
+
+echo "❌ No Wasmtime runtime available (looked for /usr/bin/wasmtime-real, $HOME/.wasmtime/bin/wasmtime, and a different wasmtime in PATH)" >&2
 exit 127
