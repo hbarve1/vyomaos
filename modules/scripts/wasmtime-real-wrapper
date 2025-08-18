@@ -1,0 +1,9 @@
+#!/bin/sh
+# VyomaOS Wasmtime real wrapper (no simulation, no demos)
+
+if [ -x "/usr/bin/wasmtime-real" ]; then
+    exec /usr/bin/wasmtime-real "$@"
+fi
+
+echo "❌ /usr/bin/wasmtime-real not found" >&2
+exit 127

@@ -1,147 +1,26 @@
 #!/bin/sh
+# VyomaOS WebAssembly Runtime Wrapper (no simulation)
+
 echo "WebAssembly Runtime"
 echo "==================="
 echo "Loading: $1"
 echo "Size: $(wc -c < "$1") bytes"
 echo ""
 
-# Check for available Wasmtime runtime
-if [ -f "/usr/bin/wasmtime-real" ]; then
-    WASMTIME_CMD="/usr/bin/wasmtime-real"
-elif command -v wasmtime-real >/dev/null 2>&1; then
-    WASMTIME_CMD="wasmtime-real"
-elif [ -f "/home/hbarve1/.wasmtime/bin/wasmtime" ]; then
-    WASMTIME_CMD="/home/hbarve1/.wasmtime/bin/wasmtime"
-else
-    WASMTIME_CMD=""
+# Prefer embedded runtime in the initramfs
+if [ -x "/usr/bin/wasmtime-real" ]; then
+    exec /usr/bin/wasmtime-real "$@"
 fi
 
-if [ $(wc -c < "$1") -gt 100 ]; then
-    # Real WASM binary
-    magic=$(head -c 4 "$1" | od -t x1 -An | tr -d ' ')
-    if [ "$magic" = "0061736d" ]; then
-        echo "✅ Valid WASM format (\\0asm)"
-        
-        # Get the filename without path and extension
-        filename=$(basename "$1" .wasm)
-        
-        # Check if main function exists and execute it
-        available_funcs=$(strings "$1" | grep -E "^[a-zA-Z_][a-zA-Z0-9_]*$")
-        if echo "$available_funcs" | grep -q "^main$"; then
-            echo "🚀 Executing main() function..."
-            echo "📋 Application: $filename"
-            echo ""
-            
-            # Try to use real Wasmtime if available, otherwise fall back to simulation
-            echo "⚡ WebAssembly Function Execution:"
-            echo ""
-            
-            if [ -n "$WASMTIME_CMD" ]; then
-                echo "🚀 Executing real WASM functions with Wasmtime"
-                echo "=============================================="
-                
-                case "$filename" in
-                    "hello-world")
-                        echo "🧪 Testing Real WebAssembly Functions"
-                        echo "===================================="
-                        echo -n "📞 hello(): "
-                        result=$($WASMTIME_CMD --invoke hello "$1" 2>/dev/null)
-                        echo "${result:-'Hello from WASM!'}"
-                        
-                        echo -n "🔢 add(15, 27): "
-                        result=$($WASMTIME_CMD --invoke add "$1" 15 27 2>/dev/null)
-                        echo "${result:-42}"
-                        
-                        echo -n "🔢 factorial(5): "
-                        result=$($WASMTIME_CMD --invoke factorial "$1" 5 2>/dev/null)
-                        echo "${result:-120}"
-                        ;;
-                    "calculator")
-                        echo "🧮 Testing Real Calculator Functions"
-                        echo "==================================="
-                        echo -n "➕ add(25.5, 14.3): "
-                        result=$($WASMTIME_CMD --invoke add "$1" 25.5 14.3 2>/dev/null)
-                        echo "${result:-39.8}"
-                        
-                        echo -n "➖ subtract(100.0, 35.7): "
-                        result=$($WASMTIME_CMD --invoke subtract "$1" 100.0 35.7 2>/dev/null)
-                        echo "${result:-64.3}"
-                        
-                        echo -n "✖️  multiply(7.5, 8.0): "
-                        result=$($WASMTIME_CMD --invoke multiply "$1" 7.5 8.0 2>/dev/null)
-                        echo "${result:-60.0}"
-                        ;;
-                    "factorial")
-                        echo "🔢 Testing Real Factorial Functions"
-                        echo "=================================="
-                        echo -n "📊 factorial(5): "
-                        result=$($WASMTIME_CMD --invoke factorial "$1" 5 2>/dev/null)
-                        echo "${result:-120}"
-                        
-                        echo -n "📊 factorial(7): "
-                        result=$($WASMTIME_CMD --invoke factorial "$1" 7 2>/dev/null)
-                        echo "${result:-5040}"
-                        
-                        echo -n "🔄 factorial_iterative(6): "
-                        result=$($WASMTIME_CMD --invoke factorial_iterative "$1" 6 2>/dev/null)
-                        echo "${result:-720}"
-                        ;;
-                    *)
-                        echo "🚀 Executing $filename main function..."
-                        $WASMTIME_CMD "$1" 2>/dev/null || echo "✨ Execution completed"
-                        ;;
-                esac
-                echo "✅ Real WASM execution completed"
-            else
-                echo "⚠️  Wasmtime not available, using simulation mode"
-                echo "================================================"
-                
-                case "$filename" in
-                    "hello-world")
-                        echo "🧪 Simulating WebAssembly Functions"
-                        echo "=================================="
-                        echo "� hello(): Hello from Rust WebAssembly!"
-                        echo "� add(15, 27): 42"
-                        echo "� factorial(5): 120"
-                        ;;
-                    "calculator")
-                        echo "🧮 Simulating Calculator Functions"
-                        echo "================================="
-                        echo "➕ add(25.5, 14.3): 39.80"
-                        echo "➖ subtract(100.0, 35.7): 64.30"
-                        echo "✖️  multiply(7.5, 8.0): 60.00"
-                        ;;
-                    "factorial")
-                        echo "� Simulating Factorial Functions"
-                        echo "================================"
-                        echo "📊 factorial(5): 120"
-                        echo "📊 factorial(7): 5040"
-                        ;;
-                    *)
-                        echo "🚀 Simulating $filename application..."
-                        ;;
-                esac
-                echo "✨ Simulation completed"
-            fi
-            
-            echo ""
-            echo "✅ main() execution completed (return code: 0)"
-        else
-            echo "⚠️  No main() function found in $filename"
-            echo "📋 Available functions:"
-            echo "$available_funcs" | while read -r func; do
-                if [ -n "$func" ] && [ ${#func} -gt 1 ] && [ ${#func} -lt 50 ]; then
-                    echo "   - ${func}()"
-                fi
-            done
-        fi
-        
-        echo "✅ WebAssembly execution completed"
-    else
-        echo "❌ Invalid WASM format"
-    fi
-else
-    # File too small to be a real WASM binary
-    echo "⚠️  File too small to be a valid WASM binary"
+# Fallback to system-installed wasmtime if available
+if command -v wasmtime >/dev/null 2>&1; then
+    exec wasmtime "$@"
 fi
-echo ""
+
+# Fallback to user-local install
+if [ -x "$HOME/.wasmtime/bin/wasmtime" ]; then
+    exec "$HOME/.wasmtime/bin/wasmtime" "$@"
+fi
+
+echo "❌ No Wasmtime runtime available (looked for /usr/bin/wasmtime-real, wasmtime in PATH, and $HOME/.wasmtime/bin/wasmtime)" >&2
+exit 127

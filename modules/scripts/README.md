@@ -6,12 +6,11 @@ This directory contains standalone scripts used by the VyomaOS build system.
 
 ### `wasmtime`
 
-The WebAssembly runtime script that gets installed in the root filesystem at `/usr/bin/wasmtime`. This script:
+The WebAssembly runtime shim that gets installed in the root filesystem at `/usr/bin/wasmtime`. This script:
 
-- Validates WASM binary format
-- Extracts and displays metadata
-- Simulates execution of WebAssembly applications
-- Provides user-friendly output with emojis and formatting
+- Delegates execution to a real Wasmtime binary if available
+- Tries `/usr/bin/wasmtime-real`, then `wasmtime` in PATH, then `$HOME/.wasmtime/bin/wasmtime`
+- Exits with an error if no runtime is available
 
 ### `init`
 
@@ -20,7 +19,7 @@ The init script that gets installed in the root filesystem at `/init`. This scri
 - Mounts essential filesystems (proc, sys, devtmpfs)
 - Displays the VyomaOS welcome message
 - Lists available WebAssembly applications
-- Runs the default WebAssembly application
+- Runs each WebAssembly application using the runtime shim
 - Initiates system shutdown
 
 ## Usage
@@ -33,4 +32,4 @@ These scripts are automatically copied to the root filesystem during the build p
 2. **Version Control**: Changes to scripts are clearly tracked
 3. **Testing**: Scripts can be tested individually
 4. **Reusability**: Scripts can be shared between different modules
-5. **Readability**: No more heredoc syntax cluttering the main module
+5. **Readability**: No heredoc syntax cluttering the main module
