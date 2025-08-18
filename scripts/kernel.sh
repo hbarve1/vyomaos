@@ -93,7 +93,8 @@ RUN wget https://www.kernel.org/pub/linux/kernel/v5.x/linux-5.10.113.tar.xz
 RUN tar -xf linux-5.10.113.tar.xz
 WORKDIR /kernel/linux-5.10.113
 
-RUN make defconfig
+# Use x86_64 defconfig instead of defconfig
+RUN make x86_64_defconfig
 RUN echo "CONFIG_SERIAL_8250=y" >> .config
 RUN echo "CONFIG_SERIAL_8250_CONSOLE=y" >> .config
 RUN echo "CONFIG_DEVTMPFS=y" >> .config
@@ -104,9 +105,9 @@ RUN make -j$(nproc) bzImage
 CMD ["cp", "arch/x86/boot/bzImage", "/output/bzImage"]
 EOF
 
-    # Build and run Docker container
-    if docker build -t kernel-builder "$OUTDIR" && \
-       docker run --rm -v "$OUTDIR":/output kernel-builder; then
+    # Build and run Docker container with platform specification
+    if docker build --platform linux/amd64 -t kernel-builder "$OUTDIR" && \
+       docker run --platform linux/amd64 --rm -v "$OUTDIR":/output kernel-builder; then
         log_success "Kernel built successfully using Docker"
         return 0
     else

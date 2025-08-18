@@ -6,9 +6,7 @@ set -euo pipefail
 
 # Configuration
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-readonly OUTDIR="$PROJECT_ROOT/out"
-readonly CONFIG_FILE="$PROJECT_ROOT/config.sh"
+readonly CONFIG_FILE="$(dirname "$SCRIPT_DIR")/config.sh"
 
 # Colors for output
 readonly RED='\033[0;31m'

@@ -8,7 +8,7 @@ readonly PROJECT_VERSION="1.0.0"
 readonly PROJECT_DESCRIPTION="A minimal Linux-based OS for running WebAssembly applications"
 
 # Directory structure
-readonly PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPTS_DIR="$PROJECT_ROOT/scripts"
 readonly OUTDIR="$PROJECT_ROOT/out"
 readonly DOCS_DIR="$PROJECT_ROOT/docs"
