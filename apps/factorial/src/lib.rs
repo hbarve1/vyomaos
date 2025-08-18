@@ -73,3 +73,79 @@ pub extern "C" fn test_calculations() -> i32 {
     // Return sum as verification
     f5 + f5_iter + df5 + rf + c // Should be 120+120+15+360+10 = 625
 }
+
+/// Main function to test all factorial functions
+#[no_mangle]
+pub extern "C" fn main() -> i32 {
+    println!("🔢 Testing Factorial Functions");
+    println!("==============================");
+    
+    // Test basic factorial function
+    println!("📊 Testing factorial(5):");
+    let fact5 = factorial(5);
+    println!("   ✅ Result: {} (5! = 5×4×3×2×1)", fact5);
+    
+    println!("📊 Testing factorial(7):");
+    let fact7 = factorial(7);
+    println!("   ✅ Result: {} (7!)", fact7);
+    
+    // Test iterative factorial
+    println!("🔄 Testing factorial_iterative(6):");
+    let fact6_iter = factorial_iterative(6);
+    println!("   ✅ Result: {} (6! iterative)", fact6_iter);
+    
+    println!("🔄 Testing factorial_iterative(8):");
+    let fact8_iter = factorial_iterative(8);
+    println!("   ✅ Result: {} (8! iterative)", fact8_iter);
+    
+    // Test double factorial
+    println!("📈 Testing double_factorial(5):");
+    let dfact5 = double_factorial(5);
+    println!("   ✅ Result: {} (5!! = 5×3×1)", dfact5);
+    
+    println!("📈 Testing double_factorial(6):");
+    let dfact6 = double_factorial(6);
+    println!("   ✅ Result: {} (6!! = 6×4×2)", dfact6);
+    
+    // Test rising factorial
+    println!("📈 Testing rising_factorial(3, 4):");
+    let rfact = rising_factorial(3, 4);
+    println!("   ✅ Result: {} (3×4×5×6)", rfact);
+    
+    println!("📈 Testing rising_factorial(2, 5):");
+    let rfact2 = rising_factorial(2, 5);
+    println!("   ✅ Result: {} (2×3×4×5×6)", rfact2);
+    
+    // Test combinations
+    println!("🎯 Testing combinations(5, 2):");
+    let comb52 = combinations(5, 2);
+    println!("   ✅ Result: {} (C(5,2) = 5!/(2!×3!))", comb52);
+    
+    println!("🎯 Testing combinations(8, 3):");
+    let comb83 = combinations(8, 3);
+    println!("   ✅ Result: {} (C(8,3))", comb83);
+    
+    println!("🎯 Testing combinations(10, 0):");
+    let comb100 = combinations(10, 0);
+    println!("   ✅ Result: {} (C(10,0) = 1)", comb100);
+    
+    // Test edge cases
+    println!("⚠️  Testing edge cases:");
+    
+    println!("   factorial(0): {}", factorial(0));
+    println!("   factorial(1): {}", factorial(1));
+    println!("   combinations(5, 6): {} (k > n)", combinations(5, 6));
+    
+    // Run comprehensive test
+    println!("🧪 Running test_calculations():");
+    let test_result = test_calculations();
+    println!("   ✅ Test sum: {} (expected: 625)", test_result);
+    
+    if test_result == 625 {
+        println!("✨ All factorial function tests PASSED!");
+        0 // Return success
+    } else {
+        println!("❌ Test verification FAILED!");
+        1 // Return error
+    }
+}
