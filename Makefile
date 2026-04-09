@@ -87,6 +87,8 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/hello-world/Cargo.toml --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/calculator/Cargo.toml  --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/factorial/Cargo.toml   --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/ping/Cargo.toml        --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/pong/Cargo.toml        --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────

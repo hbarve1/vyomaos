@@ -1,0 +1,9 @@
+[app]
+name    = "ping"
+version = "0.1.0"
+wasm    = "ping.wasm"
+
+[capabilities]
+stdio      = true
+filesystem = false
+network    = false

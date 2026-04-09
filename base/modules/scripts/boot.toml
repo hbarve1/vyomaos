@@ -12,3 +12,12 @@ restart  = "never"
 [[apps]]
 manifest = "/apps/factorial/vyoma.toml"
 restart  = "never"
+
+# IPC demo: ping and pong exchange 3 messages through the supervisor broker
+[[apps]]
+manifest = "/apps/ping/vyoma.toml"
+restart  = "never"
+
+[[apps]]
+manifest = "/apps/pong/vyoma.toml"
+restart  = "never"
