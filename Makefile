@@ -82,11 +82,9 @@ apps: $(APPS_STAMP)
 
 $(APPS_STAMP): $(APPS_SRC) | image
 	@mkdir -p $(OUT)
-	$(DOCKER_RUN) cargo build \
-	  --manifest-path apps/hello-world/Cargo.toml \
-	  --release
-	@mkdir -p apps/build
-	cp apps/hello-world/target/wasm32-wasip2/release/hello-world.wasm apps/build/
+	$(DOCKER_RUN) cargo build --manifest-path apps/hello-world/Cargo.toml --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/calculator/Cargo.toml  --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/factorial/Cargo.toml   --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────

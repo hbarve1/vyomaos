@@ -8,7 +8,9 @@ name = "supervisor"
 path = "src/main.rs"
 
 [dependencies]
-libc = { version = "0.2", default-features = false }
+libc  = { version = "0.2", default-features = false }
+serde = { version = "1", features = ["derive"] }
+toml  = "0.8"
 
 [profile.release]
 opt-level     = "z"      # optimise for binary size

@@ -3,12 +3,60 @@
 //! Responsibilities:
 //!   P03T01 — scaffold: print banner
 //!   P03T02 — mount /proc, /sys, /dev
-//!   P03T03 — discover WASM apps under /apps/
-//!   P03T04 — exec each app via wasmtime, sequential run loop
+//!   P05T03 — read /etc/vyoma/boot.toml and launch apps via capability manifests
 
 #[cfg(target_os = "linux")]
 use std::ffi::CString;
-use std::path::{Path, PathBuf};
+use std::{fs, path::Path};
+
+use serde::Deserialize;
+
+// ── Boot config structs ───────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+struct BootConfig {
+    apps: Vec<BootEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BootEntry {
+    manifest: String,
+    #[serde(default = "default_restart")]
+    restart: String,
+}
+
+fn default_restart() -> String {
+    "never".to_string()
+}
+
+// ── App manifest structs ──────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+struct AppManifest {
+    app: AppMeta,
+    capabilities: Capabilities,
+}
+
+#[derive(Debug, Deserialize)]
+struct AppMeta {
+    name: String,
+    version: String,
+    wasm: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct Capabilities {
+    #[serde(default)]
+    stdio: bool,
+    #[serde(default)]
+    filesystem: bool,
+    #[serde(default)]
+    network: bool,
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
+const BOOT_CONFIG_PATH: &str = "/etc/vyoma/boot.toml";
 
 fn main() {
     eprintln!("vyoma-supervisor starting");
@@ -16,30 +64,116 @@ fn main() {
     mount_filesystems();
     eprintln!("vyoma-supervisor: filesystems mounted");
 
-    let apps = discover_apps();
+    let boot_raw = match fs::read_to_string(BOOT_CONFIG_PATH) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("vyoma-supervisor: FATAL: cannot read {BOOT_CONFIG_PATH}: {e}");
+            std::process::exit(1);
+        }
+    };
 
-    if apps.is_empty() {
-        eprintln!("vyoma-supervisor: no apps to run, idling");
+    let boot: BootConfig = match toml::from_str(&boot_raw) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("vyoma-supervisor: FATAL: malformed {BOOT_CONFIG_PATH}: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    eprintln!("vyoma-supervisor: {} app(s) in boot config", boot.apps.len());
+
+    if boot.apps.is_empty() {
+        eprintln!("vyoma-supervisor: no apps configured, idling");
         loop {
             std::thread::park();
         }
     }
 
-    // Sequential run loop: run each app in filename order, then repeat.
-    // Phase 06 replaces this with a concurrent multi-app scheduler.
+    // Sequential run loop — Phase 06 replaces this with concurrent scheduler.
     loop {
-        for app in &apps {
-            run_app(app);
+        for entry in &boot.apps {
+            launch_app(entry);
         }
-        // Brief pause between cycles to avoid tight spin when all apps
-        // exit immediately (e.g. during development / stub apps).
+        // Brief pause between cycles to avoid tight spin when all apps exit
+        // immediately (e.g. during development).
         std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+}
+
+// ── App launch ────────────────────────────────────────────────────────────────
+
+fn launch_app(entry: &BootEntry) {
+    let manifest_raw = match fs::read_to_string(&entry.manifest) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("vyoma-supervisor: WARN: cannot read manifest {}: {e}", entry.manifest);
+            return;
+        }
+    };
+
+    let manifest: AppManifest = match toml::from_str(&manifest_raw) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("vyoma-supervisor: WARN: malformed manifest {}: {e}", entry.manifest);
+            return;
+        }
+    };
+
+    // Resolve wasm path relative to the manifest directory.
+    let manifest_dir = Path::new(&entry.manifest)
+        .parent()
+        .unwrap_or(Path::new("/apps"));
+    let wasm_path = manifest_dir.join(&manifest.app.wasm);
+
+    eprintln!(
+        "vyoma-supervisor: launching {} v{} (restart={})",
+        manifest.app.name, manifest.app.version, entry.restart
+    );
+
+    let mut cmd = std::process::Command::new("/usr/bin/wasmtime");
+    cmd.arg("run");
+
+    if manifest.capabilities.stdio {
+        cmd.arg("--inherit-stdio");
+    }
+    if manifest.capabilities.filesystem {
+        cmd.args(["--dir", "/data"]);
+    }
+    if manifest.capabilities.network {
+        cmd.args(["--tcplisten", "0.0.0.0:8080"]);
+    }
+
+    cmd.arg("--");
+    cmd.arg(&wasm_path);
+
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit());
+
+    match cmd.status() {
+        Ok(s) if s.success() => {
+            eprintln!("vyoma-supervisor: {} exited cleanly", manifest.app.name);
+        }
+        Ok(s) => {
+            let code = s.code()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "signal".to_string());
+            eprintln!("vyoma-supervisor: {} exited with code {code}", manifest.app.name);
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!(
+                "vyoma-supervisor: wasmtime not found at /usr/bin/wasmtime — \
+                 rebuild the initramfs with `make rootfs`"
+            );
+        }
+        Err(e) => {
+            eprintln!("vyoma-supervisor: failed to launch wasmtime for {}: {e}", manifest.app.name);
+        }
     }
 }
 
 // ── P03T02: mount virtual filesystems ────────────────────────────────────────
 
-/// Mount /proc, /sys, and /dev before any userspace work proceeds.
 fn mount_filesystems() {
     mount_fs("proc",     "/proc", "proc",     0);
     mount_fs("sysfs",    "/sys",  "sysfs",    0);
@@ -85,99 +219,4 @@ fn mount_fs(_source: &str, target: &str, fstype: &str, _flags: libc::c_ulong) {
 
     #[cfg(not(target_os = "linux"))]
     eprintln!("vyoma-supervisor: [dev build] skipping mount {target} ({fstype})");
-}
-
-// ── P03T03: app discovery ─────────────────────────────────────────────────────
-
-/// Scan /apps/ for .wasm modules and return sorted paths.
-///
-/// Returns an empty Vec (not an error) when /apps/ is missing or empty.
-/// Sorting by filename gives deterministic boot order across restarts.
-fn discover_apps() -> Vec<PathBuf> {
-    const APPS_DIR: &str = "/apps";
-
-    let dir = match std::fs::read_dir(APPS_DIR) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("vyoma-supervisor: warning: cannot read {APPS_DIR}: {e}");
-            return Vec::new();
-        }
-    };
-
-    let mut apps: Vec<PathBuf> = dir
-        .filter_map(|entry| {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(e) => {
-                    eprintln!("vyoma-supervisor: warning: read_dir entry error: {e}");
-                    return None;
-                }
-            };
-            let path = entry.path();
-            if path.is_file() && path.extension().map_or(false, |ext| ext == "wasm") {
-                Some(path)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // Sort by filename for stable ordering.
-    apps.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
-
-    for app in &apps {
-        eprintln!("vyoma-supervisor: discovered app: {}", app.display());
-    }
-
-    if apps.is_empty() {
-        eprintln!("vyoma-supervisor: no .wasm apps found in {APPS_DIR}");
-    } else {
-        eprintln!("vyoma-supervisor: {} app(s) discovered", apps.len());
-    }
-
-    apps
-}
-
-// ── P03T04: process lifecycle ─────────────────────────────────────────────────
-
-/// Run a single WASM app via wasmtime and block until it exits.
-///
-/// Stdio is inherited so app output appears on ttyS0 directly.
-/// If wasmtime is not present, logs a warning and returns (no panic —
-/// the supervisor must stay alive as PID 1).
-fn run_app(path: &Path) {
-    let display = path.display();
-    eprintln!("vyoma-supervisor: starting app: {display}");
-
-    let status = std::process::Command::new("/usr/bin/wasmtime")
-        .args([
-            "run",
-            "--",
-            path.to_str().expect("app path must be valid UTF-8"),
-        ])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit())
-        .status();
-
-    match status {
-        Ok(s) if s.success() => {
-            eprintln!("vyoma-supervisor: app exited cleanly: {display}");
-        }
-        Ok(s) => {
-            let code = s.code()
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "signal".to_string());
-            eprintln!("vyoma-supervisor: app exited with code {code}: {display}");
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!(
-                "vyoma-supervisor: wasmtime not found at /usr/bin/wasmtime — \
-                 rebuild the initramfs with `make rootfs`"
-            );
-        }
-        Err(e) => {
-            eprintln!("vyoma-supervisor: failed to launch wasmtime for {display}: {e}");
-        }
-    }
 }

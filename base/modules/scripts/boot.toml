@@ -1,0 +1,14 @@
+# VyomaOS boot configuration
+# Each [[apps]] entry declares one application to launch at startup.
+
+[[apps]]
+manifest = "/apps/hello-world/vyoma.toml"
+restart  = "never"
+
+[[apps]]
+manifest = "/apps/calculator/vyoma.toml"
+restart  = "never"
+
+[[apps]]
+manifest = "/apps/factorial/vyoma.toml"
+restart  = "never"

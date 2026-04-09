@@ -54,7 +54,7 @@ build_rootfs() {
     rm -rf "$ROOTFS"
     mkdir -p \
         "$ROOTFS"/{bin,sbin,usr/bin,usr/sbin,lib,lib64,dev,proc,sys,tmp,run,apps} \
-        "$ROOTFS/etc"
+        "$ROOTFS/etc/vyoma"
 
     # ── BusyBox ───────────────────────────────────────────────────────────────
     download_verified "$BUSYBOX_URL" "$BUSYBOX_CACHE" "$BUSYBOX_SHA256"
@@ -97,6 +97,10 @@ INIT_EOF
     printf 'root:x:0:0:root:/root:/bin/sh\n' > "$ROOTFS/etc/passwd"
     printf 'root:x:0:\n'                     > "$ROOTFS/etc/group"
 
+    # ── Boot configuration ────────────────────────────────────────────────────
+    cp "$PROJECT_ROOT/base/modules/scripts/boot.toml" "$ROOTFS/etc/vyoma/boot.toml"
+    log_info "Installed boot.toml"
+
     # ── Rust supervisor binary ────────────────────────────────────────────────
     local supervisor_bin="$PROJECT_ROOT/supervisor/target/x86_64-unknown-linux-musl/release/supervisor"
     if [[ -f "$supervisor_bin" ]]; then
@@ -106,15 +110,22 @@ INIT_EOF
         log_info "WARNING: supervisor binary not found, /init will fall back to shell"
     fi
 
-    # ── WASM apps (if built) ──────────────────────────────────────────────────
-    local apps_dir="$PROJECT_ROOT/apps/build"
-    if [[ -d "$apps_dir" ]]; then
-        for wasm in "$apps_dir"/*.wasm; do
-            [[ -f "$wasm" ]] || continue
-            cp "$wasm" "$ROOTFS/apps/"
-            log_info "  Included: $(basename "$wasm") ($(du -h "$wasm" | cut -f1))"
-        done
-    fi
+    # ── WASM apps ─────────────────────────────────────────────────────────────
+    # Each app gets its own subdirectory: /apps/<name>/<name>.wasm + vyoma.toml
+    # This layout matches the manifest paths declared in boot.toml.
+    for app_src_dir in "$PROJECT_ROOT/apps"/*/; do
+        local app_name
+        app_name="$(basename "$app_src_dir")"
+        local wasm_file="$app_src_dir/target/wasm32-wasip2/release/${app_name}.wasm"
+        local manifest_file="$app_src_dir/vyoma.toml"
+
+        [[ -f "$wasm_file" && -f "$manifest_file" ]] || continue
+
+        mkdir -p "$ROOTFS/apps/${app_name}"
+        cp "$wasm_file"     "$ROOTFS/apps/${app_name}/${app_name}.wasm"
+        cp "$manifest_file" "$ROOTFS/apps/${app_name}/vyoma.toml"
+        log_info "  Included: ${app_name} ($(du -h "$wasm_file" | cut -f1))"
+    done
 
     # ── Pack initramfs ────────────────────────────────────────────────────────
     log_info "Packing initramfs -> $INITRAMFS_FILE"
