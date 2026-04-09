@@ -6,6 +6,8 @@
 //!   P05T03 — read /etc/vyoma/boot.toml and launch apps via capability manifests
 //!   P06T01 — concurrent scheduler: one thread per app, per-app restart policy
 //!   P07T01 — IPC broker: route @<app>: <msg> lines between app stdio pipes
+//!   P08T01 — security: seccomp BPF denylist applied to every wasmtime child
+//!   P08T02 — security: capability audit log + manifest unknown-field rejection
 
 #[cfg(target_os = "linux")]
 use std::ffi::CString;
@@ -54,10 +56,12 @@ struct AppMeta {
     wasm: String,
 }
 
+// deny_unknown_fields ensures manifests cannot declare undocumented capabilities.
+// Any unknown key is a hard parse error — the app is rejected at boot.
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Capabilities {
     #[serde(default)]
-    #[allow(dead_code)] // declared in manifests for documentation; supervisor always pipes stdio
     stdio: bool,
     #[serde(default)]
     filesystem: bool,
@@ -65,12 +69,148 @@ struct Capabilities {
     network: bool,
 }
 
-// ── IPC inbox map ─────────────────────────────────────────────────────────────
+// ── P08T01: seccomp BPF denylist ──────────────────────────────────────────────
 //
-// Maps app name → sender half of its message channel.
-// Reader threads use this to route "@<name>: <msg>" lines.
-// Dropping the Arc (after all reader threads exit) closes all channels,
-// which in turn terminates the writer threads cleanly.
+// Applied to each wasmtime child process via Command::pre_exec (runs in the
+// forked child after fork, before execve).
+//
+// Strategy: denylist — block the small set of syscalls that should never be
+// callable from sandboxed WASM runtimes.  Allowlists are stronger but fragile;
+// wasmtime's syscall surface is wide and version-dependent.  The denylist
+// provides a meaningful second-layer defence without risking false kills.
+//
+// If CONFIG_SECCOMP / CONFIG_SECCOMP_FILTER are absent from the running kernel
+// the prctl call returns EINVAL; we silently skip and continue booting.
+#[cfg(target_os = "linux")]
+mod seccomp {
+    // Classic BPF filter instruction (same layout as struct sock_filter)
+    #[repr(C)]
+    pub struct SockFilter {
+        pub code: u16,
+        pub jt: u8,
+        pub jf: u8,
+        pub k: u32,
+    }
+
+    // BPF program descriptor passed to prctl
+    #[repr(C)]
+    pub struct SockFprog {
+        pub len: u16,
+        pub filter: *const SockFilter,
+    }
+
+    // BPF instruction codes
+    const BPF_LD: u16 = 0x00;
+    const BPF_W: u16 = 0x00;  // 32-bit word load
+    const BPF_ABS: u16 = 0x20; // absolute offset into seccomp_data
+    const BPF_JMP: u16 = 0x05;
+    const BPF_JEQ: u16 = 0x10; // jump if equal
+    const BPF_K: u16 = 0x00;   // immediate constant
+    const BPF_RET: u16 = 0x06;
+
+    const SECCOMP_RET_KILL_PROCESS: u32 = 0x8000_0000;
+    const SECCOMP_RET_ALLOW: u32 = 0x7fff_0000;
+
+    // Byte offsets inside struct seccomp_data
+    const OFF_NR: u32 = 0;   // int nr (syscall number)
+    const OFF_ARCH: u32 = 4; // __u32 arch
+
+    // x86_64 architecture token (AUDIT_ARCH_X86_64)
+    const AUDIT_ARCH_X86_64: u32 = 0xc000_003e;
+
+    // Syscalls denied in wasmtime children (x86_64 numbers)
+    const DENIED: &[u32] = &[
+        101, // ptrace        — inspect/modify other processes
+        169, // reboot        — only the supervisor may shut down
+        246, // kexec_load    — replace the running kernel
+        248, // add_key       — add entries to the kernel keyring
+        249, // request_key   — search the kernel keyring
+        250, // keyctl        — kernel key-management operations
+        272, // unshare       — namespace creation (privilege escalation path)
+        317, // seccomp       — prevent sandbox from weakening its own filter
+    ];
+
+    macro_rules! stmt {
+        ($code:expr, $k:expr) => {
+            SockFilter { code: $code, jt: 0, jf: 0, k: $k }
+        };
+    }
+    macro_rules! jump {
+        ($code:expr, $k:expr, $jt:expr, $jf:expr) => {
+            SockFilter { code: $code, jt: $jt, jf: $jf, k: $k }
+        };
+    }
+
+    /// Build the BPF filter program.  Returned Vec is heap-allocated in the
+    /// parent before fork and captured by the pre_exec closure, so its pointer
+    /// is valid in the child's copied address space.
+    pub fn build() -> Vec<SockFilter> {
+        let mut f = vec![
+            // ── Arch guard: kill immediately if not x86_64 ───────────────
+            stmt!(BPF_LD | BPF_W | BPF_ABS, OFF_ARCH),
+            jump!(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 1, 0),
+            stmt!(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+            // ── Load syscall number ───────────────────────────────────────
+            stmt!(BPF_LD | BPF_W | BPF_ABS, OFF_NR),
+        ];
+
+        // ── Denylist entries ──────────────────────────────────────────────
+        // Pattern: if nr == DENIED[i], fall through to KILL; else skip KILL.
+        for &nr in DENIED {
+            f.push(jump!(BPF_JMP | BPF_JEQ | BPF_K, nr, 0, 1));
+            f.push(stmt!(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
+        }
+
+        // ── Default: allow ────────────────────────────────────────────────
+        f.push(stmt!(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+        f
+    }
+
+    /// Install the BPF denylist on the calling process.
+    ///
+    /// Called inside Command::pre_exec (after fork, before exec).
+    /// Returns Ok(()) if seccomp was applied or if the kernel lacks support
+    /// (EINVAL) — the child simply continues without filtering in that case.
+    ///
+    /// # Safety
+    /// Must be called in an async-signal-safe context.
+    pub unsafe fn apply(filter: &[SockFilter]) -> std::io::Result<()> {
+        // PR_SET_NO_NEW_PRIVS: prevent privilege re-escalation via exec.
+        // Required to install a seccomp filter without CAP_SYS_ADMIN.
+        if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0 {
+            let e = std::io::Error::last_os_error();
+            if e.raw_os_error() != Some(libc::EINVAL) {
+                return Err(e);
+            }
+        }
+
+        let prog = SockFprog {
+            len: filter.len() as u16,
+            filter: filter.as_ptr(),
+        };
+
+        let ret = libc::prctl(
+            libc::PR_SET_SECCOMP,
+            libc::SECCOMP_MODE_FILTER as libc::c_ulong,
+            &prog as *const SockFprog as *const libc::c_void,
+            0,
+            0,
+        );
+
+        if ret < 0 {
+            let e = std::io::Error::last_os_error();
+            if e.raw_os_error() == Some(libc::EINVAL) {
+                // Kernel built without CONFIG_SECCOMP_FILTER — skip silently.
+                return Ok(());
+            }
+            return Err(e);
+        }
+
+        Ok(())
+    }
+}
+
+// ── IPC inbox map ─────────────────────────────────────────────────────────────
 
 type Inbox = Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>;
 
@@ -123,8 +263,6 @@ fn main() {
     let inbox: Inbox = Arc::new(Mutex::new(HashMap::new()));
 
     // ── Pass 1: spawn all processes and register every inbox entry ────────────
-    // All registrations happen before any IO threads start, so no @-routed
-    // message can arrive before the target's sender is in the map.
     let mut spawned: Vec<SpawnedApp> = Vec::new();
     for entry in boot.apps {
         match spawn_app(&entry, &inbox) {
@@ -140,45 +278,35 @@ fn main() {
     let mut waiter_handles = vec![];
 
     for app in spawned {
-        let SpawnedApp {
-            entry,
-            name,
-            child,
-            msg_rx,
-            child_stdin,
-            child_stdout,
-        } = app;
+        let SpawnedApp { entry, name, child, msg_rx, child_stdin, child_stdout } = app;
 
-        // Writer thread — drains the message channel into the app's stdin pipe.
+        // Writer thread: msg_rx → child stdin
         thread::Builder::new()
             .name(format!("{name}-writer"))
             .spawn(move || {
                 let mut stdin = child_stdin;
                 while let Ok(msg) = msg_rx.recv() {
                     if writeln!(stdin, "{msg}").is_err() {
-                        break; // broken pipe: app exited
+                        break;
                     }
                 }
             })
             .expect("spawn writer thread");
 
-        // Reader thread — reads app stdout; routes @<target>: lines, prints rest.
+        // Reader thread: child stdout → route @<target> or print
         let inbox_r = Arc::clone(&inbox);
         let name_r = name.clone();
         thread::Builder::new()
             .name(format!("{name}-reader"))
             .spawn(move || {
                 for line in BufReader::new(child_stdout).lines() {
-                    let line = match line {
-                        Ok(l) => l,
-                        Err(_) => break,
-                    };
+                    let line = match line { Ok(l) => l, Err(_) => break };
                     route_or_print(&line, &name_r, &inbox_r);
                 }
             })
             .expect("spawn reader thread");
 
-        // Waiter thread — waits for the child process; respawns per policy.
+        // Waiter thread: wait for child exit, respect restart policy
         waiter_handles.push(
             thread::Builder::new()
                 .name(format!("{name}-waiter"))
@@ -187,10 +315,8 @@ fn main() {
         );
     }
 
-    // Drop the main thread's reference to the inbox.
-    // When all reader threads also exit (apps' stdout pipes close),
-    // the inbox is deallocated, all tx values drop, and writer threads
-    // terminate via RecvError on their msg_rx channels.
+    // Drop main thread's inbox reference so writer threads can terminate
+    // when all reader threads exit (last Arc holders of the inbox).
     drop(inbox);
 
     for handle in waiter_handles {
@@ -216,15 +342,25 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox) -> Option<SpawnedApp> {
     let manifest: AppManifest = match toml::from_str(&manifest_raw) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("vyoma-supervisor: WARN: malformed manifest {}: {e}", entry.manifest);
+            // deny_unknown_fields makes unknown capability keys a hard error here.
+            eprintln!("vyoma-supervisor: WARN: rejected manifest {}: {e}", entry.manifest);
             return None;
         }
     };
 
     let name = manifest.app.name.clone();
+    let caps = &manifest.capabilities;
 
-    // Register inbox entry before spawning so other apps can route to this one
-    // as soon as their reader threads start.
+    // ── P08T02: capability audit log ─────────────────────────────────────────
+    eprintln!(
+        "vyoma-supervisor: [security] {name} capabilities — \
+         stdio:{} fs:{} net:{} seccomp:denylist",
+        if caps.stdio { "yes" } else { "no" },
+        if caps.filesystem { "yes" } else { "no" },
+        if caps.network { "yes" } else { "no" },
+    );
+
+    // Register inbox before spawning so routing is ready immediately.
     let (tx, msg_rx) = mpsc::channel::<String>();
     inbox.lock().unwrap().insert(name.clone(), tx);
 
@@ -238,20 +374,29 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox) -> Option<SpawnedApp> {
         name, manifest.app.version, entry.restart
     );
 
-    // Wasmtime 43: stdio is inherited by default; no --inherit-stdio flag.
-    // WASI capabilities are passed via -S <option>=<value>.
+    // Wasmtime 43: stdio inherited by default; WASI options via -S.
     let mut cmd = std::process::Command::new("/usr/bin/wasmtime");
     cmd.arg("run");
-    if manifest.capabilities.filesystem {
+    if caps.filesystem {
         cmd.args(["--dir", "/data::/data"]);
     }
-    if manifest.capabilities.network {
+    if caps.network {
         cmd.args(["-S", "tcplisten=0.0.0.0:8080"]);
     }
     cmd.arg("--").arg(&wasm_path);
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
+
+    // ── P08T01: apply seccomp denylist in child before exec ───────────────────
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::process::CommandExt;
+        let filter = seccomp::build();
+        unsafe {
+            cmd.pre_exec(move || seccomp::apply(&filter));
+        }
+    }
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
@@ -265,35 +410,26 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox) -> Option<SpawnedApp> {
     let child_stdin = child.stdin.take().expect("stdin pipe");
     let child_stdout = child.stdout.take().expect("stdout pipe");
 
-    Some(SpawnedApp {
-        entry: entry.clone(),
-        name,
-        child,
-        msg_rx,
-        child_stdin,
-        child_stdout,
-    })
+    Some(SpawnedApp { entry: entry.clone(), name, child, msg_rx, child_stdin, child_stdout })
 }
 
 // ── IPC router ────────────────────────────────────────────────────────────────
 
 fn route_or_print(line: &str, sender: &str, inbox: &Inbox) {
-    // Format: @<target>: <message>
     if let Some(rest) = line.strip_prefix('@') {
         if let Some((target, msg)) = rest.split_once(": ") {
             let map = inbox.lock().unwrap();
             if let Some(tx) = map.get(target) {
                 if tx.send(msg.to_string()).is_ok() {
-                    return; // routed successfully — don't print
+                    return;
                 }
             }
-            // Unknown target or channel closed — fall through and print
         }
     }
     println!("[{sender}] {line}");
 }
 
-// ── App waiter: handles restart policy ───────────────────────────────────────
+// ── App waiter ────────────────────────────────────────────────────────────────
 
 fn wait_app(entry: BootEntry, name: String, mut child: Child) {
     loop {
@@ -303,8 +439,7 @@ fn wait_app(entry: BootEntry, name: String, mut child: Child) {
                 Some(s)
             }
             Ok(s) => {
-                let code = s
-                    .code()
+                let code = s.code()
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "signal".to_string());
                 eprintln!("vyoma-supervisor: {name} exited with code {code}");
@@ -316,22 +451,19 @@ fn wait_app(entry: BootEntry, name: String, mut child: Child) {
             }
         };
 
-        // Note: restart=always/on-failure with IPC apps is not supported in P07
-        // because respawning requires new stdio pipes and inbox re-registration.
-        // All IPC apps should use restart=never.
         match entry.restart.as_str() {
-            "always" => {
-                eprintln!("vyoma-supervisor: [WARN] restart=always unsupported for IPC apps, treating as never");
+            "always" | "on-failure" => {
+                // Restart with IPC requires new pipes + inbox re-registration.
+                // Not implemented in P07/P08 — treat as never.
+                eprintln!(
+                    "vyoma-supervisor: [WARN] restart={} not supported for IPC apps ({name}), \
+                     treating as never",
+                    entry.restart
+                );
+                let _ = status;
                 break;
             }
-            "on-failure" => {
-                let failed = status.map(|s| !s.success()).unwrap_or(true);
-                if failed {
-                    eprintln!("vyoma-supervisor: [WARN] restart=on-failure unsupported for IPC apps, treating as never");
-                }
-                break;
-            }
-            _ => break, // "never"
+            _ => break,
         }
     }
 }
