@@ -151,8 +151,8 @@ run-gui: $(BZIMAGE) $(INITRAMFS) data
 	qemu-system-x86_64 \
 	  -kernel $(BZIMAGE) \
 	  -initrd $(INITRAMFS) \
-	  -append "console=ttyS0 panic=1" \
-	  -device virtio-gpu-pci \
+	  -append "console=tty0 console=ttyS0 panic=1" \
+	  -vga virtio \
 	  -display $(DISPLAY_BACKEND) \
 	  -serial stdio \
 	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
