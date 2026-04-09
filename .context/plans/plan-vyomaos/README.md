@@ -16,6 +16,7 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | [06 — Multi-App & IPC](phases/phase-06-multi-app-ipc/README.md) | Concurrent apps, restart policies, Component Model typed IPC | pending | 4 |
 | [07 — Networking & Storage](phases/phase-07-networking-storage/README.md) | virtio-net + WASI sockets, virtio-blk + WASI filesystem | pending | 4 |
 | [08 — Observability & Security](phases/phase-08-observability-security/README.md) | Structured logging, seccomp, Linux namespaces, WASM signing | pending | 4 |
+| [09 — GUI Display](phases/phase-09-gui-display/README.md) | DRM/virtio-gpu framebuffer, `vyoma:display` WIT host interface, WASM drawing API | pending | 5 |
 
 ## Constraints
 

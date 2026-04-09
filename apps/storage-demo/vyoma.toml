@@ -1,0 +1,9 @@
+[app]
+name    = "storage-demo"
+version = "0.1.0"
+wasm    = "storage-demo.wasm"
+
+[capabilities]
+stdio      = true
+filesystem = true
+network    = false

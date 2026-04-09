@@ -53,7 +53,7 @@ build_rootfs() {
     # ── Directory skeleton ────────────────────────────────────────────────────
     rm -rf "$ROOTFS"
     mkdir -p \
-        "$ROOTFS"/{bin,sbin,usr/bin,usr/sbin,lib,lib64,dev,proc,sys,tmp,run,apps} \
+        "$ROOTFS"/{bin,sbin,usr/bin,usr/sbin,lib,lib64,dev,proc,sys,tmp,run,apps,data} \
         "$ROOTFS/etc/vyoma"
 
     # ── BusyBox ───────────────────────────────────────────────────────────────

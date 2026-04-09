@@ -7,8 +7,9 @@
 #   make image    — build the Docker builder image
 #   make kernel   — compile the Linux kernel  -> out/bzImage
 #   make rootfs   — build the initramfs       -> out/initramfs.cpio.gz
-#   make build    — kernel + rootfs
-#   make run      — boot in QEMU (host)
+#   make disk     — create blank ext4 data disk -> out/disk.img (64 MB)
+#   make build    — kernel + rootfs + disk
+#   make run      — boot in QEMU (host) with virtio-blk data disk
 #   make shell    — open a shell in the builder container
 #   make clean    — remove out/
 #   make clean-image — remove the builder Docker image
@@ -17,6 +18,9 @@ SHELL       := /bin/bash
 OUT         := out
 BZIMAGE     := $(OUT)/bzImage
 INITRAMFS   := $(OUT)/initramfs.cpio.gz
+DISK        := $(OUT)/disk.img
+DISK_SIZE   := 64  # MB
+DATA_DIR    := data
 
 IMAGE       := vyomaos-builder
 IMAGE_TAG   := latest
@@ -51,7 +55,7 @@ DOCKER_RUN := docker run --rm \
 KVM ?=
 
 # ── phony declarations ────────────────────────────────────────────────────────
-.PHONY: image kernel supervisor apps rootfs build run shell clean clean-image
+.PHONY: image kernel supervisor apps rootfs disk build run shell clean clean-image data
 
 # ── Docker image ──────────────────────────────────────────────────────────────
 image: $(DOCKERFILE)
@@ -84,11 +88,12 @@ apps: $(APPS_STAMP)
 
 $(APPS_STAMP): $(APPS_SRC) | image
 	@mkdir -p $(OUT)
-	$(DOCKER_RUN) cargo build --manifest-path apps/hello-world/Cargo.toml --target wasm32-wasip2 --release
-	$(DOCKER_RUN) cargo build --manifest-path apps/calculator/Cargo.toml  --target wasm32-wasip2 --release
-	$(DOCKER_RUN) cargo build --manifest-path apps/factorial/Cargo.toml   --target wasm32-wasip2 --release
-	$(DOCKER_RUN) cargo build --manifest-path apps/ping/Cargo.toml        --target wasm32-wasip2 --release
-	$(DOCKER_RUN) cargo build --manifest-path apps/pong/Cargo.toml        --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/hello-world/Cargo.toml    --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/calculator/Cargo.toml     --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/factorial/Cargo.toml      --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/ping/Cargo.toml           --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/pong/Cargo.toml           --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/storage-demo/Cargo.toml   --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────
@@ -98,15 +103,40 @@ $(INITRAMFS): $(ROOTFS_SCRIPT) $(SUPERVISOR_STAMP) $(APPS_STAMP) | image
 	@mkdir -p $(OUT)
 	$(DOCKER_RUN) bash $(ROOTFS_SCRIPT)
 
+# ── data disk (ext4, 64 MB) ───────────────────────────────────────────────────
+# Created inside the builder so mkfs.ext4 is available.
+# The disk is NOT recreated if it already exists (data is preserved across runs).
+disk: $(DISK)
+
+$(DISK): | image
+	@mkdir -p $(OUT)
+	@if [ -f $(DISK) ]; then \
+	  echo "ℹ️  disk.img already exists, skipping (delete manually to recreate)"; \
+	else \
+	  echo "ℹ️  Creating $(DISK_SIZE)M ext4 data disk..."; \
+	  $(DOCKER_RUN) bash -c \
+	    "dd if=/dev/zero of=/work/$(DISK) bs=1M count=$(DISK_SIZE) status=none && \
+	     mkfs.ext4 -q -L vyoma-data /work/$(DISK) && \
+	     echo '✅ disk.img created'"; \
+	fi
+
+# ── host data directory (9P share — persistent across reboots) ───────────────
+# The VM mounts this directory at /data via virtio-9p (trans=virtio).
+# Files written by WASM apps to /data persist on the host across VM reboots.
+data:
+	@mkdir -p $(DATA_DIR)
+	@echo "ℹ️  Host data directory ready: $(DATA_DIR)/"
+
 # ── build (all) ───────────────────────────────────────────────────────────────
-build: kernel supervisor apps rootfs
+build: kernel supervisor apps rootfs disk data
 
 # ── run (host QEMU — VMs can't nest easily in containers) ────────────────────
-run: $(BZIMAGE) $(INITRAMFS)
+run: $(BZIMAGE) $(INITRAMFS) data
 	qemu-system-x86_64 \
 	  -kernel $(BZIMAGE) \
 	  -initrd $(INITRAMFS) \
 	  -append "console=ttyS0 panic=1" \
+	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
 	  -nographic \
 	  -m 512M \
 	  -no-reboot \

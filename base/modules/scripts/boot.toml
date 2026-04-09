@@ -21,3 +21,8 @@ restart  = "never"
 [[apps]]
 manifest = "/apps/pong/vyoma.toml"
 restart  = "never"
+
+# Storage demo: reads/writes /data on the virtio-blk ext4 disk
+[[apps]]
+manifest = "/apps/storage-demo/vyoma.toml"
+restart  = "never"

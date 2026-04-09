@@ -474,6 +474,17 @@ fn mount_filesystems() {
     mount_fs("proc",     "/proc", "proc",     0);
     mount_fs("sysfs",    "/sys",  "sysfs",    0);
     mount_fs("devtmpfs", "/dev",  "devtmpfs", 0);
+    // Persistent /data via virtio-9P host share (mount_tag=vyoma-data).
+    // Falls back to tmpfs for diskless/development boots without -virtfs.
+    #[cfg(target_os = "linux")]
+    {
+        let opts = c"trans=virtio,version=9p2000.L";
+        let ret = mount_fs_with_data("vyoma-data", "/data", "9p", 0, opts.as_ptr());
+        if !ret {
+            eprintln!("vyoma-supervisor: 9P share not available — /data will be empty tmpfs");
+            mount_fs("tmpfs", "/data", "tmpfs", 0);
+        }
+    }
 }
 
 fn mount_fs(_source: &str, target: &str, fstype: &str, _flags: libc::c_ulong) {
@@ -509,4 +520,38 @@ fn mount_fs(_source: &str, target: &str, fstype: &str, _flags: libc::c_ulong) {
 
     #[cfg(not(target_os = "linux"))]
     eprintln!("vyoma-supervisor: [dev build] skipping mount {target} ({fstype})");
+}
+
+/// Like mount_fs but passes a data string to the filesystem (e.g. 9P options).
+/// Returns true on success, false if the mount fails (e.g. no 9P share attached).
+#[cfg(target_os = "linux")]
+fn mount_fs_with_data(
+    source: &str,
+    target: &str,
+    fstype: &str,
+    flags: libc::c_ulong,
+    data: *const libc::c_char,
+) -> bool {
+    let c_source = CString::new(source).expect("source NUL");
+    let c_target = CString::new(target).expect("target NUL");
+    let c_fstype = CString::new(fstype).expect("fstype NUL");
+
+    let ret = unsafe {
+        libc::mount(
+            c_source.as_ptr(),
+            c_target.as_ptr(),
+            c_fstype.as_ptr(),
+            flags,
+            data as *const libc::c_void,
+        )
+    };
+
+    if ret == 0 {
+        eprintln!("vyoma-supervisor: mounted {target} ({fstype})");
+        true
+    } else {
+        let err = std::io::Error::last_os_error();
+        eprintln!("vyoma-supervisor: mount({source} -> {target}, {fstype}) failed: {err}");
+        false
+    }
 }
