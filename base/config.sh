@@ -6,7 +6,7 @@
 readonly VYOMAOS_CONFIG_LOADED=1
 
 # Paths
-readonly PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly OUTDIR="$PROJECT_ROOT/out"
 readonly ROOTFS_DIR="$OUTDIR/rootfs"
 readonly KERNEL_FILE="$OUTDIR/bzImage"
