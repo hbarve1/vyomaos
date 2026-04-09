@@ -9,10 +9,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/../config.sh"
 ROOTFS="$OUTDIR/rootfs"
 
 # ── Wasmtime musl-static binary ──────────────────────────────────────────────
-WASMTIME_VERSION="28.0.0"
-WASMTIME_TARBALL="wasmtime-v${WASMTIME_VERSION}-x86_64-linux-musl.tar.xz"
+WASMTIME_VERSION="43.0.0"
+WASMTIME_TARBALL="wasmtime-v${WASMTIME_VERSION}-x86_64-musl.tar.xz"
 WASMTIME_URL="https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/${WASMTIME_TARBALL}"
-WASMTIME_SHA256="67cca59ece6f946cb0280d4e28e85591c22aadc2d43e73da79de2f55f70e8b01"
+WASMTIME_SHA256="506b436d31389463ed5a5dbbb19270b79544507c9924780c489552fc5b166b29"
 WASMTIME_CACHE="$OUTDIR/cache/${WASMTIME_TARBALL}"
 
 # ── BusyBox musl-static binary ────────────────────────────────────────────────
@@ -70,7 +70,7 @@ build_rootfs() {
     # Extract the single 'wasmtime' binary from the tarball, strip debug info.
     tar -xJf "$WASMTIME_CACHE" --strip-components=1 \
         -C "$OUTDIR/cache" \
-        "wasmtime-v${WASMTIME_VERSION}-x86_64-linux-musl/wasmtime"
+        "wasmtime-v${WASMTIME_VERSION}-x86_64-musl/wasmtime"
     install -m 0755 "$OUTDIR/cache/wasmtime" "$ROOTFS/usr/bin/wasmtime"
     strip "$ROOTFS/usr/bin/wasmtime" 2>/dev/null || true
     log_info "Installed wasmtime ($(du -h "$ROOTFS/usr/bin/wasmtime" | cut -f1))"
