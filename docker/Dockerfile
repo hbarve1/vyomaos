@@ -1,35 +1,70 @@
-# Minimal environment to build Vyoma OS and example WASM apps
+# syntax=docker/dockerfile:1
+# VyomaOS hermetic build environment
+# Base: ubuntu:22.04 (LTS, well-supported apt mirror)
 FROM ubuntu:22.04
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    TZ=UTC
+# ── avoid interactive prompts from apt ────────────────────────────────────────
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
 
-# Base tools and build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl tar gzip xz-utils \
-    make gcc g++ flex bison bc \
-    libelf-dev libssl-dev libncurses-dev \
-    cpio qemu-system-x86 \
-    pkg-config \
+# ── system packages ───────────────────────────────────────────────────────────
+# Kernel build deps: bc bison flex libelf-dev libssl-dev libncurses-dev
+# Build tools: build-essential git wget curl ca-certificates xz-utils file
+# musl cross-compilation: musl-tools (provides musl-gcc wrapper and headers)
+# QEMU for smoke tests: qemu-system-x86
+# Build script utilities: cpio gzip rsync
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        wget \
+        curl \
+        ca-certificates \
+        xz-utils \
+        file \
+        bc \
+        bison \
+        flex \
+        libelf-dev \
+        libssl-dev \
+        libncurses-dev \
+        musl-tools \
+        qemu-system-x86 \
+        cpio \
+        gzip \
+        rsync \
     && rm -rf /var/lib/apt/lists/*
 
-# Rust toolchain for building Rust→WASM apps
-RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain stable \
-    && /root/.cargo/bin/rustup target add wasm32-unknown-unknown
-# Install Wasmtime CLI (WASM runtime)
-RUN curl -fsSL https://wasmtime.dev/install.sh | bash
-ENV PATH="/root/.wasmtime/bin:/root/.cargo/bin:${PATH}" \
-    INCLUDE_REAL_WASMTIME=true
+# ── Rust via rustup ───────────────────────────────────────────────────────────
+# Install system-wide so all users in the container have access.
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
 
-# Workdir and source (copies only the docker/ dir when building from here)
-WORKDIR /workspace
-COPY . /workspace
+ARG RUSTUP_VERSION=1.27.1
+RUN curl --proto '=https' --tlsv1.2 -sSf \
+      "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init" \
+      -o /tmp/rustup-init && \
+    chmod +x /tmp/rustup-init && \
+    /tmp/rustup-init -y \
+        --no-modify-path \
+        --profile minimal \
+        --default-toolchain stable && \
+    rm /tmp/rustup-init && \
+    rustc --version && cargo --version
 
-# Provide a place for WASM and copy a prebuilt hello-world.wasm placed next to this Dockerfile
-RUN install -d /opt/wasm
-COPY hello-world.wasm /opt/wasm/hello-world.wasm
+# ── Rust targets ──────────────────────────────────────────────────────────────
+# x86_64-unknown-linux-musl  — supervisor binary (statically linked)
+# wasm32-wasip2              — WASI Preview 2 apps
+RUN rustup target add x86_64-unknown-linux-musl wasm32-wasip2
 
-# Default command: run the hello-world WASM via Wasmtime
-# Put hello-world.wasm in this folder and build with:
-#   cd docker && docker build -t vyomaos .
-CMD ["wasmtime", "--invoke", "add", "/opt/wasm/hello-world.wasm", "15", "27"]
+# ── musl linker config ────────────────────────────────────────────────────────
+# Tell cargo to use musl-gcc when cross-compiling for x86_64-unknown-linux-musl.
+RUN mkdir -p /usr/local/cargo/config.d && \
+    printf '[target.x86_64-unknown-linux-musl]\nlinker = "musl-gcc"\n' \
+      > /usr/local/cargo/config.d/musl.toml
+
+# ── working directory ─────────────────────────────────────────────────────────
+WORKDIR /work
+
+CMD ["/bin/bash"]
