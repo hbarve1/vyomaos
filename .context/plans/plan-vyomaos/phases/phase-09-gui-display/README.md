@@ -63,6 +63,24 @@ CONFIG_FRAMEBUFFER_CONSOLE=y
 CONFIG_FRAMEBUFFER_CONSOLE_DETECT_PRIMARY=y
 ```
 
+## Status: complete
+
+## What was actually built vs planned
+
+**Kernel (done as planned):** `CONFIG_DRM=y`, `CONFIG_DRM_VIRTIO_GPU=y`, `CONFIG_DRM_FBDEV_EMULATION=y`, `CONFIG_FRAMEBUFFER_CONSOLE=y`, `CONFIG_FONT_8x16=y`.
+
+**QEMU fix (not in plan):** `-device virtio-gpu-pci` does NOT route output to the QEMU display window — the window stays attached to the default VGA `[1234:1111]`. Fix: use `-vga virtio` to replace the default VGA entirely. Also need `console=tty0 console=ttyS0` to activate fbcon.
+
+**Display approach (changed from plan):** Plan called for WIT host functions via embedded wasmtime Rust crate. This was deferred — embedding wasmtime as a library is a significant architectural shift from the current CLI-spawner model. Instead, a **VYOMA_DRAW stdout protocol** was implemented:
+- Apps with `display = true` capability write `VYOMA_DRAW:fill_rect:<x>,<y>,<w>,<h>,<rgba>` or `VYOMA_DRAW:flush` to stdout
+- Supervisor reader thread parses these and dispatches to `supervisor/src/display.rs`
+- `display.rs` opens `/dev/fb0`, mmaps XRGB8888 buffer, reads actual dims via `FBIOGET_VSCREENINFO` (retries 5× for DRM async init)
+- Actual screen size detected: 1280×800 (not the assumed 1024×768)
+
+**gui-demo app (done):** Draws navy background, blue header bar, teal/purple/orange app-status blocks, footer. No text rendering yet (text appears via fbcon from serial output).
+
+**Text rendering (deferred to P10):** Embedding an 8×16 bitmap font in the supervisor and adding `VYOMA_DRAW:draw_text:` is the natural next step.
+
 ## Tasks
 
 ### P09T01 — Kernel DRM + virtio-gpu config

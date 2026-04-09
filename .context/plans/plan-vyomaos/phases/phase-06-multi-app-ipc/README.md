@@ -1,8 +1,18 @@
-# Phase 06 — Multi-App & IPC (Component Model)
+# Phase 06 — Multi-App & IPC
+
+**Status: partial** — P06T01 + P06T02 complete; P06T03 + P06T04 (Component Model typed IPC) deferred
 
 ## Goal
 
-Run multiple WASM apps concurrently, each in its own Wasmtime instance. Add restart policies (on-failure, always, never). Introduce WASM Component Model typed IPC via `.wit` interface definitions so apps can call each other's exported functions with compile-time type safety.
+Run multiple WASM apps concurrently, each in its own Wasmtime instance. Add restart policies (on-failure, always, never). Introduce inter-app messaging via the supervisor IPC broker.
+
+## What was actually built
+
+**P06T01 — Concurrent scheduler (done):** One thread per app (`std::thread::spawn`). Separate writer/reader/waiter threads per app. Two-pass spawn for race-free inbox registration.
+
+**P06T02 — Restart policies (done):** `restart = never/always/on-failure` in boot.toml; `always`/`on-failure` logs a warning that restart+IPC requires new pipe setup (not yet implemented) and treats as `never`.
+
+**P06T03/P06T04 — Component Model typed IPC (deferred):** The supervisor stays a CLI-wasmtime spawner; embedding the wasmtime Rust crate for custom WIT host functions is a future architectural shift. Instead, a text-based IPC protocol was implemented: apps write `@<appname>: <message>` to stdout; the supervisor's reader thread routes it to the target app's stdin. Demo: `ping` and `pong` apps exchange 3 messages.
 
 ## Gate
 

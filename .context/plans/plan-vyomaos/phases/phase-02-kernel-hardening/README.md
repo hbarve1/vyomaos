@@ -1,8 +1,17 @@
 # Phase 02 — Kernel Hardening
 
+**Status: complete**
+
 ## Goal
 
-Shrink and harden the kernel config to the absolute minimum required to boot in QEMU with virtio drivers and 9p filesystem sharing. Eliminate all unnecessary drivers, modules, and debug features to reduce attack surface and binary size.
+Shrink and harden the kernel config to the absolute minimum required to boot in QEMU with virtio drivers, 9p filesystem sharing, and DRM/virtio-gpu display. Eliminate all unnecessary drivers, modules, and debug features to reduce attack surface and binary size.
+
+## What was actually built
+
+- Switched from `tinyconfig` to `allnoconfig` in `kernel.sh` — tinyconfig silently dropped forced config options when transitive deps were unresolved; allnoconfig gives full deterministic control
+- Added explicit transitive deps: `CONFIG_VIRTIO_RING=y`, `CONFIG_NETWORK_FILESYSTEMS=y`
+- Added DRM/display stack: `CONFIG_DRM=y`, `CONFIG_DRM_VIRTIO_GPU=y`, `CONFIG_DRM_FBDEV_EMULATION=y`, `CONFIG_FRAMEBUFFER_CONSOLE=y`
+- Final kernel size: 2.3 MB (well under 4 MB gate)
 
 ## Gate
 

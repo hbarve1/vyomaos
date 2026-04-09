@@ -1,5 +1,13 @@
 # Phase 07 — Networking & Storage
 
+**Status: partial** — storage (9P virtio) complete; networking (virtio-net + WASI sockets) pending
+
+## What was actually built
+
+**Storage (done):** 9P virtio host-directory sharing instead of virtio-blk. QEMU: `-virtfs local,path=data,mount_tag=vyoma-data,security_model=mapped-xattr`. Supervisor mounts `/data` with `trans=virtio,version=9p2000.L`; falls back to tmpfs if absent. `storage-demo` app reads/writes `/data/boot_count.txt` + `boot_log.txt`; counter persists across reboots. Critical kernel additions: `CONFIG_NET_9P=y`, `CONFIG_NET_9P_VIRTIO=y`, `CONFIG_9P_FS=y`, `CONFIG_NETWORK_FILESYSTEMS=y`.
+
+**Networking (pending):** `CONFIG_VIRTIO_NET=y` is in kernel.config and the PCI device enumerates, but no WASM app exercises it yet.
+
 ## Goal
 
 Add virtio-net to the kernel config so the VM has a network interface, and expose it to WASM apps via `wasi:sockets`. Add virtio-blk for a writable block device and expose it via `wasi:filesystem`. Apps that declare these capabilities in their manifest gain access; apps that don't are isolated.
