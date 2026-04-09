@@ -41,6 +41,7 @@ KERNEL_STAMP   := $(OUT)/.kernel.stamp
 # Mounts the project root read-write at /work inside the container.
 # UID/GID passthrough ensures out/ files are owned by the host user.
 DOCKER_RUN := docker run --rm \
+	--platform linux/amd64 \
 	-v "$(CURDIR)":/work \
 	-w /work \
 	-u $$(id -u):$$(id -g) \
@@ -111,6 +112,7 @@ run: $(BZIMAGE) $(INITRAMFS)
 # ── shell ─────────────────────────────────────────────────────────────────────
 shell: | image
 	docker run --rm -it \
+	  --platform linux/amd64 \
 	  -v "$(CURDIR)":/work \
 	  -w /work \
 	  $(IMAGE):$(IMAGE_TAG) \

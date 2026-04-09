@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # VyomaOS hermetic build environment
 # Base: ubuntu:22.04 (LTS, well-supported apt mirror)
-FROM ubuntu:22.04
+FROM --platform=linux/amd64 ubuntu:22.04
 
 # ── avoid interactive prompts from apt ────────────────────────────────────────
 ENV DEBIAN_FRONTEND=noninteractive
