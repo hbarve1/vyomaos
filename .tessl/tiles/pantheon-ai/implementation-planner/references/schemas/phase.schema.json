@@ -1,0 +1,29 @@
+{
+  "description": "Schema for phase README.md files",
+  "properties": {
+    "content": {
+      "allOf": [
+        {
+          "pattern": "# Phase [0-9]",
+          "description": "must have a top-level H1 heading starting with 'Phase NN'"
+        },
+        {
+          "pattern": "## Goal",
+          "description": "must have a '## Goal' section"
+        },
+        {
+          "pattern": "## Gate",
+          "description": "must have a '## Gate' section with runnable acceptance criteria"
+        },
+        {
+          "pattern": "## Dependencies",
+          "description": "must have a '## Dependencies' section"
+        },
+        {
+          "pattern": "## Tasks",
+          "description": "must have a '## Tasks' section"
+        }
+      ]
+    }
+  }
+}

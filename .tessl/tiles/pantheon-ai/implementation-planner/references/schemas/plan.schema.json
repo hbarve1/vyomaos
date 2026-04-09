@@ -1,0 +1,25 @@
+{
+  "description": "Schema for plan root README.md",
+  "properties": {
+    "content": {
+      "allOf": [
+        {
+          "pattern": "# (Implementation Plan|Plan:)",
+          "description": "must have a top-level H1 heading starting with 'Implementation Plan' or 'Plan:'"
+        },
+        {
+          "pattern": "## Goal",
+          "description": "must have a '## Goal' section"
+        },
+        {
+          "pattern": "## Phases",
+          "description": "must have a '## Phases' section"
+        },
+        {
+          "pattern": "## Constraints",
+          "description": "must have a '## Constraints' section"
+        }
+      ]
+    }
+  }
+}
