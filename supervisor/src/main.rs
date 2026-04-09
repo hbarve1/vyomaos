@@ -4,10 +4,11 @@
 //!   P03T01 — scaffold: print banner
 //!   P03T02 — mount /proc, /sys, /dev
 //!   P05T03 — read /etc/vyoma/boot.toml and launch apps via capability manifests
+//!   P06T01 — concurrent scheduler: one thread per app, per-app restart policy
 
 #[cfg(target_os = "linux")]
 use std::ffi::CString;
-use std::{fs, path::Path};
+use std::{fs, path::Path, process::ExitStatus, thread, time::Duration};
 
 use serde::Deserialize;
 
@@ -18,7 +19,7 @@ struct BootConfig {
     apps: Vec<BootEntry>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct BootEntry {
     manifest: String,
     #[serde(default = "default_restart")]
@@ -85,44 +86,75 @@ fn main() {
     if boot.apps.is_empty() {
         eprintln!("vyoma-supervisor: no apps configured, idling");
         loop {
-            std::thread::park();
+            thread::park();
         }
     }
 
-    // Sequential run loop — run each app; respect restart policy.
-    // Phase 06 replaces this with a concurrent scheduler.
-    let mut completed = vec![false; boot.apps.len()];
+    // ── Concurrent scheduler ──────────────────────────────────────────────────
+    // Spawn one thread per app. Each thread owns its BootEntry and manages
+    // the restart loop independently. Main thread joins all threads, then idles.
+    let handles: Vec<_> = boot
+        .apps
+        .into_iter()
+        .map(|entry| {
+            thread::Builder::new()
+                .name(entry.manifest.clone())
+                .spawn(move || app_thread(entry))
+                .expect("failed to spawn app thread")
+        })
+        .collect();
+
+    for handle in handles {
+        let _ = handle.join();
+    }
+
+    eprintln!("vyoma-supervisor: all apps completed, idling");
     loop {
-        let mut any_running = false;
-        for (i, entry) in boot.apps.iter().enumerate() {
-            if completed[i] {
-                continue;
+        thread::park();
+    }
+}
+
+// ── Per-app thread: owns restart loop ────────────────────────────────────────
+
+fn app_thread(entry: BootEntry) {
+    const RESTART_BACKOFF: Duration = Duration::from_secs(1);
+
+    loop {
+        let status = launch_app(&entry);
+
+        match entry.restart.as_str() {
+            "always" => {
+                eprintln!(
+                    "vyoma-supervisor: [{}] restarting (policy=always)",
+                    entry.manifest
+                );
+                thread::sleep(RESTART_BACKOFF);
             }
-            launch_app(entry);
-            if entry.restart == "never" {
-                completed[i] = true;
-            } else {
-                any_running = true;
+            "on-failure" => {
+                let failed = status.map(|s| !s.success()).unwrap_or(true);
+                if failed {
+                    eprintln!(
+                        "vyoma-supervisor: [{}] restarting (policy=on-failure)",
+                        entry.manifest
+                    );
+                    thread::sleep(RESTART_BACKOFF);
+                } else {
+                    break;
+                }
             }
+            _ => break, // "never" or unknown — run once
         }
-        if !any_running && completed.iter().all(|&d| d) {
-            eprintln!("vyoma-supervisor: all apps completed, idling");
-            loop {
-                std::thread::park();
-            }
-        }
-        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 }
 
 // ── App launch ────────────────────────────────────────────────────────────────
 
-fn launch_app(entry: &BootEntry) {
+fn launch_app(entry: &BootEntry) -> Option<ExitStatus> {
     let manifest_raw = match fs::read_to_string(&entry.manifest) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("vyoma-supervisor: WARN: cannot read manifest {}: {e}", entry.manifest);
-            return;
+            return None;
         }
     };
 
@@ -130,7 +162,7 @@ fn launch_app(entry: &BootEntry) {
         Ok(m) => m,
         Err(e) => {
             eprintln!("vyoma-supervisor: WARN: malformed manifest {}: {e}", entry.manifest);
-            return;
+            return None;
         }
     };
 
@@ -167,21 +199,29 @@ fn launch_app(entry: &BootEntry) {
     match cmd.status() {
         Ok(s) if s.success() => {
             eprintln!("vyoma-supervisor: {} exited cleanly", manifest.app.name);
+            Some(s)
         }
         Ok(s) => {
-            let code = s.code()
+            let code = s
+                .code()
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "signal".to_string());
             eprintln!("vyoma-supervisor: {} exited with code {code}", manifest.app.name);
+            Some(s)
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             eprintln!(
                 "vyoma-supervisor: wasmtime not found at /usr/bin/wasmtime — \
                  rebuild the initramfs with `make rootfs`"
             );
+            None
         }
         Err(e) => {
-            eprintln!("vyoma-supervisor: failed to launch wasmtime for {}: {e}", manifest.app.name);
+            eprintln!(
+                "vyoma-supervisor: failed to launch wasmtime for {}: {e}",
+                manifest.app.name
+            );
+            None
         }
     }
 }
