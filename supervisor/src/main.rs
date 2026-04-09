@@ -89,13 +89,28 @@ fn main() {
         }
     }
 
-    // Sequential run loop — Phase 06 replaces this with concurrent scheduler.
+    // Sequential run loop — run each app; respect restart policy.
+    // Phase 06 replaces this with a concurrent scheduler.
+    let mut completed = vec![false; boot.apps.len()];
     loop {
-        for entry in &boot.apps {
+        let mut any_running = false;
+        for (i, entry) in boot.apps.iter().enumerate() {
+            if completed[i] {
+                continue;
+            }
             launch_app(entry);
+            if entry.restart == "never" {
+                completed[i] = true;
+            } else {
+                any_running = true;
+            }
         }
-        // Brief pause between cycles to avoid tight spin when all apps exit
-        // immediately (e.g. during development).
+        if !any_running && completed.iter().all(|&d| d) {
+            eprintln!("vyoma-supervisor: all apps completed, idling");
+            loop {
+                std::thread::park();
+            }
+        }
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
 }
@@ -130,17 +145,16 @@ fn launch_app(entry: &BootEntry) {
         manifest.app.name, manifest.app.version, entry.restart
     );
 
+    // Wasmtime 43: stdio is inherited by default; no --inherit-stdio flag.
+    // WASI capabilities are passed via -S <option>=<value>.
     let mut cmd = std::process::Command::new("/usr/bin/wasmtime");
     cmd.arg("run");
 
-    if manifest.capabilities.stdio {
-        cmd.arg("--inherit-stdio");
-    }
     if manifest.capabilities.filesystem {
-        cmd.args(["--dir", "/data"]);
+        cmd.args(["--dir", "/data::/data"]);
     }
     if manifest.capabilities.network {
-        cmd.args(["--tcplisten", "0.0.0.0:8080"]);
+        cmd.args(["-S", "tcplisten=0.0.0.0:8080"]);
     }
 
     cmd.arg("--");
