@@ -16,9 +16,9 @@ WASMTIME_SHA256="506b436d31389463ed5a5dbbb19270b79544507c9924780c489552fc5b166b2
 WASMTIME_CACHE="$OUTDIR/cache/${WASMTIME_TARBALL}"
 
 # ── BusyBox musl-static binary ────────────────────────────────────────────────
-BUSYBOX_VERSION="1.36.1"
+BUSYBOX_VERSION="1.35.0"
 BUSYBOX_URL="https://www.busybox.net/downloads/binaries/${BUSYBOX_VERSION}-x86_64-linux-musl/busybox"
-BUSYBOX_SHA256="b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314"
+BUSYBOX_SHA256="6e123e7f3202a8c1e9b1f94d8941580a25135382b99e8d3e34fb858bba311348"
 BUSYBOX_CACHE="$OUTDIR/cache/busybox-${BUSYBOX_VERSION}-x86_64-musl"
 
 # ── Download with SHA-256 verification ───────────────────────────────────────
