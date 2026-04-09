@@ -13,6 +13,7 @@ readonly KERNEL_FILE="$OUTDIR/bzImage"
 readonly INITRAMFS_FILE="$OUTDIR/initramfs.cpio.gz"
 readonly KERNEL_SOURCE_DIR="$OUTDIR/linux-5.10.113"
 readonly KERNEL_TAR_FILE="$OUTDIR/linux-5.10.113.tar.xz"
+readonly KERNEL_SOURCE_URL="https://www.kernel.org/pub/linux/kernel/v5.x/linux-5.10.113.tar.xz"
 
 # Logging
 log_info() { echo "ℹ️  $1"; }
