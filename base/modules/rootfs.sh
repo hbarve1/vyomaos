@@ -10,9 +10,9 @@ ROOTFS="$OUTDIR/rootfs"
 
 # ── Wasmtime musl-static binary ──────────────────────────────────────────────
 WASMTIME_VERSION="43.0.0"
-WASMTIME_TARBALL="wasmtime-v${WASMTIME_VERSION}-x86_64-musl.tar.xz"
+WASMTIME_TARBALL="wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz"
 WASMTIME_URL="https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/${WASMTIME_TARBALL}"
-WASMTIME_SHA256="506b436d31389463ed5a5dbbb19270b79544507c9924780c489552fc5b166b29"
+WASMTIME_SHA256="e75a4933253fbc7b027c670b699490f163e3c86784f1db66581ae80fc0eb652c"
 WASMTIME_CACHE="$OUTDIR/cache/${WASMTIME_TARBALL}"
 
 # ── BusyBox musl-static binary ────────────────────────────────────────────────
@@ -70,10 +70,27 @@ build_rootfs() {
     # Extract the single 'wasmtime' binary from the tarball, strip debug info.
     tar -xJf "$WASMTIME_CACHE" --strip-components=1 \
         -C "$OUTDIR/cache" \
-        "wasmtime-v${WASMTIME_VERSION}-x86_64-musl/wasmtime"
+        "wasmtime-v${WASMTIME_VERSION}-x86_64-linux/wasmtime"
     install -m 0755 "$OUTDIR/cache/wasmtime" "$ROOTFS/usr/bin/wasmtime"
-    strip "$ROOTFS/usr/bin/wasmtime" 2>/dev/null || true
     log_info "Installed wasmtime ($(du -h "$ROOTFS/usr/bin/wasmtime" | cut -f1))"
+
+    # ── glibc runtime for wasmtime (x86_64-linux glibc variant) ──────────────
+    # wasmtime is dynamically linked; copy the glibc loader and its dependencies
+    # from the builder container (Ubuntu 22.04, glibc 2.35).
+    mkdir -p "$ROOTFS/lib/x86_64-linux-gnu" "$ROOTFS/lib64"
+    for lib in \
+        /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 \
+        /lib/x86_64-linux-gnu/libc.so.6 \
+        /lib/x86_64-linux-gnu/libgcc_s.so.1 \
+        /lib/x86_64-linux-gnu/libm.so.6 \
+        /lib/x86_64-linux-gnu/libpthread.so.0 \
+        /lib/x86_64-linux-gnu/libdl.so.2; do
+        install -m 0755 "$lib" "$ROOTFS/lib/x86_64-linux-gnu/"
+    done
+    # ld-linux expects /lib64/ld-linux-x86-64.so.2 as well (ELF interpreter path)
+    ln -sf /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 \
+        "$ROOTFS/lib64/ld-linux-x86-64.so.2"
+    log_info "Installed glibc runtime for wasmtime"
 
     # ── /init (PID 1 bootstrap) ───────────────────────────────────────────────
     # Mounts virtual filesystems then execs the Rust supervisor.
