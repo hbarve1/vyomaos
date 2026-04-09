@@ -1,6 +1,37 @@
 # VyomaOS — Comparison Matrix & Performance Tracker
 
-## Positioning
+## Long-Term Vision
+
+VyomaOS aims to become a **lightweight but fully capable general-purpose operating system** — competitive with Windows, macOS, Android, and Ubuntu — built entirely on a WASM-first foundation.
+
+The long-term goal is not to be a minimal embedded OS forever. It is to prove that every feature a modern OS ships — package manager, app store, windowed GUI, networking stack, storage, multi-user support, developer tooling — can be delivered as **WASM apps running under a capability-secure supervisor**, with no compromise on power or usability.
+
+### What "fully capable" means for VyomaOS
+
+| OS Feature | Long-Term VyomaOS Target |
+|---|---|
+| **Package manager** | `vyoma-pkg` — WASM-native package manager; installs, updates, removes `wasm32-wasip2` app bundles from a signed registry; no native binaries required |
+| **App store** | Curated registry of signed `.wasm` bundles with capability manifests; one-command install, sandboxed by default |
+| **Windowed GUI** | Compositor layer on top of DRM/virtio-gpu; per-app windows managed by a supervisor-level window manager (WASM app); keyboard/mouse routing via focus manager |
+| **Desktop shell** | Full shell app with app launcher, taskbar, notifications — all WASM, rendered via VYOMA_DRAW or a future GPU-accelerated protocol |
+| **Networking** | Full TCP/IP stack via WASI sockets; HTTP, HTTPS, DNS available to apps with `network = true` capability |
+| **Multi-user / auth** | User identity via capability tokens; apps request user-scoped filesystem access; no UNIX uid/gid dependency |
+| **Developer tools** | WASM-native compiler toolchain (via wasi-sdk), debugger, REPL — all installable as packages |
+| **Hardware support** | USB, audio, camera, sensors — each exposed as a typed WASI interface; drivers as WASM modules |
+| **Accessibility** | Screen reader, high-contrast, input assistance — built as first-class WASM apps, not OS afterthoughts |
+| **OTA updates** | Atomic supervisor + kernel updates with rollback; app updates via registry diff |
+
+### Why this approach beats the incumbents long-term
+
+- **Windows / macOS / Ubuntu** ship decades of legacy: C runtimes, shared libraries, POSIX quirks, shell injection surfaces. Every new app inherits all of it.
+- **Android** gets closer — apps run in a managed runtime (ART/JVM) with a permission model — but the runtime is heavy, the permission model is coarse, and native code bypasses it entirely.
+- **VyomaOS** starts with the lesson learned: the runtime IS the OS boundary. Every app is sandboxed from day zero. Adding features means writing more WASM apps and WASI interfaces, not patching a 30-year-old kernel ABI.
+
+The result is an OS that scales from a 18 MB embedded appliance today to a full desktop OS tomorrow — with the same security model at every scale.
+
+---
+
+## Positioning (Current State)
 
 VyomaOS is a **WASM-first operating system**: the Linux kernel provides hardware abstraction only. There is no native userland, no shell, no package manager. Every application is a `wasm32-wasip2` binary executed by Wasmtime under a Rust PID 1 supervisor. Capabilities (filesystem, network, display, stdio) are declared per-app in a manifest and enforced at runtime.
 
