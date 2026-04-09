@@ -29,3 +29,5 @@ build_kernel() {
 
     log_success "Kernel built: $KERNEL_FILE ($(du -sh "$KERNEL_FILE" | cut -f1))"
 }
+
+build_kernel

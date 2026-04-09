@@ -136,3 +136,5 @@ INIT_EOF
 
     log_success "Rootfs built: $INITRAMFS_FILE ($(du -sh "$INITRAMFS_FILE" | cut -f1))"
 }
+
+build_rootfs
