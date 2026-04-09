@@ -5,6 +5,6 @@ wasm    = "gui-demo.wasm"
 
 [capabilities]
 stdio      = true
-filesystem = false
+filesystem = true
 network    = false
 display    = true

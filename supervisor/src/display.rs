@@ -7,7 +7,10 @@
 //!
 //! Protocol (one command per stdout line from a display-capable WASM app):
 //!   VYOMA_DRAW:fill_rect:<x>,<y>,<w>,<h>,<rgba_decimal>
+//!   VYOMA_DRAW:draw_text:<x>,<y>,<rgba_decimal>,<text>
 //!   VYOMA_DRAW:flush
+
+use super::font8x16;
 
 use std::{
     fs::OpenOptions,
@@ -189,6 +192,47 @@ impl Framebuffer {
                     std::ptr::copy_nonoverlapping(pixel.as_ptr(), self.buf.add(off), 4);
                 }
             }
+        }
+    }
+
+    /// Render a string at pixel position (x, y) using the embedded 8×16 bitmap font.
+    /// Characters outside printable ASCII (0x20–0x7E) are drawn as blank glyphs.
+    /// Text is clipped at the right and bottom framebuffer edges.
+    pub fn draw_text(&mut self, x: u32, y: u32, text: &str, rgba: u32) {
+        if self.bpp != 32 { return; }
+        let r = ((rgba >> 24) & 0xFF) as u8;
+        let g = ((rgba >> 16) & 0xFF) as u8;
+        let b = ((rgba >>  8) & 0xFF) as u8;
+        let fg = [b, g, r, 0xFF_u8]; // BGRA little-endian
+
+        let mut cx = x;
+        for ch in text.chars() {
+            if cx + font8x16::GLYPH_W > self.width { break; }
+
+            let glyph_idx = if (ch as u32) >= font8x16::FIRST_CHAR as u32
+                            && (ch as u32) <= font8x16::LAST_CHAR as u32 {
+                (ch as usize - font8x16::FIRST_CHAR as usize) * font8x16::GLYPH_H as usize
+            } else {
+                0 // blank glyph for out-of-range chars
+            };
+
+            for row in 0..font8x16::GLYPH_H {
+                let scan_y = y + row;
+                if scan_y >= self.height { break; }
+                let byte = font8x16::FONT[glyph_idx + row as usize];
+                for bit in 0..font8x16::GLYPH_W {
+                    if byte & (0x80 >> bit) != 0 {
+                        let px = cx + bit;
+                        let off = (scan_y * self.stride + px * 4) as usize;
+                        if off + 4 <= self.buf_len {
+                            unsafe {
+                                std::ptr::copy_nonoverlapping(fg.as_ptr(), self.buf.add(off), 4);
+                            }
+                        }
+                    }
+                }
+            }
+            cx += font8x16::GLYPH_W;
         }
     }
 

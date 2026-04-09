@@ -12,6 +12,7 @@
 
 #[cfg(target_os = "linux")]
 mod display;
+mod font8x16;
 
 #[cfg(target_os = "linux")]
 use std::ffi::CString;
@@ -473,6 +474,23 @@ fn handle_draw_command(cmd: &str, sender: &str) {
             fb_lock.lock().unwrap().fill_rect(*x, *y, *w, *h, *rgba);
         } else {
             eprintln!("vyoma-display: [{sender}] bad fill_rect args: {args}");
+        }
+        return;
+    }
+
+    if let Some(args) = cmd.strip_prefix("draw_text:") {
+        // format: x,y,rgba,text  (text may contain commas — use splitn 4)
+        let parts: Vec<&str> = args.splitn(4, ',').collect();
+        if let [xs, ys, cs, text] = parts.as_slice() {
+            if let (Ok(x), Ok(y), Ok(rgba)) =
+                (xs.parse::<u32>(), ys.parse::<u32>(), cs.parse::<u32>())
+            {
+                fb_lock.lock().unwrap().draw_text(x, y, text, rgba);
+            } else {
+                eprintln!("vyoma-display: [{sender}] bad draw_text numeric args: {args}");
+            }
+        } else {
+            eprintln!("vyoma-display: [{sender}] bad draw_text args: {args}");
         }
         return;
     }
