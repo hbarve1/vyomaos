@@ -55,7 +55,7 @@ DOCKER_RUN := docker run --rm \
 KVM ?=
 
 # ── phony declarations ────────────────────────────────────────────────────────
-.PHONY: image kernel supervisor apps rootfs disk build run shell clean clean-image data
+.PHONY: image kernel supervisor apps rootfs disk build run run-gui shell clean clean-image data
 
 # ── Docker image ──────────────────────────────────────────────────────────────
 image: $(DOCKERFILE)
@@ -94,6 +94,7 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/ping/Cargo.toml           --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/pong/Cargo.toml           --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/storage-demo/Cargo.toml   --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/gui-demo/Cargo.toml       --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────
@@ -130,7 +131,7 @@ data:
 # ── build (all) ───────────────────────────────────────────────────────────────
 build: kernel supervisor apps rootfs disk data
 
-# ── run (host QEMU — VMs can't nest easily in containers) ────────────────────
+# ── run (headless — serial console only) ─────────────────────────────────────
 run: $(BZIMAGE) $(INITRAMFS) data
 	qemu-system-x86_64 \
 	  -kernel $(BZIMAGE) \
@@ -138,6 +139,23 @@ run: $(BZIMAGE) $(INITRAMFS) data
 	  -append "console=ttyS0 panic=1" \
 	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
 	  -nographic \
+	  -m 512M \
+	  -no-reboot \
+	  $(KVM)
+
+# ── run-gui (graphical window via virtio-gpu) ─────────────────────────────────
+# Serial output still goes to the terminal; QEMU also opens a display window.
+# On macOS use: make run-gui DISPLAY_BACKEND=cocoa  (default: sdl)
+DISPLAY_BACKEND ?= sdl
+run-gui: $(BZIMAGE) $(INITRAMFS) data
+	qemu-system-x86_64 \
+	  -kernel $(BZIMAGE) \
+	  -initrd $(INITRAMFS) \
+	  -append "console=ttyS0 panic=1" \
+	  -device virtio-gpu-pci \
+	  -display $(DISPLAY_BACKEND) \
+	  -serial stdio \
+	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
 	  -m 512M \
 	  -no-reboot \
 	  $(KVM)

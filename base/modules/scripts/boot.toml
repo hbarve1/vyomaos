@@ -26,3 +26,8 @@ restart  = "never"
 [[apps]]
 manifest = "/apps/storage-demo/vyoma.toml"
 restart  = "never"
+
+# GUI demo: draws coloured rectangles to /dev/fb0 via VYOMA_DRAW protocol
+[[apps]]
+manifest = "/apps/gui-demo/vyoma.toml"
+restart  = "never"

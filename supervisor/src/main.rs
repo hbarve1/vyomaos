@@ -8,6 +8,10 @@
 //!   P07T01 — IPC broker: route @<app>: <msg> lines between app stdio pipes
 //!   P08T01 — security: seccomp BPF denylist applied to every wasmtime child
 //!   P08T02 — security: capability audit log + manifest unknown-field rejection
+//!   P09T01 — display: open /dev/fb0, mmap framebuffer; dispatch VYOMA_DRAW: commands
+
+#[cfg(target_os = "linux")]
+mod display;
 
 #[cfg(target_os = "linux")]
 use std::ffi::CString;
@@ -67,6 +71,9 @@ struct Capabilities {
     filesystem: bool,
     #[serde(default)]
     network: bool,
+    /// Gates VYOMA_DRAW: display protocol — supervisor routes commands to /dev/fb0.
+    #[serde(default)]
+    display: bool,
 }
 
 // ── P08T01: seccomp BPF denylist ──────────────────────────────────────────────
@@ -223,6 +230,7 @@ struct SpawnedApp {
     msg_rx: mpsc::Receiver<String>,
     child_stdin: ChildStdin,
     child_stdout: ChildStdout,
+    has_display: bool,
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -234,6 +242,12 @@ fn main() {
 
     mount_filesystems();
     eprintln!("vyoma-supervisor: filesystems mounted");
+
+    // Try to open /dev/fb0 (non-fatal — headless boots proceed without GUI).
+    #[cfg(target_os = "linux")]
+    if display::init() {
+        eprintln!("vyoma-supervisor: display ready");
+    }
 
     let boot_raw = match fs::read_to_string(BOOT_CONFIG_PATH) {
         Ok(s) => s,
@@ -278,7 +292,7 @@ fn main() {
     let mut waiter_handles = vec![];
 
     for app in spawned {
-        let SpawnedApp { entry, name, child, msg_rx, child_stdin, child_stdout } = app;
+        let SpawnedApp { entry, name, child, msg_rx, child_stdin, child_stdout, has_display } = app;
 
         // Writer thread: msg_rx → child stdin
         thread::Builder::new()
@@ -293,7 +307,7 @@ fn main() {
             })
             .expect("spawn writer thread");
 
-        // Reader thread: child stdout → route @<target> or print
+        // Reader thread: child stdout → route @<target>, dispatch VYOMA_DRAW:, or print
         let inbox_r = Arc::clone(&inbox);
         let name_r = name.clone();
         thread::Builder::new()
@@ -301,7 +315,7 @@ fn main() {
             .spawn(move || {
                 for line in BufReader::new(child_stdout).lines() {
                     let line = match line { Ok(l) => l, Err(_) => break };
-                    route_or_print(&line, &name_r, &inbox_r);
+                    route_or_print(&line, &name_r, &inbox_r, has_display);
                 }
             })
             .expect("spawn reader thread");
@@ -354,10 +368,11 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox) -> Option<SpawnedApp> {
     // ── P08T02: capability audit log ─────────────────────────────────────────
     eprintln!(
         "vyoma-supervisor: [security] {name} capabilities — \
-         stdio:{} fs:{} net:{} seccomp:denylist",
+         stdio:{} fs:{} net:{} display:{} seccomp:denylist",
         if caps.stdio { "yes" } else { "no" },
         if caps.filesystem { "yes" } else { "no" },
         if caps.network { "yes" } else { "no" },
+        if caps.display { "yes" } else { "no" },
     );
 
     // Register inbox before spawning so routing is ready immediately.
@@ -410,12 +425,25 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox) -> Option<SpawnedApp> {
     let child_stdin = child.stdin.take().expect("stdin pipe");
     let child_stdout = child.stdout.take().expect("stdout pipe");
 
-    Some(SpawnedApp { entry: entry.clone(), name, child, msg_rx, child_stdin, child_stdout })
+    Some(SpawnedApp { entry: entry.clone(), name, child, msg_rx, child_stdin, child_stdout,
+                      has_display: caps.display })
 }
 
-// ── IPC router ────────────────────────────────────────────────────────────────
+// ── IPC router + display dispatcher ──────────────────────────────────────────
 
-fn route_or_print(line: &str, sender: &str, inbox: &Inbox) {
+fn route_or_print(line: &str, sender: &str, inbox: &Inbox, has_display: bool) {
+    // VYOMA_DRAW: display protocol — only honoured for display-capable apps.
+    #[cfg(target_os = "linux")]
+    if has_display {
+        if let Some(cmd) = line.strip_prefix("VYOMA_DRAW:") {
+            handle_draw_command(cmd, sender);
+            return;
+        }
+    }
+    // Suppress the unused-variable warning on non-Linux builds.
+    let _ = has_display;
+
+    // IPC routing: @<target>: <message>
     if let Some(rest) = line.strip_prefix('@') {
         if let Some((target, msg)) = rest.split_once(": ") {
             let map = inbox.lock().unwrap();
@@ -427,6 +455,29 @@ fn route_or_print(line: &str, sender: &str, inbox: &Inbox) {
         }
     }
     println!("[{sender}] {line}");
+}
+
+/// Parse and execute one VYOMA_DRAW command string (everything after the prefix).
+#[cfg(target_os = "linux")]
+fn handle_draw_command(cmd: &str, sender: &str) {
+    let Some(fb_lock) = display::get() else { return };
+
+    if cmd == "flush" {
+        fb_lock.lock().unwrap().flush();
+        return;
+    }
+
+    if let Some(args) = cmd.strip_prefix("fill_rect:") {
+        let v: Vec<u32> = args.split(',').filter_map(|s| s.parse().ok()).collect();
+        if let [x, y, w, h, rgba] = v.as_slice() {
+            fb_lock.lock().unwrap().fill_rect(*x, *y, *w, *h, *rgba);
+        } else {
+            eprintln!("vyoma-display: [{sender}] bad fill_rect args: {args}");
+        }
+        return;
+    }
+
+    eprintln!("vyoma-display: [{sender}] unknown command: {cmd}");
 }
 
 // ── App waiter ────────────────────────────────────────────────────────────────
