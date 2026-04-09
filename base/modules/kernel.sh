@@ -21,8 +21,9 @@ build_kernel() {
 
     cd "$KERNEL_SOURCE_DIR"
 
-    # Merge our config fragment on top of tinyconfig for a minimal build
-    make KCONFIG_ALLCONFIG="$kernel_config" tinyconfig
+    # allnoconfig: start with everything=n, then force-enable only what kernel.config lists.
+    # tinyconfig had transitive-dependency gaps that silently dropped virtio drivers.
+    make KCONFIG_ALLCONFIG="$kernel_config" allnoconfig
 
     make -j"$(nproc)" bzImage
     cp arch/x86/boot/bzImage "$KERNEL_FILE"
