@@ -75,6 +75,7 @@ $(SUPERVISOR_STAMP): supervisor/Cargo.toml supervisor/.cargo/config.toml $(SUPER
 	@mkdir -p $(OUT)
 	$(DOCKER_RUN) cargo build \
 	  --manifest-path supervisor/Cargo.toml \
+	  --target x86_64-unknown-linux-musl \
 	  --release
 	@touch $(SUPERVISOR_STAMP)
 
@@ -83,9 +84,9 @@ apps: $(APPS_STAMP)
 
 $(APPS_STAMP): $(APPS_SRC) | image
 	@mkdir -p $(OUT)
-	$(DOCKER_RUN) cargo build --manifest-path apps/hello-world/Cargo.toml --release
-	$(DOCKER_RUN) cargo build --manifest-path apps/calculator/Cargo.toml  --release
-	$(DOCKER_RUN) cargo build --manifest-path apps/factorial/Cargo.toml   --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/hello-world/Cargo.toml --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/calculator/Cargo.toml  --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/factorial/Cargo.toml   --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────
