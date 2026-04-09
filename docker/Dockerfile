@@ -64,6 +64,11 @@ RUN mkdir -p /usr/local/cargo/config.d && \
     printf '[target.x86_64-unknown-linux-musl]\nlinker = "musl-gcc"\n' \
       > /usr/local/cargo/config.d/musl.toml
 
+# ── allow non-root users to use cargo ────────────────────────────────────────
+# The container is run with -u $(id -u):$(id -g) for correct file ownership,
+# so the cargo registry and rustup dirs must be world-writable.
+RUN chmod -R a+rwX /usr/local/cargo /usr/local/rustup
+
 # ── working directory ─────────────────────────────────────────────────────────
 WORKDIR /work
 
