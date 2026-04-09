@@ -55,7 +55,7 @@ KVM ?=
 
 # ── Docker image ──────────────────────────────────────────────────────────────
 image: $(DOCKERFILE)
-	docker build -t $(IMAGE):$(IMAGE_TAG) -f $(DOCKERFILE) .
+	docker build --platform linux/amd64 -t $(IMAGE):$(IMAGE_TAG) -f $(DOCKERFILE) .
 
 # ── kernel ────────────────────────────────────────────────────────────────────
 kernel: $(KERNEL_STAMP)
