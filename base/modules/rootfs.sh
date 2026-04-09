@@ -80,6 +80,15 @@ INIT_EOF
     printf 'root:x:0:0:root:/root:/bin/sh\n' > "$ROOTFS/etc/passwd"
     printf 'root:x:0:\n'                     > "$ROOTFS/etc/group"
 
+    # ── Rust supervisor binary ────────────────────────────────────────────────
+    local supervisor_bin="$PROJECT_ROOT/supervisor/target/x86_64-unknown-linux-musl/release/supervisor"
+    if [[ -f "$supervisor_bin" ]]; then
+        install -m 0755 "$supervisor_bin" "$ROOTFS/usr/bin/supervisor"
+        log_info "Installed supervisor ($(du -h "$supervisor_bin" | cut -f1))"
+    else
+        log_info "WARNING: supervisor binary not found, /init will fall back to shell"
+    fi
+
     # ── WASM apps (if built) ──────────────────────────────────────────────────
     local apps_dir="$PROJECT_ROOT/apps/build"
     if [[ -d "$apps_dir" ]]; then

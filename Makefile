@@ -22,9 +22,12 @@ IMAGE       := vyomaos-builder
 IMAGE_TAG   := latest
 DOCKERFILE  := docker/Dockerfile
 
-KERNEL_SCRIPT := base/modules/kernel.sh
-ROOTFS_SCRIPT := base/modules/rootfs.sh
-KERNEL_CONFIG := base/kernel.config
+KERNEL_SCRIPT    := base/modules/kernel.sh
+ROOTFS_SCRIPT    := base/modules/rootfs.sh
+KERNEL_CONFIG    := base/kernel.config
+SUPERVISOR_SRC   := $(shell find supervisor/src -name '*.rs' 2>/dev/null)
+SUPERVISOR_BIN   := supervisor/target/x86_64-unknown-linux-musl/release/supervisor
+SUPERVISOR_STAMP := $(OUT)/.supervisor.stamp
 
 # ── kernel source tracking ────────────────────────────────────────────────────
 KERNEL_PATCHES := $(wildcard base/patches/kernel/*.patch)
@@ -44,7 +47,7 @@ DOCKER_RUN := docker run --rm \
 KVM ?=
 
 # ── phony declarations ────────────────────────────────────────────────────────
-.PHONY: image kernel rootfs build run shell clean clean-image
+.PHONY: image kernel supervisor rootfs build run shell clean clean-image
 
 # ── Docker image ──────────────────────────────────────────────────────────────
 image: $(DOCKERFILE)
@@ -61,15 +64,25 @@ $(KERNEL_STAMP): $(KERNEL_DEPS) | image
 $(BZIMAGE): $(KERNEL_STAMP)
 	@test -f $(BZIMAGE) || { echo "ERROR: $(BZIMAGE) not produced by kernel.sh"; exit 1; }
 
+# ── supervisor ───────────────────────────────────────────────────────────────
+supervisor: $(SUPERVISOR_STAMP)
+
+$(SUPERVISOR_STAMP): supervisor/Cargo.toml supervisor/.cargo/config.toml $(SUPERVISOR_SRC) | image
+	@mkdir -p $(OUT)
+	$(DOCKER_RUN) cargo build \
+	  --manifest-path supervisor/Cargo.toml \
+	  --release
+	@touch $(SUPERVISOR_STAMP)
+
 # ── rootfs ────────────────────────────────────────────────────────────────────
 rootfs: $(INITRAMFS)
 
-$(INITRAMFS): $(ROOTFS_SCRIPT) | image
+$(INITRAMFS): $(ROOTFS_SCRIPT) $(SUPERVISOR_STAMP) | image
 	@mkdir -p $(OUT)
 	$(DOCKER_RUN) bash $(ROOTFS_SCRIPT)
 
-# ── build (both) ──────────────────────────────────────────────────────────────
-build: kernel rootfs
+# ── build (all) ───────────────────────────────────────────────────────────────
+build: kernel supervisor rootfs
 
 # ── run (host QEMU — VMs can't nest easily in containers) ────────────────────
 run: $(BZIMAGE) $(INITRAMFS)
