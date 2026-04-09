@@ -8,6 +8,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/../config.sh"
 
 ROOTFS="$OUTDIR/rootfs"
 
+# ── Wasmtime musl-static binary ──────────────────────────────────────────────
+WASMTIME_VERSION="28.0.0"
+WASMTIME_TARBALL="wasmtime-v${WASMTIME_VERSION}-x86_64-linux-musl.tar.xz"
+WASMTIME_URL="https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/${WASMTIME_TARBALL}"
+WASMTIME_SHA256="67cca59ece6f946cb0280d4e28e85591c22aadc2d43e73da79de2f55f70e8b01"
+WASMTIME_CACHE="$OUTDIR/cache/${WASMTIME_TARBALL}"
+
 # ── BusyBox musl-static binary ────────────────────────────────────────────────
 BUSYBOX_VERSION="1.36.1"
 BUSYBOX_URL="https://www.busybox.net/downloads/binaries/${BUSYBOX_VERSION}-x86_64-linux-musl/busybox"
@@ -57,6 +64,16 @@ build_rootfs() {
     for applet in sh mount poweroff echo ls cat; do
         ln -sf /bin/busybox "$ROOTFS/bin/$applet"
     done
+
+    # ── Wasmtime runtime ─────────────────────────────────────────────────────
+    download_verified "$WASMTIME_URL" "$WASMTIME_CACHE" "$WASMTIME_SHA256"
+    # Extract the single 'wasmtime' binary from the tarball, strip debug info.
+    tar -xJf "$WASMTIME_CACHE" --strip-components=1 \
+        -C "$OUTDIR/cache" \
+        "wasmtime-v${WASMTIME_VERSION}-x86_64-linux-musl/wasmtime"
+    install -m 0755 "$OUTDIR/cache/wasmtime" "$ROOTFS/usr/bin/wasmtime"
+    strip "$ROOTFS/usr/bin/wasmtime" 2>/dev/null || true
+    log_info "Installed wasmtime ($(du -h "$ROOTFS/usr/bin/wasmtime" | cut -f1))"
 
     # ── /init (PID 1 bootstrap) ───────────────────────────────────────────────
     # Mounts virtual filesystems then execs the Rust supervisor.

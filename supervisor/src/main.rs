@@ -155,7 +155,7 @@ fn run_app(path: &Path) {
             "--",
             path.to_str().expect("app path must be valid UTF-8"),
         ])
-        .stdin(std::process::Stdio::inherit())
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
         .status();
@@ -169,6 +169,12 @@ fn run_app(path: &Path) {
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "signal".to_string());
             eprintln!("vyoma-supervisor: app exited with code {code}: {display}");
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!(
+                "vyoma-supervisor: wasmtime not found at /usr/bin/wasmtime — \
+                 rebuild the initramfs with `make rootfs`"
+            );
         }
         Err(e) => {
             eprintln!("vyoma-supervisor: failed to launch wasmtime for {display}: {e}");

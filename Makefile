@@ -29,6 +29,9 @@ SUPERVISOR_SRC   := $(shell find supervisor/src -name '*.rs' 2>/dev/null)
 SUPERVISOR_BIN   := supervisor/target/x86_64-unknown-linux-musl/release/supervisor
 SUPERVISOR_STAMP := $(OUT)/.supervisor.stamp
 
+APPS_SRC         := $(shell find apps -name '*.rs' -o -name 'Cargo.toml' 2>/dev/null)
+APPS_STAMP       := $(OUT)/.apps.stamp
+
 # ── kernel source tracking ────────────────────────────────────────────────────
 KERNEL_PATCHES := $(wildcard base/patches/kernel/*.patch)
 KERNEL_DEPS    := $(KERNEL_SCRIPT) $(KERNEL_CONFIG) $(KERNEL_PATCHES)
@@ -47,7 +50,7 @@ DOCKER_RUN := docker run --rm \
 KVM ?=
 
 # ── phony declarations ────────────────────────────────────────────────────────
-.PHONY: image kernel supervisor rootfs build run shell clean clean-image
+.PHONY: image kernel supervisor apps rootfs build run shell clean clean-image
 
 # ── Docker image ──────────────────────────────────────────────────────────────
 image: $(DOCKERFILE)
@@ -74,15 +77,27 @@ $(SUPERVISOR_STAMP): supervisor/Cargo.toml supervisor/.cargo/config.toml $(SUPER
 	  --release
 	@touch $(SUPERVISOR_STAMP)
 
+# ── apps (WASM) ───────────────────────────────────────────────────────────────
+apps: $(APPS_STAMP)
+
+$(APPS_STAMP): $(APPS_SRC) | image
+	@mkdir -p $(OUT)
+	$(DOCKER_RUN) cargo build \
+	  --manifest-path apps/hello-world/Cargo.toml \
+	  --release
+	@mkdir -p apps/build
+	cp apps/hello-world/target/wasm32-wasip2/release/hello-world.wasm apps/build/
+	@touch $(APPS_STAMP)
+
 # ── rootfs ────────────────────────────────────────────────────────────────────
 rootfs: $(INITRAMFS)
 
-$(INITRAMFS): $(ROOTFS_SCRIPT) $(SUPERVISOR_STAMP) | image
+$(INITRAMFS): $(ROOTFS_SCRIPT) $(SUPERVISOR_STAMP) $(APPS_STAMP) | image
 	@mkdir -p $(OUT)
 	$(DOCKER_RUN) bash $(ROOTFS_SCRIPT)
 
 # ── build (all) ───────────────────────────────────────────────────────────────
-build: kernel supervisor rootfs
+build: kernel supervisor apps rootfs
 
 # ── run (host QEMU — VMs can't nest easily in containers) ────────────────────
 run: $(BZIMAGE) $(INITRAMFS)
