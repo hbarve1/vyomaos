@@ -17,6 +17,9 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | [07 — Networking & Storage](phases/phase-07-networking-storage/README.md) | 9P virtio persistent storage done; virtio-net + sockets pending | **partial** | 4 |
 | [08 — Observability & Security](phases/phase-08-observability-security/README.md) | seccomp BPF denylist + capability audit log done; namespaces + signing pending | **partial** | 4 |
 | [09 — GUI Display](phases/phase-09-gui-display/README.md) | DRM/virtio-gpu + fbcon + VYOMA_DRAW framebuffer protocol + gui-demo | **complete** | 5 |
+| [10 — Text Rendering](phases/phase-10-text-rendering/README.md) | Embedded 8×16 bitmap font, `draw_text` VYOMA_DRAW command, labelled gui-demo dashboard | pending | 3 |
+| [11 — Networking](phases/phase-11-networking/README.md) | virtio-net + WASI sockets + `http-server` WASM app serving live status page at localhost:8080 | pending | 4 |
+| [12 — Interactive Shell](phases/phase-12-interactive-shell/README.md) | `/dev/tty0` keyboard routing, focus manager, `@supervisor:` commands, `shell` WASM app | pending | 4 |
 
 ## Constraints
 
