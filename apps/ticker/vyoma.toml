@@ -1,0 +1,8 @@
+[app]
+name    = "ticker"
+version = "0.1.0"
+wasm    = "ticker.wasm"
+
+[capabilities]
+stdio   = true
+display = true

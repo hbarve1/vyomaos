@@ -37,6 +37,11 @@ restart  = "never"
 manifest = "/apps/http-server/vyoma.toml"
 restart  = "always"
 
+# Ticker: live heartbeat — updates every second to prove GUI pipeline is alive
+[[apps]]
+manifest = "/apps/ticker/vyoma.toml"
+restart  = "always"
+
 # Interactive shell: keyboard input from /dev/tty0 → command prompt on screen
 [[apps]]
 manifest = "/apps/shell/vyoma.toml"
