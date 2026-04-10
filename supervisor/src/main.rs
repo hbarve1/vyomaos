@@ -637,6 +637,27 @@ fn handle_supervisor_command(
 
         // ── P13T01 process management commands ───────────────────────────────
 
+        // ps-raw — machine-readable: name:status:uptime_secs:restarts per entry
+        // Used by gui-demo's live dashboard for structured parsing.
+        "ps-raw" => {
+            let entries: Vec<String> = {
+                let reg = app_registry.lock().unwrap();
+                let mut rows: Vec<(String, String)> = reg.iter().map(|(name, st)| {
+                    let st = st.lock().unwrap();
+                    let uptime = st.start_time.elapsed().as_secs();
+                    let status = match &st.status {
+                        AppStatus::Running    => "run",
+                        AppStatus::Stopped(_) => "stop",
+                    };
+                    let entry = format!("{}:{}:{}:{}", name, status, uptime, st.restart_count);
+                    (name.clone(), entry)
+                }).collect();
+                rows.sort_by(|a, b| a.0.cmp(&b.0));
+                rows.into_iter().map(|(_, v)| v).collect()
+            };
+            send_reply(sender, &format!("REPLY:{}", entries.join("|")), inbox);
+        }
+
         // ps — list all apps with status, uptime, restart count
         "ps" => {
             let entries: Vec<String> = {

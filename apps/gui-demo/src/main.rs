@@ -1,96 +1,164 @@
-/// VyomaOS GUI demo — labelled dashboard
-///
-/// Draws a status dashboard to the supervisor framebuffer via VYOMA_DRAW.
-/// Protocol:
-///   VYOMA_DRAW:fill_rect:<x>,<y>,<w>,<h>,<rgba_decimal>
-///   VYOMA_DRAW:draw_text:<x>,<y>,<rgba_decimal>,<text>
-///   VYOMA_DRAW:flush
-///
-/// RGBA is a decimal u32: 0xRRGGBBAA (alpha byte ignored by supervisor).
+//! VyomaOS GUI demo — live system dashboard
+//!
+//! Runs in a continuous loop, querying the supervisor every 2 seconds via
+//! `@supervisor: ps-raw` and rendering a live grid of app status cards.
+//!
+//! Each card shows: status dot (green=running, red=stopped), name, uptime,
+//! and restart count.  The dashboard redraws only its half of the screen
+//! (Y=0..440) so the shell panel below is undisturbed.
+
+use std::io::{BufRead, BufReader, Write};
+use std::thread;
+use std::time::Duration;
+
+const W:      u32 = 1440;
+const DASH_H: u32 = 440;   // dashboard height — shell panel starts at Y=450
+
+const C_BG:     u32 = 0x0D1117FF;
+const C_HEADER: u32 = 0x161B22FF;
+const C_PANEL:  u32 = 0x161B22FF;
+const C_ACCENT: u32 = 0x58A6FFFF;
+const C_GREEN:  u32 = 0x3FB950FF;
+const C_RED:    u32 = 0xF78166FF;
+const C_YELLOW: u32 = 0xE3B341FF;
+const C_WHITE:  u32 = 0xFFFFFFFF;
+const C_DIM:    u32 = 0x8B949EFF;
+
+struct AppInfo {
+    name:     String,
+    running:  bool,
+    uptime:   u64,
+    restarts: u32,
+}
+
 fn main() {
-    let w = 1440u32;
-    let h = 900u32;
-
     let boot_count = read_boot_count();
+    let stdin = std::io::stdin();
+    let mut stdin_lines = BufReader::new(stdin).lines();
+    let mut refresh: u64 = 0;
 
-    eprintln!("gui-demo: composing frame ({}x{}) boot#{}", w, h, boot_count);
+    loop {
+        // Request live status from supervisor
+        println!("@supervisor: ps-raw");
+        let _ = std::io::stdout().flush();
 
-    // ── Background ────────────────────────────────────────────────────────────
-    fill(0, 0, w, h, 0x0D1117FF);
+        // Read reply — skip any non-REPLY lines (shouldn't normally appear)
+        let apps = loop {
+            match stdin_lines.next() {
+                Some(Ok(line)) if line.starts_with("REPLY:") => {
+                    break parse_ps(&line);
+                }
+                Some(Ok(_)) => continue,
+                Some(Err(_)) | None => break vec![],
+            }
+        };
+
+        draw(&apps, boot_count, refresh);
+        refresh += 1;
+
+        thread::sleep(Duration::from_secs(2));
+    }
+}
+
+// ── Parse `REPLY:name:status:uptime:restarts|...` ─────────────────────────────
+
+fn parse_ps(line: &str) -> Vec<AppInfo> {
+    let data = match line.strip_prefix("REPLY:") {
+        Some(d) if !d.is_empty() => d,
+        _ => return vec![],
+    };
+    let mut apps: Vec<AppInfo> = data
+        .split('|')
+        .filter_map(|entry| {
+            let p: Vec<&str> = entry.splitn(4, ':').collect();
+            if p.len() == 4 {
+                Some(AppInfo {
+                    name:     p[0].trim().to_string(),
+                    running:  p[1].trim() == "run",
+                    uptime:   p[2].trim().parse().unwrap_or(0),
+                    restarts: p[3].trim().parse().unwrap_or(0),
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+    apps.sort_by(|a, b| a.name.cmp(&b.name));
+    apps
+}
+
+// ── Dashboard renderer ────────────────────────────────────────────────────────
+
+fn draw(apps: &[AppInfo], boot_count: u64, refresh: u64) {
+    let running = apps.iter().filter(|a| a.running).count();
+    let total   = apps.len();
+
+    // ── Background (dashboard area only) ─────────────────────────────────────
+    fill(0, 0, W, DASH_H, C_BG);
 
     // ── Header bar ────────────────────────────────────────────────────────────
-    fill(0, 0, w, 52, 0x161B22FF);
-    fill(0, 52, w, 3, 0x58A6FFFF); // accent line
+    fill(0, 0, W, 52, C_HEADER);
+    fill(0, 52, W, 3, C_ACCENT);
+    fill(16, 10, 32, 32, C_GREEN);              // logo block
+    text(58, 18, C_WHITE, "VyomaOS");
+    text(W - 210, 18, C_DIM, &format!("boot #{}", boot_count));
 
-    // Logo block
-    fill(16, 10, 32, 32, 0x3FB950FF);
+    // ── Section label ─────────────────────────────────────────────────────────
+    text(32, 62, C_DIM,
+        &format!("{}/{} apps running  |  refresh #{}", running, total, refresh));
 
-    // Title and boot counter
-    text(58, 18, 0xFFFFFFFF, "VyomaOS");
-    let boot_label = format!("boot #{}", boot_count);
-    text(w - 100, 18, 0x8B949EFF, &boot_label);
+    // ── App grid (4 columns) ──────────────────────────────────────────────────
+    const COLS:   u32 = 4;
+    const GAP:    u32 = 10;
+    const CARD_H: u32 = 80;
+    const GRID_Y: u32 = 82;
+    let card_w: u32 = (W - GAP * (COLS + 1)) / COLS;
 
-    // ── Main panel ────────────────────────────────────────────────────────────
-    fill(24, 72, w - 48, h - 128, 0x161B22FF);
-    fill(24, 72, w - 48, 2, 0x30363DFF); // top border
-    fill(24, 72, 2, h - 128, 0x30363DFF); // left border
+    for (i, app) in apps.iter().enumerate() {
+        let col = (i as u32) % COLS;
+        let row = (i as u32) / COLS;
 
-    // Section label
-    text(32, 78, 0x8B949EFF, "running apps");
+        let cx = GAP + col * (card_w + GAP);
+        let cy = GRID_Y + row * (CARD_H + GAP);
 
-    // ── App blocks — row 1 ───────────────────────────────────────────────────
-    let row1_y = 100u32;
-    let col_w = (w - 96) / 3;
+        if cy + CARD_H > DASH_H { break; } // guard against overflow
 
-    // hello-world — teal
-    fill(32, row1_y, col_w - 8, 90, 0x1F6FEBFF);
-    text(40, row1_y + 8,  0xFFFFFFFF, "hello-world");
-    text(40, row1_y + 26, 0xE6EDF3FF, "wasm32-wasip2");
-    text(40, row1_y + 62, 0xFFFFFFFF, "done");
+        // Card background
+        fill(cx, cy, card_w, CARD_H, C_PANEL);
 
-    // calculator — purple
-    fill(32 + col_w, row1_y, col_w - 8, 90, 0x8957E5FF);
-    text(40 + col_w, row1_y + 8,  0xFFFFFFFF, "calculator");
-    text(40 + col_w, row1_y + 26, 0xE6EDF3FF, "wasm32-wasip2");
-    text(40 + col_w, row1_y + 62, 0xFFFFFFFF, "done");
+        // Status indicator dot
+        let dot = if app.running { C_GREEN } else { C_RED };
+        fill(cx + 8, cy + 14, 10, 10, dot);
 
-    // storage-demo — orange
-    fill(32 + col_w * 2, row1_y, col_w - 8, 90, 0xE3B341FF);
-    text(40 + col_w * 2, row1_y + 8,  0x0D1117FF, "storage-demo");
-    text(40 + col_w * 2, row1_y + 26, 0x0D1117FF, "9P virtio fs");
-    text(40 + col_w * 2, row1_y + 62, 0x0D1117FF, "done");
+        // App name
+        let name_col = if app.running { C_WHITE } else { C_DIM };
+        text(cx + 24, cy + 12, name_col, &app.name);
 
-    // ── IPC blocks — row 2 ───────────────────────────────────────────────────
-    let row2_y = 210u32;
-    let half_w = (w - 96) / 2;
+        // Uptime / status
+        let sub = if app.running {
+            format!("up {}s", app.uptime)
+        } else {
+            "stopped".to_string()
+        };
+        text(cx + 24, cy + 32, C_DIM, &sub);
 
-    // ping — green
-    fill(32, row2_y, half_w - 8, 80, 0x3FB950FF);
-    text(40, row2_y + 8,  0x0D1117FF, "ping");
-    text(40, row2_y + 26, 0x0D1117FF, "IPC: 3 msgs sent");
-    text(40, row2_y + 44, 0x0D1117FF, "target: pong");
-
-    // pong — red-orange
-    fill(32 + half_w, row2_y, half_w - 8, 80, 0xF78166FF);
-    text(40 + half_w, row2_y + 8,  0x0D1117FF, "pong");
-    text(40 + half_w, row2_y + 26, 0x0D1117FF, "IPC: 3 msgs handled");
-    text(40 + half_w, row2_y + 44, 0x0D1117FF, "source: ping");
-
-    // ── gui-demo self-label ───────────────────────────────────────────────────
-    let row3_y = 310u32;
-    fill(32, row3_y, w - 64, 60, 0x21262DFF);
-    text(40, row3_y + 8,  0x58A6FFFF, "gui-demo");
-    text(40, row3_y + 26, 0x8B949EFF, "display:yes  VYOMA_DRAW protocol  framebuffer: /dev/fb0");
+        // Restart count (shown only if > 0)
+        if app.restarts > 0 {
+            text(cx + 24, cy + 52, C_YELLOW, &format!("restarts: {}", app.restarts));
+        }
+    }
 
     // ── Footer ────────────────────────────────────────────────────────────────
-    fill(0, h - 52, w, 2, 0x30363DFF);
-    fill(0, h - 50, w, 50, 0x0D1117FF);
-    fill(16, h - 34, 12, 12, 0x3FB950FF); // green status dot
-    text(36, h - 34, 0x8B949EFF, "running  |  7 apps  |  supervisor: Rust musl PID 1  |  runtime: Wasmtime WASI P2");
+    let fy = DASH_H - 26;
+    fill(0, fy - 2, W, 2, 0x30363DFF);
+    fill(16, fy, 10, 10, C_GREEN);
+    text(34, fy, C_DIM,
+        "supervisor: Rust musl PID 1  |  runtime: Wasmtime WASI P2  |  live 2s refresh");
 
-    flush();
-    eprintln!("gui-demo: frame drawn");
+    flush_draw();
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn read_boot_count() -> u64 {
     std::fs::read_to_string("/data/boot_count.txt")
@@ -99,19 +167,13 @@ fn read_boot_count() -> u64 {
         .unwrap_or(0)
 }
 
-// ── VYOMA_DRAW protocol helpers ───────────────────────────────────────────────
-
-#[inline]
-fn fill(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
+#[inline] fn fill(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
     println!("VYOMA_DRAW:fill_rect:{x},{y},{w},{h},{rgba}");
 }
-
-#[inline]
-fn text(x: u32, y: u32, rgba: u32, s: &str) {
+#[inline] fn text(x: u32, y: u32, rgba: u32, s: &str) {
     println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},{s}");
 }
-
-#[inline]
-fn flush() {
+#[inline] fn flush_draw() {
     println!("VYOMA_DRAW:flush");
+    let _ = std::io::stdout().flush();
 }

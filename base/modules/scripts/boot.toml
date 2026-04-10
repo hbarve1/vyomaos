@@ -27,10 +27,10 @@ restart  = "never"
 manifest = "/apps/storage-demo/vyoma.toml"
 restart  = "never"
 
-# GUI demo: draws coloured rectangles to /dev/fb0 via VYOMA_DRAW protocol
+# GUI demo: live system dashboard — redraws every 2 s via @supervisor: ps-raw
 [[apps]]
 manifest = "/apps/gui-demo/vyoma.toml"
-restart  = "never"
+restart  = "always"
 
 # HTTP server: serves status page at http://localhost:8080
 [[apps]]
