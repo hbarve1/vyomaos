@@ -72,6 +72,9 @@ struct Capabilities {
     filesystem: bool,
     #[serde(default)]
     network: bool,
+    /// TCP port to expose when network = true. Defaults to 8080.
+    #[serde(default)]
+    network_port: Option<u16>,
     /// Gates VYOMA_DRAW: display protocol — supervisor routes commands to /dev/fb0.
     #[serde(default)]
     display: bool,
@@ -367,12 +370,13 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox) -> Option<SpawnedApp> {
     let caps = &manifest.capabilities;
 
     // ── P08T02: capability audit log ─────────────────────────────────────────
+    let net_port = caps.network_port.unwrap_or(8080);
     eprintln!(
         "vyoma-supervisor: [security] {name} capabilities — \
          stdio:{} fs:{} net:{} display:{} seccomp:denylist",
         if caps.stdio { "yes" } else { "no" },
         if caps.filesystem { "yes" } else { "no" },
-        if caps.network { "yes" } else { "no" },
+        if caps.network { format!("yes(port={net_port})") } else { "no".to_string() },
         if caps.display { "yes" } else { "no" },
     );
 
@@ -397,7 +401,7 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox) -> Option<SpawnedApp> {
         cmd.args(["--dir", "/data::/data"]);
     }
     if caps.network {
-        cmd.args(["-S", "tcplisten=0.0.0.0:8080"]);
+        cmd.args(["-S", &format!("tcplisten=0.0.0.0:{net_port}")]);
     }
     cmd.arg("--").arg(&wasm_path);
     cmd.stdin(Stdio::piped())

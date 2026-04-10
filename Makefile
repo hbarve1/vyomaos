@@ -55,7 +55,7 @@ DOCKER_RUN := docker run --rm \
 KVM ?=
 
 # ── phony declarations ────────────────────────────────────────────────────────
-.PHONY: image kernel supervisor apps rootfs disk build run run-gui shell clean clean-image data
+.PHONY: image kernel supervisor apps rootfs disk build run run-gui run-net run-gui-net shell clean clean-image data
 
 # ── Docker image ──────────────────────────────────────────────────────────────
 image: $(DOCKERFILE)
@@ -95,6 +95,7 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/pong/Cargo.toml           --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/storage-demo/Cargo.toml   --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/gui-demo/Cargo.toml       --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/http-server/Cargo.toml   --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────
@@ -155,6 +156,36 @@ run-gui: $(BZIMAGE) $(INITRAMFS) data
 	  -vga virtio \
 	  -display $(DISPLAY_BACKEND) \
 	  -serial stdio \
+	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
+	  -m 512M \
+	  -no-reboot \
+	  $(KVM)
+
+# ── run-net (headless + virtio-net, port 8080 forwarded to host) ─────────────
+run-net: $(BZIMAGE) $(INITRAMFS) data
+	qemu-system-x86_64 \
+	  -kernel $(BZIMAGE) \
+	  -initrd $(INITRAMFS) \
+	  -append "console=ttyS0 panic=1" \
+	  -netdev user,id=net0,hostfwd=tcp::8080-:8080 \
+	  -device virtio-net-pci,netdev=net0 \
+	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
+	  -nographic \
+	  -m 512M \
+	  -no-reboot \
+	  $(KVM)
+
+# ── run-gui-net (GUI window + virtio-net) ────────────────────────────────────
+run-gui-net: $(BZIMAGE) $(INITRAMFS) data
+	qemu-system-x86_64 \
+	  -kernel $(BZIMAGE) \
+	  -initrd $(INITRAMFS) \
+	  -append "console=tty0 console=ttyS0 panic=1" \
+	  -vga virtio \
+	  -display $(DISPLAY_BACKEND) \
+	  -serial stdio \
+	  -netdev user,id=net0,hostfwd=tcp::8080-:8080 \
+	  -device virtio-net-pci,netdev=net0 \
 	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
 	  -m 512M \
 	  -no-reboot \

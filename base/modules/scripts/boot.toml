@@ -31,3 +31,8 @@ restart  = "never"
 [[apps]]
 manifest = "/apps/gui-demo/vyoma.toml"
 restart  = "never"
+
+# HTTP server: serves status page at http://localhost:8080
+[[apps]]
+manifest = "/apps/http-server/vyoma.toml"
+restart  = "always"
