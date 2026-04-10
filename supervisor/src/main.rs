@@ -9,7 +9,7 @@
 //!   P08T01 — security: seccomp BPF denylist applied to every wasmtime child
 //!   P08T02 — security: capability audit log + manifest unknown-field rejection
 //!   P09T01 — display: open /dev/fb0, mmap framebuffer; dispatch VYOMA_DRAW: commands
-//!   P12T01 — input thread: route /dev/tty0 keypresses to focused app stdin
+//!   P17T01 — input thread: raw tty mode, per-keypress routing to focused app
 //!   P12T02 — focus manager: shell capability, focused_app state
 //!   P12T03 — @supervisor: IPC command handler (list, status, focus, run)
 //!   P13T01 — process management: ps, kill, restart, reload, log
@@ -325,7 +325,10 @@ fn main() {
         *focused.lock().unwrap() = shell_name;
     }
 
-    // ── P12T01: input-router thread — /dev/tty0 → focused app ────────────────
+    // ── P17T01: input-router thread — /dev/tty0 → focused app (raw mode) ─────
+    // Raw mode: each keystroke is forwarded immediately as a single-char message
+    // instead of waiting for a full line.  The shell accumulates characters into
+    // a live input buffer and redraws on every keystroke.
     #[cfg(target_os = "linux")]
     {
         let inbox_input   = Arc::clone(&inbox);
@@ -333,20 +336,73 @@ fn main() {
         thread::Builder::new()
             .name("input-router".into())
             .spawn(move || {
-                let tty = match std::fs::File::open("/dev/tty0") {
+                use std::io::Read;
+                use std::os::unix::io::AsRawFd;
+
+                let mut tty = match std::fs::File::open("/dev/tty0") {
                     Ok(f) => f,
                     Err(e) => {
                         eprintln!("vyoma-supervisor: cannot open /dev/tty0: {e}");
                         return;
                     }
                 };
-                for line in BufReader::new(tty).lines() {
-                    let line = match line { Ok(l) => l, Err(_) => break };
-                    let target = focused_input.lock().unwrap().clone();
-                    if let Some(name) = target {
-                        let map = inbox_input.lock().unwrap();
-                        if let Some(tx) = map.get(&name) {
-                            let _ = tx.send(line);
+
+                // Switch tty0 to raw mode so every keypress arrives immediately
+                // without waiting for the Enter key (no line-discipline buffering).
+                let fd = tty.as_raw_fd();
+                let raw_ok = unsafe {
+                    let mut t: libc::termios = std::mem::zeroed();
+                    if libc::tcgetattr(fd, &mut t) == 0 {
+                        // Disable canonical mode, echo, and signal keys (^C / ^Z)
+                        t.c_lflag &= !(libc::ICANON | libc::ECHO | libc::ECHOE
+                                     | libc::ECHOK  | libc::ECHONL | libc::ISIG
+                                     | libc::IEXTEN);
+                        // Disable special input translations (CR→NL, XON/XOFF, …)
+                        t.c_iflag &= !(libc::IXON | libc::ICRNL | libc::BRKINT
+                                     | libc::INPCK | libc::ISTRIP);
+                        // 8-bit characters; block until 1 byte arrives, no timeout
+                        t.c_cflag |= libc::CS8;
+                        t.c_cc[libc::VMIN  as usize] = 1;
+                        t.c_cc[libc::VTIME as usize] = 0;
+                        libc::tcsetattr(fd, libc::TCSANOW, &t) == 0
+                    } else {
+                        false
+                    }
+                };
+                if raw_ok {
+                    eprintln!("vyoma-supervisor: input-router: raw tty mode active");
+                } else {
+                    eprintln!("vyoma-supervisor: input-router: raw mode unavailable, using line mode");
+                }
+
+                let mut buf = [0u8; 1];
+                loop {
+                    match tty.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {
+                            let msg: Option<String> = match buf[0] {
+                                0x0D | 0x0A => Some(String::new()),              // Enter → execute
+                                0x7F | 0x08 => Some("\x7f".to_string()),         // Backspace / DEL
+                                0x03        => Some("\x03".to_string()),          // Ctrl+C
+                                0x1B        => {
+                                    // ANSI escape sequence (arrow keys, etc.)
+                                    // Consume the next 2 bytes and discard the whole sequence.
+                                    let mut esc = [0u8; 2];
+                                    let _ = tty.read(&mut esc);
+                                    None
+                                }
+                                0x20..=0x7E => Some(String::from(buf[0] as char)), // printable ASCII
+                                _           => None,
+                            };
+                            if let Some(msg) = msg {
+                                let target = focused_input.lock().unwrap().clone();
+                                if let Some(name) = target {
+                                    let map = inbox_input.lock().unwrap();
+                                    if let Some(tx) = map.get(&name) {
+                                        let _ = tx.send(msg);
+                                    }
+                                }
+                            }
                         }
                     }
                 }

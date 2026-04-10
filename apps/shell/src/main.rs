@@ -1,12 +1,20 @@
 //! VyomaOS interactive shell
 //!
 //! Reads keyboard input from stdin (forwarded by the supervisor input thread
-//! from /dev/tty0).  Renders a command prompt panel on the lower portion of
-//! the framebuffer via VYOMA_DRAW.  Dispatches commands via @supervisor: IPC.
+//! from /dev/tty0 in raw mode).  Each keypress arrives as a separate message:
+//!
+//!   ""       — Enter key   → execute current_input as a command
+//!   "\x7f"   — Backspace   → remove last character from current_input
+//!   "\x03"   — Ctrl+C      → clear current_input
+//!   one char — printable   → append to current_input
+//!   multi-ch — legacy line mode (headless / non-raw fallback)
 //!
 //! Supervisor reply protocol:
-//!   Replies arrive on stdin prefixed with "REPLY:" so the shell can
-//!   distinguish them from keyboard input lines.
+//!   Replies arrive prefixed with "REPLY:" so the shell can
+//!   distinguish them from keyboard input.
+//!
+//! Renders a command prompt panel on the lower portion of the framebuffer
+//! via VYOMA_DRAW.  Redraws on every keypress to show the live input buffer.
 
 use std::io::{BufRead, Write};
 
@@ -36,8 +44,9 @@ const C_PROMPT:  u32 = 0x58A6FFFF; // prompt colour
 
 fn main() {
     let mut lines: Vec<String> = Vec::new();
+    let mut current_input = String::new();
 
-    draw_panel(&lines, "");
+    draw_panel(&lines, &current_input);
 
     let stdin = std::io::stdin();
     for raw in stdin.lock().lines() {
@@ -45,148 +54,184 @@ fn main() {
 
         // ── Supervisor reply ──────────────────────────────────────────────────
         if let Some(reply) = raw.strip_prefix("REPLY:") {
-            // pipe-separated list (for "list") or JSON (for "status") or message
             for item in reply.split('|') {
                 let item = item.trim();
                 if !item.is_empty() {
                     push_line(&mut lines, item.to_string());
                 }
             }
-            draw_panel(&lines, "");
+            draw_panel(&lines, &current_input);
             continue;
         }
 
-        // ── Keyboard input: a completed command line ──────────────────────────
-        let cmd = raw.trim().to_string();
-        if cmd.is_empty() {
-            draw_panel(&lines, "");
-            continue;
-        }
-
-        push_line(&mut lines, format!("> {cmd}"));
-
-        match cmd.as_str() {
-            "help" => {
-                push_line(&mut lines, "commands:".into());
-                push_line(&mut lines, "  help              — this text".into());
-                push_line(&mut lines, "  ps                — list all apps + status".into());
-                push_line(&mut lines, "  status            — running app count".into());
-                push_line(&mut lines, "  list              — list app names".into());
-                push_line(&mut lines, "  log <app>         — last 20 lines (memory)".into());
-                push_line(&mut lines, "  logf <app>        — last 30 lines from disk log".into());
-                push_line(&mut lines, "  logs              — list apps with log files".into());
-                push_line(&mut lines, "  kill <app>        — terminate an app".into());
-                push_line(&mut lines, "  restart <app>     — kill + relaunch an app".into());
-                push_line(&mut lines, "  run <app>         — launch an app by name".into());
-                push_line(&mut lines, "  reload            — re-read boot.toml".into());
-                push_line(&mut lines, "  pkg list          — list available packages".into());
-                push_line(&mut lines, "  pkg install <n>   — install a package".into());
-                push_line(&mut lines, "  pkg remove <n>    — remove a package".into());
-                push_line(&mut lines, "  pkg installed     — list installed packages".into());
-                push_line(&mut lines, "  clear             — clear shell output".into());
+        // ── Raw tty mode: single-char messages ───────────────────────────────
+        match raw.as_str() {
+            "\x03" => {
+                // Ctrl+C — clear the input line
+                current_input.clear();
+                draw_panel(&lines, &current_input);
             }
-            "clear" => {
-                lines.clear();
+            "\x7f" => {
+                // Backspace — remove last character
+                current_input.pop();
+                draw_panel(&lines, &current_input);
             }
-            "ps" => {
-                println!("@supervisor: ps");
-            }
-            "status" => {
-                println!("@supervisor: status");
-            }
-            "list" => {
-                println!("@supervisor: list");
-            }
-            "reload" => {
-                println!("@supervisor: reload");
-                push_line(&mut lines, "reloading boot.toml...".into());
-            }
-            "logs" => {
-                println!("@supervisor: logs");
-            }
-            other if other.starts_with("logf ") => {
-                let app = other[5..].trim();
-                if app.is_empty() {
-                    push_line(&mut lines, "usage: logf <appname>".into());
+            "" => {
+                // Enter — execute whatever is in the input buffer
+                let cmd = current_input.trim().to_string();
+                current_input.clear();
+                if cmd.is_empty() {
+                    draw_panel(&lines, &current_input);
                 } else {
-                    println!("@supervisor: logf {app}");
+                    push_line(&mut lines, format!("> {cmd}"));
+                    handle_command(&cmd, &mut lines);
+                    draw_panel(&lines, &current_input);
                 }
             }
-            other if other.starts_with("log ") => {
-                let app = other[4..].trim();
-                if app.is_empty() {
-                    push_line(&mut lines, "usage: log <appname>".into());
-                } else {
-                    println!("@supervisor: log {app}");
-                }
+            s if s.len() == 1
+                && s.bytes().next().map(|b| (0x20..=0x7E).contains(&b)).unwrap_or(false) =>
+            {
+                // Single printable ASCII char — append to input buffer
+                current_input.push_str(s);
+                draw_panel(&lines, &current_input);
             }
-            other if other.starts_with("kill ") => {
-                let app = other[5..].trim();
-                if app.is_empty() {
-                    push_line(&mut lines, "usage: kill <appname>".into());
-                } else {
-                    println!("@supervisor: kill {app}");
-                    push_line(&mut lines, format!("killing {app}..."));
-                }
-            }
-            other if other.starts_with("restart ") => {
-                let app = other[8..].trim();
-                if app.is_empty() {
-                    push_line(&mut lines, "usage: restart <appname>".into());
-                } else {
-                    println!("@supervisor: restart {app}");
-                    push_line(&mut lines, format!("restarting {app}..."));
-                }
-            }
-            // pkg <subcmd> [arg] — package manager
-            other if other.starts_with("pkg ") || other == "pkg" => {
-                let sub = other[4..].trim(); // strip "pkg "
-                match sub {
-                    "list" => {
-                        println!("@supervisor: pkg-list");
-                    }
-                    "installed" => {
-                        println!("@supervisor: pkg-installed");
-                    }
-                    s if s.starts_with("install ") => {
-                        let pkg = s[8..].trim();
-                        if pkg.is_empty() {
-                            push_line(&mut lines, "usage: pkg install <name>".into());
-                        } else {
-                            println!("@supervisor: pkg-install {pkg}");
-                            push_line(&mut lines, format!("installing {pkg}..."));
-                        }
-                    }
-                    s if s.starts_with("remove ") => {
-                        let pkg = s[7..].trim();
-                        if pkg.is_empty() {
-                            push_line(&mut lines, "usage: pkg remove <name>".into());
-                        } else {
-                            println!("@supervisor: pkg-remove {pkg}");
-                            push_line(&mut lines, format!("removing {pkg}..."));
-                        }
-                    }
-                    _ => {
-                        push_line(&mut lines, "pkg: list | install <n> | remove <n> | installed".into());
-                    }
-                }
-            }
-            other if other.starts_with("run ") => {
-                let app = other[4..].trim();
-                if app.is_empty() {
-                    push_line(&mut lines, "usage: run <appname>".into());
-                } else {
-                    println!("@supervisor: run /apps/{app}/vyoma.toml");
-                    push_line(&mut lines, format!("launching {app}..."));
-                }
-            }
+            // ── Legacy / line mode: complete command string (non-raw fallback) ─
             other => {
-                push_line(&mut lines, format!("unknown: {other}"));
+                let cmd = other.trim().to_string();
+                if cmd.is_empty() {
+                    draw_panel(&lines, &current_input);
+                } else {
+                    current_input.clear();
+                    push_line(&mut lines, format!("> {cmd}"));
+                    handle_command(&cmd, &mut lines);
+                    draw_panel(&lines, &current_input);
+                }
             }
         }
+    }
+}
 
-        draw_panel(&lines, "");
-        flush();
+// ── Command dispatcher ────────────────────────────────────────────────────────
+
+fn handle_command(cmd: &str, lines: &mut Vec<String>) {
+    match cmd {
+        "help" => {
+            push_line(lines, "commands:".into());
+            push_line(lines, "  help              — this text".into());
+            push_line(lines, "  ps                — list all apps + status".into());
+            push_line(lines, "  status            — running app count".into());
+            push_line(lines, "  list              — list app names".into());
+            push_line(lines, "  log <app>         — last 20 lines (memory)".into());
+            push_line(lines, "  logf <app>        — last 30 lines from disk log".into());
+            push_line(lines, "  logs              — list apps with log files".into());
+            push_line(lines, "  kill <app>        — terminate an app".into());
+            push_line(lines, "  restart <app>     — kill + relaunch an app".into());
+            push_line(lines, "  run <app>         — launch an app by name".into());
+            push_line(lines, "  reload            — re-read boot.toml".into());
+            push_line(lines, "  pkg list          — list available packages".into());
+            push_line(lines, "  pkg install <n>   — install a package".into());
+            push_line(lines, "  pkg remove <n>    — remove a package".into());
+            push_line(lines, "  pkg installed     — list installed packages".into());
+            push_line(lines, "  clear             — clear shell output".into());
+        }
+        "clear" => {
+            lines.clear();
+        }
+        "ps" => {
+            println!("@supervisor: ps");
+        }
+        "status" => {
+            println!("@supervisor: status");
+        }
+        "list" => {
+            println!("@supervisor: list");
+        }
+        "reload" => {
+            println!("@supervisor: reload");
+            push_line(lines, "reloading boot.toml...".into());
+        }
+        "logs" => {
+            println!("@supervisor: logs");
+        }
+        other if other.starts_with("logf ") => {
+            let app = other[5..].trim();
+            if app.is_empty() {
+                push_line(lines, "usage: logf <appname>".into());
+            } else {
+                println!("@supervisor: logf {app}");
+            }
+        }
+        other if other.starts_with("log ") => {
+            let app = other[4..].trim();
+            if app.is_empty() {
+                push_line(lines, "usage: log <appname>".into());
+            } else {
+                println!("@supervisor: log {app}");
+            }
+        }
+        other if other.starts_with("kill ") => {
+            let app = other[5..].trim();
+            if app.is_empty() {
+                push_line(lines, "usage: kill <appname>".into());
+            } else {
+                println!("@supervisor: kill {app}");
+                push_line(lines, format!("killing {app}..."));
+            }
+        }
+        other if other.starts_with("restart ") => {
+            let app = other[8..].trim();
+            if app.is_empty() {
+                push_line(lines, "usage: restart <appname>".into());
+            } else {
+                println!("@supervisor: restart {app}");
+                push_line(lines, format!("restarting {app}..."));
+            }
+        }
+        // pkg <subcmd> [arg] — package manager
+        other if other.starts_with("pkg") => {
+            let sub = other.get(4..).map(|s| s.trim()).unwrap_or("");
+            match sub {
+                "list" => {
+                    println!("@supervisor: pkg-list");
+                }
+                "installed" => {
+                    println!("@supervisor: pkg-installed");
+                }
+                s if s.starts_with("install ") => {
+                    let pkg = s[8..].trim();
+                    if pkg.is_empty() {
+                        push_line(lines, "usage: pkg install <name>".into());
+                    } else {
+                        println!("@supervisor: pkg-install {pkg}");
+                        push_line(lines, format!("installing {pkg}..."));
+                    }
+                }
+                s if s.starts_with("remove ") => {
+                    let pkg = s[7..].trim();
+                    if pkg.is_empty() {
+                        push_line(lines, "usage: pkg remove <name>".into());
+                    } else {
+                        println!("@supervisor: pkg-remove {pkg}");
+                        push_line(lines, format!("removing {pkg}..."));
+                    }
+                }
+                _ => {
+                    push_line(lines, "pkg: list | install <n> | remove <n> | installed".into());
+                }
+            }
+        }
+        other if other.starts_with("run ") => {
+            let app = other[4..].trim();
+            if app.is_empty() {
+                push_line(lines, "usage: run <appname>".into());
+            } else {
+                println!("@supervisor: run /apps/{app}/vyoma.toml");
+                push_line(lines, format!("launching {app}..."));
+            }
+        }
+        other => {
+            push_line(lines, format!("unknown: {other}"));
+        }
     }
 }
 
