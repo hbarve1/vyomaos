@@ -149,14 +149,21 @@ run: $(BZIMAGE) $(INITRAMFS) data
 # ── run-gui (graphical window via virtio-gpu) ─────────────────────────────────
 # Serial output still goes to the terminal; QEMU also opens a display window.
 # On macOS use: make run-gui DISPLAY_BACKEND=cocoa  (default: sdl)
+#
+# Display notes:
+#   -device virtio-vga,xres=1280,yres=800  — pin the virtual display to exactly
+#     the resolution our apps draw for (avoids a mismatched small window).
+#   zoom-to-fit=on — QEMU scales the fixed 1280×800 surface to fill the window
+#     when resized or made fullscreen, instead of trying to reconfigure the
+#     virtual display (which causes "Display output is not active" in fullscreen).
 DISPLAY_BACKEND ?= sdl
 run-gui: $(BZIMAGE) $(INITRAMFS) data
 	qemu-system-x86_64 \
 	  -kernel $(BZIMAGE) \
 	  -initrd $(INITRAMFS) \
 	  -append "console=tty0 console=ttyS0 panic=1" \
-	  -vga virtio \
-	  -display $(DISPLAY_BACKEND) \
+	  -device virtio-vga,xres=1280,yres=800 \
+	  -display $(DISPLAY_BACKEND),zoom-to-fit=on \
 	  -serial stdio \
 	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
 	  -m 512M \
@@ -183,8 +190,8 @@ run-gui-net: $(BZIMAGE) $(INITRAMFS) data
 	  -kernel $(BZIMAGE) \
 	  -initrd $(INITRAMFS) \
 	  -append "console=tty0 console=ttyS0 panic=1" \
-	  -vga virtio \
-	  -display $(DISPLAY_BACKEND) \
+	  -device virtio-vga,xres=1280,yres=800 \
+	  -display $(DISPLAY_BACKEND),zoom-to-fit=on \
 	  -serial stdio \
 	  -netdev user,id=net0,hostfwd=tcp::8080-:8080 \
 	  -device virtio-net-pci,netdev=net0 \
