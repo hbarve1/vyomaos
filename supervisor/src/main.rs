@@ -496,7 +496,10 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         cmd.args(["--dir", "/data::/data"]);
     }
     if caps.network {
-        cmd.args(["-S", &format!("tcplisten=0.0.0.0:{net_port}")]);
+        // -S inherit-network: grants wasi:sockets access for P2 components.
+        // (The legacy -S tcplisten= flag only works for P1 modules.)
+        // The component binds its own port; net_port is used only for QEMU hostfwd.
+        cmd.args(["-S", "inherit-network"]);
     }
     cmd.arg("--").arg(&wasm_path);
     cmd.stdin(Stdio::piped())
