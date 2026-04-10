@@ -10,12 +10,12 @@
 
 use std::io::{BufRead, Write};
 
-// ── Panel geometry (lower portion of 1280×800 screen) ────────────────────────
+// ── Panel geometry (lower portion of 1440×900 screen) ────────────────────────
 
 const PX: u32 = 24;       // panel left edge
-const PY: u32 = 400;      // panel top edge
-const PW: u32 = 1232;     // panel width  (1280 - 24*2)
-const PH: u32 = 370;      // panel height
+const PY: u32 = 450;      // panel top edge
+const PW: u32 = 1392;     // panel width  (1440 - 24*2)
+const PH: u32 = 420;      // panel height
 
 const TITLE_H: u32 = 24;                    // title bar height
 const INNER_X: u32 = PX + 8;               // content left margin
@@ -26,7 +26,6 @@ const MAX_LINES: usize = ((PROMPT_Y - INNER_Y) / LINE_H) as usize;
 
 // ── Colours ───────────────────────────────────────────────────────────────────
 
-const C_BG:      u32 = 0x0D1117FF; // deep navy
 const C_PANEL:   u32 = 0x161B22FF; // panel background
 const C_TITLE:   u32 = 0x21262DFF; // title bar
 const C_ACCENT:  u32 = 0x58A6FFFF; // blue accent
@@ -69,20 +68,58 @@ fn main() {
         match cmd.as_str() {
             "help" => {
                 push_line(&mut lines, "commands:".into());
-                push_line(&mut lines, "  help    — this text".into());
-                push_line(&mut lines, "  status  — running app count".into());
-                push_line(&mut lines, "  list    — list running apps".into());
-                push_line(&mut lines, "  clear   — clear shell output".into());
-                push_line(&mut lines, "  run <app>  — launch an app".into());
+                push_line(&mut lines, "  help              — this text".into());
+                push_line(&mut lines, "  ps                — list all apps + status".into());
+                push_line(&mut lines, "  status            — running app count".into());
+                push_line(&mut lines, "  list              — list app names".into());
+                push_line(&mut lines, "  log <app>         — last 20 lines of app output".into());
+                push_line(&mut lines, "  kill <app>        — terminate an app".into());
+                push_line(&mut lines, "  restart <app>     — kill + relaunch an app".into());
+                push_line(&mut lines, "  run <app>         — launch an app by name".into());
+                push_line(&mut lines, "  reload            — re-read boot.toml".into());
+                push_line(&mut lines, "  clear             — clear shell output".into());
             }
             "clear" => {
                 lines.clear();
+            }
+            "ps" => {
+                println!("@supervisor: ps");
             }
             "status" => {
                 println!("@supervisor: status");
             }
             "list" => {
                 println!("@supervisor: list");
+            }
+            "reload" => {
+                println!("@supervisor: reload");
+                push_line(&mut lines, "reloading boot.toml...".into());
+            }
+            other if other.starts_with("log ") => {
+                let app = other[4..].trim();
+                if app.is_empty() {
+                    push_line(&mut lines, "usage: log <appname>".into());
+                } else {
+                    println!("@supervisor: log {app}");
+                }
+            }
+            other if other.starts_with("kill ") => {
+                let app = other[5..].trim();
+                if app.is_empty() {
+                    push_line(&mut lines, "usage: kill <appname>".into());
+                } else {
+                    println!("@supervisor: kill {app}");
+                    push_line(&mut lines, format!("killing {app}..."));
+                }
+            }
+            other if other.starts_with("restart ") => {
+                let app = other[8..].trim();
+                if app.is_empty() {
+                    push_line(&mut lines, "usage: restart <appname>".into());
+                } else {
+                    println!("@supervisor: restart {app}");
+                    push_line(&mut lines, format!("restarting {app}..."));
+                }
             }
             other if other.starts_with("run ") => {
                 let app = other[4..].trim();

@@ -12,6 +12,7 @@
 //!   P12T01 — input thread: route /dev/tty0 keypresses to focused app stdin
 //!   P12T02 — focus manager: shell capability, focused_app state
 //!   P12T03 — @supervisor: IPC command handler (list, status, focus, run)
+//!   P13T01 — process management: ps, kill, restart, reload, log
 
 #[cfg(target_os = "linux")]
 mod display;
@@ -20,13 +21,14 @@ mod font8x16;
 #[cfg(target_os = "linux")]
 use std::ffi::CString;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fs,
     io::{BufRead, BufReader, Write},
     path::Path,
     process::{Child, ChildStdin, ChildStdout, Stdio},
     sync::{mpsc, Arc, Mutex},
     thread,
+    time::Instant,
 };
 
 use serde::Deserialize;
@@ -65,7 +67,6 @@ struct AppMeta {
 }
 
 // deny_unknown_fields ensures manifests cannot declare undocumented capabilities.
-// Any unknown key is a hard parse error — the app is rejected at boot.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Capabilities {
@@ -75,32 +76,17 @@ struct Capabilities {
     filesystem: bool,
     #[serde(default)]
     network: bool,
-    /// TCP port to expose when network = true. Defaults to 8080.
     #[serde(default)]
     network_port: Option<u16>,
-    /// Gates VYOMA_DRAW: display protocol — supervisor routes commands to /dev/fb0.
     #[serde(default)]
     display: bool,
-    /// Receives keyboard input from /dev/tty0 by default at boot.
     #[serde(default)]
     shell: bool,
 }
 
 // ── P08T01: seccomp BPF denylist ──────────────────────────────────────────────
-//
-// Applied to each wasmtime child process via Command::pre_exec (runs in the
-// forked child after fork, before execve).
-//
-// Strategy: denylist — block the small set of syscalls that should never be
-// callable from sandboxed WASM runtimes.  Allowlists are stronger but fragile;
-// wasmtime's syscall surface is wide and version-dependent.  The denylist
-// provides a meaningful second-layer defence without risking false kills.
-//
-// If CONFIG_SECCOMP / CONFIG_SECCOMP_FILTER are absent from the running kernel
-// the prctl call returns EINVAL; we silently skip and continue booting.
 #[cfg(target_os = "linux")]
 mod seccomp {
-    // Classic BPF filter instruction (same layout as struct sock_filter)
     #[repr(C)]
     pub struct SockFilter {
         pub code: u16,
@@ -109,42 +95,37 @@ mod seccomp {
         pub k: u32,
     }
 
-    // BPF program descriptor passed to prctl
     #[repr(C)]
     pub struct SockFprog {
         pub len: u16,
         pub filter: *const SockFilter,
     }
 
-    // BPF instruction codes
     const BPF_LD: u16 = 0x00;
-    const BPF_W: u16 = 0x00;  // 32-bit word load
-    const BPF_ABS: u16 = 0x20; // absolute offset into seccomp_data
+    const BPF_W: u16 = 0x00;
+    const BPF_ABS: u16 = 0x20;
     const BPF_JMP: u16 = 0x05;
-    const BPF_JEQ: u16 = 0x10; // jump if equal
-    const BPF_K: u16 = 0x00;   // immediate constant
+    const BPF_JEQ: u16 = 0x10;
+    const BPF_K: u16 = 0x00;
     const BPF_RET: u16 = 0x06;
 
     const SECCOMP_RET_KILL_PROCESS: u32 = 0x8000_0000;
     const SECCOMP_RET_ALLOW: u32 = 0x7fff_0000;
 
-    // Byte offsets inside struct seccomp_data
-    const OFF_NR: u32 = 0;   // int nr (syscall number)
-    const OFF_ARCH: u32 = 4; // __u32 arch
+    const OFF_NR: u32 = 0;
+    const OFF_ARCH: u32 = 4;
 
-    // x86_64 architecture token (AUDIT_ARCH_X86_64)
     const AUDIT_ARCH_X86_64: u32 = 0xc000_003e;
 
-    // Syscalls denied in wasmtime children (x86_64 numbers)
     const DENIED: &[u32] = &[
-        101, // ptrace        — inspect/modify other processes
-        169, // reboot        — only the supervisor may shut down
-        246, // kexec_load    — replace the running kernel
-        248, // add_key       — add entries to the kernel keyring
-        249, // request_key   — search the kernel keyring
-        250, // keyctl        — kernel key-management operations
-        272, // unshare       — namespace creation (privilege escalation path)
-        317, // seccomp       — prevent sandbox from weakening its own filter
+        101, // ptrace
+        169, // reboot
+        246, // kexec_load
+        248, // add_key
+        249, // request_key
+        250, // keyctl
+        272, // unshare
+        317, // seccomp
     ];
 
     macro_rules! stmt {
@@ -158,54 +139,32 @@ mod seccomp {
         };
     }
 
-    /// Build the BPF filter program.  Returned Vec is heap-allocated in the
-    /// parent before fork and captured by the pre_exec closure, so its pointer
-    /// is valid in the child's copied address space.
     pub fn build() -> Vec<SockFilter> {
         let mut f = vec![
-            // ── Arch guard: kill immediately if not x86_64 ───────────────
             stmt!(BPF_LD | BPF_W | BPF_ABS, OFF_ARCH),
             jump!(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 1, 0),
             stmt!(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
-            // ── Load syscall number ───────────────────────────────────────
             stmt!(BPF_LD | BPF_W | BPF_ABS, OFF_NR),
         ];
-
-        // ── Denylist entries ──────────────────────────────────────────────
-        // Pattern: if nr == DENIED[i], fall through to KILL; else skip KILL.
         for &nr in DENIED {
             f.push(jump!(BPF_JMP | BPF_JEQ | BPF_K, nr, 0, 1));
             f.push(stmt!(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
         }
-
-        // ── Default: allow ────────────────────────────────────────────────
         f.push(stmt!(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
         f
     }
 
-    /// Install the BPF denylist on the calling process.
-    ///
-    /// Called inside Command::pre_exec (after fork, before exec).
-    /// Returns Ok(()) if seccomp was applied or if the kernel lacks support
-    /// (EINVAL) — the child simply continues without filtering in that case.
-    ///
-    /// # Safety
-    /// Must be called in an async-signal-safe context.
     pub unsafe fn apply(filter: &[SockFilter]) -> std::io::Result<()> {
-        // PR_SET_NO_NEW_PRIVS: prevent privilege re-escalation via exec.
-        // Required to install a seccomp filter without CAP_SYS_ADMIN.
         if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0 {
             let e = std::io::Error::last_os_error();
             if e.raw_os_error() != Some(libc::EINVAL) {
                 return Err(e);
             }
         }
-
         let prog = SockFprog {
             len: filter.len() as u16,
             filter: filter.as_ptr(),
         };
-
         let ret = libc::prctl(
             libc::PR_SET_SECCOMP,
             libc::SECCOMP_MODE_FILTER as libc::c_ulong,
@@ -213,19 +172,37 @@ mod seccomp {
             0,
             0,
         );
-
         if ret < 0 {
             let e = std::io::Error::last_os_error();
             if e.raw_os_error() == Some(libc::EINVAL) {
-                // Kernel built without CONFIG_SECCOMP_FILTER — skip silently.
                 return Ok(());
             }
             return Err(e);
         }
-
         Ok(())
     }
 }
+
+// ── P13T01: per-app runtime state ─────────────────────────────────────────────
+
+const LOG_BUF_SIZE: usize = 20;
+
+#[derive(Clone, Debug)]
+enum AppStatus {
+    Running,
+    Stopped(i32),
+}
+
+struct AppState {
+    entry:         BootEntry,
+    status:        AppStatus,
+    start_time:    Instant,
+    restart_count: u32,
+    log_buf:       VecDeque<String>,
+    child_pid:     Option<u32>,
+}
+
+type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
 
 // ── IPC inbox map + focus state ───────────────────────────────────────────────
 
@@ -235,14 +212,14 @@ type FocusedApp = Arc<Mutex<Option<String>>>;
 // ── Spawned app descriptor ────────────────────────────────────────────────────
 
 struct SpawnedApp {
-    entry: BootEntry,
-    name: String,
-    child: Child,
-    msg_rx: mpsc::Receiver<String>,
-    child_stdin: ChildStdin,
+    entry:        BootEntry,
+    name:         String,
+    child:        Child,
+    msg_rx:       mpsc::Receiver<String>,
+    child_stdin:  ChildStdin,
     child_stdout: ChildStdout,
-    has_display: bool,
-    is_shell: bool,
+    has_display:  bool,
+    is_shell:     bool,
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -255,7 +232,6 @@ fn main() {
     mount_filesystems();
     eprintln!("vyoma-supervisor: filesystems mounted");
 
-    // Try to open /dev/fb0 (non-fatal — headless boots proceed without GUI).
     #[cfg(target_os = "linux")]
     if display::init() {
         eprintln!("vyoma-supervisor: display ready");
@@ -284,13 +260,14 @@ fn main() {
         loop { thread::park(); }
     }
 
-    let inbox: Inbox = Arc::new(Mutex::new(HashMap::new()));
-    let focused: FocusedApp = Arc::new(Mutex::new(None));
+    let inbox:        Inbox       = Arc::new(Mutex::new(HashMap::new()));
+    let focused:      FocusedApp  = Arc::new(Mutex::new(None));
+    let app_registry: AppRegistry = Arc::new(Mutex::new(HashMap::new()));
 
-    // ── Pass 1: spawn all processes and register every inbox entry ────────────
+    // ── Pass 1: spawn all processes and register inbox entries ────────────────
     let mut spawned: Vec<SpawnedApp> = Vec::new();
     for entry in boot.apps {
-        match spawn_app(&entry, &inbox) {
+        match spawn_app(&entry, &inbox, &app_registry) {
             Some(app) => spawned.push(app),
             None => eprintln!(
                 "vyoma-supervisor: WARN: failed to spawn {}, skipping",
@@ -299,7 +276,7 @@ fn main() {
         }
     }
 
-    // ── Set default keyboard focus to the first app with shell = true ─────────
+    // ── Set default keyboard focus to the first shell app ────────────────────
     {
         let shell_name = spawned.iter().find(|a| a.is_shell).map(|a| a.name.clone());
         if let Some(ref name) = shell_name {
@@ -308,10 +285,10 @@ fn main() {
         *focused.lock().unwrap() = shell_name;
     }
 
-    // ── P12T01: input-router thread — reads /dev/tty0, forwards to focused app ─
+    // ── P12T01: input-router thread — /dev/tty0 → focused app ────────────────
     #[cfg(target_os = "linux")]
     {
-        let inbox_input = Arc::clone(&inbox);
+        let inbox_input   = Arc::clone(&inbox);
         let focused_input = Arc::clone(&focused);
         thread::Builder::new()
             .name("input-router".into())
@@ -340,13 +317,13 @@ fn main() {
     // ── Pass 2: start IO threads for each spawned app ─────────────────────────
     let mut waiter_handles = vec![];
     for app in spawned {
-        let wh = launch_app_threads(app, &inbox, &focused);
+        let wh = launch_app_threads(app, &inbox, &focused, &app_registry);
         waiter_handles.push(wh);
     }
 
-    // Drop main thread's inbox reference so writer threads can clean up.
     drop(inbox);
     drop(focused);
+    drop(app_registry);
 
     for handle in waiter_handles {
         let _ = handle.join();
@@ -356,20 +333,24 @@ fn main() {
     loop { thread::park(); }
 }
 
-// ── Launch writer/reader/waiter threads for one app ──────────────────────────
+// ── Spawn writer + reader threads for one app (no waiter) ────────────────────
 
-fn launch_app_threads(
-    app: SpawnedApp,
-    inbox: &Inbox,
-    focused: &FocusedApp,
-) -> thread::JoinHandle<()> {
-    let SpawnedApp { entry, name, child, msg_rx, child_stdin, child_stdout, has_display, is_shell: _ } = app;
-
-    // Writer thread: msg_rx → child stdin
+fn spawn_io_threads(
+    name: &str,
+    child_stdin:  ChildStdin,
+    child_stdout: ChildStdout,
+    msg_rx:       mpsc::Receiver<String>,
+    has_display:  bool,
+    inbox:        &Inbox,
+    focused:      &FocusedApp,
+    app_registry: &AppRegistry,
+) {
     thread::Builder::new()
         .name(format!("{name}-writer"))
         .spawn(move || {
             let mut stdin = child_stdin;
+            // When the inbox entry is replaced on restart, the sender is dropped
+            // and msg_rx.recv() returns Err — writer exits cleanly.
             while let Ok(msg) = msg_rx.recv() {
                 if writeln!(stdin, "{msg}").is_err() {
                     break;
@@ -378,30 +359,57 @@ fn launch_app_threads(
         })
         .expect("spawn writer thread");
 
-    // Reader thread: child stdout → route_or_print
-    let inbox_r  = Arc::clone(inbox);
-    let focused_r = Arc::clone(focused);
-    let name_r   = name.clone();
+    let inbox_r    = Arc::clone(inbox);
+    let focused_r  = Arc::clone(focused);
+    let registry_r = Arc::clone(app_registry);
+    let name_r     = name.to_string();
     thread::Builder::new()
         .name(format!("{name}-reader"))
         .spawn(move || {
             for line in BufReader::new(child_stdout).lines() {
                 let line = match line { Ok(l) => l, Err(_) => break };
-                route_or_print(&line, &name_r, &inbox_r, has_display, &focused_r);
+                // Append to per-app log ring buffer
+                {
+                    let reg = registry_r.lock().unwrap();
+                    if let Some(st) = reg.get(&name_r) {
+                        let mut st = st.lock().unwrap();
+                        st.log_buf.push_back(line.clone());
+                        if st.log_buf.len() > LOG_BUF_SIZE {
+                            st.log_buf.pop_front();
+                        }
+                    }
+                }
+                route_or_print(&line, &name_r, &inbox_r, has_display, &focused_r, &registry_r);
             }
         })
         .expect("spawn reader thread");
+}
 
-    // Waiter thread: wait for child exit, respect restart policy
+// ── Launch writer/reader/waiter threads for one app ──────────────────────────
+
+fn launch_app_threads(
+    app:          SpawnedApp,
+    inbox:        &Inbox,
+    focused:      &FocusedApp,
+    app_registry: &AppRegistry,
+) -> thread::JoinHandle<()> {
+    let SpawnedApp { entry, name, child, msg_rx, child_stdin, child_stdout, has_display, is_shell: _ } = app;
+
+    spawn_io_threads(&name, child_stdin, child_stdout, msg_rx, has_display, inbox, focused, app_registry);
+
+    let registry_w = Arc::clone(app_registry);
+    let inbox_w    = Arc::clone(inbox);
+    let focused_w  = Arc::clone(focused);
+
     thread::Builder::new()
         .name(format!("{name}-waiter"))
-        .spawn(move || wait_app(entry, name, child))
+        .spawn(move || wait_app(entry, name, child, registry_w, inbox_w, focused_w))
         .expect("spawn waiter thread")
 }
 
-// ── Spawn one app ─────────────────────────────────────────────────────────────
+// ── Spawn one app process and register its state ─────────────────────────────
 
-fn spawn_app(entry: &BootEntry, inbox: &Inbox) -> Option<SpawnedApp> {
+fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Option<SpawnedApp> {
     let manifest_raw = match fs::read_to_string(&entry.manifest) {
         Ok(s) => s,
         Err(e) => {
@@ -412,7 +420,6 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox) -> Option<SpawnedApp> {
     let manifest: AppManifest = match toml::from_str(&manifest_raw) {
         Ok(m) => m,
         Err(e) => {
-            // deny_unknown_fields makes unknown capability keys a hard error here.
             eprintln!("vyoma-supervisor: WARN: rejected manifest {}: {e}", entry.manifest);
             return None;
         }
@@ -421,7 +428,6 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox) -> Option<SpawnedApp> {
     let name = manifest.app.name.clone();
     let caps = &manifest.capabilities;
 
-    // ── P08T02: capability audit log ─────────────────────────────────────────
     let net_port = caps.network_port.unwrap_or(8080);
     eprintln!(
         "vyoma-supervisor: [security] {name} capabilities — \
@@ -433,7 +439,6 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox) -> Option<SpawnedApp> {
         if caps.shell { "yes" } else { "no" },
     );
 
-    // Register inbox before spawning so routing is ready immediately.
     let (tx, msg_rx) = mpsc::channel::<String>();
     inbox.lock().unwrap().insert(name.clone(), tx);
 
@@ -460,7 +465,6 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox) -> Option<SpawnedApp> {
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
 
-    // ── P08T01: apply seccomp denylist in child before exec ───────────────────
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::process::CommandExt;
@@ -479,8 +483,20 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox) -> Option<SpawnedApp> {
         }
     };
 
+    let child_pid    = child.id();
     let child_stdin  = child.stdin.take().expect("stdin pipe");
     let child_stdout = child.stdout.take().expect("stdout pipe");
+
+    // Register per-app runtime state
+    let state = Arc::new(Mutex::new(AppState {
+        entry:         entry.clone(),
+        status:        AppStatus::Running,
+        start_time:    Instant::now(),
+        restart_count: 0,
+        log_buf:       VecDeque::new(),
+        child_pid:     Some(child_pid),
+    }));
+    app_registry.lock().unwrap().insert(name.clone(), state);
 
     Some(SpawnedApp {
         entry: entry.clone(),
@@ -496,8 +512,14 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox) -> Option<SpawnedApp> {
 
 // ── IPC router + display dispatcher ──────────────────────────────────────────
 
-fn route_or_print(line: &str, sender: &str, inbox: &Inbox, has_display: bool, focused: &FocusedApp) {
-    // VYOMA_DRAW: display protocol — only honoured for display-capable apps.
+fn route_or_print(
+    line:         &str,
+    sender:       &str,
+    inbox:        &Inbox,
+    has_display:  bool,
+    focused:      &FocusedApp,
+    app_registry: &AppRegistry,
+) {
     #[cfg(target_os = "linux")]
     if has_display {
         if let Some(cmd) = line.strip_prefix("VYOMA_DRAW:") {
@@ -507,12 +529,10 @@ fn route_or_print(line: &str, sender: &str, inbox: &Inbox, has_display: bool, fo
     }
     let _ = has_display;
 
-    // IPC routing: @<target>: <message>
     if let Some(rest) = line.strip_prefix('@') {
         if let Some((target, msg)) = rest.split_once(": ") {
-            // ── P12T03: @supervisor: commands ────────────────────────────
             if target == "supervisor" {
-                handle_supervisor_command(msg, sender, inbox, focused);
+                handle_supervisor_command(msg, sender, inbox, focused, app_registry);
                 return;
             }
             let map = inbox.lock().unwrap();
@@ -526,24 +546,25 @@ fn route_or_print(line: &str, sender: &str, inbox: &Inbox, has_display: bool, fo
     println!("[{sender}] {line}");
 }
 
-// ── P12T03: @supervisor: command handler ─────────────────────────────────────
+// ── P12T03 / P13T01: @supervisor: command handler ────────────────────────────
 
-fn handle_supervisor_command(cmd: &str, sender: &str, inbox: &Inbox, focused: &FocusedApp) {
+fn handle_supervisor_command(
+    cmd:          &str,
+    sender:       &str,
+    inbox:        &Inbox,
+    focused:      &FocusedApp,
+    app_registry: &AppRegistry,
+) {
     let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
     match parts[0] {
+        // ── P12T03 legacy commands ────────────────────────────────────────────
         "list" => {
             let names = inbox.lock().unwrap().keys().cloned().collect::<Vec<_>>().join("|");
-            let reply = format!("REPLY:{names}");
-            if let Some(tx) = inbox.lock().unwrap().get(sender) {
-                let _ = tx.send(reply);
-            }
+            send_reply(sender, &format!("REPLY:{names}"), inbox);
         }
         "status" => {
             let count = inbox.lock().unwrap().len();
-            let reply = format!("REPLY:{{\"running\":{count}}}");
-            if let Some(tx) = inbox.lock().unwrap().get(sender) {
-                let _ = tx.send(reply);
-            }
+            send_reply(sender, &format!("REPLY:{{\"running\":{count}}}"), inbox);
         }
         "focus" => {
             if let Some(name) = parts.get(1).map(|s| s.trim()) {
@@ -561,10 +582,10 @@ fn handle_supervisor_command(cmd: &str, sender: &str, inbox: &Inbox, focused: &F
             };
             eprintln!("vyoma-supervisor: @supervisor: run {path}");
             let entry = BootEntry { manifest: path.clone(), restart: "never".to_string() };
-            match spawn_app(&entry, inbox) {
+            match spawn_app(&entry, inbox, app_registry) {
                 Some(app) => {
                     let app_name = app.name.clone();
-                    launch_app_threads(app, inbox, focused);
+                    launch_app_threads(app, inbox, focused, app_registry);
                     send_reply(sender, &format!("REPLY:launched {app_name}"), inbox);
                 }
                 None => {
@@ -572,10 +593,176 @@ fn handle_supervisor_command(cmd: &str, sender: &str, inbox: &Inbox, focused: &F
                 }
             }
         }
-        "kill" => {
-            // Deferred: requires tracking child PIDs separately
-            send_reply(sender, "REPLY:error: kill not yet implemented", inbox);
+
+        // ── P13T01 process management commands ───────────────────────────────
+
+        // ps — list all apps with status, uptime, restart count
+        "ps" => {
+            let entries: Vec<String> = {
+                let reg = app_registry.lock().unwrap();
+                let mut rows: Vec<(String, String)> = reg.iter().map(|(name, st)| {
+                    let st = st.lock().unwrap();
+                    let uptime = st.start_time.elapsed().as_secs();
+                    let status_str = match &st.status {
+                        AppStatus::Running    => "running".to_string(),
+                        AppStatus::Stopped(c) => format!("stopped({})", c),
+                    };
+                    let info = format!(
+                        "{:<16} {:<12} {:>5}s  restarts:{}",
+                        name, status_str, uptime, st.restart_count
+                    );
+                    (name.clone(), info)
+                }).collect();
+                rows.sort_by(|a, b| a.0.cmp(&b.0));
+                rows.into_iter().map(|(_, v)| v).collect()
+            };
+            send_reply(sender, &format!("REPLY:{}", entries.join("|")), inbox);
         }
+
+        // kill <app> — send SIGKILL to a running app
+        "kill" => {
+            let app_name = match parts.get(1).map(|s| s.trim()) {
+                Some(n) if !n.is_empty() => n.to_string(),
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: kill <app>", inbox);
+                    return;
+                }
+            };
+            let pid = {
+                let reg = app_registry.lock().unwrap();
+                reg.get(&app_name).and_then(|st| st.lock().unwrap().child_pid)
+            };
+            match pid {
+                Some(pid) => {
+                    #[cfg(target_os = "linux")]
+                    unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+                    eprintln!("vyoma-supervisor: killed {app_name} (pid {pid})");
+                    send_reply(sender, &format!("REPLY:killed {app_name}"), inbox);
+                }
+                None => {
+                    send_reply(sender, &format!("REPLY:{app_name} not running"), inbox);
+                }
+            }
+        }
+
+        // restart <app> — kill + re-spawn an app
+        "restart" => {
+            let app_name = match parts.get(1).map(|s| s.trim()) {
+                Some(n) if !n.is_empty() => n.to_string(),
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: restart <app>", inbox);
+                    return;
+                }
+            };
+            let (pid, entry) = {
+                let reg = app_registry.lock().unwrap();
+                match reg.get(&app_name) {
+                    Some(st) => {
+                        let st = st.lock().unwrap();
+                        (st.child_pid, st.entry.clone())
+                    }
+                    None => {
+                        send_reply(sender, &format!("REPLY:error: app {app_name} not found"), inbox);
+                        return;
+                    }
+                }
+            };
+            // Kill old instance (if still running)
+            if let Some(pid) = pid {
+                #[cfg(target_os = "linux")]
+                unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+                eprintln!("vyoma-supervisor: restart: killed old {app_name} (pid {pid})");
+            }
+            // Spawn new instance
+            match spawn_app(&entry, inbox, app_registry) {
+                Some(app) => {
+                    launch_app_threads(app, inbox, focused, app_registry);
+                    eprintln!("vyoma-supervisor: restarted {app_name}");
+                    send_reply(sender, &format!("REPLY:restarted {app_name}"), inbox);
+                }
+                None => {
+                    send_reply(sender, &format!("REPLY:error: could not restart {app_name}"), inbox);
+                }
+            }
+        }
+
+        // reload — re-read boot.toml, launch any apps not currently running
+        "reload" => {
+            let boot_raw = match fs::read_to_string(BOOT_CONFIG_PATH) {
+                Ok(s) => s,
+                Err(e) => {
+                    send_reply(sender, &format!("REPLY:error: cannot read boot.toml: {e}"), inbox);
+                    return;
+                }
+            };
+            let boot: BootConfig = match toml::from_str(&boot_raw) {
+                Ok(c) => c,
+                Err(e) => {
+                    send_reply(sender, &format!("REPLY:error: malformed boot.toml: {e}"), inbox);
+                    return;
+                }
+            };
+            let mut launched = 0usize;
+            for entry in &boot.apps {
+                // Parse manifest to get name
+                let name = match fs::read_to_string(&entry.manifest).ok()
+                    .and_then(|s| toml::from_str::<AppManifest>(&s).ok())
+                    .map(|m| m.app.name)
+                {
+                    Some(n) => n,
+                    None => continue,
+                };
+                // Skip already-running apps
+                let already_running = {
+                    let reg = app_registry.lock().unwrap();
+                    reg.get(&name).map(|st| {
+                        matches!(st.lock().unwrap().status, AppStatus::Running)
+                    }).unwrap_or(false)
+                };
+                if already_running { continue; }
+
+                if let Some(app) = spawn_app(entry, inbox, app_registry) {
+                    launch_app_threads(app, inbox, focused, app_registry);
+                    launched += 1;
+                }
+            }
+            send_reply(
+                sender,
+                &format!("REPLY:reload done — {launched} new app(s) started"),
+                inbox,
+            );
+        }
+
+        // log <app> — show last LOG_BUF_SIZE lines of an app's stdout
+        "log" => {
+            let app_name = match parts.get(1).map(|s| s.trim()) {
+                Some(n) if !n.is_empty() => n.to_string(),
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: log <app>", inbox);
+                    return;
+                }
+            };
+            let reply = {
+                let reg = app_registry.lock().unwrap();
+                match reg.get(&app_name) {
+                    Some(st) => {
+                        let st = st.lock().unwrap();
+                        if st.log_buf.is_empty() {
+                            format!("REPLY:no output captured for {app_name}")
+                        } else {
+                            // Replace any | in log lines so they don't break the reply protocol
+                            let lines: Vec<String> = st.log_buf.iter()
+                                .map(|s| s.replace('|', " "))
+                                .collect();
+                            format!("REPLY:{}", lines.join("|"))
+                        }
+                    }
+                    None => format!("REPLY:error: app {app_name} not found"),
+                }
+            };
+            send_reply(sender, &reply, inbox);
+        }
+
         other => {
             eprintln!("vyoma-supervisor: unknown @supervisor command from {sender}: {other}");
         }
@@ -590,7 +777,6 @@ fn send_reply(target: &str, msg: &str, inbox: &Inbox) {
 
 // ── VYOMA_DRAW command dispatcher ─────────────────────────────────────────────
 
-/// Parse and execute one VYOMA_DRAW command string (everything after the prefix).
 #[cfg(target_os = "linux")]
 fn handle_draw_command(cmd: &str, sender: &str) {
     let Some(fb_lock) = display::get() else { return };
@@ -611,7 +797,6 @@ fn handle_draw_command(cmd: &str, sender: &str) {
     }
 
     if let Some(args) = cmd.strip_prefix("draw_text:") {
-        // format: x,y,rgba,text  (text may contain commas — use splitn 4)
         let parts: Vec<&str> = args.splitn(4, ',').collect();
         if let [xs, ys, cs, text] = parts.as_slice() {
             if let (Ok(x), Ok(y), Ok(rgba)) =
@@ -630,41 +815,78 @@ fn handle_draw_command(cmd: &str, sender: &str) {
     eprintln!("vyoma-display: [{sender}] unknown command: {cmd}");
 }
 
-// ── App waiter ────────────────────────────────────────────────────────────────
+// ── App waiter — handles exit + automatic restart policy ─────────────────────
 
-fn wait_app(entry: BootEntry, name: String, mut child: Child) {
+fn wait_app(
+    entry:        BootEntry,
+    name:         String,
+    mut child:    Child,
+    app_registry: AppRegistry,
+    inbox:        Inbox,
+    focused:      FocusedApp,
+) {
+    let mut restart_count: u32 = 0;
+
     loop {
-        let status = match child.wait() {
-            Ok(s) if s.success() => {
-                eprintln!("vyoma-supervisor: {name} exited cleanly");
-                Some(s)
-            }
+        let exit_code = match child.wait() {
             Ok(s) => {
-                let code = s.code()
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "signal".to_string());
-                eprintln!("vyoma-supervisor: {name} exited with code {code}");
-                Some(s)
+                let code = s.code().unwrap_or(-1);
+                eprintln!("vyoma-supervisor: {name} exited (code {code})");
+                code
             }
             Err(e) => {
                 eprintln!("vyoma-supervisor: wait failed for {name}: {e}");
-                None
+                -1
             }
         };
 
-        match entry.restart.as_str() {
-            "always" | "on-failure" => {
-                // Restart with IPC requires new pipes + inbox re-registration.
-                // Not implemented — treat as never.
-                eprintln!(
-                    "vyoma-supervisor: [WARN] restart={} not supported for IPC apps ({name}), \
-                     treating as never",
-                    entry.restart
+        // Update status in registry
+        {
+            let reg = app_registry.lock().unwrap();
+            if let Some(st) = reg.get(&name) {
+                let mut st = st.lock().unwrap();
+                st.status = AppStatus::Stopped(exit_code);
+                st.child_pid = None;
+            }
+        }
+
+        let should_restart = match entry.restart.as_str() {
+            "always"     => true,
+            "on-failure" => exit_code != 0,
+            _            => false,
+        };
+
+        if !should_restart {
+            break;
+        }
+
+        eprintln!(
+            "vyoma-supervisor: restarting {name} (policy={}, count={})",
+            entry.restart, restart_count + 1
+        );
+
+        match spawn_app(&entry, &inbox, &app_registry) {
+            Some(app) => {
+                restart_count += 1;
+                // Update restart_count in the new AppState
+                {
+                    let reg = app_registry.lock().unwrap();
+                    if let Some(st) = reg.get(&name) {
+                        st.lock().unwrap().restart_count = restart_count;
+                    }
+                }
+                // Spawn new IO threads; continue this loop as the new waiter
+                let SpawnedApp { child: new_child, child_stdin, child_stdout, msg_rx, has_display, .. } = app;
+                spawn_io_threads(
+                    &name, child_stdin, child_stdout, msg_rx,
+                    has_display, &inbox, &focused, &app_registry,
                 );
-                let _ = status;
+                child = new_child;
+            }
+            None => {
+                eprintln!("vyoma-supervisor: failed to restart {name}, giving up");
                 break;
             }
-            _ => break,
         }
     }
 }
@@ -675,8 +897,6 @@ fn mount_filesystems() {
     mount_fs("proc",     "/proc", "proc",     0);
     mount_fs("sysfs",    "/sys",  "sysfs",    0);
     mount_fs("devtmpfs", "/dev",  "devtmpfs", 0);
-    // Persistent /data via virtio-9P host share (mount_tag=vyoma-data).
-    // Falls back to tmpfs for diskless/development boots without -virtfs.
     #[cfg(target_os = "linux")]
     {
         let opts = c"trans=virtio,version=9p2000.L";
@@ -723,8 +943,6 @@ fn mount_fs(_source: &str, target: &str, fstype: &str, _flags: libc::c_ulong) {
     eprintln!("vyoma-supervisor: [dev build] skipping mount {target} ({fstype})");
 }
 
-/// Like mount_fs but passes a data string to the filesystem (e.g. 9P options).
-/// Returns true on success, false if the mount fails (e.g. no 9P share attached).
 #[cfg(target_os = "linux")]
 fn mount_fs_with_data(
     source: &str,
