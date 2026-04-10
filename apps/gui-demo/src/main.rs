@@ -8,12 +8,12 @@
 ///
 /// RGBA is a decimal u32: 0xRRGGBBAA (alpha byte ignored by supervisor).
 fn main() {
-    let w = 1280u32;
-    let h = 800u32;
+    let w = 1440u32;
+    let h = 900u32;
 
     let boot_count = read_boot_count();
 
-    eprintln!("gui-demo: composing frame ({}×{}) boot#{}", w, h, boot_count);
+    eprintln!("gui-demo: composing frame ({}x{}) boot#{}", w, h, boot_count);
 
     // ── Background ────────────────────────────────────────────────────────────
     fill(0, 0, w, h, 0x0D1117FF);

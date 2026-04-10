@@ -8,7 +8,7 @@
 
 use std::{io::Write, thread, time::Duration};
 
-const X: u32 = 980;  // right side of 1280px screen
+const X: u32 = 1140;  // right side of 1440px screen
 const Y: u32 = 8;    // just below top edge
 const W: u32 = 292;
 const H: u32 = 36;
