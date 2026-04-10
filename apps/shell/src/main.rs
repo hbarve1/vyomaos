@@ -77,6 +77,10 @@ fn main() {
                 push_line(&mut lines, "  restart <app>     — kill + relaunch an app".into());
                 push_line(&mut lines, "  run <app>         — launch an app by name".into());
                 push_line(&mut lines, "  reload            — re-read boot.toml".into());
+                push_line(&mut lines, "  pkg list          — list available packages".into());
+                push_line(&mut lines, "  pkg install <n>   — install a package".into());
+                push_line(&mut lines, "  pkg remove <n>    — remove a package".into());
+                push_line(&mut lines, "  pkg installed     — list installed packages".into());
                 push_line(&mut lines, "  clear             — clear shell output".into());
             }
             "clear" => {
@@ -119,6 +123,39 @@ fn main() {
                 } else {
                     println!("@supervisor: restart {app}");
                     push_line(&mut lines, format!("restarting {app}..."));
+                }
+            }
+            // pkg <subcmd> [arg] — package manager
+            other if other.starts_with("pkg ") || other == "pkg" => {
+                let sub = other[4..].trim(); // strip "pkg "
+                match sub {
+                    "list" => {
+                        println!("@supervisor: pkg-list");
+                    }
+                    "installed" => {
+                        println!("@supervisor: pkg-installed");
+                    }
+                    s if s.starts_with("install ") => {
+                        let pkg = s[8..].trim();
+                        if pkg.is_empty() {
+                            push_line(&mut lines, "usage: pkg install <name>".into());
+                        } else {
+                            println!("@supervisor: pkg-install {pkg}");
+                            push_line(&mut lines, format!("installing {pkg}..."));
+                        }
+                    }
+                    s if s.starts_with("remove ") => {
+                        let pkg = s[7..].trim();
+                        if pkg.is_empty() {
+                            push_line(&mut lines, "usage: pkg remove <name>".into());
+                        } else {
+                            println!("@supervisor: pkg-remove {pkg}");
+                            push_line(&mut lines, format!("removing {pkg}..."));
+                        }
+                    }
+                    _ => {
+                        push_line(&mut lines, "pkg: list | install <n> | remove <n> | installed".into());
+                    }
                 }
             }
             other if other.starts_with("run ") => {

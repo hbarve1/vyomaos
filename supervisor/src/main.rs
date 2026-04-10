@@ -224,7 +224,22 @@ struct SpawnedApp {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-const BOOT_CONFIG_PATH: &str = "/etc/vyoma/boot.toml";
+const BOOT_CONFIG_PATH:  &str = "/etc/vyoma/boot.toml";
+const USER_BOOT_PATH:    &str = "/data/installed.txt";
+const DATA_APPS_DIR:     &str = "/data/apps";
+
+/// Built-in package catalog — apps shipped in the initramfs, available to install.
+/// Tuple: (name, version, description)
+const PACKAGES: &[(&str, &str, &str)] = &[
+    ("calculator",   "0.1.0", "Basic arithmetic calculator"),
+    ("factorial",    "0.1.0", "Recursive factorial computation"),
+    ("gui-demo",     "0.1.0", "Framebuffer dashboard demo"),
+    ("hello-world",  "0.1.0", "Hello World demo app"),
+    ("http-server",  "0.1.0", "HTTP status server on :8080"),
+    ("ping",         "0.1.0", "IPC demo — send side (pair with pong)"),
+    ("pong",         "0.1.0", "IPC demo — recv side (pair with ping)"),
+    ("storage-demo", "0.1.0", "Persistent storage demo"),
+];
 
 fn main() {
     eprintln!("vyoma-supervisor starting");
@@ -253,9 +268,32 @@ fn main() {
         }
     };
 
-    eprintln!("vyoma-supervisor: {} app(s) in boot config", boot.apps.len());
+    // ── Merge user-installed apps from /data/installed.txt ───────────────────
+    let mut all_entries = boot.apps;
+    if let Ok(raw) = fs::read_to_string(USER_BOOT_PATH) {
+        let mut user_count = 0u32;
+        for name in raw.lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        {
+            let manifest = format!("{DATA_APPS_DIR}/{name}/vyoma.toml");
+            if Path::new(&manifest).exists()
+                && !all_entries.iter().any(|e| e.manifest == manifest)
+            {
+                all_entries.push(BootEntry { manifest, restart: "never".to_string() });
+                user_count += 1;
+            } else if !Path::new(&manifest).exists() {
+                eprintln!("vyoma-supervisor: installed app {name} missing manifest, skipping");
+            }
+        }
+        if user_count > 0 {
+            eprintln!("vyoma-supervisor: {user_count} user-installed app(s) added");
+        }
+    }
 
-    if boot.apps.is_empty() {
+    eprintln!("vyoma-supervisor: {} app(s) total", all_entries.len());
+
+    if all_entries.is_empty() {
         eprintln!("vyoma-supervisor: no apps configured, idling");
         loop { thread::park(); }
     }
@@ -266,7 +304,7 @@ fn main() {
 
     // ── Pass 1: spawn all processes and register inbox entries ────────────────
     let mut spawned: Vec<SpawnedApp> = Vec::new();
-    for entry in boot.apps {
+    for entry in all_entries {
         match spawn_app(&entry, &inbox, &app_registry) {
             Some(app) => spawned.push(app),
             None => eprintln!(
@@ -763,10 +801,179 @@ fn handle_supervisor_command(
             send_reply(sender, &reply, inbox);
         }
 
+        // ── P14T01: package manager commands ─────────────────────────────────
+
+        // pkg-list — show available packages with install status
+        "pkg-list" => {
+            let installed = read_installed_apps();
+            let rows: Vec<String> = PACKAGES.iter().map(|(name, ver, desc)| {
+                let mark = if installed.iter().any(|n| n == name) { "+" } else { " " };
+                format!("[{mark}] {name} v{ver}  {desc}")
+            }).collect();
+            if rows.is_empty() {
+                send_reply(sender, "REPLY:no packages in catalog", inbox);
+            } else {
+                send_reply(sender, &format!("REPLY:{}", rows.join("|")), inbox);
+            }
+        }
+
+        // pkg-installed — list user-installed app names
+        "pkg-installed" => {
+            let installed = read_installed_apps();
+            if installed.is_empty() {
+                send_reply(sender, "REPLY:no packages installed", inbox);
+            } else {
+                send_reply(sender, &format!("REPLY:{}", installed.join("|")), inbox);
+            }
+        }
+
+        // pkg-install <name> — copy app to /data/apps, register, launch
+        "pkg-install" => {
+            let name = match parts.get(1).map(|s| s.trim()) {
+                Some(n) if !n.is_empty() => n.to_string(),
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: pkg install <name>", inbox);
+                    return;
+                }
+            };
+            if !PACKAGES.iter().any(|(n, _, _)| *n == name.as_str()) {
+                send_reply(sender, &format!("REPLY:error: unknown package '{name}'  (try: pkg list)"), inbox);
+                return;
+            }
+            if read_installed_apps().iter().any(|n| n == &name) {
+                send_reply(sender, &format!("REPLY:{name} is already installed"), inbox);
+                return;
+            }
+            match install_package(&name, inbox, focused, app_registry) {
+                Ok(()) => send_reply(sender, &format!("REPLY:installed {name} — now running"), inbox),
+                Err(e) => send_reply(sender, &format!("REPLY:error: {e}"), inbox),
+            }
+        }
+
+        // pkg-remove <name> — kill app, remove files, unregister
+        "pkg-remove" => {
+            let name = match parts.get(1).map(|s| s.trim()) {
+                Some(n) if !n.is_empty() => n.to_string(),
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: pkg remove <name>", inbox);
+                    return;
+                }
+            };
+            if !read_installed_apps().iter().any(|n| n == &name) {
+                send_reply(sender, &format!("REPLY:error: '{name}' is not installed"), inbox);
+                return;
+            }
+            match remove_package(&name, app_registry) {
+                Ok(()) => send_reply(sender, &format!("REPLY:removed {name}"), inbox),
+                Err(e) => send_reply(sender, &format!("REPLY:error: {e}"), inbox),
+            }
+        }
+
         other => {
             eprintln!("vyoma-supervisor: unknown @supervisor command from {sender}: {other}");
         }
     }
+}
+
+// ── P14T01: package manager helpers ──────────────────────────────────────────
+
+/// Read the list of user-installed app names from /data/installed.txt.
+fn read_installed_apps() -> Vec<String> {
+    fs::read_to_string(USER_BOOT_PATH)
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect()
+}
+
+/// Copy app files from initramfs /apps/<name>/ to /data/apps/<name>/,
+/// register in /data/installed.txt, and launch immediately.
+fn install_package(
+    name:         &str,
+    inbox:        &Inbox,
+    focused:      &FocusedApp,
+    app_registry: &AppRegistry,
+) -> Result<(), String> {
+    let src_dir = format!("/apps/{name}");
+    let dst_dir = format!("{DATA_APPS_DIR}/{name}");
+
+    // Create destination dir
+    fs::create_dir_all(&dst_dir)
+        .map_err(|e| format!("create_dir {dst_dir}: {e}"))?;
+
+    // Copy vyoma.toml
+    let toml_dst = format!("{dst_dir}/vyoma.toml");
+    fs::copy(format!("{src_dir}/vyoma.toml"), &toml_dst)
+        .map_err(|e| format!("copy vyoma.toml: {e}"))?;
+
+    // Read manifest to get the wasm filename
+    let manifest_raw = fs::read_to_string(&toml_dst)
+        .map_err(|e| format!("read manifest: {e}"))?;
+    let manifest: AppManifest = toml::from_str(&manifest_raw)
+        .map_err(|e| format!("parse manifest: {e}"))?;
+
+    // Copy wasm binary
+    fs::copy(
+        format!("{src_dir}/{}", manifest.app.wasm),
+        format!("{dst_dir}/{}", manifest.app.wasm),
+    ).map_err(|e| format!("copy wasm: {e}"))?;
+
+    // Append name to /data/installed.txt
+    {
+        use std::io::Write as _;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true).append(true)
+            .open(USER_BOOT_PATH)
+            .map_err(|e| format!("open installed.txt: {e}"))?;
+        writeln!(f, "{name}").map_err(|e| format!("write installed.txt: {e}"))?;
+    }
+
+    // Launch immediately (no reboot required)
+    let entry = BootEntry { manifest: toml_dst, restart: "never".to_string() };
+    if let Some(app) = spawn_app(&entry, inbox, app_registry) {
+        launch_app_threads(app, inbox, focused, app_registry);
+    }
+
+    eprintln!("vyoma-supervisor: pkg: installed {name}");
+    Ok(())
+}
+
+/// Kill the app (if running), remove its files, and unregister from installed.txt.
+fn remove_package(name: &str, app_registry: &AppRegistry) -> Result<(), String> {
+    // Kill running instance
+    let pid = {
+        let reg = app_registry.lock().unwrap();
+        reg.get(name).and_then(|st| st.lock().unwrap().child_pid)
+    };
+    if let Some(pid) = pid {
+        #[cfg(target_os = "linux")]
+        unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+        eprintln!("vyoma-supervisor: pkg: killed {name} (pid {pid})");
+    }
+
+    // Rewrite /data/installed.txt without this entry
+    let kept: Vec<String> = read_installed_apps()
+        .into_iter()
+        .filter(|n| n != name)
+        .collect();
+    let content = if kept.is_empty() {
+        String::new()
+    } else {
+        kept.join("\n") + "\n"
+    };
+    fs::write(USER_BOOT_PATH, content)
+        .map_err(|e| format!("write installed.txt: {e}"))?;
+
+    // Remove app directory
+    let dst_dir = format!("{DATA_APPS_DIR}/{name}");
+    if Path::new(&dst_dir).exists() {
+        fs::remove_dir_all(&dst_dir)
+            .map_err(|e| format!("remove {dst_dir}: {e}"))?;
+    }
+
+    eprintln!("vyoma-supervisor: pkg: removed {name}");
+    Ok(())
 }
 
 fn send_reply(target: &str, msg: &str, inbox: &Inbox) {
