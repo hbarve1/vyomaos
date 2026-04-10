@@ -8,7 +8,7 @@
 //!   Replies arrive on stdin prefixed with "REPLY:" so the shell can
 //!   distinguish them from keyboard input lines.
 
-use std::io::BufRead;
+use std::io::{BufRead, Write};
 
 // ── Panel geometry (lower portion of 1280×800 screen) ────────────────────────
 
@@ -160,4 +160,7 @@ fn text(x: u32, y: u32, rgba: u32, s: &str) {
 #[inline]
 fn flush() {
     println!("VYOMA_DRAW:flush");
+    // Pipe stdout is block-buffered — must flush explicitly so VYOMA_DRAW
+    // commands reach the supervisor without waiting for the buffer to fill.
+    let _ = std::io::stdout().flush();
 }
