@@ -1,0 +1,11 @@
+[app]
+name    = "shell"
+version = "0.1.0"
+wasm    = "shell.wasm"
+
+[capabilities]
+stdio      = true
+filesystem = false
+network    = false
+display    = true   # VYOMA_DRAW output
+shell      = true   # receives keyboard focus by default at boot

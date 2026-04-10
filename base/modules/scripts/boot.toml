@@ -36,3 +36,8 @@ restart  = "never"
 [[apps]]
 manifest = "/apps/http-server/vyoma.toml"
 restart  = "always"
+
+# Interactive shell: keyboard input from /dev/tty0 → command prompt on screen
+[[apps]]
+manifest = "/apps/shell/vyoma.toml"
+restart  = "never"
