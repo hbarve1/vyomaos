@@ -72,7 +72,9 @@ fn main() {
                 push_line(&mut lines, "  ps                — list all apps + status".into());
                 push_line(&mut lines, "  status            — running app count".into());
                 push_line(&mut lines, "  list              — list app names".into());
-                push_line(&mut lines, "  log <app>         — last 20 lines of app output".into());
+                push_line(&mut lines, "  log <app>         — last 20 lines (memory)".into());
+                push_line(&mut lines, "  logf <app>        — last 30 lines from disk log".into());
+                push_line(&mut lines, "  logs              — list apps with log files".into());
                 push_line(&mut lines, "  kill <app>        — terminate an app".into());
                 push_line(&mut lines, "  restart <app>     — kill + relaunch an app".into());
                 push_line(&mut lines, "  run <app>         — launch an app by name".into());
@@ -98,6 +100,17 @@ fn main() {
             "reload" => {
                 println!("@supervisor: reload");
                 push_line(&mut lines, "reloading boot.toml...".into());
+            }
+            "logs" => {
+                println!("@supervisor: logs");
+            }
+            other if other.starts_with("logf ") => {
+                let app = other[5..].trim();
+                if app.is_empty() {
+                    push_line(&mut lines, "usage: logf <appname>".into());
+                } else {
+                    println!("@supervisor: logf {app}");
+                }
             }
             other if other.starts_with("log ") => {
                 let app = other[4..].trim();

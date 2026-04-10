@@ -227,6 +227,8 @@ struct SpawnedApp {
 const BOOT_CONFIG_PATH:  &str = "/etc/vyoma/boot.toml";
 const USER_BOOT_PATH:    &str = "/data/installed.txt";
 const DATA_APPS_DIR:     &str = "/data/apps";
+const LOG_DIR:           &str = "/data/logs";
+const LOG_TAIL_LINES:    usize = 30;
 
 /// Built-in package catalog — apps shipped in the initramfs, available to install.
 /// Tuple: (name, version, description)
@@ -404,8 +406,22 @@ fn spawn_io_threads(
     thread::Builder::new()
         .name(format!("{name}-reader"))
         .spawn(move || {
+            // Open persistent log file (best-effort; errors are silently ignored)
+            let _ = fs::create_dir_all(LOG_DIR);
+            let log_path = format!("{LOG_DIR}/{name_r}.log");
+            let mut log_file = std::fs::OpenOptions::new()
+                .create(true).append(true)
+                .open(&log_path)
+                .ok();
+
             for line in BufReader::new(child_stdout).lines() {
                 let line = match line { Ok(l) => l, Err(_) => break };
+
+                // Write to persistent log file
+                if let Some(ref mut f) = log_file {
+                    let _ = writeln!(f, "{line}");
+                }
+
                 // Append to per-app log ring buffer
                 {
                     let reg = registry_r.lock().unwrap();
@@ -823,6 +839,57 @@ fn handle_supervisor_command(
                 }
             };
             send_reply(sender, &reply, inbox);
+        }
+
+        // ── P16T01: persistent log commands ──────────────────────────────────
+
+        // logs — list apps that have a log file in /data/logs/
+        "logs" => {
+            let mut names: Vec<String> = fs::read_dir(LOG_DIR)
+                .map(|rd| {
+                    rd.filter_map(|e| {
+                        let e = e.ok()?;
+                        let fname = e.file_name().into_string().ok()?;
+                        fname.strip_suffix(".log").map(|s| s.to_string())
+                    }).collect()
+                })
+                .unwrap_or_default();
+            names.sort();
+            if names.is_empty() {
+                send_reply(sender, "REPLY:no logs yet (apps haven't produced output)", inbox);
+            } else {
+                send_reply(sender, &format!("REPLY:{}", names.join("|")), inbox);
+            }
+        }
+
+        // logf <app> — last LOG_TAIL_LINES lines from /data/logs/<app>.log
+        "logf" => {
+            let app_name = match parts.get(1).map(|s| s.trim()) {
+                Some(n) if !n.is_empty() => n.to_string(),
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: logf <app>", inbox);
+                    return;
+                }
+            };
+            let log_path = format!("{LOG_DIR}/{app_name}.log");
+            match fs::read_to_string(&log_path) {
+                Ok(content) => {
+                    let all: Vec<&str> = content.lines().collect();
+                    let start = all.len().saturating_sub(LOG_TAIL_LINES);
+                    let recent: Vec<String> = all[start..]
+                        .iter()
+                        .map(|s| s.replace('|', " "))
+                        .collect();
+                    if recent.is_empty() {
+                        send_reply(sender, &format!("REPLY:{app_name}.log is empty"), inbox);
+                    } else {
+                        send_reply(sender, &format!("REPLY:{}", recent.join("|")), inbox);
+                    }
+                }
+                Err(_) => {
+                    send_reply(sender, &format!("REPLY:no log file for {app_name}"), inbox);
+                }
+            }
         }
 
         // ── P14T01: package manager commands ─────────────────────────────────
