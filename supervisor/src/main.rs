@@ -237,6 +237,7 @@ struct SpawnedApp {
     child_stdout: ChildStdout,
     has_display:  bool,
     is_shell:     bool,
+    win_region:   Option<(u32, u32, u32, u32)>,  // P21: (x, y, w, h) in screen coords
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -514,6 +515,7 @@ fn spawn_io_threads(
     child_stdout: ChildStdout,
     msg_rx:       mpsc::Receiver<String>,
     has_display:  bool,
+    win_region:   Option<(u32, u32, u32, u32)>,  // P21
     inbox:        &Inbox,
     focused:      &FocusedApp,
     app_registry: &AppRegistry,
@@ -581,7 +583,7 @@ fn spawn_io_threads(
                         }
                     }
                 }
-                route_or_print(&line, &name_r, &inbox_r, has_display, &focused_r, &registry_r);
+                route_or_print(&line, &name_r, &inbox_r, has_display, win_region, &focused_r, &registry_r);
             }
         })
         .expect("spawn reader thread");
@@ -595,9 +597,9 @@ fn launch_app_threads(
     focused:      &FocusedApp,
     app_registry: &AppRegistry,
 ) -> thread::JoinHandle<()> {
-    let SpawnedApp { entry, name, child, msg_rx, child_stdin, child_stdout, has_display, is_shell: _ } = app;
+    let SpawnedApp { entry, name, child, msg_rx, child_stdin, child_stdout, has_display, is_shell: _, win_region } = app;
 
-    spawn_io_threads(&name, child_stdin, child_stdout, msg_rx, has_display, inbox, focused, app_registry);
+    spawn_io_threads(&name, child_stdin, child_stdout, msg_rx, has_display, win_region, inbox, focused, app_registry);
 
     let registry_w = Arc::clone(app_registry);
     let inbox_w    = Arc::clone(inbox);
@@ -715,6 +717,7 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         child_stdout,
         has_display: caps.display,
         is_shell: caps.shell,
+        win_region: manifest.window.map(|wr| (wr.x, wr.y, wr.w, wr.h)),
     })
 }
 
@@ -725,17 +728,19 @@ fn route_or_print(
     sender:       &str,
     inbox:        &Inbox,
     has_display:  bool,
+    win_region:   Option<(u32, u32, u32, u32)>,  // P21
     focused:      &FocusedApp,
     app_registry: &AppRegistry,
 ) {
     #[cfg(target_os = "linux")]
     if has_display {
         if let Some(cmd) = line.strip_prefix("VYOMA_DRAW:") {
-            handle_draw_command(cmd, sender);
+            handle_draw_command(cmd, sender, win_region);
             return;
         }
     }
     let _ = has_display;
+    let _ = win_region;
 
     if let Some(rest) = line.strip_prefix('@') {
         if let Some((target, msg)) = rest.split_once(": ") {
@@ -1232,7 +1237,7 @@ fn send_reply(target: &str, msg: &str, inbox: &Inbox) {
 // ── VYOMA_DRAW command dispatcher ─────────────────────────────────────────────
 
 #[cfg(target_os = "linux")]
-fn handle_draw_command(cmd: &str, sender: &str) {
+fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)>) {
     let Some(fb_lock) = display::get() else { return };
 
     if cmd == "flush" {
@@ -1242,8 +1247,22 @@ fn handle_draw_command(cmd: &str, sender: &str) {
 
     if let Some(args) = cmd.strip_prefix("fill_rect:") {
         let v: Vec<u32> = args.split(',').filter_map(|s| s.parse().ok()).collect();
-        if let [x, y, w, h, rgba] = v.as_slice() {
-            fb_lock.lock().unwrap().fill_rect(*x, *y, *w, *h, *rgba);
+        if let [lx, ly, w, h, rgba] = v.as_slice() {
+            let (ax, ay, aw, ah) = match win {
+                None => (*lx, *ly, *w, *h),
+                Some((wx, wy, ww, wh)) => {
+                    let ax = wx + *lx;
+                    let ay = wy + *ly;
+                    let win_right  = wx + ww;
+                    let win_bottom = wy + wh;
+                    if ax >= win_right || ay >= win_bottom { return; }
+                    let aw = (*w).min(win_right  - ax);
+                    let ah = (*h).min(win_bottom - ay);
+                    if aw == 0 || ah == 0 { return; }
+                    (ax, ay, aw, ah)
+                }
+            };
+            fb_lock.lock().unwrap().fill_rect(ax, ay, aw, ah, *rgba);
         } else {
             eprintln!("vyoma-display: [{sender}] bad fill_rect args: {args}");
         }
@@ -1257,13 +1276,13 @@ fn handle_draw_command(cmd: &str, sender: &str) {
         let parts4: Vec<&str> = args.splitn(4, ',').collect();
 
         let parsed = if parts5.len() == 5 {
-            if let (Ok(x), Ok(y), Ok(rgba), Some(sz)) = (
+            if let (Ok(lx), Ok(ly), Ok(rgba), Some(sz)) = (
                 parts5[0].parse::<u32>(),
                 parts5[1].parse::<u32>(),
                 parts5[2].parse::<u32>(),
                 font::parse_size(parts5[3]),
             ) {
-                Some((x, y, rgba, sz, parts5[4]))
+                Some((lx, ly, rgba, sz, parts5[4]))
             } else {
                 None
             }
@@ -1273,12 +1292,12 @@ fn handle_draw_command(cmd: &str, sender: &str) {
 
         let parsed = parsed.or_else(|| {
             if parts4.len() == 4 {
-                if let (Ok(x), Ok(y), Ok(rgba)) = (
+                if let (Ok(lx), Ok(ly), Ok(rgba)) = (
                     parts4[0].parse::<u32>(),
                     parts4[1].parse::<u32>(),
                     parts4[2].parse::<u32>(),
                 ) {
-                    Some((x, y, rgba, font::FontSize::Medium, parts4[3]))
+                    Some((lx, ly, rgba, font::FontSize::Medium, parts4[3]))
                 } else {
                     None
                 }
@@ -1287,8 +1306,17 @@ fn handle_draw_command(cmd: &str, sender: &str) {
             }
         });
 
-        if let Some((x, y, rgba, size, text)) = parsed {
-            fb_lock.lock().unwrap().draw_text(x, y, text, rgba, size);
+        if let Some((lx, ly, rgba, size, text)) = parsed {
+            let (ax, ay) = match win {
+                None => (lx, ly),
+                Some((wx, wy, ww, wh)) => {
+                    let ax = wx + lx;
+                    let ay = wy + ly;
+                    if ax >= wx + ww || ay >= wy + wh { return; }
+                    (ax, ay)
+                }
+            };
+            fb_lock.lock().unwrap().draw_text(ax, ay, text, rgba, size);
         } else {
             eprintln!("vyoma-display: [{sender}] bad draw_text args: {args}");
         }
@@ -1359,10 +1387,10 @@ fn wait_app(
                     }
                 }
                 // Spawn new IO threads; continue this loop as the new waiter
-                let SpawnedApp { child: new_child, child_stdin, child_stdout, msg_rx, has_display, .. } = app;
+                let SpawnedApp { child: new_child, child_stdin, child_stdout, msg_rx, has_display, win_region, .. } = app;
                 spawn_io_threads(
                     &name, child_stdin, child_stdout, msg_rx,
-                    has_display, &inbox, &focused, &app_registry,
+                    has_display, win_region, &inbox, &focused, &app_registry,
                 );
                 child = new_child;
             }
