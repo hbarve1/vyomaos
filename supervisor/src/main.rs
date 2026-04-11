@@ -82,6 +82,8 @@ struct Capabilities {
     display: bool,
     #[serde(default)]
     shell: bool,
+    #[serde(default)]
+    watchdog_secs: u32,  // 0 = disabled; >0 = kill app if silent for this many seconds
 }
 
 // ── P08T01: seccomp BPF denylist ──────────────────────────────────────────────
