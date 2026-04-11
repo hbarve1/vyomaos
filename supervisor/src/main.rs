@@ -67,7 +67,7 @@ struct AppManifest {
     app: AppMeta,
     capabilities: Capabilities,
     #[serde(default)]
-    window: Option<WindowRegion>,  // P21: consumed in spawn_app → win_region
+    window: Option<WindowRegion>,  // optional [window] section in vyoma.toml
 }
 
 #[derive(Debug, Deserialize)]
