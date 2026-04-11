@@ -9,3 +9,9 @@ filesystem = false
 network    = false
 display    = true   # VYOMA_DRAW output
 shell      = true   # receives keyboard focus by default at boot
+
+[window]
+x = 0
+y = 440
+w = 1440
+h = 460

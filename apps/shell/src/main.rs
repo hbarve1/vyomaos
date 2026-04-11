@@ -20,8 +20,8 @@ use std::io::{BufRead, Write};
 
 // ── Panel geometry (lower portion of 1440×900 screen) ────────────────────────
 
-const PX: u32 = 24;       // panel left edge
-const PY: u32 = 450;      // panel top edge
+const PX: u32 = 24;       // panel left edge (horizontal margin within window)
+const PY: u32 = 10;       // panel top edge in LOCAL window coords (window.y=440)
 const PW: u32 = 1392;     // panel width  (1440 - 24*2)
 const PH: u32 = 420;      // panel height
 
