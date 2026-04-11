@@ -6,4 +6,4 @@ wasm    = "ticker.wasm"
 [capabilities]
 stdio         = true
 display       = true
-watchdog_secs = 10
+watchdog_secs = 30   # 30s: covers WASM JIT startup (~10-15s) + runtime silence detection
