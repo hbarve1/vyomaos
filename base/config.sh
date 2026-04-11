@@ -6,17 +6,14 @@
 readonly VYOMAOS_CONFIG_LOADED=1
 
 # Paths
-readonly PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly OUTDIR="$PROJECT_ROOT/out"
 readonly ROOTFS_DIR="$OUTDIR/rootfs"
 readonly KERNEL_FILE="$OUTDIR/bzImage"
 readonly INITRAMFS_FILE="$OUTDIR/initramfs.cpio.gz"
 readonly KERNEL_SOURCE_DIR="$OUTDIR/linux-5.10.113"
 readonly KERNEL_TAR_FILE="$OUTDIR/linux-5.10.113.tar.xz"
-
-# URLs
 readonly KERNEL_SOURCE_URL="https://www.kernel.org/pub/linux/kernel/v5.x/linux-5.10.113.tar.xz"
-readonly BUSYBOX_URL="https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox"
 
 # Logging
 log_info() { echo "ℹ️  $1"; }

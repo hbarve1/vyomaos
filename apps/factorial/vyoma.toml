@@ -1,0 +1,9 @@
+[app]
+name    = "factorial"
+version = "0.1.0"
+wasm    = "factorial.wasm"
+
+[capabilities]
+stdio      = true
+filesystem = false
+network    = false

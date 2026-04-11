@@ -1,0 +1,9 @@
+[app]
+name    = "calculator"
+version = "0.1.0"
+wasm    = "calculator.wasm"
+
+[capabilities]
+stdio      = true
+filesystem = false
+network    = false

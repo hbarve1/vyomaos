@@ -1,5 +1,30 @@
 {
   "name": "vyoma-os",
   "mode": "vendored",
-  "dependencies": {}
+  "dependencies": {
+    "pantheon-ai/implementation-planner": {
+      "version": "0.4.3"
+    },
+    "tessl/pypi-wasmtime": {
+      "version": "36.0.0"
+    },
+    "secondsky/claude-skills": {
+      "version": "88da5ffe9767d2b75bd5a5545165ca4bcd868168",
+      "source": "https://github.com/secondsky/claude-skills",
+      "include": {
+        "skills": [
+          "cloudflare-workers-multi-lang"
+        ]
+      }
+    },
+    "NeverSight/skills_feed": {
+      "version": "dd652dd36bc9aa7b8323204b95c1db54b4192e8c",
+      "source": "https://github.com/NeverSight/skills_feed",
+      "include": {
+        "skills": [
+          "git-best-practices"
+        ]
+      }
+    }
+  }
 }

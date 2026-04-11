@@ -1,0 +1,36 @@
+{
+  "description": "Schema for individual task files",
+  "properties": {
+    "filename": {
+      "pattern": "^task-P[0-9]{2}T[0-9]{2}-[a-z0-9-]+\\.md$"
+    },
+    "content": {
+      "allOf": [
+        {
+          "pattern": "# P[0-9]{2}T[0-9]{2}",
+          "description": "must have a top-level H1 with task identifier P{NN}T{NN}"
+        },
+        {
+          "pattern": "## Phase",
+          "description": "must have a '## Phase' section"
+        },
+        {
+          "pattern": "## Goal",
+          "description": "must have a '## Goal' section"
+        },
+        {
+          "pattern": "## File to create",
+          "description": "must have a '## File to create / modify' section"
+        },
+        {
+          "pattern": "## Implementation",
+          "description": "must have an '## Implementation' section"
+        },
+        {
+          "pattern": "## Verification",
+          "description": "must have a '## Verification' section with runnable commands"
+        }
+      ]
+    }
+  }
+}

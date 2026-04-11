@@ -1,0 +1,16 @@
+[app]
+name    = "gui-demo"
+version = "0.1.0"
+wasm    = "gui-demo.wasm"
+
+[capabilities]
+stdio      = true
+filesystem = true
+network    = false
+display    = true
+
+[window]
+x = 0
+y = 0
+w = 1440
+h = 440

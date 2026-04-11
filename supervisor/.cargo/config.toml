@@ -1,0 +1,8 @@
+[build]
+# Default target: statically linked x86_64 musl binary.
+# Override per-invocation with: cargo build --target <other>
+target = "x86_64-unknown-linux-musl"
+
+[target.x86_64-unknown-linux-musl]
+# musl-gcc is provided by musl-tools in the Docker build environment (P01T03).
+linker = "musl-gcc"

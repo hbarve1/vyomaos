@@ -1,0 +1,11 @@
+[app]
+name    = "http-server"
+version = "0.1.0"
+wasm    = "http-server.wasm"
+
+[capabilities]
+stdio        = true
+filesystem   = true    # reads /data/boot_count.txt, boot_log.txt
+network      = true    # grants -S tcplisten=0.0.0.0:8080
+network_port = 8080
+display      = false

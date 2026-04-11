@@ -1,0 +1,20 @@
+[package]
+name    = "supervisor"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "supervisor"
+path = "src/main.rs"
+
+[dependencies]
+libc  = { version = "0.2", default-features = false }
+serde = { version = "1", features = ["derive"] }
+toml  = "0.8"
+
+[profile.release]
+opt-level     = "z"      # optimise for binary size
+lto           = true     # link-time optimisation
+codegen-units = 1        # single CGU improves LTO effectiveness
+strip         = true     # strip debug symbols
+panic         = "abort"  # no unwinding (~50 KB saving in musl builds)

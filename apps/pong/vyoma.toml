@@ -1,0 +1,9 @@
+[app]
+name    = "pong"
+version = "0.1.0"
+wasm    = "pong.wasm"
+
+[capabilities]
+stdio      = true
+filesystem = false
+network    = false

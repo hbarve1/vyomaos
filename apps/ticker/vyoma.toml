@@ -1,0 +1,9 @@
+[app]
+name    = "ticker"
+version = "0.1.0"
+wasm    = "ticker.wasm"
+
+[capabilities]
+stdio         = true
+display       = true
+watchdog_secs = 30   # 30s: covers WASM JIT startup (~10-15s) + runtime silence detection

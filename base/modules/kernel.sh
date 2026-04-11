@@ -1,29 +1,34 @@
 #!/usr/bin/env bash
 # VyomaOS Kernel Module
+# Builds Linux kernel using base/kernel.config merged onto tinyconfig.
 
 source "$(dirname "${BASH_SOURCE[0]}")/../config.sh"
 
 build_kernel() {
-    [[ -f "$KERNEL_FILE" ]] && return 0
+    [[ -f "$KERNEL_FILE" ]] && { log_info "Kernel already built, skipping."; return 0; }
     log_info "Building kernel..."
-    
+
     download_file "$KERNEL_SOURCE_URL" "$KERNEL_TAR_FILE" "kernel source" || return 1
-    
+
     mkdir -p "$OUTDIR"
     tar -xJf "$KERNEL_TAR_FILE" -C "$OUTDIR"
-    
+
+    local kernel_config="$PROJECT_ROOT/base/kernel.config"
+    if [[ ! -f "$kernel_config" ]]; then
+        log_error "Kernel config not found: $kernel_config"
+        return 1
+    fi
+
     cd "$KERNEL_SOURCE_DIR"
-    make defconfig >/dev/null 2>&1
-    
-    # Essential kernel config for VyomaOS
-    {
-        echo "CONFIG_SERIAL_8250=y"
-        echo "CONFIG_SERIAL_8250_CONSOLE=y"
-        echo "CONFIG_DEVTMPFS=y"
-        echo "CONFIG_DEVTMPFS_MOUNT=y"
-    } >> .config
-    
-    make -j$(nproc) bzImage >/dev/null 2>&1 || return 1
+
+    # allnoconfig: start with everything=n, then force-enable only what kernel.config lists.
+    # tinyconfig had transitive-dependency gaps that silently dropped virtio drivers.
+    make KCONFIG_ALLCONFIG="$kernel_config" allnoconfig
+
+    make -j"$(nproc)" bzImage
     cp arch/x86/boot/bzImage "$KERNEL_FILE"
-    return 0
+
+    log_success "Kernel built: $KERNEL_FILE ($(du -sh "$KERNEL_FILE" | cut -f1))"
 }
+
+build_kernel

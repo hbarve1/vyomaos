@@ -1,0 +1,9 @@
+[app]
+name    = "hello-world"
+version = "0.1.0"
+wasm    = "hello-world.wasm"
+
+[capabilities]
+stdio      = true
+filesystem = false
+network    = false
