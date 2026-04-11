@@ -195,44 +195,95 @@ impl Framebuffer {
         }
     }
 
-    /// Render a string at pixel position (x, y) using the embedded 8×16 bitmap font.
+    /// Render a string at pixel position (x, y) using the embedded bitmap font.
+    /// Supports three sizes: Small (8×8), Medium (8×16), Large (16×32).
     /// Characters outside printable ASCII (0x20–0x7E) are drawn as blank glyphs.
     /// Text is clipped at the right and bottom framebuffer edges.
-    pub fn draw_text(&mut self, x: u32, y: u32, text: &str, rgba: u32) {
+    pub fn draw_text(&mut self, x: u32, y: u32, text: &str, rgba: u32, size: font::FontSize) {
         if self.bpp != 32 { return; }
         let r = ((rgba >> 24) & 0xFF) as u8;
         let g = ((rgba >> 16) & 0xFF) as u8;
         let b = ((rgba >>  8) & 0xFF) as u8;
         let fg = [b, g, r, 0xFF_u8]; // BGRA little-endian
 
+        let (glyph_w, _glyph_h) = font::glyph_dims(size);
         let mut cx = x;
-        for ch in text.chars() {
-            if cx + font::GLYPH_W > self.width { break; }
 
-            let glyph_idx = if (ch as u32) >= font::FIRST_CHAR as u32
-                            && (ch as u32) <= font::LAST_CHAR as u32 {
+        for ch in text.chars() {
+            if cx + glyph_w > self.width { break; }
+
+            let glyph_base = if (ch as u32) >= font::FIRST_CHAR as u32
+                             && (ch as u32) <= font::LAST_CHAR as u32 {
                 (ch as usize - font::FIRST_CHAR as usize) * font::GLYPH_H as usize
             } else {
                 0 // blank glyph for out-of-range chars
             };
 
-            for row in 0..font::GLYPH_H {
-                let scan_y = y + row;
-                if scan_y >= self.height { break; }
-                let byte = font::FONT[glyph_idx + row as usize];
-                for bit in 0..font::GLYPH_W {
-                    if byte & (0x80 >> bit) != 0 {
-                        let px = cx + bit;
-                        let off = (scan_y * self.stride + px * 4) as usize;
-                        if off + 4 <= self.buf_len {
-                            unsafe {
-                                std::ptr::copy_nonoverlapping(fg.as_ptr(), self.buf.add(off), 4);
+            match size {
+                font::FontSize::Medium => {
+                    // Original 8×16 rendering (unchanged)
+                    for row in 0..font::GLYPH_H {
+                        let scan_y = y + row;
+                        if scan_y >= self.height { break; }
+                        let byte = font::FONT[glyph_base + row as usize];
+                        for bit in 0..font::GLYPH_W {
+                            if byte & (0x80 >> bit) != 0 {
+                                let px = cx + bit;
+                                let off = (scan_y * self.stride + px * 4) as usize;
+                                if off + 4 <= self.buf_len {
+                                    unsafe {
+                                        std::ptr::copy_nonoverlapping(fg.as_ptr(), self.buf.add(off), 4);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                font::FontSize::Small => {
+                    // 8×8: sample every other row of the 8×16 glyph (rows 0,2,4,...14)
+                    for out_row in 0..8u32 {
+                        let src_row = out_row * 2; // source rows 0,2,4,...14
+                        let scan_y = y + out_row;
+                        if scan_y >= self.height { break; }
+                        let byte = font::FONT[glyph_base + src_row as usize];
+                        for out_bit in 0..8u32 {
+                            if byte & (0x80 >> out_bit) != 0 {
+                                let px = cx + out_bit;
+                                let off = (scan_y * self.stride + px * 4) as usize;
+                                if off + 4 <= self.buf_len {
+                                    unsafe {
+                                        std::ptr::copy_nonoverlapping(fg.as_ptr(), self.buf.add(off), 4);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                font::FontSize::Large => {
+                    // 16×32: pixel-double the 8×16 glyph (each bit → 2×2 block)
+                    for src_row in 0..font::GLYPH_H {
+                        let byte = font::FONT[glyph_base + src_row as usize];
+                        for rep in 0..2u32 { // each source row drawn twice
+                            let scan_y = y + src_row * 2 + rep;
+                            if scan_y >= self.height { break; }
+                            for src_bit in 0..font::GLYPH_W {
+                                if byte & (0x80 >> src_bit) != 0 {
+                                    for rep_x in 0..2u32 { // each bit drawn twice
+                                        let px = cx + src_bit * 2 + rep_x;
+                                        let off = (scan_y * self.stride + px * 4) as usize;
+                                        if off + 4 <= self.buf_len {
+                                            unsafe {
+                                                std::ptr::copy_nonoverlapping(fg.as_ptr(), self.buf.add(off), 4);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
-            cx += font::GLYPH_W;
+            cx += glyph_w;
         }
     }
 
