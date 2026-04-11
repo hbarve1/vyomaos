@@ -465,6 +465,13 @@ fn spawn_io_threads(
     let focused_r  = Arc::clone(focused);
     let registry_r = Arc::clone(app_registry);
     let name_r     = name.to_string();
+    // P19: clone last_output Arc so the reader thread can update it cheaply
+    let last_output_r: Arc<Mutex<Instant>> = {
+        let reg = app_registry.lock().unwrap();
+        reg.get(name)
+            .map(|st| Arc::clone(&st.lock().unwrap().last_output))
+            .unwrap_or_else(|| Arc::new(Mutex::new(Instant::now())))
+    };
     thread::Builder::new()
         .name(format!("{name}-reader"))
         .spawn(move || {
@@ -478,6 +485,9 @@ fn spawn_io_threads(
 
             for line in BufReader::new(child_stdout).lines() {
                 let line = match line { Ok(l) => l, Err(_) => break };
+
+                // P19: touch last_output on every line — resets the watchdog timer
+                *last_output_r.lock().unwrap() = Instant::now();
 
                 // Write to persistent log file
                 if let Some(ref mut f) = log_file {
