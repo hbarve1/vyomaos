@@ -54,6 +54,7 @@ fn default_restart() -> String {
 // ── App manifest structs ──────────────────────────────────────────────────────
 
 #[derive(Debug, Default, Deserialize, Clone, Copy)]
+#[serde(deny_unknown_fields)]
 struct WindowRegion {
     x: u32,
     y: u32,
@@ -66,7 +67,7 @@ struct AppManifest {
     app: AppMeta,
     capabilities: Capabilities,
     #[serde(default)]
-    window: Option<WindowRegion>,
+    window: Option<WindowRegion>,  // P21: consumed in spawn_app → win_region
 }
 
 #[derive(Debug, Deserialize)]
