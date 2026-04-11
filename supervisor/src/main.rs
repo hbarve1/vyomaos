@@ -249,6 +249,14 @@ const PACKAGES: &[(&str, &str, &str)] = &[
     ("storage-demo", "0.1.0", "Persistent storage demo"),
 ];
 
+// ── P19: watchdog backoff helper ─────────────────────────────────────────────
+
+fn watchdog_next_backoff(watchdog_secs: u32, restarts: u32) -> u64 {
+    let base = watchdog_secs as u64;
+    let factor = 1u64 << restarts.min(8);
+    (base * factor).min(300)
+}
+
 fn main() {
     eprintln!("vyoma-supervisor starting");
 
@@ -421,6 +429,55 @@ fn main() {
     for app in spawned {
         let wh = launch_app_threads(app, &inbox, &focused, &app_registry);
         waiter_handles.push(wh);
+    }
+
+    // ── P19: watchdog thread — kills apps silent longer than watchdog_secs ───
+    {
+        use std::time::Duration;
+        let registry_wd = Arc::clone(&app_registry);
+        thread::Builder::new()
+            .name("watchdog".into())
+            .spawn(move || {
+                loop {
+                    thread::sleep(Duration::from_secs(1));
+                    let reg = registry_wd.lock().unwrap();
+                    for (name, state_arc) in reg.iter() {
+                        let st = state_arc.lock().unwrap();
+                        let wsecs = st.watchdog_secs;
+                        if wsecs == 0 { continue; }
+
+                        // Check backoff countdown
+                        {
+                            let mut backoff = st.watchdog_backoff.lock().unwrap();
+                            if *backoff > 0 {
+                                *backoff -= 1;
+                                continue;
+                            }
+                        }
+
+                        // Check silence duration
+                        let elapsed = st.last_output.lock().unwrap().elapsed();
+                        if elapsed.as_secs() >= wsecs as u64 {
+                            // Kill the child process
+                            if let Some(pid) = st.child_pid {
+                                eprintln!(
+                                    "[watchdog] {name}: silent for {}s (limit={wsecs}s) — killing pid {pid}",
+                                    elapsed.as_secs()
+                                );
+                                #[cfg(target_os = "linux")]
+                                unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+                            }
+                            // Set exponential backoff for next restart
+                            let restarts = st.restart_count;
+                            *st.watchdog_backoff.lock().unwrap() =
+                                watchdog_next_backoff(wsecs, restarts);
+                            // Reset timer so we don't immediately re-trigger
+                            *st.last_output.lock().unwrap() = std::time::Instant::now();
+                        }
+                    }
+                }
+            })
+            .expect("spawn watchdog thread");
     }
 
     drop(inbox);
@@ -760,9 +817,14 @@ fn handle_supervisor_command(
                         AppStatus::Running    => "running".to_string(),
                         AppStatus::Stopped(c) => format!("stopped({})", c),
                     };
+                    let wd_tag = if st.watchdog_secs > 0 {
+                        format!(" [watchdog={}s]", st.watchdog_secs)
+                    } else {
+                        String::new()
+                    };
                     let info = format!(
-                        "{:<16} {:<12} {:>5}s  restarts:{}",
-                        name, status_str, uptime, st.restart_count
+                        "{:<16} {:<12} {:>5}s  restarts:{}{}",
+                        name, status_str, uptime, st.restart_count, wd_tag
                     );
                     (name.clone(), info)
                 }).collect();
