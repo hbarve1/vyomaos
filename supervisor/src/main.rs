@@ -532,6 +532,11 @@ fn spawn_io_threads(
     thread::Builder::new()
         .name(format!("{name}-reader"))
         .spawn(move || {
+            // P19: reset last_output to "now" so the watchdog timeout starts from
+            // when the reader thread is actually ready (not from the earlier spawn
+            // time, which can be many seconds before the first line arrives).
+            *last_output_r.lock().unwrap() = Instant::now();
+
             // Open persistent log file (best-effort; errors are silently ignored)
             let _ = fs::create_dir_all(LOG_DIR);
             let log_path = format!("{LOG_DIR}/{name_r}.log");
