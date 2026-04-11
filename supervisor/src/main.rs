@@ -53,10 +53,20 @@ fn default_restart() -> String {
 
 // ── App manifest structs ──────────────────────────────────────────────────────
 
+#[derive(Debug, Default, Deserialize, Clone, Copy)]
+struct WindowRegion {
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+}
+
 #[derive(Debug, Deserialize)]
 struct AppManifest {
     app: AppMeta,
     capabilities: Capabilities,
+    #[serde(default)]
+    window: Option<WindowRegion>,
 }
 
 #[derive(Debug, Deserialize)]
