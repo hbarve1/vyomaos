@@ -1489,6 +1489,106 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
         return;
     }
 
+    if let Some(args) = cmd.strip_prefix("rect_border:") {
+        let parts: Vec<&str> = args.splitn(5, ',').collect();
+        if parts.len() == 5 {
+            if let (Ok(lx), Ok(ly), Ok(w), Ok(h), Ok(rgba)) = (
+                parts[0].parse::<u32>(),
+                parts[1].parse::<u32>(),
+                parts[2].parse::<u32>(),
+                parts[3].parse::<u32>(),
+                parts[4].parse::<u32>(),
+            ) {
+                let (ax, ay, aw, ah) = match win {
+                    None => (lx, ly, w, h),
+                    Some((wx, wy, ww, wh)) => {
+                        let ax = wx + lx;
+                        let ay = wy + ly;
+                        let win_right  = wx + ww;
+                        let win_bottom = wy + wh;
+                        if ax >= win_right || ay >= win_bottom { return; }
+                        let aw = w.min(win_right  - ax);
+                        let ah = h.min(win_bottom - ay);
+                        if aw == 0 || ah == 0 { return; }
+                        (ax, ay, aw, ah)
+                    }
+                };
+                fb_lock.lock().unwrap().rect_border(ax, ay, aw, ah, rgba);
+            } else {
+                eprintln!("vyoma-display: [{sender}] bad rect_border args: {args}");
+            }
+        } else {
+            eprintln!("vyoma-display: [{sender}] bad rect_border args: {args}");
+        }
+        return;
+    }
+
+    if let Some(args) = cmd.strip_prefix("clear_region:") {
+        let parts: Vec<&str> = args.splitn(4, ',').collect();
+        if parts.len() == 4 {
+            if let (Ok(lx), Ok(ly), Ok(w), Ok(h)) = (
+                parts[0].parse::<u32>(),
+                parts[1].parse::<u32>(),
+                parts[2].parse::<u32>(),
+                parts[3].parse::<u32>(),
+            ) {
+                let (ax, ay, aw, ah) = match win {
+                    None => (lx, ly, w, h),
+                    Some((wx, wy, ww, wh)) => {
+                        let ax = wx + lx;
+                        let ay = wy + ly;
+                        let win_right  = wx + ww;
+                        let win_bottom = wy + wh;
+                        if ax >= win_right || ay >= win_bottom { return; }
+                        let aw = w.min(win_right  - ax);
+                        let ah = h.min(win_bottom - ay);
+                        if aw == 0 || ah == 0 { return; }
+                        (ax, ay, aw, ah)
+                    }
+                };
+                fb_lock.lock().unwrap().clear_region(ax, ay, aw, ah);
+            } else {
+                eprintln!("vyoma-display: [{sender}] bad clear_region args: {args}");
+            }
+        } else {
+            eprintln!("vyoma-display: [{sender}] bad clear_region args: {args}");
+        }
+        return;
+    }
+
+    if let Some(args) = cmd.strip_prefix("draw_text_wrap:") {
+        // Format: x,y,max_w,rgba,size,text  (splitn 6)
+        let parts: Vec<&str> = args.splitn(6, ',').collect();
+        if parts.len() == 6 {
+            if let (Ok(lx), Ok(ly), Ok(max_w), Ok(rgba), Some(size)) = (
+                parts[0].parse::<u32>(),
+                parts[1].parse::<u32>(),
+                parts[2].parse::<u32>(),
+                parts[3].parse::<u32>(),
+                font::parse_size(parts[4]),
+            ) {
+                let text = parts[5];
+                let (ax, ay, effective_max_w) = match win {
+                    None => (lx, ly, max_w),
+                    Some((wx, wy, ww, wh)) => {
+                        let ax = wx + lx;
+                        let ay = wy + ly;
+                        if ax >= wx + ww || ay >= wy + wh { return; }
+                        let effective_max_w = max_w.min(ww.saturating_sub(lx));
+                        if effective_max_w == 0 { return; }
+                        (ax, ay, effective_max_w)
+                    }
+                };
+                fb_lock.lock().unwrap().draw_text_wrap(ax, ay, effective_max_w, text, rgba, size);
+            } else {
+                eprintln!("vyoma-display: [{sender}] bad draw_text_wrap args: {args}");
+            }
+        } else {
+            eprintln!("vyoma-display: [{sender}] bad draw_text_wrap args: {args}");
+        }
+        return;
+    }
+
     eprintln!("vyoma-display: [{sender}] unknown command: {cmd}");
 }
 
