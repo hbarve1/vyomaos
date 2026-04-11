@@ -1154,15 +1154,44 @@ fn handle_draw_command(cmd: &str, sender: &str) {
     }
 
     if let Some(args) = cmd.strip_prefix("draw_text:") {
-        let parts: Vec<&str> = args.splitn(4, ',').collect();
-        if let [xs, ys, cs, text] = parts.as_slice() {
-            if let (Ok(x), Ok(y), Ok(rgba)) =
-                (xs.parse::<u32>(), ys.parse::<u32>(), cs.parse::<u32>())
-            {
-                fb_lock.lock().unwrap().draw_text(x, y, text, rgba);
+        // Try new format first: x,y,rgba,size,text  (5 comma-fields, size = s/m/l)
+        // Fall back to legacy:   x,y,rgba,text       (4 comma-fields, size = Medium)
+        let parts5: Vec<&str> = args.splitn(5, ',').collect();
+        let parts4: Vec<&str> = args.splitn(4, ',').collect();
+
+        let parsed = if parts5.len() == 5 {
+            if let (Ok(x), Ok(y), Ok(rgba), Some(sz)) = (
+                parts5[0].parse::<u32>(),
+                parts5[1].parse::<u32>(),
+                parts5[2].parse::<u32>(),
+                font::parse_size(parts5[3]),
+            ) {
+                Some((x, y, rgba, sz, parts5[4]))
             } else {
-                eprintln!("vyoma-display: [{sender}] bad draw_text numeric args: {args}");
+                None
             }
+        } else {
+            None
+        };
+
+        let parsed = parsed.or_else(|| {
+            if parts4.len() == 4 {
+                if let (Ok(x), Ok(y), Ok(rgba)) = (
+                    parts4[0].parse::<u32>(),
+                    parts4[1].parse::<u32>(),
+                    parts4[2].parse::<u32>(),
+                ) {
+                    Some((x, y, rgba, font::FontSize::Medium, parts4[3]))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        });
+
+        if let Some((x, y, rgba, size, text)) = parsed {
+            fb_lock.lock().unwrap().draw_text(x, y, text, rgba, size);
         } else {
             eprintln!("vyoma-display: [{sender}] bad draw_text args: {args}");
         }
