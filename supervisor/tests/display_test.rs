@@ -8,7 +8,7 @@ fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {
     }
     let mut lines: Vec<String> = Vec::new();
     let mut current = String::new();
-    for word in text.split(' ') {
+    for word in text.split(' ').filter(|w| !w.is_empty()) {
         if current.is_empty() {
             current.push_str(word);
         } else if current.len() + 1 + word.len() <= max_chars {
@@ -70,4 +70,9 @@ fn sentence_wraps_correctly() {
 fn exactly_max_chars_stays_on_one_line() {
     // "ab cd" = 5 chars, max_chars = 5 → fits exactly
     assert_eq!(wrap_words("ab cd", 5), vec!["ab cd"]);
+}
+
+#[test]
+fn trailing_space_does_not_produce_empty_line() {
+    assert_eq!(wrap_words("hello ", 10), vec!["hello"]);
 }
