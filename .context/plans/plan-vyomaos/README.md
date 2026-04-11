@@ -25,7 +25,9 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 15 — Live Dashboard | gui-demo queries `@supervisor: ps-raw` every 2s, renders 4-col app status grid | **complete** | — |
 | 16 — Persistent Logs | Supervisor writes each app stdout to `/data/logs/<name>.log`; ring buffer in memory | **complete** | — |
 | 17 — Real-Time Input | Raw termios mode (ICANON+ECHO off), per-keypress forwarding to focused app | **complete** | — |
-| 18 — _(next)_ | — | **pending** | — |
+| 18 — Shell UX | _(pending)_ | **pending** | — |
+| 19 — Watchdog | Silent-app detection + restart with exponential backoff; `watchdog_secs` per-app | **complete** | — |
+| 20 — _(next)_ | — | **pending** | — |
 
 ## Constraints
 
