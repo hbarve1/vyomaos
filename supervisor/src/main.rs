@@ -16,7 +16,7 @@
 
 #[cfg(target_os = "linux")]
 mod display;
-mod font8x16;
+mod font;
 
 #[cfg(target_os = "linux")]
 use std::ffi::CString;
@@ -385,11 +385,14 @@ fn main() {
                                 0x7F | 0x08 => Some("\x7f".to_string()),         // Backspace / DEL
                                 0x03        => Some("\x03".to_string()),          // Ctrl+C
                                 0x1B        => {
-                                    // ANSI escape sequence (arrow keys, etc.)
-                                    // Consume the next 2 bytes and discard the whole sequence.
+                                    // ANSI escape sequence — read next 2 bytes, forward arrows, discard rest.
                                     let mut esc = [0u8; 2];
                                     let _ = tty.read(&mut esc);
-                                    None
+                                    match esc {
+                                        [0x5B, 0x41] => Some("\x1b[A".to_string()), // ↑ up arrow
+                                        [0x5B, 0x42] => Some("\x1b[B".to_string()), // ↓ down arrow
+                                        _            => None,
+                                    }
                                 }
                                 0x20..=0x7E => Some(String::from(buf[0] as char)), // printable ASCII
                                 _           => None,

@@ -202,3 +202,29 @@ pub const FONT: &[u8] = &[
     // 0x7E '~'
     0x00,0x00,0x76,0xDC,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 ];
+
+// ── Font size support ─────────────────────────────────────────────────────────
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum FontSize {
+    Small,   // 8×8   (every other row + bit of Medium)
+    Medium,  // 8×16  (unchanged — existing glyphs)
+    Large,   // 16×32 (pixel-doubled Medium)
+}
+
+pub fn parse_size(s: &str) -> Option<FontSize> {
+    match s {
+        "s" => Some(FontSize::Small),
+        "m" => Some(FontSize::Medium),
+        "l" => Some(FontSize::Large),
+        _   => None,
+    }
+}
+
+pub fn glyph_dims(size: FontSize) -> (u32, u32) {
+    match size {
+        FontSize::Small  => (8, 8),
+        FontSize::Medium => (GLYPH_W, GLYPH_H),
+        FontSize::Large  => (GLYPH_W * 2, GLYPH_H * 2),
+    }
+}

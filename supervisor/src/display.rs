@@ -10,7 +10,7 @@
 //!   VYOMA_DRAW:draw_text:<x>,<y>,<rgba_decimal>,<text>
 //!   VYOMA_DRAW:flush
 
-use super::font8x16;
+use super::font;
 
 use std::{
     fs::OpenOptions,
@@ -207,20 +207,20 @@ impl Framebuffer {
 
         let mut cx = x;
         for ch in text.chars() {
-            if cx + font8x16::GLYPH_W > self.width { break; }
+            if cx + font::GLYPH_W > self.width { break; }
 
-            let glyph_idx = if (ch as u32) >= font8x16::FIRST_CHAR as u32
-                            && (ch as u32) <= font8x16::LAST_CHAR as u32 {
-                (ch as usize - font8x16::FIRST_CHAR as usize) * font8x16::GLYPH_H as usize
+            let glyph_idx = if (ch as u32) >= font::FIRST_CHAR as u32
+                            && (ch as u32) <= font::LAST_CHAR as u32 {
+                (ch as usize - font::FIRST_CHAR as usize) * font::GLYPH_H as usize
             } else {
                 0 // blank glyph for out-of-range chars
             };
 
-            for row in 0..font8x16::GLYPH_H {
+            for row in 0..font::GLYPH_H {
                 let scan_y = y + row;
                 if scan_y >= self.height { break; }
-                let byte = font8x16::FONT[glyph_idx + row as usize];
-                for bit in 0..font8x16::GLYPH_W {
+                let byte = font::FONT[glyph_idx + row as usize];
+                for bit in 0..font::GLYPH_W {
                     if byte & (0x80 >> bit) != 0 {
                         let px = cx + bit;
                         let off = (scan_y * self.stride + px * 4) as usize;
@@ -232,7 +232,7 @@ impl Framebuffer {
                     }
                 }
             }
-            cx += font8x16::GLYPH_W;
+            cx += font::GLYPH_W;
         }
     }
 
