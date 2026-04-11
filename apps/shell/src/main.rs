@@ -45,6 +45,9 @@ const C_PROMPT:  u32 = 0x58A6FFFF; // prompt colour
 fn main() {
     let mut lines: Vec<String> = Vec::new();
     let mut current_input = String::new();
+    let mut history: Vec<String> = Vec::new(); // up to 50 entries
+    let mut hist_idx: usize = 0;               // 0 = not browsing history
+    let mut saved_input = String::new();       // input saved when ↑ is first pressed
 
     draw_panel(&lines, &current_input);
 
@@ -67,8 +70,10 @@ fn main() {
         // ── Raw tty mode: single-char messages ───────────────────────────────
         match raw.as_str() {
             "\x03" => {
-                // Ctrl+C — clear the input line
+                // Ctrl+C — clear the input line and reset history navigation
                 current_input.clear();
+                hist_idx = 0;
+                saved_input.clear();
                 draw_panel(&lines, &current_input);
             }
             "\x7f" => {
@@ -80,11 +85,40 @@ fn main() {
                 // Enter — execute whatever is in the input buffer
                 let cmd = current_input.trim().to_string();
                 current_input.clear();
+                hist_idx = 0; // reset history navigation
+                // Push non-empty, non-consecutive-duplicate commands to history
+                if !cmd.is_empty() {
+                    if history.last().map(|s| s.as_str()) != Some(cmd.as_str()) {
+                        if history.len() >= 50 { history.remove(0); }
+                        history.push(cmd.clone());
+                    }
+                }
                 if cmd.is_empty() {
                     draw_panel(&lines, &current_input);
                 } else {
                     push_line(&mut lines, format!("> {cmd}"));
                     handle_command(&cmd, &mut lines);
+                    draw_panel(&lines, &current_input);
+                }
+            }
+            "\x1b[A" => {
+                // Up arrow — go back in history
+                if !history.is_empty() {
+                    if hist_idx == 0 { saved_input = current_input.clone(); }
+                    hist_idx = (hist_idx + 1).min(history.len());
+                    current_input = history[history.len() - hist_idx].clone();
+                    draw_panel(&lines, &current_input);
+                }
+            }
+            "\x1b[B" => {
+                // Down arrow — go forward in history
+                if hist_idx > 0 {
+                    hist_idx -= 1;
+                    current_input = if hist_idx == 0 {
+                        saved_input.clone()
+                    } else {
+                        history[history.len() - hist_idx].clone()
+                    };
                     draw_panel(&lines, &current_input);
                 }
             }
