@@ -18,7 +18,7 @@
 
 use std::io::{BufRead, Write};
 
-// ── Panel geometry (lower portion of 1440×900 screen) ────────────────────────
+// ── Panel geometry (local window coords; window declared at y=440 in vyoma.toml) ──────
 
 const PX: u32 = 24;       // panel left edge (horizontal margin within window)
 const PY: u32 = 10;       // panel top edge in LOCAL window coords (window.y=440)

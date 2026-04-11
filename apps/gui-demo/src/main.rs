@@ -12,7 +12,7 @@ use std::thread;
 use std::time::Duration;
 
 const W:      u32 = 1440;
-const DASH_H: u32 = 440;   // dashboard height — shell panel starts at Y=450
+const DASH_H: u32 = 440;   // dashboard height; matches [window] h=440 in vyoma.toml
 
 const C_BG:     u32 = 0x0D1117FF;
 const C_HEADER: u32 = 0x161B22FF;
