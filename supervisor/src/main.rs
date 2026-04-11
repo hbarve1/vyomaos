@@ -82,6 +82,8 @@ struct Capabilities {
     display: bool,
     #[serde(default)]
     shell: bool,
+    #[serde(default)]
+    watchdog_secs: u32,  // 0 = disabled; >0 = kill app if silent for this many seconds
 }
 
 // ── P08T01: seccomp BPF denylist ──────────────────────────────────────────────
@@ -194,12 +196,16 @@ enum AppStatus {
 }
 
 struct AppState {
-    entry:         BootEntry,
-    status:        AppStatus,
-    start_time:    Instant,
-    restart_count: u32,
-    log_buf:       VecDeque<String>,
-    child_pid:     Option<u32>,
+    entry:            BootEntry,
+    status:           AppStatus,
+    start_time:       Instant,
+    restart_count:    u32,
+    log_buf:          VecDeque<String>,
+    child_pid:        Option<u32>,
+    // P19: watchdog fields
+    watchdog_secs:    u32,
+    last_output:      Arc<Mutex<Instant>>,
+    watchdog_backoff: Arc<Mutex<u64>>,   // seconds until next restart allowed
 }
 
 type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
@@ -242,6 +248,14 @@ const PACKAGES: &[(&str, &str, &str)] = &[
     ("pong",         "0.1.0", "IPC demo — recv side (pair with ping)"),
     ("storage-demo", "0.1.0", "Persistent storage demo"),
 ];
+
+// ── P19: watchdog backoff helper ─────────────────────────────────────────────
+
+fn watchdog_next_backoff(watchdog_secs: u32, restarts: u32) -> u64 {
+    let base = watchdog_secs as u64;
+    let factor = 1u64 << restarts.min(8);
+    (base * factor).min(300)
+}
 
 fn main() {
     eprintln!("vyoma-supervisor starting");
@@ -420,6 +434,55 @@ fn main() {
         waiter_handles.push(wh);
     }
 
+    // ── P19: watchdog thread — kills apps silent longer than watchdog_secs ───
+    {
+        use std::time::Duration;
+        let registry_wd = Arc::clone(&app_registry);
+        thread::Builder::new()
+            .name("watchdog".into())
+            .spawn(move || {
+                loop {
+                    thread::sleep(Duration::from_secs(1));
+                    let reg = registry_wd.lock().unwrap();
+                    for (name, state_arc) in reg.iter() {
+                        let st = state_arc.lock().unwrap();
+                        let wsecs = st.watchdog_secs;
+                        if wsecs == 0 { continue; }
+
+                        // Check backoff countdown
+                        {
+                            let mut backoff = st.watchdog_backoff.lock().unwrap();
+                            if *backoff > 0 {
+                                *backoff -= 1;
+                                continue;
+                            }
+                        }
+
+                        // Check silence duration
+                        let elapsed = st.last_output.lock().unwrap().elapsed();
+                        if elapsed.as_secs() >= wsecs as u64 {
+                            // Kill the child process
+                            if let Some(pid) = st.child_pid {
+                                eprintln!(
+                                    "[watchdog] {name}: silent for {}s (limit={wsecs}s) — killing pid {pid}",
+                                    elapsed.as_secs()
+                                );
+                                #[cfg(target_os = "linux")]
+                                unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+                            }
+                            // Set exponential backoff for next restart
+                            let restarts = st.restart_count;
+                            *st.watchdog_backoff.lock().unwrap() =
+                                watchdog_next_backoff(wsecs, restarts);
+                            // Reset timer so we don't immediately re-trigger
+                            *st.last_output.lock().unwrap() = std::time::Instant::now();
+                        }
+                    }
+                }
+            })
+            .expect("spawn watchdog thread");
+    }
+
     drop(inbox);
     drop(focused);
     drop(app_registry);
@@ -462,9 +525,21 @@ fn spawn_io_threads(
     let focused_r  = Arc::clone(focused);
     let registry_r = Arc::clone(app_registry);
     let name_r     = name.to_string();
+    // P19: clone last_output Arc so the reader thread can update it cheaply
+    let last_output_r: Arc<Mutex<Instant>> = {
+        let reg = app_registry.lock().unwrap();
+        reg.get(name)
+            .map(|st| Arc::clone(&st.lock().unwrap().last_output))
+            .unwrap_or_else(|| Arc::new(Mutex::new(Instant::now())))
+    };
     thread::Builder::new()
         .name(format!("{name}-reader"))
         .spawn(move || {
+            // P19: reset last_output to "now" so the watchdog timeout starts from
+            // when the reader thread is actually ready (not from the earlier spawn
+            // time, which can be many seconds before the first line arrives).
+            *last_output_r.lock().unwrap() = Instant::now();
+
             // Open persistent log file (best-effort; errors are silently ignored)
             let _ = fs::create_dir_all(LOG_DIR);
             let log_path = format!("{LOG_DIR}/{name_r}.log");
@@ -475,6 +550,9 @@ fn spawn_io_threads(
 
             for line in BufReader::new(child_stdout).lines() {
                 let line = match line { Ok(l) => l, Err(_) => break };
+
+                // P19: touch last_output on every line — resets the watchdog timer
+                *last_output_r.lock().unwrap() = Instant::now();
 
                 // Write to persistent log file
                 if let Some(ref mut f) = log_file {
@@ -605,12 +683,15 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
 
     // Register per-app runtime state
     let state = Arc::new(Mutex::new(AppState {
-        entry:         entry.clone(),
-        status:        AppStatus::Running,
-        start_time:    Instant::now(),
-        restart_count: 0,
-        log_buf:       VecDeque::new(),
-        child_pid:     Some(child_pid),
+        entry:            entry.clone(),
+        status:           AppStatus::Running,
+        start_time:       Instant::now(),
+        restart_count:    0,
+        log_buf:          VecDeque::new(),
+        child_pid:        Some(child_pid),
+        watchdog_secs:    caps.watchdog_secs,
+        last_output:      Arc::new(Mutex::new(Instant::now())),
+        watchdog_backoff: Arc::new(Mutex::new(0u64)),
     }));
     app_registry.lock().unwrap().insert(name.clone(), state);
 
@@ -744,9 +825,14 @@ fn handle_supervisor_command(
                         AppStatus::Running    => "running".to_string(),
                         AppStatus::Stopped(c) => format!("stopped({})", c),
                     };
+                    let wd_tag = if st.watchdog_secs > 0 {
+                        format!(" [watchdog={}s]", st.watchdog_secs)
+                    } else {
+                        String::new()
+                    };
                     let info = format!(
-                        "{:<16} {:<12} {:>5}s  restarts:{}",
-                        name, status_str, uptime, st.restart_count
+                        "{:<16} {:<12} {:>5}s  restarts:{}{}",
+                        name, status_str, uptime, st.restart_count, wd_tag
                     );
                     (name.clone(), info)
                 }).collect();

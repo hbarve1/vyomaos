@@ -4,5 +4,6 @@ version = "0.1.0"
 wasm    = "ticker.wasm"
 
 [capabilities]
-stdio   = true
-display = true
+stdio         = true
+display       = true
+watchdog_secs = 10
