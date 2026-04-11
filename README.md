@@ -38,22 +38,38 @@ The result scales from an 18 MB embedded appliance today to a full desktop OS to
 - **Small footprint**: apps are 71–136 KB today. No shared library sprawl.
 - **Determinism**: WASM bytecode is byte-identical across builds and hosts.
 
-## Current State (Phase 9 of 12)
+## Current State (Phase 17)
 
-VyomaOS boots in QEMU in under 5 seconds to a Rust supervisor running 7 concurrent WASM apps:
+VyomaOS boots in QEMU in under 5 seconds to a Rust supervisor running 10 concurrent WASM apps with a live GUI dashboard, interactive shell, HTTP server, and real-time keyboard input:
 
 ```
-Linux 5.10 (allnoconfig, 2.3 MB)
-  └── Rust supervisor (697 KB, static musl, PID 1)
-        ├── hello-world.wasm    (85 KB)
-        ├── calculator.wasm     (113 KB)
-        ├── factorial.wasm      (87 KB)
-        ├── ping.wasm ←──IPC──→ pong.wasm  (92 KB each)
-        ├── storage-demo.wasm   (136 KB, 9P persistent storage)
-        └── gui-demo.wasm       (71 KB, DRM framebuffer display)
+Linux 5.10 (allnoconfig, ~2.3 MB)
+  └── Rust supervisor (static musl, PID 1)
+        ├── hello-world.wasm    — boot demo
+        ├── calculator.wasm     — arithmetic demo
+        ├── factorial.wasm      — math demo
+        ├── ping.wasm ←──IPC──→ pong.wasm   — IPC demo
+        ├── storage-demo.wasm   — 9P persistent storage (/data)
+        ├── gui-demo.wasm       — live dashboard (DRM/virtio-gpu, 2s refresh)
+        ├── http-server.wasm    — HTTP status page at localhost:8080
+        ├── ticker.wasm         — uptime counter overlay
+        └── shell.wasm          — interactive command shell (raw TTY input)
 ```
 
-Working features: concurrent scheduler, supervisor IPC broker, seccomp BPF denylist, 9P virtio persistent storage, DRM/virtio-gpu display, VYOMA_DRAW framebuffer protocol.
+**Working features:**
+- Concurrent scheduler with restart policies (`never` / `always`)
+- Bidirectional IPC broker (`@<app>: <message>` routing)
+- seccomp BPF denylist + capability audit log
+- 9P virtio persistent storage (`/data`, survives reboots)
+- DRM/virtio-gpu display at 1440×900, fullscreen on macOS/Linux
+- `VYOMA_DRAW:` framebuffer protocol (`fill_rect`, `draw_text`, `flush`)
+- Embedded 8×16 bitmap font (95 printable ASCII glyphs)
+- virtio-net + WASI sockets (`-S inherit-network`)
+- `/dev/tty0` raw keyboard input with per-app focus routing
+- Process management: `ps`, `kill`, `restart`, `reload`, `log`, `logf`
+- Package manager: install/remove/list; persists via `/data/installed.txt`
+- Persistent app logs: `/data/logs/<name>.log`
+- Real-time shell input: per-keypress forwarding, live prompt
 
 ## Roadmap
 
@@ -68,9 +84,15 @@ Working features: concurrent scheduler, supervisor IPC broker, seccomp BPF denyl
 | P07 | 9P virtio persistent storage | complete |
 | P08 | seccomp BPF denylist + capability audit log | complete |
 | P09 | DRM/virtio-gpu display + VYOMA_DRAW protocol | complete |
-| P10 | Embedded bitmap font + `draw_text` rendering | pending |
-| P11 | virtio-net + WASI sockets + HTTP server app | pending |
-| P12 | Interactive shell + keyboard routing + focus manager | pending |
+| P10 | Embedded bitmap font + `draw_text` rendering | complete |
+| P11 | virtio-net + WASI sockets + HTTP server app | complete |
+| P12 | Interactive shell + keyboard routing + focus manager | complete |
+| P13 | Process management (ps, kill, restart, reload, log) | complete |
+| P14 | Package manager (install, remove, list, persist) | complete |
+| P15 | Live system dashboard (gui-demo 2s refresh) | complete |
+| P16 | Persistent app logs (/data/logs/<name>.log) | complete |
+| P17 | Real-time shell input (raw TTY, per-keypress) | complete |
+| P18 | — | next |
 
 Full implementation plans: [`.context/plans/plan-vyomaos/`](.context/plans/plan-vyomaos/README.md)
 

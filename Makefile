@@ -163,7 +163,7 @@ run-gui: $(BZIMAGE) $(INITRAMFS) data
 	  -initrd $(INITRAMFS) \
 	  -append "console=tty0 console=ttyS0 panic=1" \
 	  -device virtio-vga,xres=1440,yres=900 \
-	  -display $(DISPLAY_BACKEND),zoom-to-fit=on \
+	  -display $(DISPLAY_BACKEND),zoom-to-fit=on,full-screen=on \
 	  -serial stdio \
 	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
 	  -m 512M \
@@ -191,7 +191,7 @@ run-gui-net: $(BZIMAGE) $(INITRAMFS) data
 	  -initrd $(INITRAMFS) \
 	  -append "console=tty0 console=ttyS0 panic=1" \
 	  -device virtio-vga,xres=1440,yres=900 \
-	  -display $(DISPLAY_BACKEND),zoom-to-fit=on \
+	  -display $(DISPLAY_BACKEND),zoom-to-fit=on,full-screen=on \
 	  -serial stdio \
 	  -netdev user,id=net0,hostfwd=tcp::8080-:8080 \
 	  -device virtio-net-pci,netdev=net0 \

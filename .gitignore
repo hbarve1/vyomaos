@@ -7,3 +7,7 @@ apps/*/target/
 
 # WASM binaries (built into out/ by make)
 **/*.wasm
+
+# For local development, ignore the data directory
+/data/ 
+.superpowers/
