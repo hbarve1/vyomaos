@@ -28,7 +28,7 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 18 — Shell UX | Arrow keys + command history (50 entries, ↑/↓ navigation) | **complete** | 5 |
 | 19 — Watchdog | Silent-app detection + restart with exponential backoff; `watchdog_secs` per-app | **complete** | 7 |
 | 20 — Font Scaling | 8×8/8×16/16×32 text sizes via `draw_text` size field; gui-demo large header | **complete** | 6 |
-| 21 — _(next)_ | — | **pending** | — |
+| 21 — Window Regions | Per-app window regions with offset+clip; `region` field in boot.toml; supervisor clips all draw ops to app bounds | **complete** | — |
 
 ## Constraints
 
