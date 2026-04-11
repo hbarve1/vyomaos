@@ -97,21 +97,21 @@ fn draw(apps: &[AppInfo], boot_count: u64, refresh: u64) {
     fill(0, 0, W, DASH_H, C_BG);
 
     // ── Header bar ────────────────────────────────────────────────────────────
-    fill(0, 0, W, 52, C_HEADER);
-    fill(0, 52, W, 3, C_ACCENT);
-    fill(16, 10, 32, 32, C_GREEN);              // logo block
-    text(58, 18, C_WHITE, "VyomaOS");
-    text(W - 210, 18, C_DIM, &format!("boot #{}", boot_count));
+    fill(0, 0, W, 64, C_HEADER);               // 52→64 to fit 16×32 large font
+    fill(0, 64, W, 3, C_ACCENT);              // accent line moves down
+    fill(16, 14, 32, 32, C_GREEN);             // logo block
+    text_large(58, 16, C_WHITE, "VyomaOS");    // 16×32 glyph, y=16 centres in 64px bar
+    text(W - 210, 24, C_DIM, &format!("boot #{}", boot_count));
 
     // ── Section label ─────────────────────────────────────────────────────────
-    text(32, 62, C_DIM,
+    text(32, 74, C_DIM,
         &format!("{}/{} apps running  |  refresh #{}", running, total, refresh));
 
     // ── App grid (4 columns) ──────────────────────────────────────────────────
     const COLS:   u32 = 4;
     const GAP:    u32 = 10;
     const CARD_H: u32 = 80;
-    const GRID_Y: u32 = 82;
+    const GRID_Y: u32 = 94;
     let card_w: u32 = (W - GAP * (COLS + 1)) / COLS;
 
     for (i, app) in apps.iter().enumerate() {
@@ -171,7 +171,10 @@ fn read_boot_count() -> u64 {
     println!("VYOMA_DRAW:fill_rect:{x},{y},{w},{h},{rgba}");
 }
 #[inline] fn text(x: u32, y: u32, rgba: u32, s: &str) {
-    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},{s}");
+    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},m,{s}");
+}
+#[inline] fn text_large(x: u32, y: u32, rgba: u32, s: &str) {
+    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},l,{s}");
 }
 #[inline] fn flush_draw() {
     println!("VYOMA_DRAW:flush");

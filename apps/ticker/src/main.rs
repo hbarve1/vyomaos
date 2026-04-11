@@ -51,7 +51,7 @@ fn main() {
     println!("VYOMA_DRAW:fill_rect:{x},{y},{w},{h},{rgba}");
 }
 #[inline] fn text(x: u32, y: u32, rgba: u32, s: &str) {
-    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},{s}");
+    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},m,{s}");
 }
 #[inline] fn flush() {
     println!("VYOMA_DRAW:flush");

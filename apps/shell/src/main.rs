@@ -286,7 +286,7 @@ fn fill(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
 
 #[inline]
 fn text(x: u32, y: u32, rgba: u32, s: &str) {
-    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},{s}");
+    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},m,{s}");
 }
 
 #[inline]
