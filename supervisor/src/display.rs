@@ -290,4 +290,73 @@ impl Framebuffer {
     /// Flush — virtio-gpu with DRM fbdev emulation propagates writes
     /// immediately on mmap.  This is a protocol no-op kept for completeness.
     pub fn flush(&self) {}
+
+    /// Draw a 1-pixel border rectangle (no fill).
+    pub fn rect_border(&mut self, x: u32, y: u32, w: u32, h: u32, rgba: u32) {
+        if w == 0 || h == 0 {
+            return;
+        }
+        self.fill_rect(x, y, w, 1, rgba);              // top
+        self.fill_rect(x, y + h - 1, w, 1, rgba);      // bottom
+        self.fill_rect(x, y, 1, h, rgba);              // left
+        self.fill_rect(x + w - 1, y, 1, h, rgba);      // right
+    }
+
+    /// Fill a region with solid black (clear).
+    pub fn clear_region(&mut self, x: u32, y: u32, w: u32, h: u32) {
+        self.fill_rect(x, y, w, h, 0x000000FF);
+    }
+
+    /// Draw word-wrapped text. Each line is `glyph_h` pixels tall.
+    /// `max_w` is the available width in pixels; wraps at character boundaries.
+    pub fn draw_text_wrap(
+        &mut self,
+        x: u32,
+        y: u32,
+        max_w: u32,
+        text: &str,
+        rgba: u32,
+        size: font::FontSize,
+    ) {
+        if self.bpp != 32 {
+            return;
+        }
+        let (glyph_w, glyph_h) = font::glyph_dims(size);
+        let max_chars = if glyph_w > 0 {
+            (max_w / glyph_w) as usize
+        } else {
+            0
+        };
+        for (i, line) in wrap_words(text, max_chars).into_iter().enumerate() {
+            let ly = y + i as u32 * glyph_h;
+            if ly + glyph_h > self.height {
+                break;
+            }
+            self.draw_text(x, ly, &line, rgba, size);
+        }
+    }
+}
+
+/// Word-wrap `text` so each line is at most `max_chars` wide.
+/// Long single words are placed on their own line without truncation.
+/// If `max_chars` is 0, returns the full text as a single line.
+pub fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {
+    if max_chars == 0 {
+        return vec![text.to_string()];
+    }
+    let mut lines: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for word in text.split(' ').filter(|w| !w.is_empty()) {
+        if current.is_empty() {
+            current.push_str(word);
+        } else if current.len() + 1 + word.len() <= max_chars {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(std::mem::take(&mut current));
+            current.push_str(word);
+        }
+    }
+    lines.push(current);  // always push, even if empty — ensures empty input returns vec![""]
+    lines
 }
