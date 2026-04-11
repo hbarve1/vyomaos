@@ -23,6 +23,7 @@ const C_RED:    u32 = 0xF78166FF;
 const C_YELLOW: u32 = 0xE3B341FF;
 const C_WHITE:  u32 = 0xFFFFFFFF;
 const C_DIM:    u32 = 0x8B949EFF;
+const C_HIGHLIGHT: u32 = 0x1C2E4AFF; // blue-tinted card background for hover
 
 struct AppInfo {
     name:     String,
@@ -36,24 +37,28 @@ fn main() {
     let stdin = std::io::stdin();
     let mut stdin_lines = BufReader::new(stdin).lines();
     let mut refresh: u64 = 0;
+    let mut cursor_pos: Option<(u32, u32)> = None;  // local window coords from mouse events
 
     loop {
         // Request live status from supervisor
         println!("@supervisor: ps-raw");
         let _ = std::io::stdout().flush();
 
-        // Read reply — skip any non-REPLY lines (shouldn't normally appear)
+        // Read reply — also absorb mouse events that arrived since last iteration
         let apps = loop {
             match stdin_lines.next() {
                 Some(Ok(line)) if line.starts_with("REPLY:") => {
                     break parse_ps(&line);
                 }
-                Some(Ok(_)) => continue,
+                Some(Ok(line)) if line.starts_with("VYOMA_INPUT:mouse:") => {
+                    cursor_pos = parse_mouse_event(&line).or(cursor_pos);
+                }
+                Some(Ok(_)) => {}
                 Some(Err(_)) | None => break vec![],
             }
         };
 
-        draw(&apps, boot_count, refresh);
+        draw(&apps, boot_count, refresh, cursor_pos);
         refresh += 1;
 
         thread::sleep(Duration::from_secs(2));
@@ -89,7 +94,7 @@ fn parse_ps(line: &str) -> Vec<AppInfo> {
 
 // ── Dashboard renderer ────────────────────────────────────────────────────────
 
-fn draw(apps: &[AppInfo], boot_count: u64, refresh: u64) {
+fn draw(apps: &[AppInfo], boot_count: u64, refresh: u64, cursor_pos: Option<(u32, u32)>) {
     let running = apps.iter().filter(|a| a.running).count();
     let total   = apps.len();
 
@@ -123,8 +128,12 @@ fn draw(apps: &[AppInfo], boot_count: u64, refresh: u64) {
 
         if cy + CARD_H > DASH_H { break; } // guard against overflow
 
-        // Card background
-        fill(cx, cy, card_w, CARD_H, C_PANEL);
+        // Card background — highlight if cursor is over this card
+        let hovered = cursor_pos
+            .map(|(mx, my)| find_card_under_cursor(mx, my, apps.len()) == Some(i))
+            .unwrap_or(false);
+        let card_bg = if hovered { C_HIGHLIGHT } else { C_PANEL };
+        fill(cx, cy, card_w, CARD_H, card_bg);
 
         // Status indicator dot
         let dot = if app.running { C_GREEN } else { C_RED };
@@ -167,6 +176,35 @@ fn read_boot_count() -> u64 {
         .unwrap_or(0)
 }
 
+/// Parse `VYOMA_INPUT:mouse:<x>,<y>,<btn>` → local window coords `(x, y)`.
+fn parse_mouse_event(line: &str) -> Option<(u32, u32)> {
+    let data = line.strip_prefix("VYOMA_INPUT:mouse:")?;
+    let mut parts = data.splitn(3, ',');
+    let x: u32 = parts.next()?.parse().ok()?;
+    let y: u32 = parts.next()?.parse().ok()?;
+    Some((x, y))
+}
+
+/// Return the index of the app card at local cursor position (mx, my), or None.
+fn find_card_under_cursor(mx: u32, my: u32, count: usize) -> Option<usize> {
+    const COLS: u32   = 4;
+    const GAP: u32    = 10;
+    const CARD_H: u32 = 80;
+    const GRID_Y: u32 = 94;
+    let card_w: u32   = (W - GAP * (COLS + 1)) / COLS;
+    for i in 0..count {
+        let col = (i as u32) % COLS;
+        let row = (i as u32) / COLS;
+        let cx  = GAP + col * (card_w + GAP);
+        let cy  = GRID_Y + row * (CARD_H + GAP);
+        if cy + CARD_H > DASH_H { break; }
+        if mx >= cx && mx < cx + card_w && my >= cy && my < cy + CARD_H {
+            return Some(i);
+        }
+    }
+    None
+}
+
 #[inline] fn fill(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
     println!("VYOMA_DRAW:fill_rect:{x},{y},{w},{h},{rgba}");
 }
@@ -179,4 +217,58 @@ fn read_boot_count() -> u64 {
 #[inline] fn flush_draw() {
     println!("VYOMA_DRAW:flush");
     let _ = std::io::stdout().flush();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_mouse_valid() {
+        assert_eq!(parse_mouse_event("VYOMA_INPUT:mouse:100,200,0"), Some((100, 200)));
+        assert_eq!(parse_mouse_event("VYOMA_INPUT:mouse:0,0,1"), Some((0, 0)));
+    }
+
+    #[test]
+    fn parse_mouse_invalid() {
+        assert_eq!(parse_mouse_event("REPLY:something"), None);
+        assert_eq!(parse_mouse_event("VYOMA_INPUT:mouse:abc,200,0"), None);
+    }
+
+    #[test]
+    fn no_cards_no_highlight() {
+        assert_eq!(find_card_under_cursor(100, 100, 0), None);
+    }
+
+    #[test]
+    fn cursor_on_first_card() {
+        // card 0: col=0, row=0 → cx=GAP=10, cy=GRID_Y=94
+        // card_w = (1440 - 10*5) / 4 = 347
+        // Inside: x in [10, 357), y in [94, 174)
+        assert_eq!(find_card_under_cursor(15, 100, 1), Some(0));
+        assert_eq!(find_card_under_cursor(356, 173, 1), Some(0));
+    }
+
+    #[test]
+    fn cursor_in_gap_no_highlight() {
+        // card 0 ends at x=357; card 1 starts at x=367; gap is [357, 367)
+        assert_eq!(find_card_under_cursor(360, 100, 5), None);
+    }
+
+    #[test]
+    fn cursor_above_grid() {
+        assert_eq!(find_card_under_cursor(15, 90, 5), None);
+    }
+
+    #[test]
+    fn cursor_on_second_card() {
+        // card 1: col=1 → cx = 10 + 1*(347+10) = 367, cy=94
+        assert_eq!(find_card_under_cursor(370, 100, 5), Some(1));
+    }
+
+    #[test]
+    fn cursor_on_fifth_card_second_row() {
+        // card 4: col=0, row=1 → cx=10, cy=94+(80+10)=184
+        assert_eq!(find_card_under_cursor(15, 190, 5), Some(4));
+    }
 }

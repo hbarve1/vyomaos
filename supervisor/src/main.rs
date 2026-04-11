@@ -95,6 +95,8 @@ struct Capabilities {
     shell: bool,
     #[serde(default)]
     watchdog_secs: u32,  // 0 = disabled; >0 = kill app if silent for this many seconds
+    #[serde(default)]
+    mouse: bool,   // receives VYOMA_INPUT:mouse: events when cursor is in window
 }
 
 // ── P08T01: seccomp BPF denylist ──────────────────────────────────────────────
@@ -217,6 +219,8 @@ struct AppState {
     watchdog_secs:    u32,
     last_output:      Arc<Mutex<Instant>>,
     watchdog_backoff: Arc<Mutex<u64>>,   // seconds until next restart allowed
+    has_mouse:  bool,
+    win_region: Option<(u32, u32, u32, u32)>,  // P22: (x,y,w,h) screen coords for mouse dispatch
 }
 
 type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
@@ -439,6 +443,100 @@ fn main() {
             .expect("spawn input-router");
     }
 
+    // ── P22: mouse-input thread — /dev/input/eventN → mouse-capable apps ──────
+    // Reads evdev input_event structs (24 bytes each on 64-bit Linux), tracks
+    // global cursor position, dispatches VYOMA_INPUT:mouse:<lx>,<ly>,<btn>
+    // to the first app with mouse=true whose window contains the cursor.
+    // Exits silently if no pointer device is found (headless boot).
+    #[cfg(target_os = "linux")]
+    {
+        let inbox_m    = Arc::clone(&inbox);
+        let registry_m = Arc::clone(&app_registry);
+        thread::Builder::new()
+            .name("mouse-input".into())
+            .spawn(move || {
+                use std::io::Read;
+
+                let Some(mut dev) = open_mouse_device() else {
+                    eprintln!("vyoma-supervisor: mouse-input: no pointer device found, disabling");
+                    return;
+                };
+
+                const EV_SYN: u16   = 0;
+                const EV_KEY: u16   = 1;
+                const EV_REL: u16   = 2;
+                const EV_ABS: u16   = 3;
+                const REL_X: u16    = 0;
+                const REL_Y: u16    = 1;
+                const ABS_X: u16    = 0;
+                const ABS_Y: u16    = 1;
+                const BTN_LEFT: u16 = 0x110;
+
+                const SCREEN_W: i32 = 1440;
+                const SCREEN_H: i32 = 900;
+                // virtio-mouse-pci reports ABS coords in range 0..=32767
+                const ABS_MAX: i64  = 32768;
+
+                let mut cx: i32 = SCREEN_W / 2;
+                let mut cy: i32 = SCREEN_H / 2;
+                let mut btn: u8 = 0;
+                let mut pending_abs_x: Option<i32> = None;
+                let mut pending_abs_y: Option<i32> = None;
+                let mut pending_dx:    i32 = 0;
+                let mut pending_dy:    i32 = 0;
+
+                // Linux input_event on 64-bit:
+                //   i64 tv_sec + i64 tv_usec + u16 type + u16 code + i32 value = 24 bytes
+                let mut buf = [0u8; 24];
+                loop {
+                    if dev.read_exact(&mut buf).is_err() {
+                        eprintln!("vyoma-supervisor: mouse-input: device read error, exiting");
+                        break;
+                    }
+                    let ev_type = u16::from_ne_bytes([buf[16], buf[17]]);
+                    let code    = u16::from_ne_bytes([buf[18], buf[19]]);
+                    let value   = i32::from_ne_bytes([buf[20], buf[21], buf[22], buf[23]]);
+
+                    match ev_type {
+                        EV_REL => match code {
+                            REL_X => pending_dx += value,
+                            REL_Y => pending_dy += value,
+                            _     => {}
+                        },
+                        EV_ABS => match code {
+                            ABS_X => pending_abs_x = Some(value),
+                            ABS_Y => pending_abs_y = Some(value),
+                            _     => {}
+                        },
+                        EV_KEY => {
+                            if code == BTN_LEFT {
+                                btn = if value > 0 { 1 } else { 0 };
+                            }
+                        }
+                        EV_SYN => {
+                            // Apply REL movement (regular mouse)
+                            if pending_dx != 0 || pending_dy != 0 {
+                                cx = (cx + pending_dx).clamp(0, SCREEN_W - 1);
+                                cy = (cy + pending_dy).clamp(0, SCREEN_H - 1);
+                                pending_dx = 0;
+                                pending_dy = 0;
+                            }
+                            // Apply ABS position (virtio-mouse-pci, scaled 0..32767 → screen)
+                            if let Some(ax) = pending_abs_x.take() {
+                                cx = (ax as i64 * SCREEN_W as i64 / ABS_MAX) as i32;
+                            }
+                            if let Some(ay) = pending_abs_y.take() {
+                                cy = (ay as i64 * SCREEN_H as i64 / ABS_MAX) as i32;
+                            }
+                            dispatch_mouse(cx, cy, btn, &inbox_m, &registry_m);
+                        }
+                        _ => {}
+                    }
+                }
+            })
+            .expect("spawn mouse-input thread");
+    }
+
     // ── Pass 2: start IO threads for each spawned app ─────────────────────────
     let mut waiter_handles = vec![];
     for app in spawned {
@@ -635,12 +733,13 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
     let net_port = caps.network_port.unwrap_or(8080);
     eprintln!(
         "vyoma-supervisor: [security] {name} capabilities — \
-         stdio:{} fs:{} net:{} display:{} shell:{} seccomp:denylist",
-        if caps.stdio { "yes" } else { "no" },
+         stdio:{} fs:{} net:{} display:{} shell:{} mouse:{} seccomp:denylist",
+        if caps.stdio      { "yes" } else { "no" },
         if caps.filesystem { "yes" } else { "no" },
-        if caps.network { format!("yes(port={net_port})") } else { "no".to_string() },
-        if caps.display { "yes" } else { "no" },
-        if caps.shell { "yes" } else { "no" },
+        if caps.network    { format!("yes(port={net_port})") } else { "no".to_string() },
+        if caps.display    { "yes" } else { "no" },
+        if caps.shell      { "yes" } else { "no" },
+        if caps.mouse      { "yes" } else { "no" },
     );
 
     let (tx, msg_rx) = mpsc::channel::<String>();
@@ -705,6 +804,8 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         watchdog_secs:    caps.watchdog_secs,
         last_output:      Arc::new(Mutex::new(Instant::now())),
         watchdog_backoff: Arc::new(Mutex::new(0u64)),
+        has_mouse:        caps.mouse,
+        win_region:       manifest.window.map(|wr| (wr.x, wr.y, wr.w, wr.h)),
     }));
     app_registry.lock().unwrap().insert(name.clone(), state);
 
@@ -1231,6 +1332,71 @@ fn remove_package(name: &str, app_registry: &AppRegistry) -> Result<(), String> 
 fn send_reply(target: &str, msg: &str, inbox: &Inbox) {
     if let Some(tx) = inbox.lock().unwrap().get(target) {
         let _ = tx.send(msg.to_string());
+    }
+}
+
+/// Find the first /dev/input/eventN that supports pointer events (EV_REL or EV_ABS).
+/// Uses EVIOCGBIT(0, 1) ioctl — returns 1 byte of event-type capability bitmask.
+/// Bit 2 = EV_REL (relative mouse), bit 3 = EV_ABS (absolute pointer, virtio-mouse-pci).
+/// Returns None on headless boot where no pointer input devices exist.
+#[cfg(target_os = "linux")]
+fn open_mouse_device() -> Option<std::fs::File> {
+    use std::os::unix::io::AsRawFd;
+    // EVIOCGBIT(0, 1) = _IOC(_IOC_READ=2, 'E'=0x45, nr=0x20, size=1)
+    //                 = (2<<30)|(0x45<<8)|0x20|(1<<16) = 0x80014520
+    // libc::Ioctl is i32 on musl/x86-64 and u64 on glibc — use `as _` to coerce.
+    const EVIOCGBIT_TYPE: u32 = 0x80014520u32;
+    for i in 0..8u32 {
+        let path = format!("/dev/input/event{i}");
+        let Ok(f) = std::fs::File::open(&path) else { continue };
+        let mut bits = 0u8;
+        let ret = unsafe {
+            libc::ioctl(
+                f.as_raw_fd(),
+                EVIOCGBIT_TYPE as _,
+                &mut bits as *mut u8 as *mut libc::c_void,
+            )
+        };
+        if ret >= 0 && (bits & (1 << 2) != 0 || bits & (1 << 3) != 0) {
+            eprintln!("vyoma-supervisor: mouse-input: using {path}");
+            return Some(f);
+        }
+    }
+    None
+}
+
+/// Dispatch a mouse event to the first mouse-capable app whose window contains (cx, cy).
+/// Sends local-coordinate message: VYOMA_INPUT:mouse:<lx>,<ly>,<btn>
+#[cfg(target_os = "linux")]
+fn dispatch_mouse(
+    cx: i32,
+    cy: i32,
+    btn: u8,
+    inbox: &Inbox,
+    app_registry: &AppRegistry,
+) {
+    let target = {
+        let reg = app_registry.lock().unwrap();
+        let mut found: Option<(String, i32, i32)> = None;
+        for (name, state_arc) in reg.iter() {
+            let st = state_arc.lock().unwrap();
+            if !st.has_mouse { continue; }
+            let Some((wx, wy, ww, wh)) = st.win_region else { continue };
+            if cx >= wx as i32
+                && cy >= wy as i32
+                && cx < (wx + ww) as i32
+                && cy < (wy + wh) as i32
+            {
+                let lx = cx - wx as i32;
+                let ly = cy - wy as i32;
+                found = Some((name.clone(), lx, ly));
+                break;
+            }
+        }
+        found
+    }; // registry lock released here
+    if let Some((name, lx, ly)) = target {
+        send_reply(&name, &format!("VYOMA_INPUT:mouse:{lx},{ly},{btn}"), inbox);
     }
 }
 
