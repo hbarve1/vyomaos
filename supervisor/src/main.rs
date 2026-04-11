@@ -196,12 +196,16 @@ enum AppStatus {
 }
 
 struct AppState {
-    entry:         BootEntry,
-    status:        AppStatus,
-    start_time:    Instant,
-    restart_count: u32,
-    log_buf:       VecDeque<String>,
-    child_pid:     Option<u32>,
+    entry:            BootEntry,
+    status:           AppStatus,
+    start_time:       Instant,
+    restart_count:    u32,
+    log_buf:          VecDeque<String>,
+    child_pid:        Option<u32>,
+    // P19: watchdog fields
+    watchdog_secs:    u32,
+    last_output:      Arc<Mutex<Instant>>,
+    watchdog_backoff: Arc<Mutex<u64>>,   // seconds until next restart allowed
 }
 
 type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
@@ -604,12 +608,15 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
 
     // Register per-app runtime state
     let state = Arc::new(Mutex::new(AppState {
-        entry:         entry.clone(),
-        status:        AppStatus::Running,
-        start_time:    Instant::now(),
-        restart_count: 0,
-        log_buf:       VecDeque::new(),
-        child_pid:     Some(child_pid),
+        entry:            entry.clone(),
+        status:           AppStatus::Running,
+        start_time:       Instant::now(),
+        restart_count:    0,
+        log_buf:          VecDeque::new(),
+        child_pid:        Some(child_pid),
+        watchdog_secs:    caps.watchdog_secs,
+        last_output:      Arc::new(Mutex::new(Instant::now())),
+        watchdog_backoff: Arc::new(Mutex::new(0u64)),
     }));
     app_registry.lock().unwrap().insert(name.clone(), state);
 
