@@ -281,7 +281,7 @@ fn push_line(lines: &mut Vec<String>, s: String) {
 // ── Draw the full shell panel ─────────────────────────────────────────────────
 
 fn draw_panel(lines: &[String], input: &str) {
-    // Panel background
+    // Panel background + border
     fill(PX, PY, PW, PH, C_PANEL);
 
     // Title bar
@@ -289,13 +289,17 @@ fn draw_panel(lines: &[String], input: &str) {
     fill(PX, PY + TITLE_H, PW, 2, C_ACCENT); // accent line
     text(PX + 8, PY + 4, C_ACCENT, "shell");
     text(PX + PW - 136, PY + 4, C_DIM, "VyomaOS v0.1");
+    border(PX, PY, PW, PH, C_ACCENT);
 
-    // Output lines
+    // Clear output area
+    clear_region(INNER_X, INNER_Y, PW - 16, PROMPT_Y - INNER_Y);
+
+    // Output lines (word-wrapped)
     for (i, line) in lines.iter().enumerate() {
         let ly = INNER_Y + i as u32 * LINE_H;
         if ly + LINE_H > PROMPT_Y { break; }
         let colour = if line.starts_with("> ") { C_DIM } else { C_WHITE };
-        text(INNER_X, ly, colour, line);
+        text_wrap(INNER_X, ly, PW - 16, colour, line);
     }
 
     // Prompt + cursor
@@ -321,6 +325,21 @@ fn fill(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
 #[inline]
 fn text(x: u32, y: u32, rgba: u32, s: &str) {
     println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},m,{s}");
+}
+
+#[inline]
+fn border(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
+    println!("VYOMA_DRAW:rect_border:{x},{y},{w},{h},{rgba}");
+}
+
+#[inline]
+fn clear_region(x: u32, y: u32, w: u32, h: u32) {
+    println!("VYOMA_DRAW:clear_region:{x},{y},{w},{h}");
+}
+
+#[inline]
+fn text_wrap(x: u32, y: u32, max_w: u32, rgba: u32, s: &str) {
+    println!("VYOMA_DRAW:draw_text_wrap:{x},{y},{max_w},{rgba},m,{s}");
 }
 
 #[inline]
