@@ -340,6 +340,7 @@ impl Framebuffer {
 /// Word-wrap `text` so each line is at most `max_chars` wide.
 /// Long single words are placed on their own line without truncation.
 /// If `max_chars` is 0, returns the full text as a single line.
+/// SYNC: algorithm duplicated in supervisor/tests/display_test.rs — keep in lockstep.
 pub fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {
     if max_chars == 0 {
         return vec![text.to_string()];
