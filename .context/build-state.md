@@ -1,44 +1,33 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-25
+last_updated: 2026-05-26
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Current batch
 status: ready
 phases:
-  - P48 — Network Config UI
-  - P49 — Download Manager
+  - P50 — Clipboard Manager
+  - P51 — Screenshot
 notes: |
-  P48: Network Config UI. Create apps/network-config/ WASM app. Window x=200, y=100, w=1040, h=600.
-       Capabilities: stdio=true, display=true, shell=true, filesystem=true.
-       Shows two sections: Static IP (fields: interface, ip, netmask, gateway, dns) and DHCP toggle.
-       Reads /data/network.toml on start (create with defaults if missing).
-       Saves to /data/network.toml on Ctrl+W. Tab/arrows navigate fields. Ctrl+C quits.
-       Network.toml format:
-         [network]
-         mode = "dhcp"  # or "static"
-         interface = "eth0"
-         ip = ""
-         netmask = ""
-         gateway = ""
-         dns = "8.8.8.8"
+  P50: Clipboard Manager.
+       supervisor/src/main.rs: add static CLIPBOARD: OnceLock<Mutex<String>>.
+       Handle @supervisor: clipboard-set <text> — stores text in CLIPBOARD; replies REPLY:clipboard-set ok.
+       Handle @supervisor: clipboard-get — reads CLIPBOARD; replies REPLY:clipboard <text>.
+       Shell: add `clip-set <text>` and `clip-get` commands.
 
-  P49: Download Manager. Two parts:
-       (a) supervisor/src/main.rs: handle @supervisor: download <url> <dest>.
-           Uses existing http_get() to fetch the URL, writes bytes to <dest> path.
-           Runs in a background thread. Sends REPLY:download-progress <dest> <bytes> periodically.
-           Sends REPLY:download-done <dest> or REPLY:download-error <dest> <msg> when complete.
-       (b) Shell: add `download <url> <dest>` command routing to @supervisor: download.
+  P51: Screenshot.
+       supervisor/src/main.rs: handle @supervisor: screenshot <path>.
+       Reads the back-buffer (or front mmap) from the Framebuffer struct.
+       Writes raw PPM format (P6, 1440 900, 255, then RGB bytes stripped of alpha) to <path>.
+       Shell: add `screenshot <path>` command routing to @supervisor: screenshot.
 
 ## Queue (implement in order after current batch)
-- [ ] P50 — WebSocket: WASI socket WS upgrade; real-time apps
-- [ ] P51 — Clipboard Manager: supervisor clipboard buffer; @supervisor: clipboard-set/get
-- [ ] P52 — Screenshot: @supervisor: screenshot <path>; blit back-buffer to raw PPM in /data
-- [ ] P53 — Virtual Keyboard: on-screen keyboard WASM app for touch input
-- [ ] P54 — Color Picker: WASM color picker widget; writes chosen RGBA hex to stdout
-- [ ] P55 — Terminal Emulator: VT100 WASM app; shell-spawn supervisor command
-- [ ] P56 — Process Inspector: detailed app info; restarts/uptime; navigable ps-raw list
+- [ ] P52 — Virtual Keyboard: on-screen keyboard WASM app for touch input
+- [ ] P53 — Color Picker: WASM color picker widget; writes chosen RGBA hex to stdout
+- [ ] P54 — Terminal Emulator: VT100 WASM app; shell-spawn supervisor command
+- [ ] P55 — Process Inspector: detailed app info; restarts/uptime; navigable ps-raw list
+- [ ] P56 — WebSocket: WASI socket WS upgrade; real-time apps
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -71,6 +60,8 @@ notes: |
 - [x] P45: HTTPS/TLS groundwork — @supervisor: tls-info checks /data/cert.pem+key.pem; http-server checks at startup + serves /tls JSON endpoint; shell `tls-info` command
 - [x] P46: Basic Browser — apps/browser/ (1440×880 y=20); @supervisor: http-get fetches URL + returns 4096-char body; HTML stripped; Up/Down scroll; Ctrl+L URL bar; status bar
 - [x] P47: SSH Client / TCP Tunnel — apps/ssh-client/ (1240×700); @supervisor: tcp-connect/tcp-send/tcp-recv/tcp-close; TCP_CONNS global map; TCP_NEXT_ID atomic; form→connected terminal view
+- [x] P48: Network Config UI — apps/network-config/ (1040×600); DHCP/Static toggle (d/s keys); 5 IP fields; reads+writes /data/network.toml; Tab/arrows/Ctrl+W/Ctrl+C
+- [x] P49: Download Manager — @supervisor: download <url> <dest>; background thread; http_get(); REPLY:download-progress/done/error; shell `download` command
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

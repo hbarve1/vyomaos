@@ -55,6 +55,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 45 — HTTPS/TLS | `@supervisor: tls-info`; http-server /tls endpoint + cert check at startup; shell `tls-info` | **complete** | — |
 | 46 — Basic Browser | `apps/browser/` URL bar + HTML strip + scroll; `@supervisor: http-get` fetches+truncates body; Ctrl+L/Up/Down | **complete** | — |
 | 47 — SSH Client / TCP Tunnel | `apps/ssh-client/` form→terminal; `@supervisor: tcp-connect/send/recv/close`; TCP_CONNS pool; AtomicU32 IDs | **complete** | — |
+| 48 — Network Config UI | `apps/network-config/` DHCP/Static toggle; 5 IP fields; reads+writes `/data/network.toml`; Tab/d/s/Ctrl+W/Ctrl+C | **complete** | — |
+| 49 — Download Manager | `@supervisor: download <url> <dest>`; background thread; progress/done/error replies; shell `download` command | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

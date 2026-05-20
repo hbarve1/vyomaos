@@ -1739,6 +1739,46 @@ fn handle_supervisor_command(
             send_reply(sender, &format!("REPLY:tcp-close {id} ok"), inbox);
         }
 
+        // P49: download <url> <dest> — fetch URL, write to dest path in background
+        "download" => {
+            let rest = parts.get(1).unwrap_or(&"").trim().to_string();
+            let (url, dest) = match rest.split_once(' ') {
+                Some((u, d)) => (u.trim().to_string(), d.trim().to_string()),
+                None => {
+                    send_reply(sender, "REPLY:download-error  missing dest", inbox);
+                    return;
+                }
+            };
+            if url.is_empty() || dest.is_empty() {
+                send_reply(sender, "REPLY:download-error  missing url or dest", inbox);
+                return;
+            }
+            let sender_name = sender.to_string();
+            let inbox_clone = Arc::clone(inbox);
+            thread::spawn(move || {
+                send_reply(&sender_name, &format!("REPLY:download-progress {dest} 0"), &inbox_clone);
+                match http_get(&url) {
+                    Ok(bytes) => {
+                        let n = bytes.len();
+                        send_reply(&sender_name, &format!("REPLY:download-progress {dest} {n}"), &inbox_clone);
+                        match fs::write(&dest, &bytes) {
+                            Ok(()) => {
+                                eprintln!("vyoma-supervisor: download done {dest} ({n} bytes)");
+                                send_reply(&sender_name, &format!("REPLY:download-done {dest}"), &inbox_clone);
+                            }
+                            Err(e) => {
+                                send_reply(&sender_name, &format!("REPLY:download-error {dest} {e}"), &inbox_clone);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        send_reply(&sender_name, &format!("REPLY:download-error {dest} {e}"), &inbox_clone);
+                    }
+                }
+            });
+            send_reply(sender, &format!("REPLY:download-progress {dest} 0"), inbox);
+        }
+
         other => {
             eprintln!("vyoma-supervisor: unknown @supervisor command from {sender}: {other}");
         }

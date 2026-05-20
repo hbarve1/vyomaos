@@ -180,6 +180,7 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  monitors           — count connected DRM displays".into());
             push_line(lines, "  dns <hostname>     — resolve hostname to IP via supervisor".into());
             push_line(lines, "  tls-info           — check TLS cert/key availability".into());
+            push_line(lines, "  download <url> <dest> — download file from HTTP URL to /data path".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
         "clear" => {
@@ -369,6 +370,16 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             } else {
                 println!("@supervisor: dns-resolve {host}");
                 push_line(lines, format!("resolving {host}..."));
+            }
+        }
+        other if other.starts_with("download ") => {
+            let args = other[9..].trim();
+            match args.split_once(' ') {
+                Some((url, dest)) if !url.is_empty() && !dest.is_empty() => {
+                    println!("@supervisor: download {url} {dest}");
+                    push_line(lines, format!("downloading {url} → {dest}"));
+                }
+                _ => push_line(lines, "usage: download <url> <dest>".into()),
             }
         }
         other => {
