@@ -7,35 +7,37 @@ repo: /Users/hbarve1/codes/hbarve1/vyomaos
 ## Current batch
 status: ready
 phases:
-  - P42 — Session Manager
-  - P43 — Multi-Monitor
+  - P44 — DNS Resolver
+  - P45 — HTTPS/TLS
 notes: |
-  P42: Session Manager. Two parts:
-       (a) supervisor/src/main.rs: handle @supervisor: session-save and @supervisor: session-restore.
-           session-save: iterate app_registry, for each app collect name + win_region (x,y,w,h),
-           write to /data/session.toml as [[window]] entries (name, x, y, w, h).
-           session-restore: read /data/session.toml, for each [[window]] entry send
-           @supervisor: resize <name> <w> <h> — reuse existing resize logic.
-           Both commands reply REPLY:ok.
-       (b) Shell: add `session-save` and `session-restore` commands.
+  P44: DNS Resolver WASM app. Create apps/dns-resolver/ (stdio=true, shell=true, network=true).
+       Reads queries from stdin: each line is a hostname to resolve.
+       Uses supervisor IPC: sends @supervisor: dns-resolve <hostname>.
+       Supervisor handles dns-resolve by connecting to 8.8.8.8:53 via raw TCP DNS query
+       (type A, class IN), parses the response, and sends REPLY:dns <hostname> <ip> (or REPLY:dns <hostname> NXDOMAIN).
+       App prints the result and loops. Window: x=300, y=200, w=840, h=500.
+       Shell: add `dns <hostname>` command that routes to @supervisor: dns-resolve <hostname>.
+       NOTE: This is a supervisor-side TCP DNS implementation using the existing http_get() style raw socket.
 
-  P43: Multi-Monitor detection (read-only query — no per-monitor surfaces yet).
-       supervisor/src/main.rs: handle @supervisor: monitors.
-       Use ioctl DRM_IOCTL_MODE_GETRESOURCES on /dev/dri/card0 to enumerate connector count.
-       Reply with REPLY:monitors <N> where N is the count (or 1 if ioctl fails).
-       Shell: add `monitors` command that shows the reply.
-       This is a probe-only phase — actual multi-surface rendering is future work.
+  P45: HTTPS/TLS for http-server app. This is about the WASM http-server app accepting HTTPS.
+       Since rustls in WASM is complex, implement a simpler approach:
+       supervisor/src/main.rs — add @supervisor: tls-info command that replies with whether TLS is available.
+       apps/http-server/src/main.rs — check for /data/cert.pem and /data/key.pem; if present, print
+       "TLS: cert and key found at /data/cert.pem, /data/key.pem" to stdout and serve a note page
+       at https (actually still HTTP, but noting TLS readiness). If absent, serve normally.
+       Shell: add `tls-info` command routing to @supervisor: tls-info.
+       NOTE: Full TLS termination requires a native TLS library; this phase adds the groundwork.
 
 ## Queue (implement in order after current batch)
-- [ ] P44 — DNS Resolver: WASM resolver app; supervisor proxies DNS queries
-- [ ] P45 — HTTPS/TLS: rustls in WASM apps; http-server serves HTTPS
 - [ ] P46 — Basic Browser: WASM app; fetch HTML via HTTP; render stripped text
 - [ ] P47 — SSH Client: WASM SSH client; pure-Rust SSH library
-- [ ] P48 — Network Config UI: settings sub-page; /data/network.toml
+- [ ] P48 — Network Config UI: settings app sub-page; /data/network.toml
 - [ ] P49 — Download Manager: @supervisor: download <url> <dest>; background to /data
 - [ ] P50 — WebSocket: WASI socket WS upgrade; real-time apps
-- [ ] P51 — Clipboard Manager: supervisor clipboard buffer; Ctrl+Shift+C/V key sequences
+- [ ] P51 — Clipboard Manager: supervisor clipboard buffer; @supervisor: clipboard-set/get
 - [ ] P52 — Screenshot: @supervisor: screenshot <path>; blit back-buffer to raw PPM in /data
+- [ ] P53 — Virtual Keyboard: on-screen keyboard WASM app for touch input
+- [ ] P54 — Color Picker: WASM color picker widget; writes chosen RGBA hex to stdout
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -62,6 +64,8 @@ notes: |
 - [x] P39: Notifications — @supervisor: notify <title> <msg>; toast at (1020,10,400,60); 0x21262DFF bg + 0x58A6FFFF border; auto-clear after 3s in background thread; shell `notify` command
 - [x] P40: Settings App — apps/settings/ (w=1440,h=880,y=20); sidebar+content layout; Display/Font/Boot sections; /data/settings.toml read+write; Ctrl+W saves; Tab switches; shell `run settings`
 - [x] P41: Power Manager — @supervisor: shutdown (libc::LINUX_REBOOT_CMD_POWER_OFF) + reboot (LINUX_REBOOT_CMD_RESTART); 500ms delay before action; shell `shutdown`/`reboot` commands
+- [x] P42: Session Manager — @supervisor: session-save writes [[window]] TOML to /data/session.toml; session-restore parses and updates win_region + sends resize; shell session-save/session-restore
+- [x] P43: Multi-Monitor — @supervisor: monitors counts /sys/class/drm/card0-* entries; fallback 1; shell `monitors` command
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

@@ -175,6 +175,9 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  notify <title> <msg> — show toast notification".into());
             push_line(lines, "  shutdown           — power off the system".into());
             push_line(lines, "  reboot             — restart the system".into());
+            push_line(lines, "  session-save       — save window layout to /data/session.toml".into());
+            push_line(lines, "  session-restore    — restore window layout from /data/session.toml".into());
+            push_line(lines, "  monitors           — count connected DRM displays".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
         "clear" => {
@@ -342,6 +345,17 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
         "reboot" => {
             push_line(lines, "system rebooting...".into());
             println!("@supervisor: reboot");
+        }
+        "session-save" => {
+            println!("@supervisor: session-save");
+            push_line(lines, "saving session...".into());
+        }
+        "session-restore" => {
+            println!("@supervisor: session-restore");
+            push_line(lines, "restoring session...".into());
+        }
+        "monitors" => {
+            println!("@supervisor: monitors");
         }
         other => {
             push_line(lines, format!("unknown: {other}"));

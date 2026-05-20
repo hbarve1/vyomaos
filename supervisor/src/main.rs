@@ -1539,10 +1539,93 @@ fn handle_supervisor_command(
             send_reply(sender, "REPLY:notified", inbox);
         }
 
+        // P42: session-save — persist all window positions to /data/session.toml
+        "session-save" => {
+            let mut toml = String::new();
+            {
+                let reg = app_registry.lock().unwrap();
+                for (name, state_arc) in reg.iter() {
+                    let st = state_arc.lock().unwrap();
+                    if let Some((x, y, w, h)) = st.win_region {
+                        toml.push_str(&format!(
+                            "[[window]]\nname = \"{name}\"\nx = {x}\ny = {y}\nw = {w}\nh = {h}\n\n"
+                        ));
+                    }
+                }
+            }
+            let _ = fs::write("/data/session.toml", &toml);
+            eprintln!("vyoma-supervisor: session saved ({} bytes)", toml.len());
+            send_reply(sender, "REPLY:session saved", inbox);
+        }
+
+        // P42: session-restore — reload window positions from /data/session.toml
+        "session-restore" => {
+            let content = fs::read_to_string("/data/session.toml").unwrap_or_default();
+            let mut windows: Vec<(String, u32, u32, u32, u32)> = Vec::new();
+            let (mut cur_name, mut cx, mut cy, mut cw, mut ch, mut in_win) =
+                (String::new(), 0u32, 0u32, 0u32, 0u32, false);
+            for line in content.lines() {
+                let l = line.trim();
+                if l == "[[window]]" {
+                    if in_win && !cur_name.is_empty() {
+                        windows.push((cur_name.clone(), cx, cy, cw, ch));
+                    }
+                    cur_name.clear();
+                    (cx, cy, cw, ch, in_win) = (0, 0, 0, 0, true);
+                } else if in_win {
+                    if let Some(v) = l.strip_prefix("name = ") {
+                        cur_name = v.trim_matches('"').to_string();
+                    } else if let Some(v) = l.strip_prefix("x = ") { cx = v.parse().unwrap_or(0); }
+                    else if let Some(v) = l.strip_prefix("y = ")  { cy = v.parse().unwrap_or(0); }
+                    else if let Some(v) = l.strip_prefix("w = ")  { cw = v.parse().unwrap_or(0); }
+                    else if let Some(v) = l.strip_prefix("h = ")  { ch = v.parse().unwrap_or(0); }
+                }
+            }
+            if in_win && !cur_name.is_empty() {
+                windows.push((cur_name, cx, cy, cw, ch));
+            }
+            let mut restored = 0usize;
+            for (name, x, y, w, h) in windows {
+                let updated = {
+                    let reg = app_registry.lock().unwrap();
+                    if let Some(state_arc) = reg.get(&name) {
+                        let mut st = state_arc.lock().unwrap();
+                        st.win_region = Some((x, y, w, h));
+                        true
+                    } else { false }
+                };
+                if updated {
+                    send_reply(&name, &format!("VYOMA_SYSTEM:resize:{w},{h}"), inbox);
+                    restored += 1;
+                }
+            }
+            eprintln!("vyoma-supervisor: session restored {restored} windows");
+            send_reply(sender, &format!("REPLY:restored {restored} windows"), inbox);
+        }
+
+        // P43: monitors — count DRM connectors via /sys/class/drm
+        "monitors" => {
+            let count = count_drm_connectors();
+            eprintln!("vyoma-supervisor: monitors = {count}");
+            send_reply(sender, &format!("REPLY:monitors {count}"), inbox);
+        }
+
         other => {
             eprintln!("vyoma-supervisor: unknown @supervisor command from {sender}: {other}");
         }
     }
+}
+
+fn count_drm_connectors() -> usize {
+    fs::read_dir("/sys/class/drm")
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_name().to_string_lossy().starts_with("card0-"))
+                .count()
+        })
+        .unwrap_or(1)
+        .max(1)
 }
 
 // ── P14T01: package manager helpers ──────────────────────────────────────────

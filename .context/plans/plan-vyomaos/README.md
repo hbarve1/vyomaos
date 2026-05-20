@@ -49,6 +49,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 39 — Notifications | `@supervisor: notify <title> <msg>`; toast at (1020,10,400×60); 0x21262DFF bg; auto-clear 3s; shell `notify` command | **complete** | — |
 | 40 — Settings App | `apps/settings/` sidebar+content; Display/Font/Boot sections; reads+writes `/data/settings.toml`; Tab/Ctrl+W/Ctrl+C | **complete** | — |
 | 41 — Power Manager | `@supervisor: shutdown`/`reboot`; `libc::reboot` with POWER_OFF/RESTART; 500ms delay; shell `shutdown`/`reboot` | **complete** | — |
+| 42 — Session Manager | `@supervisor: session-save/restore`; writes/reads `/data/session.toml` [[window]] TOML; shell commands | **complete** | — |
+| 43 — Multi-Monitor | `@supervisor: monitors`; counts `/sys/class/drm/card0-*`; fallback 1; shell `monitors` | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
