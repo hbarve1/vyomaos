@@ -1,41 +1,33 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-26
+last_updated: 2026-05-20
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Current batch
 status: ready
 phases:
-  - P58 — Image Viewer
-  - P59 — Hex Editor
+  - P60 — Calendar Widget
+  - P61 — Markdown Viewer
 notes: |
-  P58: Image Viewer. Create apps/image-viewer/ WASM app.
-       Window x=100, y=60, w=1240, h=760. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
-       On start: lists /data/*.ppm files via std::fs::read_dir.
-       Displays file list if multiple files, or auto-loads the first one.
-       Loads a PPM P6 file: reads header (P6, width height, maxval), then raw RGB bytes.
-       Renders the image by writing fill_rect commands for each row as a colored strip.
-       Since VYOMA_DRAW doesn't have a pixel blit command, downsample: for each row, output fill_rect calls
-       per horizontal segment of same color (run-length). For simplicity: output one fill_rect per pixel
-       row strip of 1px height, 1px width (limit to first 640×400 pixels to avoid too many commands).
-       Actually: render as 2×2 pixel blocks (so a 320×200 image fills 640×400 area).
-       Up/Down: scroll image. Left/Right: prev/next file. Ctrl+C: quit.
+  P60: Calendar Widget. Create apps/calendar/ WASM app.
+       Window x=120, y=80, w=640, h=520. Capabilities: stdio=true, display=true, filesystem=true.
+       Month view: 7-column grid (Sun–Sat), rows per week. Header shows month + year.
+       Marks today's date highlighted. Left/Right keys navigate months; Up/Down navigate months too.
+       Stores notes per day in /data/calendar.toml if filesystem available.
+       Ctrl+C: quit.
 
-  P59: Hex Editor. Create apps/hex-editor/ WASM app.
-       Window x=80, y=60, w=1280, h=760. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
-       On start: shows a file path input field.
-       After entering a path and pressing Enter: loads the file, shows hex+ASCII view.
-       Layout: 16 bytes per row. Left: hex values (00-FF). Right: ASCII printable chars (. for non-printable).
-       Address column at left (8 hex digits).
-       Scrollable: Up/Down scrolls by 1 row, PgUp/PgDn by 16 rows.
-       Edit mode: Enter on a hex cell makes it editable; type 2 hex digits to change byte; Esc cancels.
-       Ctrl+W: saves file. Ctrl+C: back to path input or quit.
+  P61: Markdown Viewer. Create apps/markdown-viewer/ WASM app.
+       Window x=100, y=60, w=1240, h=760. Capabilities: stdio=true, display=true, filesystem=true.
+       On start: lists /data/*.md files.
+       Renders markdown: # headers as large/colored text, ## as medium, bold **text** as accent color,
+       bullet lists with • prefix, plain text as dim. Scrollable with Up/Down. Left/Right: prev/next file.
+       Ctrl+C: quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P60 — Calendar Widget: month view, marks today, Up/Down/Left/Right navigate months
-- [ ] P61 — Markdown Viewer: reads /data/*.md files, renders headers/bold/bullets as styled text
 - [ ] P62 — Password Manager: stores encrypted key-value pairs in /data/vault.enc; AES-like XOR cipher
+- [ ] P63 — Task Manager: to-do list in /data/tasks.toml; add/remove/check-off tasks; ↑↓ nav; Enter toggle done
+- [ ] P64 — Clock Widget: analog clock face drawn with fill_rect arcs; digital time display below
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -78,6 +70,8 @@ notes: |
 - [x] P55: Font Chooser — apps/font-chooser/ (440×340); 3 buttons S/M/L with preview; Enter → @supervisor: font-size; static FONT_SIZE in supervisor
 - [x] P56: App Store UI — apps/app-store/ (1440×880); pkg-list query; 4-col grid; search filter; Enter install/remove; re-queries after action; Ctrl+C exit
 - [x] P57: Audio Player Stub — apps/audio-player/ (440×260); lists /data/*.raw; scrollable track list; play/pause/prev/next; cosmetic progress bar (advances on keypress when playing)
+- [x] P58: Image Viewer — apps/image-viewer/ (1240×760); lists /data/*.ppm; PPM P6 loader; 4×4 block RLE rendering; ↑↓ scroll ←→ prev/next; list+image views
+- [x] P59: Hex Editor — apps/hex-editor/ (1280×760); path input → hex+ASCII view; 16 bytes/row; edit mode (2 hex digits); u/d page nav; Ctrl+W save
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

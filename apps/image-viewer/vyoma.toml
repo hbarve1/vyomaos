@@ -1,0 +1,16 @@
+[app]
+name    = "image-viewer"
+version = "0.1.0"
+wasm    = "image-viewer.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+shell      = true
+filesystem = true
+
+[window]
+x = 100
+y = 60
+w = 1240
+h = 760
