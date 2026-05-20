@@ -67,6 +67,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 57 — Audio Player Stub | `apps/audio-player/` track list from /data/*.raw; play/pause/prev/next; cosmetic progress bar; Ctrl+C quit | **complete** | — |
 | 58 — Image Viewer | `apps/image-viewer/` PPM P6 loader; 4×4 block RLE rendering; ↑↓ scroll ←→ prev/next; list+image views | **complete** | — |
 | 59 — Hex Editor | `apps/hex-editor/` path input → hex+ASCII view; 16 bytes/row; edit mode (2 hex digits); u/d page nav; Ctrl+W save | **complete** | — |
+| 60 — Calendar Widget | `apps/calendar/` month view 7-col grid; marks today; ←→↑↓ navigate months; weekend color highlight | **complete** | — |
+| 61 — Markdown Viewer | `apps/markdown-viewer/` lists /data/*.md; renders H1/H2/H3/bold/code/bullets; ↑↓ scroll ←→ prev/next | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

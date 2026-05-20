@@ -7,27 +7,29 @@ repo: /Users/hbarve1/codes/hbarve1/vyomaos
 ## Current batch
 status: ready
 phases:
-  - P60 — Calendar Widget
-  - P61 — Markdown Viewer
+  - P62 — Password Manager
+  - P63 — Task Manager
 notes: |
-  P60: Calendar Widget. Create apps/calendar/ WASM app.
-       Window x=120, y=80, w=640, h=520. Capabilities: stdio=true, display=true, filesystem=true.
-       Month view: 7-column grid (Sun–Sat), rows per week. Header shows month + year.
-       Marks today's date highlighted. Left/Right keys navigate months; Up/Down navigate months too.
-       Stores notes per day in /data/calendar.toml if filesystem available.
-       Ctrl+C: quit.
+  P62: Password Manager. Create apps/password-manager/ WASM app.
+       Window x=160, y=80, w=960, h=640. Capabilities: stdio=true, display=true, filesystem=true.
+       Stores key-value pairs encrypted in /data/vault.enc using XOR cipher with a master key.
+       Master key is prompted at launch (typed inline, shown as ****).
+       After unlock: shows list of stored entries (site/username/password).
+       'a' = add new entry (prompts for site/user/pass fields one at a time).
+       'd' on selected = delete. 'c' = copy password (outputs "clip-set" command).
+       Ctrl+W saves. Ctrl+C quits.
 
-  P61: Markdown Viewer. Create apps/markdown-viewer/ WASM app.
-       Window x=100, y=60, w=1240, h=760. Capabilities: stdio=true, display=true, filesystem=true.
-       On start: lists /data/*.md files.
-       Renders markdown: # headers as large/colored text, ## as medium, bold **text** as accent color,
-       bullet lists with • prefix, plain text as dim. Scrollable with Up/Down. Left/Right: prev/next file.
-       Ctrl+C: quit.
+  P63: Task Manager. Create apps/task-manager/ WASM app.
+       Window x=200, y=80, w=640, h=560. Capabilities: stdio=true, display=true, filesystem=true.
+       To-do list stored in /data/tasks.toml as [[task]] entries with fields: title, done.
+       Shows scrollable list; done items shown with strikethrough indicator (✓).
+       Enter toggles done/undone on selected task. 'a' enters add mode (type title, Enter to confirm).
+       'd' deletes selected. ↑↓ navigate. Ctrl+W saves. Ctrl+C quits.
 
 ## Queue (implement in order after current batch)
-- [ ] P62 — Password Manager: stores encrypted key-value pairs in /data/vault.enc; AES-like XOR cipher
-- [ ] P63 — Task Manager: to-do list in /data/tasks.toml; add/remove/check-off tasks; ↑↓ nav; Enter toggle done
-- [ ] P64 — Clock Widget: analog clock face drawn with fill_rect arcs; digital time display below
+- [ ] P64 — Clock Widget: analog clock face drawn with fill_rect pixels; digital time display; uses hardcoded start time + elapsed tracking
+- [ ] P65 — Weather App: reads /data/weather.toml; shows temp/conditions/forecast; arrow nav days; Ctrl+R refresh (re-reads file)
+- [ ] P66 — Calculator Scientific: extends calculator app pattern; adds sin/cos/tan/sqrt/pow; RPN or infix mode toggle
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -72,6 +74,8 @@ notes: |
 - [x] P57: Audio Player Stub — apps/audio-player/ (440×260); lists /data/*.raw; scrollable track list; play/pause/prev/next; cosmetic progress bar (advances on keypress when playing)
 - [x] P58: Image Viewer — apps/image-viewer/ (1240×760); lists /data/*.ppm; PPM P6 loader; 4×4 block RLE rendering; ↑↓ scroll ←→ prev/next; list+image views
 - [x] P59: Hex Editor — apps/hex-editor/ (1280×760); path input → hex+ASCII view; 16 bytes/row; edit mode (2 hex digits); u/d page nav; Ctrl+W save
+- [x] P60: Calendar Widget — apps/calendar/ (640×520); month grid Sun–Sat; today highlighted; ←→↑↓ navigate months; weekend accent color
+- [x] P61: Markdown Viewer — apps/markdown-viewer/ (1240×760); lists /data/*.md; H1/H2/H3/bold/code/bullet rendering; ↑↓ scroll ←→ prev/next
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
