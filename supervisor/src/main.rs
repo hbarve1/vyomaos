@@ -1479,6 +1479,32 @@ fn handle_supervisor_command(
             send_reply(sender, &format!("REPLY:resized {app_name} to {new_w}x{new_h}"), inbox);
         }
 
+        // P41: shutdown — power off the system
+        "shutdown" => {
+            eprintln!("vyoma-supervisor: shutdown requested by {sender}");
+            send_reply(sender, "REPLY:shutting down...", inbox);
+            thread::spawn(|| {
+                thread::sleep(std::time::Duration::from_millis(500));
+                #[cfg(target_os = "linux")]
+                unsafe {
+                    libc::reboot(libc::LINUX_REBOOT_CMD_POWER_OFF);
+                }
+            });
+        }
+
+        // P41: reboot — restart the system
+        "reboot" => {
+            eprintln!("vyoma-supervisor: reboot requested by {sender}");
+            send_reply(sender, "REPLY:rebooting...", inbox);
+            thread::spawn(|| {
+                thread::sleep(std::time::Duration::from_millis(500));
+                #[cfg(target_os = "linux")]
+                unsafe {
+                    libc::reboot(libc::LINUX_REBOOT_CMD_RESTART);
+                }
+            });
+        }
+
         // P39: notify <title> <msg> — draw toast overlay, auto-clear after 3s
         "notify" => {
             let rest = parts.get(1).unwrap_or(&"").trim().to_string();

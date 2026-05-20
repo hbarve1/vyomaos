@@ -7,28 +7,26 @@ repo: /Users/hbarve1/codes/hbarve1/vyomaos
 ## Current batch
 status: ready
 phases:
-  - P40 — Settings App
-  - P41 — Power Manager
+  - P42 — Session Manager
+  - P43 — Multi-Monitor
 notes: |
-  P40: Create apps/settings/ WASM app. Full-screen settings panel (x=0, y=20, w=1440, h=880).
-       Sections: Display (wallpaper color picker as hex input), Font (size selector 8/16/32),
-       Boot (edit /data/settings.toml directly). Left sidebar with section tabs. Right content area.
-       Reads /data/settings.toml on start (create with defaults if missing). Saves on Ctrl+W.
-       Capabilities: stdio=true, display=true, shell=true, filesystem=true.
-       Key mappings: Tab switches section, arrow keys navigate fields, Enter edits field,
-       Ctrl+W saves to /data/settings.toml, Ctrl+C quits.
+  P42: Session Manager. Two parts:
+       (a) supervisor/src/main.rs: handle @supervisor: session-save and @supervisor: session-restore.
+           session-save: iterate app_registry, for each app collect name + win_region (x,y,w,h),
+           write to /data/session.toml as [[window]] entries (name, x, y, w, h).
+           session-restore: read /data/session.toml, for each [[window]] entry send
+           @supervisor: resize <name> <w> <h> — reuse existing resize logic.
+           Both commands reply REPLY:ok.
+       (b) Shell: add `session-save` and `session-restore` commands.
 
-  P41: Power management. Two parts:
-       (a) supervisor/src/main.rs: handle @supervisor: shutdown and @supervisor: reboot.
-           shutdown: write "0" to /proc/sysrq-trigger (or call libc reboot with LINUX_REBOOT_CMD_POWER_OFF).
-           reboot: call libc reboot with LINUX_REBOOT_CMD_RESTART.
-           Both commands: log to stderr, reply REPLY:ok, then exec the action.
-       (b) Shell: add `shutdown` and `reboot` commands routing to @supervisor: shutdown/reboot.
-           Show warning "system shutting down..." / "system rebooting..." before sending.
+  P43: Multi-Monitor detection (read-only query — no per-monitor surfaces yet).
+       supervisor/src/main.rs: handle @supervisor: monitors.
+       Use ioctl DRM_IOCTL_MODE_GETRESOURCES on /dev/dri/card0 to enumerate connector count.
+       Reply with REPLY:monitors <N> where N is the count (or 1 if ioctl fails).
+       Shell: add `monitors` command that shows the reply.
+       This is a probe-only phase — actual multi-surface rendering is future work.
 
 ## Queue (implement in order after current batch)
-- [ ] P42 — Session Manager: save/restore window positions to /data/session.toml
-- [ ] P43 — Multi-Monitor: enumerate DRM connectors; per-monitor framebuffer surface
 - [ ] P44 — DNS Resolver: WASM resolver app; supervisor proxies DNS queries
 - [ ] P45 — HTTPS/TLS: rustls in WASM apps; http-server serves HTTPS
 - [ ] P46 — Basic Browser: WASM app; fetch HTML via HTTP; render stripped text
@@ -36,6 +34,8 @@ notes: |
 - [ ] P48 — Network Config UI: settings sub-page; /data/network.toml
 - [ ] P49 — Download Manager: @supervisor: download <url> <dest>; background to /data
 - [ ] P50 — WebSocket: WASI socket WS upgrade; real-time apps
+- [ ] P51 — Clipboard Manager: supervisor clipboard buffer; Ctrl+Shift+C/V key sequences
+- [ ] P52 — Screenshot: @supervisor: screenshot <path>; blit back-buffer to raw PPM in /data
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -60,6 +60,8 @@ notes: |
 - [x] P37: Taskbar App — apps/taskbar/ at y=860 h=40; ps-raw poll every 2s; app buttons with click-to-focus; elapsed clock; brand label
 - [x] P38: App Launcher — apps/app-launcher/ full-screen overlay; pkg-list query; search filter; 4-col app grid; Enter launches; Ctrl+C exits; shell `run app-launcher`
 - [x] P39: Notifications — @supervisor: notify <title> <msg>; toast at (1020,10,400,60); 0x21262DFF bg + 0x58A6FFFF border; auto-clear after 3s in background thread; shell `notify` command
+- [x] P40: Settings App — apps/settings/ (w=1440,h=880,y=20); sidebar+content layout; Display/Font/Boot sections; /data/settings.toml read+write; Ctrl+W saves; Tab switches; shell `run settings`
+- [x] P41: Power Manager — @supervisor: shutdown (libc::LINUX_REBOOT_CMD_POWER_OFF) + reboot (LINUX_REBOOT_CMD_RESTART); 500ms delay before action; shell `shutdown`/`reboot` commands
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

@@ -173,6 +173,8 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  wallpaper <rgba>   — set desktop background color".into());
             push_line(lines, "  resize <app> <w> <h> — resize app window".into());
             push_line(lines, "  notify <title> <msg> — show toast notification".into());
+            push_line(lines, "  shutdown           — power off the system".into());
+            push_line(lines, "  reboot             — restart the system".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
         "clear" => {
@@ -332,6 +334,14 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
                 println!("@supervisor: focus {app}");
                 push_line(lines, format!("launching {app}..."));
             }
+        }
+        "shutdown" => {
+            push_line(lines, "system shutting down...".into());
+            println!("@supervisor: shutdown");
+        }
+        "reboot" => {
+            push_line(lines, "system rebooting...".into());
+            println!("@supervisor: reboot");
         }
         other => {
             push_line(lines, format!("unknown: {other}"));
