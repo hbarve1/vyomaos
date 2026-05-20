@@ -1,32 +1,36 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-20
+last_updated: 2026-05-21
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Current batch
 status: ready
 phases:
-  - P29 — Multi-Resolution Display
-  - P30 — OTA Hot-Swap
+  - P32 — Window Decorations
+  - P33 — Z-Ordering
 notes: |
-  P29: supervisor/src/main.rs — after opening /dev/fb0, call FBIOGET_VSCREENINFO ioctl to
-       read actual resolution. Store as (fb_w, fb_h). Before first draw command from any
-       display app, send "VYOMA_SYSTEM:screen:<w>,<h>\n" to that app's stdin.
-       Apps should read this on startup and store as their screen size.
-       Search for where fb0 is opened (display.rs or main.rs) — likely display.rs.
-       Read supervisor/src/display.rs before editing.
-  P30: supervisor/src/main.rs — handle new @supervisor: command "update <app> <url>".
-       Steps: HTTP GET url → /tmp/<app>.wasm.new (use std TcpStream + HTTP/1.1 GET),
-       sha256 verify against manifest wasm_sha256 (reuse P28 infra), move to /data/apps/<app>/<app>.wasm,
-       then @supervisor: restart <app>. 
-       HTTP: use raw TCP + write "GET <path> HTTP/1.1\r\nHost: <host>\r\nConnection: close\r\n\r\n"
-       then read response, skip headers (find \r\n\r\n), write body to file.
-       No external HTTP crate needed — keep it simple.
+  P32: supervisor/src/main.rs — before dispatching VYOMA_DRAW commands for a display app,
+       draw a title bar chrome above the app's window region: thin bar (height=20) at
+       (win_x, win_y - 20, win_w, 20) filled with 0x21262DFF, app name in 0xFFFFFFFF at
+       (win_x+8, win_y-16), close button red circle at (win_x+win_w-16, win_y-14) radius 6
+       drawn as a 12×12 fill_rect 0xFF5F56FF. Draw this chrome only once at app launch
+       (when VYOMA_SYSTEM:screen is sent, or when app first seen). On VYOMA_DRAW:flush/present,
+       redraw the chrome on top so apps can't overwrite it.
+       Add VYOMA_SYSTEM:window_event:close to app stdin when the close button region is clicked
+       (requires checking mouse click coords — reuse mouse input path).
+       Read supervisor/src/main.rs lines 870-920 (the VYOMA_DRAW dispatch path) for context.
+  P33: supervisor/src/main.rs — add a Z-order stack: Vec<String> of app names ordered
+       front-to-back. When supervisor dispatches VYOMA_DRAW to an app, it draws at the app's
+       window region. On mouse click, find the topmost app whose window contains the click point
+       and raise it to front of the stack (move to index 0). Add @supervisor: raise <app> and
+       @supervisor: lower <app> IPC commands. On each flush/present, re-composite windows in
+       Z-order (back-to-front) by doing nothing special — the back-buffer already handles it
+       since windows are independent regions. The key work: track z_order: Vec<String>, on click
+       raise clicked app, send VYOMA_SYSTEM:focus:<app> to the newly-raised app.
+       Shell: add `raise <app>` and `lower <app>` commands routing to @supervisor: raise/lower.
 
 ## Queue (implement in order after current batch)
-- [ ] P32 — Window Decorations: supervisor draws title bar/close/min/max chrome around app windows; VYOMA_SYSTEM:window_event to app on close
-- [ ] P33 — Z-Ordering: window stack; @supervisor: raise/lower; click raises
 - [ ] P34 — Window Manager App: WASM app manages layout/Z-order via supervisor IPC
 - [ ] P35 — Desktop Wallpaper: VYOMA_SYSTEM:wallpaper IPC; solid color or image fill as bottom layer
 - [ ] P36 — Window Resize Events: VYOMA_SYSTEM:resize:<w>,<h> to app on resize; apps redraw at new dims
@@ -59,6 +63,7 @@ notes: |
 - [x] P28: Signed Bundles — AppMeta.wasm_sha256: Option<String>; sha2::Sha256 verify before spawn; sha2 dep added
 - [x] P29: Multi-Resolution — display::screen_size() reads FBIOGET_VSCREENINFO; launch_app_threads sends VYOMA_SYSTEM:screen:<w>,<h> to display apps
 - [x] P30: OTA Hot-Swap — @supervisor:update <app> <url>; http_get() raw TCP; sha256 verify; atomic copy; restart in background thread; shell `update` command
+- [x] P31: Double-Buffered Compositor — Framebuffer.back: Vec<u8>; all draw ops write to back; flush()/present blit back→mmap; VYOMA_DRAW:present alias added
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

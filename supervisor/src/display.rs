@@ -77,6 +77,7 @@ pub struct Framebuffer {
     bpp: u32,
     buf: *mut u8,
     buf_len: usize,
+    back: Vec<u8>,        // back-buffer; blitted to buf on flush()
 }
 
 // All mutable access is serialised through `Mutex<Framebuffer>`.
@@ -164,7 +165,8 @@ fn open_fb() -> io::Result<Framebuffer> {
         width, height, bpp, stride, buf_len / 1024
     );
 
-    Ok(Framebuffer { _file: file, width, height, stride, bpp, buf: buf as *mut u8, buf_len })
+    let back = vec![0u8; buf_len];
+    Ok(Framebuffer { _file: file, width, height, stride, bpp, buf: buf as *mut u8, buf_len, back })
 }
 
 impl Drop for Framebuffer {
@@ -197,9 +199,7 @@ impl Framebuffer {
                 break;
             }
             for off in (base..end).step_by(4) {
-                unsafe {
-                    std::ptr::copy_nonoverlapping(pixel.as_ptr(), self.buf.add(off), 4);
-                }
+                self.back[off..off + 4].copy_from_slice(&pixel);
             }
         }
     }
@@ -240,9 +240,7 @@ impl Framebuffer {
                                 let px = cx + bit;
                                 let off = (scan_y * self.stride + px * 4) as usize;
                                 if off + 4 <= self.buf_len {
-                                    unsafe {
-                                        std::ptr::copy_nonoverlapping(fg.as_ptr(), self.buf.add(off), 4);
-                                    }
+                                    self.back[off..off + 4].copy_from_slice(&fg);
                                 }
                             }
                         }
@@ -260,9 +258,7 @@ impl Framebuffer {
                                 let px = cx + out_bit;
                                 let off = (scan_y * self.stride + px * 4) as usize;
                                 if off + 4 <= self.buf_len {
-                                    unsafe {
-                                        std::ptr::copy_nonoverlapping(fg.as_ptr(), self.buf.add(off), 4);
-                                    }
+                                    self.back[off..off + 4].copy_from_slice(&fg);
                                 }
                             }
                         }
@@ -281,9 +277,7 @@ impl Framebuffer {
                                         let px = cx + src_bit * 2 + rep_x;
                                         let off = (scan_y * self.stride + px * 4) as usize;
                                         if off + 4 <= self.buf_len {
-                                            unsafe {
-                                                std::ptr::copy_nonoverlapping(fg.as_ptr(), self.buf.add(off), 4);
-                                            }
+                                            self.back[off..off + 4].copy_from_slice(&fg);
                                         }
                                     }
                                 }
@@ -296,9 +290,14 @@ impl Framebuffer {
         }
     }
 
-    /// Flush — virtio-gpu with DRM fbdev emulation propagates writes
-    /// immediately on mmap.  This is a protocol no-op kept for completeness.
-    pub fn flush(&self) {}
+    /// Blit back-buffer to the mmap'd framebuffer (front-buffer).
+    /// All draw ops write to `self.back`; only this call makes them visible,
+    /// eliminating partial-frame tearing.
+    pub fn flush(&self) {
+        unsafe {
+            std::ptr::copy_nonoverlapping(self.back.as_ptr(), self.buf, self.buf_len);
+        }
+    }
 
     /// Draw a 1-pixel border rectangle (no fill).
     pub fn rect_border(&mut self, x: u32, y: u32, w: u32, h: u32, rgba: u32) {

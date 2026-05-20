@@ -1598,7 +1598,7 @@ fn dispatch_mouse(
 fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)>) {
     let Some(fb_lock) = display::get() else { return };
 
-    if cmd == "flush" {
+    if cmd == "flush" || cmd == "present" {
         fb_lock.lock().unwrap().flush();
         return;
     }
