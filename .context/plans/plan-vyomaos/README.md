@@ -51,6 +51,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 41 — Power Manager | `@supervisor: shutdown`/`reboot`; `libc::reboot` with POWER_OFF/RESTART; 500ms delay; shell `shutdown`/`reboot` | **complete** | — |
 | 42 — Session Manager | `@supervisor: session-save/restore`; writes/reads `/data/session.toml` [[window]] TOML; shell commands | **complete** | — |
 | 43 — Multi-Monitor | `@supervisor: monitors`; counts `/sys/class/drm/card0-*`; fallback 1; shell `monitors` | **complete** | — |
+| 44 — DNS Resolver | `apps/dns-resolver/` TUI (840×500); supervisor TCP DNS to 8.8.8.8:53; A-record parse; `dns-resolve`/`REPLY:dns`; shell `dns` | **complete** | — |
+| 45 — HTTPS/TLS | `@supervisor: tls-info`; http-server /tls endpoint + cert check at startup; shell `tls-info` | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

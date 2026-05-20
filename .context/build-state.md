@@ -7,30 +7,32 @@ repo: /Users/hbarve1/codes/hbarve1/vyomaos
 ## Current batch
 status: ready
 phases:
-  - P44 — DNS Resolver
-  - P45 — HTTPS/TLS
+  - P46 — Basic Browser
+  - P47 — SSH Client
 notes: |
-  P44: DNS Resolver WASM app. Create apps/dns-resolver/ (stdio=true, shell=true, network=true).
-       Reads queries from stdin: each line is a hostname to resolve.
-       Uses supervisor IPC: sends @supervisor: dns-resolve <hostname>.
-       Supervisor handles dns-resolve by connecting to 8.8.8.8:53 via raw TCP DNS query
-       (type A, class IN), parses the response, and sends REPLY:dns <hostname> <ip> (or REPLY:dns <hostname> NXDOMAIN).
-       App prints the result and loops. Window: x=300, y=200, w=840, h=500.
-       Shell: add `dns <hostname>` command that routes to @supervisor: dns-resolve <hostname>.
-       NOTE: This is a supervisor-side TCP DNS implementation using the existing http_get() style raw socket.
+  P46: Create apps/browser/ WASM app. Window x=0, y=20, w=1440, h=880.
+       Capabilities: stdio=true, display=true, shell=true, network=true.
+       Shows a URL bar at the top (input field). User types URL and presses Enter.
+       App sends @supervisor: http-get <url> which returns REPLY:http-get <status> <body_truncated_at_4096_chars>.
+       Supervisor adds http-get command: does raw TCP HTTP GET (reuse http_get() pattern),
+       returns first 4096 chars of response body.
+       Browser strips HTML tags from response and renders as plain text with text_wrap.
+       Navigation: Up/Down scrolls, Ctrl+L focuses URL bar, Ctrl+C quits.
+       Status bar at bottom shows current URL and response code.
 
-  P45: HTTPS/TLS for http-server app. This is about the WASM http-server app accepting HTTPS.
-       Since rustls in WASM is complex, implement a simpler approach:
-       supervisor/src/main.rs — add @supervisor: tls-info command that replies with whether TLS is available.
-       apps/http-server/src/main.rs — check for /data/cert.pem and /data/key.pem; if present, print
-       "TLS: cert and key found at /data/cert.pem, /data/key.pem" to stdout and serve a note page
-       at https (actually still HTTP, but noting TLS readiness). If absent, serve normally.
-       Shell: add `tls-info` command routing to @supervisor: tls-info.
-       NOTE: Full TLS termination requires a native TLS library; this phase adds the groundwork.
+  P47: Create apps/ssh-client/ WASM app. Window x=100, y=100, w=1240, h=700.
+       Capabilities: stdio=true, display=true, shell=true, network=true.
+       Since full SSH in WASM is complex, implement a useful subset:
+       Shows a form: host input, port input (default 22), user input.
+       On Enter, app sends @supervisor: tcp-connect <host>:<port> and gets back
+       REPLY:tcp-connect <id> (or REPLY:tcp-connect error).
+       Supervisor handles tcp-connect: opens raw TCP socket, assigns an ID (incrementing integer),
+       stores in a HashMap<u32, TcpStream>. App then can send/receive via
+       @supervisor: tcp-send <id> <data> and receives REPLY:tcp-recv <id> <data>.
+       This gives apps a generic raw TCP channel. The SSH client app shows a terminal-like
+       display and sends raw keystrokes. Note: actual SSH crypto is future work — this builds the TCP plumbing.
 
 ## Queue (implement in order after current batch)
-- [ ] P46 — Basic Browser: WASM app; fetch HTML via HTTP; render stripped text
-- [ ] P47 — SSH Client: WASM SSH client; pure-Rust SSH library
 - [ ] P48 — Network Config UI: settings app sub-page; /data/network.toml
 - [ ] P49 — Download Manager: @supervisor: download <url> <dest>; background to /data
 - [ ] P50 — WebSocket: WASI socket WS upgrade; real-time apps
@@ -38,6 +40,8 @@ notes: |
 - [ ] P52 — Screenshot: @supervisor: screenshot <path>; blit back-buffer to raw PPM in /data
 - [ ] P53 — Virtual Keyboard: on-screen keyboard WASM app for touch input
 - [ ] P54 — Color Picker: WASM color picker widget; writes chosen RGBA hex to stdout
+- [ ] P55 — Terminal Emulator: full VT100 WASM app; spawn shell via @supervisor: shell-spawn
+- [ ] P56 — Process Inspector: detailed app info; threads, memory, uptime; click on name in ps
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -66,6 +70,8 @@ notes: |
 - [x] P41: Power Manager — @supervisor: shutdown (libc::LINUX_REBOOT_CMD_POWER_OFF) + reboot (LINUX_REBOOT_CMD_RESTART); 500ms delay before action; shell `shutdown`/`reboot` commands
 - [x] P42: Session Manager — @supervisor: session-save writes [[window]] TOML to /data/session.toml; session-restore parses and updates win_region + sends resize; shell session-save/session-restore
 - [x] P43: Multi-Monitor — @supervisor: monitors counts /sys/class/drm/card0-* entries; fallback 1; shell `monitors` command
+- [x] P44: DNS Resolver — apps/dns-resolver/ TUI app (840x500); @supervisor: dns-resolve <host> does TCP DNS to 8.8.8.8:53; parses A record; REPLY:dns <host> <ip>; shell `dns` command
+- [x] P45: HTTPS/TLS groundwork — @supervisor: tls-info checks /data/cert.pem+key.pem; http-server checks at startup + serves /tls JSON endpoint; shell `tls-info` command
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

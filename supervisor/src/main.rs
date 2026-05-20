@@ -1610,6 +1610,30 @@ fn handle_supervisor_command(
             send_reply(sender, &format!("REPLY:monitors {count}"), inbox);
         }
 
+        // P44: dns-resolve <hostname> — synchronous DNS A-record lookup via 8.8.8.8:53
+        "dns-resolve" => {
+            let hostname = parts.get(1).unwrap_or(&"").trim().to_string();
+            if hostname.is_empty() {
+                send_reply(sender, "REPLY:dns error: no hostname", inbox);
+                return;
+            }
+            let ip = dns_resolve_a(&hostname).unwrap_or_else(|| "NXDOMAIN".to_string());
+            eprintln!("vyoma-supervisor: dns {hostname} -> {ip}");
+            send_reply(sender, &format!("REPLY:dns {hostname} {ip}"), inbox);
+        }
+
+        // P45: tls-info — check for cert/key in /data
+        "tls-info" => {
+            let cert = Path::new("/data/cert.pem").exists();
+            let key  = Path::new("/data/key.pem").exists();
+            let msg = if cert && key {
+                "TLS: cert.pem and key.pem present in /data — ready for TLS termination proxy"
+            } else {
+                "TLS: no cert/key found — place cert.pem and key.pem in /data/ to enable TLS"
+            };
+            send_reply(sender, &format!("REPLY:{msg}"), inbox);
+        }
+
         other => {
             eprintln!("vyoma-supervisor: unknown @supervisor command from {sender}: {other}");
         }
@@ -1626,6 +1650,71 @@ fn count_drm_connectors() -> usize {
         })
         .unwrap_or(1)
         .max(1)
+}
+
+// P44: synchronous DNS A-record lookup over TCP to 8.8.8.8:53
+fn dns_resolve_a(hostname: &str) -> Option<String> {
+    use std::io::{Read, Write as _};
+    use std::net::TcpStream;
+
+    // Build DNS query packet
+    let mut q: Vec<u8> = Vec::new();
+    q.extend_from_slice(&[0x12, 0x34, 0x01, 0x00]); // ID + flags (RD)
+    q.extend_from_slice(&[0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // counts
+    for label in hostname.trim_end_matches('.').split('.') {
+        let b = label.as_bytes();
+        q.push(b.len() as u8);
+        q.extend_from_slice(b);
+    }
+    q.push(0x00);                                // root label
+    q.extend_from_slice(&[0x00, 0x01, 0x00, 0x01]); // Type A, Class IN
+
+    // TCP DNS: 2-byte big-endian length prefix
+    let mut msg: Vec<u8> = vec![(q.len() >> 8) as u8, (q.len() & 0xFF) as u8];
+    msg.extend_from_slice(&q);
+
+    let mut stream = TcpStream::connect("8.8.8.8:53").ok()?;
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(4))).ok()?;
+    stream.write_all(&msg).ok()?;
+
+    // Read response length then body
+    let mut lbuf = [0u8; 2];
+    stream.read_exact(&mut lbuf).ok()?;
+    let rlen = u16::from_be_bytes(lbuf) as usize;
+    let mut resp = vec![0u8; rlen];
+    stream.read_exact(&mut resp).ok()?;
+
+    if resp.len() < 12 { return None; }
+    let ancount = u16::from_be_bytes([resp[6], resp[7]]) as usize;
+    if ancount == 0 { return None; }
+
+    // Skip question section
+    let mut pos = 12usize;
+    pos = dns_skip_name(&resp, pos)?;
+    pos += 4; // type + class
+
+    // Parse first answer record
+    pos = dns_skip_name(&resp, pos)?;
+    if pos + 10 > resp.len() { return None; }
+    let rtype  = u16::from_be_bytes([resp[pos],   resp[pos+1]]);
+    pos += 8; // type(2) + class(2) + ttl(4)
+    let rdlen  = u16::from_be_bytes([resp[pos], resp[pos+1]]) as usize;
+    pos += 2;
+
+    if rtype == 1 && rdlen == 4 && pos + 4 <= resp.len() {
+        return Some(format!("{}.{}.{}.{}", resp[pos], resp[pos+1], resp[pos+2], resp[pos+3]));
+    }
+    None
+}
+
+fn dns_skip_name(buf: &[u8], mut pos: usize) -> Option<usize> {
+    loop {
+        if pos >= buf.len() { return None; }
+        let b = buf[pos] as usize;
+        if b == 0                 { return Some(pos + 1); }
+        if (b & 0xC0) == 0xC0    { return Some(pos + 2); } // compressed pointer
+        pos += b + 1;
+    }
 }
 
 // ── P14T01: package manager helpers ──────────────────────────────────────────

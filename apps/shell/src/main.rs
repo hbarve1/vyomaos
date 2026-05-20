@@ -178,6 +178,8 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  session-save       — save window layout to /data/session.toml".into());
             push_line(lines, "  session-restore    — restore window layout from /data/session.toml".into());
             push_line(lines, "  monitors           — count connected DRM displays".into());
+            push_line(lines, "  dns <hostname>     — resolve hostname to IP via supervisor".into());
+            push_line(lines, "  tls-info           — check TLS cert/key availability".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
         "clear" => {
@@ -356,6 +358,18 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
         }
         "monitors" => {
             println!("@supervisor: monitors");
+        }
+        "tls-info" => {
+            println!("@supervisor: tls-info");
+        }
+        other if other.starts_with("dns ") => {
+            let host = other[4..].trim();
+            if host.is_empty() {
+                push_line(lines, "usage: dns <hostname>".into());
+            } else {
+                println!("@supervisor: dns-resolve {host}");
+                push_line(lines, format!("resolving {host}..."));
+            }
         }
         other => {
             push_line(lines, format!("unknown: {other}"));

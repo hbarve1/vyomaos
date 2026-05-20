@@ -9,6 +9,12 @@ use std::{
 };
 
 fn main() {
+    let tls_ready = std::path::Path::new("/data/cert.pem").exists()
+        && std::path::Path::new("/data/key.pem").exists();
+    if tls_ready {
+        eprintln!("http-server: TLS cert and key found at /data/cert.pem, /data/key.pem");
+        println!("TLS: cert and key found at /data/cert.pem, /data/key.pem");
+    }
     let listener = TcpListener::bind("0.0.0.0:8080").expect("bind 0.0.0.0:8080");
     eprintln!("http-server: listening on 0.0.0.0:8080");
 
@@ -45,6 +51,16 @@ fn handle(mut stream: TcpStream) {
             "application/json",
             apps_json(),
         ),
+        "/tls" => {
+            let tls_ready = std::path::Path::new("/data/cert.pem").exists()
+                && std::path::Path::new("/data/key.pem").exists();
+            let msg = if tls_ready {
+                r#"{"tls":true,"cert":"/data/cert.pem","key":"/data/key.pem"}"#.to_string()
+            } else {
+                r#"{"tls":false,"hint":"place cert.pem and key.pem in /data/"}"#.to_string()
+            };
+            ("200 OK", "application/json", msg)
+        }
         _ => (
             "200 OK",
             "text/html; charset=utf-8",
