@@ -1,38 +1,30 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21
+last_updated: 2026-05-22
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Current batch
 status: ready
 phases:
-  - P32 — Window Decorations
-  - P33 — Z-Ordering
+  - P34 — Window Manager App
+  - P35 — Desktop Wallpaper
 notes: |
-  P32: supervisor/src/main.rs — before dispatching VYOMA_DRAW commands for a display app,
-       draw a title bar chrome above the app's window region: thin bar (height=20) at
-       (win_x, win_y - 20, win_w, 20) filled with 0x21262DFF, app name in 0xFFFFFFFF at
-       (win_x+8, win_y-16), close button red circle at (win_x+win_w-16, win_y-14) radius 6
-       drawn as a 12×12 fill_rect 0xFF5F56FF. Draw this chrome only once at app launch
-       (when VYOMA_SYSTEM:screen is sent, or when app first seen). On VYOMA_DRAW:flush/present,
-       redraw the chrome on top so apps can't overwrite it.
-       Add VYOMA_SYSTEM:window_event:close to app stdin when the close button region is clicked
-       (requires checking mouse click coords — reuse mouse input path).
-       Read supervisor/src/main.rs lines 870-920 (the VYOMA_DRAW dispatch path) for context.
-  P33: supervisor/src/main.rs — add a Z-order stack: Vec<String> of app names ordered
-       front-to-back. When supervisor dispatches VYOMA_DRAW to an app, it draws at the app's
-       window region. On mouse click, find the topmost app whose window contains the click point
-       and raise it to front of the stack (move to index 0). Add @supervisor: raise <app> and
-       @supervisor: lower <app> IPC commands. On each flush/present, re-composite windows in
-       Z-order (back-to-front) by doing nothing special — the back-buffer already handles it
-       since windows are independent regions. The key work: track z_order: Vec<String>, on click
-       raise clicked app, send VYOMA_SYSTEM:focus:<app> to the newly-raised app.
-       Shell: add `raise <app>` and `lower <app>` commands routing to @supervisor: raise/lower.
+  P34: Create apps/window-manager/ WASM app. It manages layout of other apps via @supervisor: IPC.
+       On start: sends @supervisor: list to get running apps, sends @supervisor: raise <name> and
+       @supervisor: lower <name> to arrange them. Listens on stdin for REPLY: messages.
+       Provides a simple tiling layout: top half = first display app, bottom half = second display app.
+       It issues @supervisor: focus commands too. Full app: Cargo.toml, vyoma.toml, src/main.rs.
+       vyoma.toml: capabilities = { stdio=true, shell=true }, no [window] (no direct drawing).
+  P35: supervisor/src/main.rs — handle new @supervisor: command "wallpaper <color>" where color
+       is an RGBA hex value (e.g. 0x1E1E2EFF). On receiving this command, supervisor calls
+       fill_rect on the framebuffer to fill the entire screen (0, 0, screen_w, screen_h) with
+       that color, then flushes. This becomes the bottom layer since it's painted once directly.
+       Shell: add `wallpaper <color>` command routing to @supervisor: wallpaper <color>.
+       Also on supervisor startup (after display::init()), paint a default background color
+       0x0D1117FF to fill the screen.
 
 ## Queue (implement in order after current batch)
-- [ ] P34 — Window Manager App: WASM app manages layout/Z-order via supervisor IPC
-- [ ] P35 — Desktop Wallpaper: VYOMA_SYSTEM:wallpaper IPC; solid color or image fill as bottom layer
 - [ ] P36 — Window Resize Events: VYOMA_SYSTEM:resize:<w>,<h> to app on resize; apps redraw at new dims
 - [ ] P37 — Taskbar App: dock, running app icons, clock, system tray; click to focus
 - [ ] P38 — App Launcher: Meta key overlay, search + launch; queries app registry
@@ -64,6 +56,8 @@ notes: |
 - [x] P29: Multi-Resolution — display::screen_size() reads FBIOGET_VSCREENINFO; launch_app_threads sends VYOMA_SYSTEM:screen:<w>,<h> to display apps
 - [x] P30: OTA Hot-Swap — @supervisor:update <app> <url>; http_get() raw TCP; sha256 verify; atomic copy; restart in background thread; shell `update` command
 - [x] P31: Double-Buffered Compositor — Framebuffer.back: Vec<u8>; all draw ops write to back; flush()/present blit back→mmap; VYOMA_DRAW:present alias added
+- [x] P32: Window Decorations — chrome (title bar + close button) painted at flush/present; VYOMA_SYSTEM:window_event:close on close-button click; guard wy>=20
+- [x] P33: Z-Ordering — Z_ORDER OnceLock<Mutex<Vec<String>>>; z_order_push_front/back; click-to-raise sets focus; @supervisor: raise/lower; shell raise/lower commands
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

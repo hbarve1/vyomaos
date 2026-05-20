@@ -26,7 +26,7 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::Path,
     process::{Child, ChildStdin, ChildStdout, Stdio},
-    sync::{mpsc, Arc, Mutex},
+    sync::{mpsc, Arc, Mutex, OnceLock},
     thread,
     time::Instant,
 };
@@ -224,8 +224,9 @@ struct AppState {
     watchdog_secs:    u32,
     last_output:      Arc<Mutex<Instant>>,
     watchdog_backoff: Arc<Mutex<u64>>,   // seconds until next restart allowed
-    has_mouse:  bool,
-    win_region: Option<(u32, u32, u32, u32)>,  // P22: (x,y,w,h) screen coords for mouse dispatch
+    has_mouse:   bool,
+    has_display: bool,
+    win_region:  Option<(u32, u32, u32, u32)>,  // P22: (x,y,w,h) screen coords for mouse dispatch
 }
 
 type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
@@ -234,6 +235,26 @@ type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
 
 type Inbox = Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>;
 type FocusedApp = Arc<Mutex<Option<String>>>;
+
+// ── P33: Global Z-order stack (index 0 = topmost / frontmost window) ─────────
+
+static Z_ORDER: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+
+fn z_order_push_front(name: &str) {
+    if let Some(m) = Z_ORDER.get() {
+        let mut v = m.lock().unwrap();
+        v.retain(|n| n != name);
+        v.insert(0, name.to_string());
+    }
+}
+
+fn z_order_push_back(name: &str) {
+    if let Some(m) = Z_ORDER.get() {
+        let mut v = m.lock().unwrap();
+        v.retain(|n| n != name);
+        v.push(name.to_string());
+    }
+}
 
 // ── Spawned app descriptor ────────────────────────────────────────────────────
 
@@ -334,6 +355,8 @@ fn main() {
         eprintln!("vyoma-supervisor: no apps configured, idling");
         loop { thread::park(); }
     }
+
+    let _ = Z_ORDER.set(Mutex::new(Vec::new()));
 
     let inbox:        Inbox       = Arc::new(Mutex::new(HashMap::new()));
     let focused:      FocusedApp  = Arc::new(Mutex::new(None));
@@ -457,6 +480,7 @@ fn main() {
     {
         let inbox_m    = Arc::clone(&inbox);
         let registry_m = Arc::clone(&app_registry);
+        let focused_m  = Arc::clone(&focused);
         thread::Builder::new()
             .name("mouse-input".into())
             .spawn(move || {
@@ -533,7 +557,7 @@ fn main() {
                             if let Some(ay) = pending_abs_y.take() {
                                 cy = (ay as i64 * SCREEN_H as i64 / ABS_MAX) as i32;
                             }
-                            dispatch_mouse(cx, cy, btn, &inbox_m, &registry_m);
+                            dispatch_mouse(cx, cy, btn, &inbox_m, &registry_m, &focused_m);
                         }
                         _ => {}
                     }
@@ -714,6 +738,11 @@ fn launch_app_threads(
         }
     }
 
+    // P33: newly launched display apps with windows go to the front of the Z-order
+    if has_display && win_region.is_some() {
+        z_order_push_front(&name);
+    }
+
     let registry_w = Arc::clone(app_registry);
     let inbox_w    = Arc::clone(inbox);
     let focused_w  = Arc::clone(focused);
@@ -845,6 +874,7 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         last_output:      Arc::new(Mutex::new(Instant::now())),
         watchdog_backoff: Arc::new(Mutex::new(0u64)),
         has_mouse:        caps.mouse,
+        has_display:      caps.display,
         win_region:       manifest.window.map(|wr| (wr.x, wr.y, wr.w, wr.h)),
     }));
     app_registry.lock().unwrap().insert(name.clone(), state);
@@ -1360,6 +1390,31 @@ fn handle_supervisor_command(
             }
         }
 
+        // P33: raise/lower window in Z-order
+        "raise" => {
+            let app_name = match parts.get(1).map(|s| s.trim()) {
+                Some(n) if !n.is_empty() => n.to_string(),
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: raise <app>", inbox);
+                    return;
+                }
+            };
+            z_order_push_front(&app_name);
+            *focused.lock().unwrap() = Some(app_name.clone());
+            send_reply(sender, &format!("REPLY:raised {app_name}"), inbox);
+        }
+        "lower" => {
+            let app_name = match parts.get(1).map(|s| s.trim()) {
+                Some(n) if !n.is_empty() => n.to_string(),
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: lower <app>", inbox);
+                    return;
+                }
+            };
+            z_order_push_back(&app_name);
+            send_reply(sender, &format!("REPLY:lowered {app_name}"), inbox);
+        }
+
         other => {
             eprintln!("vyoma-supervisor: unknown @supervisor command from {sender}: {other}");
         }
@@ -1557,8 +1612,10 @@ fn open_mouse_device() -> Option<std::fs::File> {
     None
 }
 
-/// Dispatch a mouse event to the first mouse-capable app whose window contains (cx, cy).
-/// Sends local-coordinate message: VYOMA_INPUT:mouse:<lx>,<ly>,<btn>
+/// Dispatch a mouse event:
+///  P32 — check close-button hit for all display apps; send VYOMA_SYSTEM:window_event:close
+///  P33 — on click, raise topmost window under cursor in Z-order; set keyboard focus
+///         dispatch VYOMA_INPUT:mouse to the topmost mouse-capable app under cursor
 #[cfg(target_os = "linux")]
 fn dispatch_mouse(
     cx: i32,
@@ -1566,27 +1623,98 @@ fn dispatch_mouse(
     btn: u8,
     inbox: &Inbox,
     app_registry: &AppRegistry,
+    focused: &FocusedApp,
 ) {
+    // P32: check close-button clicks (in the chrome region above each windowed app)
+    if btn == 1 {
+        let close_hit = {
+            let reg = app_registry.lock().unwrap();
+            let mut hit: Option<String> = None;
+            for (name, state_arc) in reg.iter() {
+                let st = state_arc.lock().unwrap();
+                if !st.has_display { continue; }
+                let Some((wx, wy, ww, _)) = st.win_region else { continue };
+                if wy < 20 || ww < 20 { continue; }
+                // Close button occupies (wx+ww-16, wy-14, 12, 12)
+                let cbx = (wx + ww) as i32 - 16;
+                let cby = wy as i32 - 14;
+                if cx >= cbx && cx < cbx + 12 && cy >= cby && cy < cby + 12 {
+                    hit = Some(name.clone());
+                    break;
+                }
+            }
+            hit
+        };
+        if let Some(name) = close_hit {
+            send_reply(&name, "VYOMA_SYSTEM:window_event:close", inbox);
+            return;
+        }
+    }
+
+    // Snapshot z-order before locking registry (avoids lock ordering issues)
+    let z_snapshot: Vec<String> = Z_ORDER.get()
+        .map(|m| m.lock().unwrap().clone())
+        .unwrap_or_default();
+
+    // P33: on click, raise topmost window under cursor and set keyboard focus
+    if btn == 1 {
+        let raise_target = {
+            let reg = app_registry.lock().unwrap();
+            // Iterate z-order front-to-back; first window that contains the click wins
+            let mut found: Option<String> = None;
+            for name in &z_snapshot {
+                let Some(state_arc) = reg.get(name) else { continue };
+                let st = state_arc.lock().unwrap();
+                let Some((wx, wy, ww, wh)) = st.win_region else { continue };
+                if cx >= wx as i32 && cy >= wy as i32
+                    && cx < (wx + ww) as i32 && cy < (wy + wh) as i32 {
+                    found = Some(name.clone());
+                    break;
+                }
+            }
+            found
+        };
+        if let Some(ref name) = raise_target {
+            z_order_push_front(name);
+            *focused.lock().unwrap() = Some(name.clone());
+        }
+    }
+
+    // Dispatch mouse event to topmost mouse-capable app under cursor (z-order aware)
     let target = {
         let reg = app_registry.lock().unwrap();
         let mut found: Option<(String, i32, i32)> = None;
-        for (name, state_arc) in reg.iter() {
+        // Try z-order first (preserves topmost-window semantics when windows overlap)
+        for name in &z_snapshot {
+            let Some(state_arc) = reg.get(name) else { continue };
             let st = state_arc.lock().unwrap();
             if !st.has_mouse { continue; }
             let Some((wx, wy, ww, wh)) = st.win_region else { continue };
-            if cx >= wx as i32
-                && cy >= wy as i32
-                && cx < (wx + ww) as i32
-                && cy < (wy + wh) as i32
-            {
+            if cx >= wx as i32 && cy >= wy as i32
+                && cx < (wx + ww) as i32 && cy < (wy + wh) as i32 {
                 let lx = cx - wx as i32;
                 let ly = cy - wy as i32;
                 found = Some((name.clone(), lx, ly));
                 break;
             }
         }
+        // Fallback: apps not in z_order (no window region) still get events
+        if found.is_none() {
+            for (name, state_arc) in reg.iter() {
+                let st = state_arc.lock().unwrap();
+                if !st.has_mouse { continue; }
+                let Some((wx, wy, ww, wh)) = st.win_region else { continue };
+                if cx >= wx as i32 && cy >= wy as i32
+                    && cx < (wx + ww) as i32 && cy < (wy + wh) as i32 {
+                    let lx = cx - wx as i32;
+                    let ly = cy - wy as i32;
+                    found = Some((name.clone(), lx, ly));
+                    break;
+                }
+            }
+        }
         found
-    }; // registry lock released here
+    };
     if let Some((name, lx, ly)) = target {
         send_reply(&name, &format!("VYOMA_INPUT:mouse:{lx},{ly},{btn}"), inbox);
     }
@@ -1599,7 +1727,19 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
     let Some(fb_lock) = display::get() else { return };
 
     if cmd == "flush" || cmd == "present" {
-        fb_lock.lock().unwrap().flush();
+        let mut fb = fb_lock.lock().unwrap();
+        // P32: paint window decoration chrome on top of app content before blit
+        if let Some((wx, wy, ww, _wh)) = win {
+            if wy >= 20 && ww >= 20 {
+                // Title bar background
+                fb.fill_rect(wx, wy - 20, ww, 20, 0x21262DFF);
+                // App name label
+                fb.draw_text(wx + 8, wy - 16, sender, 0xFFFFFFFF, font::FontSize::Medium);
+                // Close button — red square
+                fb.fill_rect(wx + ww - 16, wy - 14, 12, 12, 0xFF5F56FF);
+            }
+        }
+        fb.flush();
         return;
     }
 

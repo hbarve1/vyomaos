@@ -39,6 +39,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 29 — Multi-Resolution Display | `display::screen_size()` via FBIOGET_VSCREENINFO; `VYOMA_SYSTEM:screen:<w>,<h>` sent to display apps at launch | **complete** | — |
 | 30 — OTA Hot-Swap | `@supervisor: update <app> <url>`; raw TCP HTTP GET; SHA-256 verify; atomic replace; restart | **complete** | — |
 | 31 — Double-Buffered Compositor | `Framebuffer.back: Vec<u8>`; all draw ops → back-buffer; `flush()`/`present` blit back→mmap; no tearing | **complete** | — |
+| 32 — Window Decorations | Title bar + close button chrome painted at flush/present on top of app content; `VYOMA_SYSTEM:window_event:close` on click | **complete** | — |
+| 33 — Z-Ordering | `Z_ORDER` global stack; click-to-raise sets focus; `@supervisor: raise/lower`; shell `raise`/`lower` commands | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

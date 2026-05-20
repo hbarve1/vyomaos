@@ -167,6 +167,8 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  pkg remove <n>    — remove a package".into());
             push_line(lines, "  pkg installed     — list installed packages".into());
             push_line(lines, "  focus <app>        — give keyboard focus to an app".into());
+            push_line(lines, "  raise <app>        — bring window to front (Z-order)".into());
+            push_line(lines, "  lower <app>        — send window to back (Z-order)".into());
             push_line(lines, "  update <app> <url> — OTA hot-swap wasm binary from url".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
@@ -254,6 +256,24 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
                 _ => {
                     push_line(lines, "pkg: list | install <n> | remove <n> | installed".into());
                 }
+            }
+        }
+        other if other.starts_with("raise ") => {
+            let app = other[6..].trim();
+            if app.is_empty() {
+                push_line(lines, "usage: raise <appname>".into());
+            } else {
+                println!("@supervisor: raise {app}");
+                push_line(lines, format!("raising {app}..."));
+            }
+        }
+        other if other.starts_with("lower ") => {
+            let app = other[6..].trim();
+            if app.is_empty() {
+                push_line(lines, "usage: lower <appname>".into());
+            } else {
+                println!("@supervisor: lower {app}");
+                push_line(lines, format!("lowering {app}..."));
             }
         }
         other if other.starts_with("update ") => {
