@@ -71,6 +71,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 61 — Markdown Viewer | `apps/markdown-viewer/` lists /data/*.md; renders H1/H2/H3/bold/code/bullets; ↑↓ scroll ←→ prev/next | **complete** | — |
 | 62 — Password Manager | `apps/password-manager/` XOR-encrypted vault; master password unlock; add/delete entries; copy password to clipboard | **complete** | — |
 | 63 — Task Manager | `apps/task-manager/` TOML task list; add/delete/toggle done; ↑↓ nav; Ctrl+W save | **complete** | — |
+| 64 — Clock Widget | `apps/clock/` digital HH:MM:SS (large font); date line; Instant-based elapsed time; ping-pong tick loop | **complete** | — |
+| 65 — Weather App | `apps/weather/` reads /data/weather.toml [[day]] entries; condition/hi-lo/humidity display; forecast strip; ←→ nav; r=refresh | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

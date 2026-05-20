@@ -7,9 +7,34 @@ repo: /Users/hbarve1/codes/hbarve1/vyomaos
 ## Current batch
 status: ready
 phases:
-  - P64 — Clock Widget
-  - P65 — Weather App
+  - P66 — Scientific Calculator
+  - P67 — Pomodoro Timer
 notes: |
+  P66: Scientific Calculator. Create apps/sci-calculator/ WASM app.
+       Window x=200, y=100, w=600, h=520. Capabilities: stdio=true, display=true.
+       Extends basic calculator with sin/cos/tan/sqrt/log/pow functions.
+       Button grid: rows of numeric + basic ops + function buttons.
+       DEG/RAD toggle mode. ANS stores last result.
+       Integer math only for trig — output as scaled integer (no f64 dependency).
+       Actually: use Rust's f64 stdlib (available in WASM). No external deps needed.
+       Display: expression string above, result below.
+       Mouse click not required — keyboard input: digits, operators, function names via typing.
+       's'=sin, 'c'=cos, 't'=tan, 'q'=sqrt, 'l'=log, 'p'=pow(last,next), 'd'=toggle deg/rad.
+       Enter=evaluate, Esc=clear, Backspace=delete char, Ctrl+C=quit.
+
+  P67: Pomodoro Timer. Create apps/pomodoro/ WASM app.
+       Window x=300, y=160, w=440, h=380. Capabilities: stdio=true, display=true.
+       25min work / 5min short break / 15min long break (every 4th break) cycle.
+       Visual countdown: MM:SS in large font. Phase label above.
+       Space: start/pause. 'n': skip to next phase. 'r': reset current. Ctrl+C: quit.
+       Uses Instant for elapsed tracking. On each event (keypress/REPLY), check elapsed.
+       Progress bar below countdown showing time remaining as fraction.
+       Pomodoro count shown (e.g. "Pomodoro #3").
+
+## Queue (implement in order after current batch)
+- [ ] P68 — Log Viewer: reads /data/*.log files; real-time tail (polls every 2s via re-read); grep filter; color severity
+- [ ] P69 — Diff Viewer: reads two files from path input; shows unified diff line-by-line; + lines green, - lines red
+- [ ] P70 — CSV Viewer: reads /data/*.csv; table view with column headers; ↑↓←→ scroll; row count in status bar
   P64: Clock Widget. Create apps/clock/ WASM app.
        Window x=300, y=200, w=320, h=360. Capabilities: stdio=true, display=true.
        Shows a digital clock face: HH:MM:SS in large text (use 'l' font size).
@@ -86,6 +111,8 @@ notes: |
 - [x] P61: Markdown Viewer — apps/markdown-viewer/ (1240×760); lists /data/*.md; H1/H2/H3/bold/code/bullet rendering; ↑↓ scroll ←→ prev/next
 - [x] P62: Password Manager — apps/password-manager/ (960×640); XOR-encrypted vault.enc; master password unlock; add/delete entries; 'c' copy pass to clipboard
 - [x] P63: Task Manager — apps/task-manager/ (640×560); TOML [[task]] list; add/delete/toggle-done; ↑↓ nav; Ctrl+W save
+- [x] P64: Clock Widget — apps/clock/ (320×360); digital HH:MM:SS large font; date line; Instant elapsed; ping-pong tick loop
+- [x] P65: Weather App — apps/weather/ (760×480); reads /data/weather.toml [[day]] entries; hi/lo/humidity; forecast strip; ←→ nav; r=refresh
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
