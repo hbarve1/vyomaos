@@ -32,6 +32,7 @@ use std::{
 };
 
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 // ── Boot config structs ───────────────────────────────────────────────────────
 
@@ -75,6 +76,10 @@ struct AppMeta {
     name: String,
     version: String,
     wasm: String,
+    /// P28: optional SHA-256 hex digest of the .wasm binary.
+    /// If present, supervisor verifies before spawning; rejects on mismatch.
+    #[serde(default)]
+    wasm_sha256: Option<String>,
 }
 
 // deny_unknown_fields ensures manifests cannot declare undocumented capabilities.
@@ -750,6 +755,26 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         .unwrap_or(Path::new("/apps"))
         .join(&manifest.app.wasm);
 
+    // P28: SHA-256 integrity check — reject binary if hash declared and mismatches
+    if let Some(expected) = &manifest.app.wasm_sha256 {
+        match fs::read(&wasm_path) {
+            Ok(bytes) => {
+                let actual = format!("{:x}", Sha256::digest(&bytes));
+                if actual != expected.to_lowercase() {
+                    eprintln!(
+                        "vyoma-supervisor: SECURITY: {name} rejected — SHA-256 mismatch\n  expected {expected}\n  actual   {actual}"
+                    );
+                    inbox.lock().unwrap().remove(&name);
+                    return None;
+                }
+                eprintln!("vyoma-supervisor: [security] {name} wasm_sha256 verified OK");
+            }
+            Err(e) => {
+                eprintln!("vyoma-supervisor: WARN: {name} cannot read wasm for hash check: {e}");
+            }
+        }
+    }
+
     eprintln!(
         "vyoma-supervisor: spawning {} v{} (restart={})",
         name, manifest.app.version, entry.restart
@@ -776,7 +801,12 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         use std::os::unix::process::CommandExt;
         let filter = seccomp::build();
         unsafe {
-            cmd.pre_exec(move || seccomp::apply(&filter));
+            cmd.pre_exec(move || {
+                // P27: isolate mount + PID namespaces per app.
+                // Non-fatal: ignored if kernel lacks CONFIG_NAMESPACES/CONFIG_PID_NS/CONFIG_MNT_NS.
+                let _ = libc::unshare(libc::CLONE_NEWNS | libc::CLONE_NEWPID);
+                seccomp::apply(&filter)
+            });
         }
     }
 

@@ -34,8 +34,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 24 — File Manager | Scrollable /data browser; ↑/↓ navigate; Enter view file; q quit; full-screen window | **complete** | — |
 | 25 — Text Editor | Path input → full edit mode; cursor nav; insert/delete/split/merge; Ctrl+W save; Ctrl+C save+quit | **complete** | — |
 | 26 — System Monitor | Polls ps-raw every 1s; table of name/status/uptime/restarts; q to quit | **complete** | — |
-| 27 — App Namespaces | Per-app Linux mount+PID namespace via clone(CLONE_NEWNS\|CLONE_NEWPID) | pending | — |
-| 28 — Signed App Bundles | `wasm_sha256` in vyoma.toml; supervisor verifies at load | pending | — |
+| 27 — App Namespaces | `unshare(CLONE_NEWNS\|CLONE_NEWPID)` in pre_exec; kernel CONFIG_NAMESPACES+PID_NS+MNT_NS | **complete** | — |
+| 28 — Signed App Bundles | `wasm_sha256` in AppMeta; supervisor sha2::Sha256 verify at load; rejects on mismatch | **complete** | — |
 | 29 — Multi-Resolution Display | Read actual framebuffer resolution; broadcast VYOMA_SYSTEM:screen to apps | pending | — |
 | 30 — OTA Hot-Swap | `@supervisor: update <app> <url>`; download, verify SHA256, hot-replace, restart | pending | — |
 

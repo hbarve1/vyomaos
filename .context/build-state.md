@@ -7,26 +7,25 @@ repo: /Users/hbarve1/codes/hbarve1/vyomaos
 ## Current batch
 status: ready
 phases:
-  - P27 — App Namespaces
-  - P28 — Signed Bundles
+  - P29 — Multi-Resolution Display
+  - P30 — OTA Hot-Swap
 notes: |
-  P27: supervisor/src/main.rs — wrap wasmtime child spawn with unshare(CLONE_NEWNS|CLONE_NEWPID).
-       kernel base/kernel.config — add CONFIG_NAMESPACES=y CONFIG_PID_NS=y CONFIG_MNT_NS=y.
-       Use nix crate for unshare syscall OR raw libc::unshare call in the supervisor.
-       Check current supervisor Cargo.toml for existing deps before adding nix.
-  P28: vyoma.toml — add optional wasm_sha256 field in [app] section.
-       supervisor/src/main.rs — after reading wasm path, sha256sum the binary, compare.
-       Use sha2 crate (add to supervisor/Cargo.toml). Refuse spawn if mismatch.
-       Keep backward-compat: if wasm_sha256 absent, skip verification (warn only).
-  These touch supervisor and kernel config. Read supervisor/Cargo.toml before editing.
-  For P27 unshare: the supervisor itself is PID 1 musl binary. Use libc crate (likely already present).
-  Raw syscall: libc::unshare(libc::CLONE_NEWNS | libc::CLONE_NEWPID) before execvp of wasmtime.
+  P29: supervisor/src/main.rs — after opening /dev/fb0, call FBIOGET_VSCREENINFO ioctl to
+       read actual resolution. Store as (fb_w, fb_h). Before first draw command from any
+       display app, send "VYOMA_SYSTEM:screen:<w>,<h>\n" to that app's stdin.
+       Apps should read this on startup and store as their screen size.
+       Search for where fb0 is opened (display.rs or main.rs) — likely display.rs.
+       Read supervisor/src/display.rs before editing.
+  P30: supervisor/src/main.rs — handle new @supervisor: command "update <app> <url>".
+       Steps: HTTP GET url → /tmp/<app>.wasm.new (use std TcpStream + HTTP/1.1 GET),
+       sha256 verify against manifest wasm_sha256 (reuse P28 infra), move to /data/apps/<app>/<app>.wasm,
+       then @supervisor: restart <app>. 
+       HTTP: use raw TCP + write "GET <path> HTTP/1.1\r\nHost: <host>\r\nConnection: close\r\n\r\n"
+       then read response, skip headers (find \r\n\r\n), write body to file.
+       No external HTTP crate needed — keep it simple.
 
 ## Queue (implement in order after current batch)
-- [ ] P29 — Multi-Resolution: supervisor reads FBIOGET_VSCREENINFO; broadcasts VYOMA_SYSTEM:screen:<w>,<h> to display apps before first draw; apps use it instead of hardcoded 1440x900
-- [ ] P30 — OTA Hot-Swap: @supervisor: update <app> <url>; HTTP GET via reqwest-wasm or built-in downloader; verify sha256; replace /data/apps/<app>/<app>.wasm; restart app
-- [ ] P29 — Multi-Resolution: supervisor reads FBIOGET_VSCREENINFO; broadcasts VYOMA_SYSTEM:screen:<w>,<h> to display apps before first draw; apps use it instead of hardcoded 1440x900
-- [ ] P30 — OTA Hot-Swap: @supervisor: update <app> <url>; HTTP GET via reqwest-wasm or built-in downloader; verify sha256; replace /data/apps/<app>/<app>.wasm; restart app
+- [ ] P31 — Double-Buffered Compositor: supervisor back-buffer; VYOMA_DRAW:present to flip; eliminates tearing
 - [ ] P31 — Double-Buffered Compositor: supervisor back-buffer; VYOMA_DRAW:present to flip; eliminates tearing
 - [ ] P32 — Window Decorations: supervisor draws title bar/close/min/max chrome around app windows; VYOMA_SYSTEM:window_event to app on close
 - [ ] P33 — Z-Ordering: window stack; @supervisor: raise/lower; click raises
@@ -58,6 +57,8 @@ notes: |
 - [x] P24: File Manager — apps/file-manager/ complete; shell `run` auto-focuses; Makefile wired
 - [x] P25: Text Editor — apps/text-editor/ complete; path-input → edit mode; Ctrl+W save; Ctrl+C save+quit
 - [x] P26: System Monitor — apps/system-monitor/ complete; polls ps-raw every 1s; table view; q to quit
+- [x] P27: App Namespaces — libc::unshare(CLONE_NEWNS|CLONE_NEWPID) in pre_exec; kernel config updated
+- [x] P28: Signed Bundles — AppMeta.wasm_sha256: Option<String>; sha2::Sha256 verify before spawn; sha2 dep added
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
