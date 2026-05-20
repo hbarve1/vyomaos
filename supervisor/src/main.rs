@@ -704,6 +704,16 @@ fn launch_app_threads(
 
     spawn_io_threads(&name, child_stdin, child_stdout, msg_rx, has_display, win_region, inbox, focused, app_registry);
 
+    // P29: send actual screen resolution to display apps before their first draw
+    #[cfg(target_os = "linux")]
+    if has_display {
+        if let Some((w, h)) = display::screen_size() {
+            if let Some(tx) = inbox.lock().unwrap().get(&name) {
+                let _ = tx.send(format!("VYOMA_SYSTEM:screen:{w},{h}"));
+            }
+        }
+    }
+
     let registry_w = Arc::clone(app_registry);
     let inbox_w    = Arc::clone(inbox);
     let focused_w  = Arc::clone(focused);
@@ -1056,6 +1066,104 @@ fn handle_supervisor_command(
             }
         }
 
+        // P30: update <app> <url> — download new wasm, verify sha256, hot-swap, restart
+        "update" => {
+            let rest = parts.get(1).unwrap_or(&"").trim();
+            let (app_name, url) = match rest.split_once(' ') {
+                Some((a, u)) if !a.trim().is_empty() && !u.trim().is_empty() => {
+                    (a.trim().to_string(), u.trim().to_string())
+                }
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: update <app> <url>", inbox);
+                    return;
+                }
+            };
+            let entry = {
+                let reg = app_registry.lock().unwrap();
+                reg.get(&app_name).map(|st| st.lock().unwrap().entry.clone())
+            };
+            let entry = match entry {
+                Some(e) => e,
+                None => {
+                    send_reply(sender, &format!("REPLY:error: unknown app: {app_name}"), inbox);
+                    return;
+                }
+            };
+            send_reply(sender, &format!("REPLY:downloading {url}…"), inbox);
+            eprintln!("vyoma-supervisor: @supervisor: update {app_name} from {url}");
+
+            let sender_name  = sender.to_string();
+            let inbox_bg     = Arc::clone(inbox);
+            let focused_bg   = Arc::clone(focused);
+            let registry_bg  = Arc::clone(app_registry);
+
+            thread::spawn(move || {
+                let bytes = match http_get(&url) {
+                    Ok(b)  => b,
+                    Err(e) => {
+                        eprintln!("vyoma-supervisor: update {app_name}: download failed: {e}");
+                        send_reply(&sender_name, &format!("REPLY:error: download failed: {e}"), &inbox_bg);
+                        return;
+                    }
+                };
+
+                let tmp = format!("/tmp/{app_name}.wasm.new");
+                if let Err(e) = fs::write(&tmp, &bytes) {
+                    send_reply(&sender_name, &format!("REPLY:error: write tmp failed: {e}"), &inbox_bg);
+                    return;
+                }
+
+                // Verify SHA-256 if declared in manifest (reuses P28 Sha256)
+                if let Ok(raw) = fs::read_to_string(&entry.manifest) {
+                    if let Ok(m) = toml::from_str::<AppManifest>(&raw) {
+                        if let Some(expected) = &m.app.wasm_sha256 {
+                            let actual = format!("{:x}", Sha256::digest(&bytes));
+                            if actual != expected.to_lowercase() {
+                                let _ = fs::remove_file(&tmp);
+                                send_reply(&sender_name, "REPLY:error: SHA-256 mismatch — update rejected", &inbox_bg);
+                                return;
+                            }
+                            eprintln!("vyoma-supervisor: update {app_name}: SHA-256 verified OK");
+                        }
+                    }
+                }
+
+                let dest = Path::new(&entry.manifest)
+                    .parent()
+                    .unwrap_or(Path::new("/apps"))
+                    .join(format!("{app_name}.wasm"));
+                if let Err(e) = fs::copy(&tmp, &dest) {
+                    let _ = fs::remove_file(&tmp);
+                    send_reply(&sender_name, &format!("REPLY:error: install failed: {e}"), &inbox_bg);
+                    return;
+                }
+                let _ = fs::remove_file(&tmp);
+                eprintln!("vyoma-supervisor: update {app_name}: installed → {dest:?}");
+                send_reply(&sender_name, &format!("REPLY:installed — restarting {app_name}…"), &inbox_bg);
+
+                // Kill old instance then respawn
+                {
+                    let reg = registry_bg.lock().unwrap();
+                    if let Some(st) = reg.get(&app_name) {
+                        if let Some(pid) = st.lock().unwrap().child_pid {
+                            #[cfg(target_os = "linux")]
+                            unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+                        }
+                    }
+                }
+                match spawn_app(&entry, &inbox_bg, &registry_bg) {
+                    Some(app) => {
+                        launch_app_threads(app, &inbox_bg, &focused_bg, &registry_bg);
+                        eprintln!("vyoma-supervisor: update {app_name}: restarted OK");
+                        send_reply(&sender_name, &format!("REPLY:updated {app_name} OK"), &inbox_bg);
+                    }
+                    None => {
+                        send_reply(&sender_name, "REPLY:error: restart failed after update", &inbox_bg);
+                    }
+                }
+            });
+        }
+
         // reload — re-read boot.toml, launch any apps not currently running
         "reload" => {
             let boot_raw = match fs::read_to_string(BOOT_CONFIG_PATH) {
@@ -1357,6 +1465,60 @@ fn remove_package(name: &str, app_registry: &AppRegistry) -> Result<(), String> 
 
     eprintln!("vyoma-supervisor: pkg: removed {name}");
     Ok(())
+}
+
+/// P30: minimal HTTP/1.1 GET over plain TCP. Returns the response body.
+/// Only supports `http://` (no TLS). URL format: `http://host[:port]/path`.
+fn http_get(url: &str) -> Result<Vec<u8>, String> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+
+    let rest = url.strip_prefix("http://")
+        .ok_or_else(|| "only http:// URLs are supported".to_string())?;
+
+    let (hostport, path) = if let Some(idx) = rest.find('/') {
+        (&rest[..idx], &rest[idx..])
+    } else {
+        (rest, "/")
+    };
+    let (host, port) = if let Some(c) = hostport.rfind(':') {
+        let p: u16 = hostport[c + 1..]
+            .parse()
+            .map_err(|_| format!("invalid port in '{hostport}'"))?;
+        (&hostport[..c], p)
+    } else {
+        (hostport, 80u16)
+    };
+
+    let mut stream = TcpStream::connect((host, port))
+        .map_err(|e| format!("connect {host}:{port}: {e}"))?;
+
+    let req = format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
+    stream.write_all(req.as_bytes())
+        .map_err(|e| format!("request write: {e}"))?;
+
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw)
+        .map_err(|e| format!("response read: {e}"))?;
+
+    let sep = raw.windows(4).position(|w| w == b"\r\n\r\n")
+        .ok_or_else(|| "no HTTP header boundary in response".to_string())?;
+
+    let status: u16 = std::str::from_utf8(&raw[..sep])
+        .unwrap_or("")
+        .lines()
+        .next()
+        .unwrap_or("")
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    if status != 200 {
+        return Err(format!("HTTP {status}"));
+    }
+
+    Ok(raw[sep + 4..].to_vec())
 }
 
 fn send_reply(target: &str, msg: &str, inbox: &Inbox) {

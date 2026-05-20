@@ -36,8 +36,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 26 — System Monitor | Polls ps-raw every 1s; table of name/status/uptime/restarts; q to quit | **complete** | — |
 | 27 — App Namespaces | `unshare(CLONE_NEWNS\|CLONE_NEWPID)` in pre_exec; kernel CONFIG_NAMESPACES+PID_NS+MNT_NS | **complete** | — |
 | 28 — Signed App Bundles | `wasm_sha256` in AppMeta; supervisor sha2::Sha256 verify at load; rejects on mismatch | **complete** | — |
-| 29 — Multi-Resolution Display | Read actual framebuffer resolution; broadcast VYOMA_SYSTEM:screen to apps | pending | — |
-| 30 — OTA Hot-Swap | `@supervisor: update <app> <url>`; download, verify SHA256, hot-replace, restart | pending | — |
+| 29 — Multi-Resolution Display | `display::screen_size()` via FBIOGET_VSCREENINFO; `VYOMA_SYSTEM:screen:<w>,<h>` sent to display apps at launch | **complete** | — |
+| 30 — OTA Hot-Swap | `@supervisor: update <app> <url>`; raw TCP HTTP GET; SHA-256 verify; atomic replace; restart | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

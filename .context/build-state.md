@@ -25,8 +25,6 @@ notes: |
        No external HTTP crate needed — keep it simple.
 
 ## Queue (implement in order after current batch)
-- [ ] P31 — Double-Buffered Compositor: supervisor back-buffer; VYOMA_DRAW:present to flip; eliminates tearing
-- [ ] P31 — Double-Buffered Compositor: supervisor back-buffer; VYOMA_DRAW:present to flip; eliminates tearing
 - [ ] P32 — Window Decorations: supervisor draws title bar/close/min/max chrome around app windows; VYOMA_SYSTEM:window_event to app on close
 - [ ] P33 — Z-Ordering: window stack; @supervisor: raise/lower; click raises
 - [ ] P34 — Window Manager App: WASM app manages layout/Z-order via supervisor IPC
@@ -59,6 +57,8 @@ notes: |
 - [x] P26: System Monitor — apps/system-monitor/ complete; polls ps-raw every 1s; table view; q to quit
 - [x] P27: App Namespaces — libc::unshare(CLONE_NEWNS|CLONE_NEWPID) in pre_exec; kernel config updated
 - [x] P28: Signed Bundles — AppMeta.wasm_sha256: Option<String>; sha2::Sha256 verify before spawn; sha2 dep added
+- [x] P29: Multi-Resolution — display::screen_size() reads FBIOGET_VSCREENINFO; launch_app_threads sends VYOMA_SYSTEM:screen:<w>,<h> to display apps
+- [x] P30: OTA Hot-Swap — @supervisor:update <app> <url>; http_get() raw TCP; sha256 verify; atomic copy; restart in background thread; shell `update` command
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

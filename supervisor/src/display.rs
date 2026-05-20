@@ -113,6 +113,15 @@ pub fn get() -> Option<&'static Mutex<Framebuffer>> {
     FB.get()
 }
 
+/// Return the actual framebuffer resolution read via FBIOGET_VSCREENINFO.
+/// Returns `None` on headless boots where `/dev/fb0` was not opened.
+pub fn screen_size() -> Option<(u32, u32)> {
+    FB.get().map(|m| {
+        let fb = m.lock().unwrap();
+        (fb.width, fb.height)
+    })
+}
+
 // ── Framebuffer open + mmap ───────────────────────────────────────────────────
 
 fn open_fb() -> io::Result<Framebuffer> {

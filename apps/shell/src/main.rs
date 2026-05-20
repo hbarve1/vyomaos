@@ -167,6 +167,7 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  pkg remove <n>    — remove a package".into());
             push_line(lines, "  pkg installed     — list installed packages".into());
             push_line(lines, "  focus <app>        — give keyboard focus to an app".into());
+            push_line(lines, "  update <app> <url> — OTA hot-swap wasm binary from url".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
         "clear" => {
@@ -253,6 +254,15 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
                 _ => {
                     push_line(lines, "pkg: list | install <n> | remove <n> | installed".into());
                 }
+            }
+        }
+        other if other.starts_with("update ") => {
+            let args = other[7..].trim();
+            if args.is_empty() {
+                push_line(lines, "usage: update <app> <url>".into());
+            } else {
+                println!("@supervisor: update {args}");
+                push_line(lines, format!("updating {args}…"));
             }
         }
         other if other.starts_with("focus ") => {
