@@ -172,6 +172,7 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  update <app> <url> — OTA hot-swap wasm binary from url".into());
             push_line(lines, "  wallpaper <rgba>   — set desktop background color".into());
             push_line(lines, "  resize <app> <w> <h> — resize app window".into());
+            push_line(lines, "  notify <title> <msg> — show toast notification".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
         "clear" => {
@@ -303,6 +304,15 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             } else {
                 println!("@supervisor: update {args}");
                 push_line(lines, format!("updating {args}…"));
+            }
+        }
+        other if other.starts_with("notify ") => {
+            let args = other[7..].trim();
+            if args.is_empty() {
+                push_line(lines, "usage: notify <title> <msg>".into());
+            } else {
+                println!("@supervisor: notify {args}");
+                push_line(lines, format!("notification sent: {args}"));
             }
         }
         other if other.starts_with("focus ") => {

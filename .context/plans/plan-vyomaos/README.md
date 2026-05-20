@@ -45,6 +45,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 35 — Desktop Wallpaper | Default `0x0D1117FF` at startup; `@supervisor: wallpaper <rgba>`; shell `wallpaper` command | **complete** | — |
 | 36 — Window Resize Events | `@supervisor: resize <app> <w> <h>`; updates win_region; `VYOMA_SYSTEM:resize:<w>,<h>` to app | **complete** | — |
 | 37 — Taskbar App | `apps/taskbar/` dock at y=860; ps-raw poll 2s; app buttons + clock; click-to-focus | **complete** | — |
+| 38 — App Launcher | `apps/app-launcher/` full-screen overlay; pkg-list query; search filter; 4-col grid; Enter launches; Ctrl+C exits | **complete** | — |
+| 39 — Notifications | `@supervisor: notify <title> <msg>`; toast at (1020,10,400×60); 0x21262DFF bg; auto-clear 3s; shell `notify` command | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

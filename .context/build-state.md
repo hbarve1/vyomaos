@@ -1,35 +1,32 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-24
+last_updated: 2026-05-25
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Current batch
 status: ready
 phases:
-  - P38 — App Launcher
-  - P39 — Notifications
+  - P40 — Settings App
+  - P41 — Power Manager
 notes: |
-  P38: Create apps/app-launcher/ WASM app. A full-screen overlay (x=0, y=0, w=1440, h=900)
-       that shows available apps from @supervisor: pkg-list and installed apps. Semi-transparent
-       background (0x000000CC — use fill with rgba that shows through). Shows a grid of app
-       name buttons. Typing filters app names. Enter or click launches selected app via
-       @supervisor: run /apps/<name>/vyoma.toml (or /data/apps/<name>/vyoma.toml for installed).
-       Listens for keyboard input: printable chars append to search buffer, Backspace removes,
-       Ctrl+C or Escape exits (quit self). Shows "App Launcher" title at top. Capabilities:
-       stdio=true, display=true, shell=true. Keyboard focus must be given to it via shell: run app-launcher.
+  P40: Create apps/settings/ WASM app. Full-screen settings panel (x=0, y=20, w=1440, h=880).
+       Sections: Display (wallpaper color picker as hex input), Font (size selector 8/16/32),
+       Boot (edit /data/settings.toml directly). Left sidebar with section tabs. Right content area.
+       Reads /data/settings.toml on start (create with defaults if missing). Saves on Ctrl+W.
+       Capabilities: stdio=true, display=true, shell=true, filesystem=true.
+       Key mappings: Tab switches section, arrow keys navigate fields, Enter edits field,
+       Ctrl+W saves to /data/settings.toml, Ctrl+C quits.
 
-  P39: supervisor/src/main.rs — handle new @supervisor: command "notify <title> <msg>".
-       Supervisor draws a toast notification overlay directly on the framebuffer:
-       a 400×60 rect at top-right (x=1020, y=10) with background 0x21262DFF, border 0x58A6FFFF,
-       title text in 0xFFFFFFFF at (1028, 18), message text in 0x8B949EFF at (1028, 34).
-       After drawing, flush to screen. Toast stays for 3 seconds then supervisor clears it
-       (fill_rect the same region with wallpaper black 0x0D1117FF and flush) in a background thread.
-       Shell: add `notify <title> <msg>` command routing to @supervisor: notify.
+  P41: Power management. Two parts:
+       (a) supervisor/src/main.rs: handle @supervisor: shutdown and @supervisor: reboot.
+           shutdown: write "0" to /proc/sysrq-trigger (or call libc reboot with LINUX_REBOOT_CMD_POWER_OFF).
+           reboot: call libc reboot with LINUX_REBOOT_CMD_RESTART.
+           Both commands: log to stderr, reply REPLY:ok, then exec the action.
+       (b) Shell: add `shutdown` and `reboot` commands routing to @supervisor: shutdown/reboot.
+           Show warning "system shutting down..." / "system rebooting..." before sending.
 
 ## Queue (implement in order after current batch)
-- [ ] P40 — Settings App: display/font/theme/boot config; writes /data/settings.toml
-- [ ] P41 — Power Manager: ACPI shutdown/reboot via @supervisor: shutdown|reboot
 - [ ] P42 — Session Manager: save/restore window positions to /data/session.toml
 - [ ] P43 — Multi-Monitor: enumerate DRM connectors; per-monitor framebuffer surface
 - [ ] P44 — DNS Resolver: WASM resolver app; supervisor proxies DNS queries
@@ -61,6 +58,8 @@ notes: |
 - [x] P35: Desktop Wallpaper — default 0x0D1117FF painted at startup; @supervisor: wallpaper <rgba>; shell `wallpaper <rgba>`
 - [x] P36: Window Resize Events — @supervisor: resize <app> <w> <h>; updates AppState.win_region; sends VYOMA_SYSTEM:resize:<w>,<h> to app; shell `resize` command
 - [x] P37: Taskbar App — apps/taskbar/ at y=860 h=40; ps-raw poll every 2s; app buttons with click-to-focus; elapsed clock; brand label
+- [x] P38: App Launcher — apps/app-launcher/ full-screen overlay; pkg-list query; search filter; 4-col app grid; Enter launches; Ctrl+C exits; shell `run app-launcher`
+- [x] P39: Notifications — @supervisor: notify <title> <msg>; toast at (1020,10,400,60); 0x21262DFF bg + 0x58A6FFFF border; auto-clear after 3s in background thread; shell `notify` command
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
