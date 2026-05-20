@@ -1,0 +1,16 @@
+[app]
+name    = "color-picker"
+version = "0.1.0"
+wasm    = "color-picker.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+mouse   = true
+
+[window]
+x = 400
+y = 150
+w = 640
+h = 500

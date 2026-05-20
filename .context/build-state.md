@@ -7,40 +7,31 @@ repo: /Users/hbarve1/codes/hbarve1/vyomaos
 ## Current batch
 status: ready
 phases:
-  - P52 — Virtual Keyboard
-  - P53 — Color Picker
+  - P54 — Process Inspector
+  - P55 — Font Chooser
 notes: |
-  P52: Virtual Keyboard. Create apps/virtual-keyboard/ WASM app.
-       Window x=220, y=560, w=1000, h=320. Capabilities: stdio=true, display=true, shell=true.
-       On-screen QWERTY keyboard layout with rows:
-         Row 0 (y=60):  Q W E R T Y U I O P
-         Row 1 (y=120): A S D F G H J K L
-         Row 2 (y=180): Z X C V B N M
-         Row 3 (y=240): [Space 400px] [Backspace] [Enter]
-       Each key: w=80, h=50, C_KEY_BG=0x21262DFF, C_KEY_BORDER=0x30363DFF, C_KEY_TEXT=0xFFFFFFFF.
-       Highlighted key uses C_SEL=0x1F4068FF bg + C_ACCENT=0x58A6FFFF border.
-       Mouse click (VYOMA_INPUT:mouse:down:x,y) finds which key was hit.
-       Sends @supervisor: focus shell then writes the character to the focused app via
-       @supervisor: input <char>  (supervisor must forward single-char input to focused app stdin).
-       For Backspace: sends @supervisor: input \x7f
-       For Enter: sends @supervisor: input \n (empty string — matches how raw tty sends enter)
-       Ctrl+C closes the virtual keyboard (fill black + flush + exit).
+  P54: Process Inspector. Create apps/process-inspector/ WASM app.
+       Window x=300, y=80, w=840, h=720. Capabilities: stdio=true, display=true, shell=true.
+       Sends @supervisor: ps-raw every 2s (poll via a loop with a 2s sleep via std::thread::sleep).
+       Parses ps-raw reply format: "name|status|uptime|restarts|pid" per entry, pipe-separated entries.
+       Displays scrollable table with columns: Name, Status, Uptime, Restarts.
+       Up/Down: scroll list. Enter: select app and show detail view (full info + log excerpt).
+       Detail view shows: name, status, uptime, restart count, win_region (query @supervisor: win-info <app>).
+       q / Ctrl+C: back to list (or quit if on list).
+       Use draw helpers: fill, text, border, flush.
 
-  P53: Color Picker. Create apps/color-picker/ WASM app.
-       Window x=400, y=150, w=640, h=500. Capabilities: stdio=true, display=true, shell=true.
-       Displays a 256×256 hue/saturation gradient (HSV: vary H 0-360 on x, S 0-1 on y, V=1.0).
-       Below that: a Value slider (0-1) 256×20.
-       Renders each pixel by converting HSV to RGBA using integer math.
-       Shows current color as a 100×60 preview swatch + hex code label.
-       Mouse click: if in gradient area → update H+S; if in value slider → update V.
-       Ctrl+W: prints chosen color hex to stdout as a line ("color: #RRGGBBFF") then exits.
-       Ctrl+C: exits without output.
-       No external crates — pure integer HSV→RGB math.
+  P55: Font Chooser App. Create apps/font-chooser/ WASM app.
+       Window x=500, y=200, w=440, h=340. Capabilities: stdio=true, display=true, shell=true.
+       Shows 3 font size options: "Small (8×8)", "Medium (8×16)", "Large (16×32)".
+       Each option: full-width button (w=400, h=72), navigable with Up/Down, highlighted with C_SEL+C_ACCENT border.
+       Preview text rendered below each option label using the draw_text size field (s/m/l).
+       Enter selects and sends @supervisor: font-size <s|m|l> (supervisor stores in FONT_SIZE global).
+       Ctrl+C quits.
 
 ## Queue (implement in order after current batch)
-- [ ] P54 — Terminal Emulator: VT100 WASM app; shell-spawn supervisor command
-- [ ] P55 — Process Inspector: detailed app info; restarts/uptime; navigable ps-raw list
-- [ ] P56 — WebSocket: WASI socket WS upgrade; real-time apps
+- [ ] P56 — Terminal Emulator: VT100-ish WASM TUI; shell commands go to a child process
+- [ ] P57 — WebSocket: WASI socket WS upgrade; real-time apps
+- [ ] P58 — App Store UI: pkg-list + search + install/remove; full-screen overlay
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -77,6 +68,8 @@ notes: |
 - [x] P49: Download Manager — @supervisor: download <url> <dest>; background thread; http_get(); REPLY:download-progress/done/error; shell `download` command
 - [x] P50: Clipboard Manager — static CLIPBOARD: OnceLock<Mutex<String>>; @supervisor: clipboard-set/get; REPLY:clipboard-set ok / REPLY:clipboard <text>; shell clip-set/clip-get
 - [x] P51: Screenshot — display::Framebuffer.screenshot() method; @supervisor: screenshot <path>; writes P6 PPM (BGRA→RGB); shell `screenshot [path]` defaults to /data/screenshot.ppm
+- [x] P52: Virtual Keyboard — apps/virtual-keyboard/ (1000×320 at y=560); QWERTY + Space/Backspace/Enter; mouse click sends @supervisor: input <char>; supervisor P52 `input` cmd routes char to focused app stdin
+- [x] P53: Color Picker — apps/color-picker/ (640×500); 64×64 HSV gradient (4px cells); value slider; pure integer HSV→RGB; Ctrl+W outputs "color: #RRGGBBFF"
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

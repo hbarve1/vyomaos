@@ -59,6 +59,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 49 — Download Manager | `@supervisor: download <url> <dest>`; background thread; progress/done/error replies; shell `download` command | **complete** | — |
 | 50 — Clipboard Manager | `static CLIPBOARD: OnceLock<Mutex<String>>`; `@supervisor: clipboard-set/get`; shell `clip-set`/`clip-get` | **complete** | — |
 | 51 — Screenshot | `@supervisor: screenshot <path>`; reads back-buffer; writes P6 PPM (BGRA→RGB); shell `screenshot [path]` | **complete** | — |
+| 52 — Virtual Keyboard | `apps/virtual-keyboard/` QWERTY on-screen; mouse click → `@supervisor: input <char>`; supervisor routes char to focused app; Ctrl+C quits | **complete** | — |
+| 53 — Color Picker | `apps/color-picker/` 64×64 HSV gradient + value slider; mouse click; Ctrl+W outputs `color: #RRGGBBFF` | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

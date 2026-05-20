@@ -976,6 +976,18 @@ fn handle_supervisor_command(
                 eprintln!("vyoma-supervisor: focus → {name}");
             }
         }
+
+        // P52: input <char> — forward a character to the focused app's stdin
+        "input" => {
+            let ch = parts.get(1).map(|s| s.to_string()).unwrap_or_default();
+            let target = focused.lock().unwrap().clone();
+            if let Some(name) = target {
+                let map = inbox.lock().unwrap();
+                if let Some(tx) = map.get(&name) {
+                    let _ = tx.send(ch);
+                }
+            }
+        }
         "run" => {
             let path = match parts.get(1).map(|s| s.trim()) {
                 Some(p) if !p.is_empty() => p.to_string(),
