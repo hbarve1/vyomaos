@@ -240,6 +240,13 @@ type FocusedApp = Arc<Mutex<Option<String>>>;
 
 static Z_ORDER: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 
+// ── P47: Raw TCP connection pool ──────────────────────────────────────────────
+
+static TCP_CONNS: OnceLock<Mutex<std::collections::HashMap<u32, std::net::TcpStream>>> =
+    OnceLock::new();
+static TCP_NEXT_ID: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(1);
+
 fn z_order_push_front(name: &str) {
     if let Some(m) = Z_ORDER.get() {
         let mut v = m.lock().unwrap();
@@ -364,6 +371,7 @@ fn main() {
     }
 
     let _ = Z_ORDER.set(Mutex::new(Vec::new()));
+    let _ = TCP_CONNS.set(Mutex::new(std::collections::HashMap::new()));
 
     let inbox:        Inbox       = Arc::new(Mutex::new(HashMap::new()));
     let focused:      FocusedApp  = Arc::new(Mutex::new(None));
@@ -1632,6 +1640,103 @@ fn handle_supervisor_command(
                 "TLS: no cert/key found — place cert.pem and key.pem in /data/ to enable TLS"
             };
             send_reply(sender, &format!("REPLY:{msg}"), inbox);
+        }
+
+        // P46: http-get <url> — fetch URL, return status code + first 4096 chars of body
+        "http-get" => {
+            let url = parts.get(1).unwrap_or(&"").trim().to_string();
+            if url.is_empty() {
+                send_reply(sender, "REPLY:http-get error no-url", inbox);
+                return;
+            }
+            match http_get(&url) {
+                Ok(bytes) => {
+                    let raw = String::from_utf8_lossy(&bytes);
+                    let status_code = raw.lines().next()
+                        .and_then(|l| l.split_whitespace().nth(1))
+                        .unwrap_or("200")
+                        .to_string();
+                    let body = if let Some(p) = raw.find("\r\n\r\n") { &raw[p + 4..] }
+                              else if let Some(p) = raw.find("\n\n") { &raw[p + 2..] }
+                              else { &raw };
+                    let escaped: String = body.chars().take(4096)
+                        .collect::<String>()
+                        .replace('\r', "")
+                        .replace('\n', "\\n");
+                    send_reply(sender, &format!("REPLY:http-get {status_code} {escaped}"), inbox);
+                }
+                Err(e) => {
+                    send_reply(sender, &format!("REPLY:http-get error {e}"), inbox);
+                }
+            }
+        }
+
+        // P47: tcp-connect <host:port> — open raw TCP connection, return ID
+        "tcp-connect" => {
+            let addr = parts.get(1).unwrap_or(&"").trim().to_string();
+            if addr.is_empty() {
+                send_reply(sender, "REPLY:tcp-connect error no-addr", inbox);
+                return;
+            }
+            match std::net::TcpStream::connect(&addr) {
+                Ok(stream) => {
+                    let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(200)));
+                    let id = TCP_NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    TCP_CONNS.get().unwrap().lock().unwrap().insert(id, stream);
+                    eprintln!("vyoma-supervisor: tcp-connect {addr} id={id}");
+                    send_reply(sender, &format!("REPLY:tcp-connect {id}"), inbox);
+                }
+                Err(e) => {
+                    send_reply(sender, &format!("REPLY:tcp-connect error {e}"), inbox);
+                }
+            }
+        }
+
+        // P47: tcp-send <id> <data> — write data to TCP connection
+        "tcp-send" => {
+            let rest = parts.get(1).unwrap_or(&"").trim();
+            let (id_str, data) = rest.split_once(' ').unwrap_or((rest, ""));
+            let id: u32 = id_str.parse().unwrap_or(0);
+            let map = TCP_CONNS.get().unwrap().lock().unwrap();
+            if let Some(stream) = map.get(&id) {
+                use std::io::Write as IoWrite;
+                let payload = format!("{data}\n");
+                let _ = (&*stream as &std::net::TcpStream).write_all(payload.as_bytes());
+                send_reply(sender, &format!("REPLY:tcp-send {id} ok"), inbox);
+            } else {
+                send_reply(sender, &format!("REPLY:tcp-send error not-found"), inbox);
+            }
+        }
+
+        // P47: tcp-recv <id> — read available data from TCP connection (non-blocking)
+        "tcp-recv" => {
+            let id: u32 = parts.get(1).unwrap_or(&"0").trim().parse().unwrap_or(0);
+            let map = TCP_CONNS.get().unwrap().lock().unwrap();
+            if let Some(stream) = map.get(&id) {
+                use std::io::Read as IoRead;
+                let mut buf = vec![0u8; 1024];
+                match (&*stream as &std::net::TcpStream).read(&mut buf) {
+                    Ok(n) if n > 0 => {
+                        let data: String = buf[..n].iter()
+                            .filter(|&&b| b >= 32 || b == b'\n' || b == b'\r')
+                            .map(|&b| b as char)
+                            .collect::<String>()
+                            .replace('\r', "")
+                            .replace('\n', "\\n");
+                        send_reply(sender, &format!("REPLY:tcp-recv {id} {data}"), inbox);
+                    }
+                    _ => send_reply(sender, &format!("REPLY:tcp-recv {id} "), inbox),
+                }
+            } else {
+                send_reply(sender, &format!("REPLY:tcp-recv error not-found"), inbox);
+            }
+        }
+
+        // P47: tcp-close <id> — close TCP connection
+        "tcp-close" => {
+            let id: u32 = parts.get(1).unwrap_or(&"0").trim().parse().unwrap_or(0);
+            TCP_CONNS.get().unwrap().lock().unwrap().remove(&id);
+            send_reply(sender, &format!("REPLY:tcp-close {id} ok"), inbox);
         }
 
         other => {

@@ -7,41 +7,38 @@ repo: /Users/hbarve1/codes/hbarve1/vyomaos
 ## Current batch
 status: ready
 phases:
-  - P46 — Basic Browser
-  - P47 — SSH Client
+  - P48 — Network Config UI
+  - P49 — Download Manager
 notes: |
-  P46: Create apps/browser/ WASM app. Window x=0, y=20, w=1440, h=880.
-       Capabilities: stdio=true, display=true, shell=true, network=true.
-       Shows a URL bar at the top (input field). User types URL and presses Enter.
-       App sends @supervisor: http-get <url> which returns REPLY:http-get <status> <body_truncated_at_4096_chars>.
-       Supervisor adds http-get command: does raw TCP HTTP GET (reuse http_get() pattern),
-       returns first 4096 chars of response body.
-       Browser strips HTML tags from response and renders as plain text with text_wrap.
-       Navigation: Up/Down scrolls, Ctrl+L focuses URL bar, Ctrl+C quits.
-       Status bar at bottom shows current URL and response code.
+  P48: Network Config UI. Create apps/network-config/ WASM app. Window x=200, y=100, w=1040, h=600.
+       Capabilities: stdio=true, display=true, shell=true, filesystem=true.
+       Shows two sections: Static IP (fields: interface, ip, netmask, gateway, dns) and DHCP toggle.
+       Reads /data/network.toml on start (create with defaults if missing).
+       Saves to /data/network.toml on Ctrl+W. Tab/arrows navigate fields. Ctrl+C quits.
+       Network.toml format:
+         [network]
+         mode = "dhcp"  # or "static"
+         interface = "eth0"
+         ip = ""
+         netmask = ""
+         gateway = ""
+         dns = "8.8.8.8"
 
-  P47: Create apps/ssh-client/ WASM app. Window x=100, y=100, w=1240, h=700.
-       Capabilities: stdio=true, display=true, shell=true, network=true.
-       Since full SSH in WASM is complex, implement a useful subset:
-       Shows a form: host input, port input (default 22), user input.
-       On Enter, app sends @supervisor: tcp-connect <host>:<port> and gets back
-       REPLY:tcp-connect <id> (or REPLY:tcp-connect error).
-       Supervisor handles tcp-connect: opens raw TCP socket, assigns an ID (incrementing integer),
-       stores in a HashMap<u32, TcpStream>. App then can send/receive via
-       @supervisor: tcp-send <id> <data> and receives REPLY:tcp-recv <id> <data>.
-       This gives apps a generic raw TCP channel. The SSH client app shows a terminal-like
-       display and sends raw keystrokes. Note: actual SSH crypto is future work — this builds the TCP plumbing.
+  P49: Download Manager. Two parts:
+       (a) supervisor/src/main.rs: handle @supervisor: download <url> <dest>.
+           Uses existing http_get() to fetch the URL, writes bytes to <dest> path.
+           Runs in a background thread. Sends REPLY:download-progress <dest> <bytes> periodically.
+           Sends REPLY:download-done <dest> or REPLY:download-error <dest> <msg> when complete.
+       (b) Shell: add `download <url> <dest>` command routing to @supervisor: download.
 
 ## Queue (implement in order after current batch)
-- [ ] P48 — Network Config UI: settings app sub-page; /data/network.toml
-- [ ] P49 — Download Manager: @supervisor: download <url> <dest>; background to /data
 - [ ] P50 — WebSocket: WASI socket WS upgrade; real-time apps
 - [ ] P51 — Clipboard Manager: supervisor clipboard buffer; @supervisor: clipboard-set/get
 - [ ] P52 — Screenshot: @supervisor: screenshot <path>; blit back-buffer to raw PPM in /data
 - [ ] P53 — Virtual Keyboard: on-screen keyboard WASM app for touch input
 - [ ] P54 — Color Picker: WASM color picker widget; writes chosen RGBA hex to stdout
-- [ ] P55 — Terminal Emulator: full VT100 WASM app; spawn shell via @supervisor: shell-spawn
-- [ ] P56 — Process Inspector: detailed app info; threads, memory, uptime; click on name in ps
+- [ ] P55 — Terminal Emulator: VT100 WASM app; shell-spawn supervisor command
+- [ ] P56 — Process Inspector: detailed app info; restarts/uptime; navigable ps-raw list
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -72,6 +69,8 @@ notes: |
 - [x] P43: Multi-Monitor — @supervisor: monitors counts /sys/class/drm/card0-* entries; fallback 1; shell `monitors` command
 - [x] P44: DNS Resolver — apps/dns-resolver/ TUI app (840x500); @supervisor: dns-resolve <host> does TCP DNS to 8.8.8.8:53; parses A record; REPLY:dns <host> <ip>; shell `dns` command
 - [x] P45: HTTPS/TLS groundwork — @supervisor: tls-info checks /data/cert.pem+key.pem; http-server checks at startup + serves /tls JSON endpoint; shell `tls-info` command
+- [x] P46: Basic Browser — apps/browser/ (1440×880 y=20); @supervisor: http-get fetches URL + returns 4096-char body; HTML stripped; Up/Down scroll; Ctrl+L URL bar; status bar
+- [x] P47: SSH Client / TCP Tunnel — apps/ssh-client/ (1240×700); @supervisor: tcp-connect/tcp-send/tcp-recv/tcp-close; TCP_CONNS global map; TCP_NEXT_ID atomic; form→connected terminal view
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

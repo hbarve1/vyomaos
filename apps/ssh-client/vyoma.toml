@@ -1,0 +1,16 @@
+[app]
+name    = "ssh-client"
+version = "0.1.0"
+wasm    = "ssh-client.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+network = true
+
+[window]
+x = 100
+y = 100
+w = 1240
+h = 700

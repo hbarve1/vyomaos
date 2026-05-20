@@ -53,6 +53,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 43 — Multi-Monitor | `@supervisor: monitors`; counts `/sys/class/drm/card0-*`; fallback 1; shell `monitors` | **complete** | — |
 | 44 — DNS Resolver | `apps/dns-resolver/` TUI (840×500); supervisor TCP DNS to 8.8.8.8:53; A-record parse; `dns-resolve`/`REPLY:dns`; shell `dns` | **complete** | — |
 | 45 — HTTPS/TLS | `@supervisor: tls-info`; http-server /tls endpoint + cert check at startup; shell `tls-info` | **complete** | — |
+| 46 — Basic Browser | `apps/browser/` URL bar + HTML strip + scroll; `@supervisor: http-get` fetches+truncates body; Ctrl+L/Up/Down | **complete** | — |
+| 47 — SSH Client / TCP Tunnel | `apps/ssh-client/` form→terminal; `@supervisor: tcp-connect/send/recv/close`; TCP_CONNS pool; AtomicU32 IDs | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
