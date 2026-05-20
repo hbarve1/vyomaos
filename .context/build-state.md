@@ -7,34 +7,31 @@ repo: /Users/hbarve1/codes/hbarve1/vyomaos
 ## Current batch
 status: ready
 phases:
-  - P66 — Scientific Calculator
-  - P67 — Pomodoro Timer
+  - P68 — Log Viewer
+  - P69 — Diff Viewer
 notes: |
-  P66: Scientific Calculator. Create apps/sci-calculator/ WASM app.
-       Window x=200, y=100, w=600, h=520. Capabilities: stdio=true, display=true.
-       Extends basic calculator with sin/cos/tan/sqrt/log/pow functions.
-       Button grid: rows of numeric + basic ops + function buttons.
-       DEG/RAD toggle mode. ANS stores last result.
-       Integer math only for trig — output as scaled integer (no f64 dependency).
-       Actually: use Rust's f64 stdlib (available in WASM). No external deps needed.
-       Display: expression string above, result below.
-       Mouse click not required — keyboard input: digits, operators, function names via typing.
-       's'=sin, 'c'=cos, 't'=tan, 'q'=sqrt, 'l'=log, 'p'=pow(last,next), 'd'=toggle deg/rad.
-       Enter=evaluate, Esc=clear, Backspace=delete char, Ctrl+C=quit.
+  P68: Log Viewer. Create apps/log-viewer/ WASM app.
+       Window x=80, y=60, w=1360, h=760. Capabilities: stdio=true, display=true, filesystem=true.
+       Lists /data/*.log files on start; auto-loads if only one.
+       Tail mode: shows last N lines; re-reads file every 2s (poll via @supervisor: ping + REPLY:pong loop).
+       Filter mode: typing chars filters visible lines by substring. Esc clears filter.
+       Colors: lines containing "ERROR" or "error" → red; "WARN" → orange; "INFO" → accent; rest dim.
+       ↑↓: scroll; 'f': toggle follow/tail mode; Ctrl+C: quit.
 
-  P67: Pomodoro Timer. Create apps/pomodoro/ WASM app.
-       Window x=300, y=160, w=440, h=380. Capabilities: stdio=true, display=true.
-       25min work / 5min short break / 15min long break (every 4th break) cycle.
-       Visual countdown: MM:SS in large font. Phase label above.
-       Space: start/pause. 'n': skip to next phase. 'r': reset current. Ctrl+C: quit.
-       Uses Instant for elapsed tracking. On each event (keypress/REPLY), check elapsed.
-       Progress bar below countdown showing time remaining as fraction.
-       Pomodoro count shown (e.g. "Pomodoro #3").
+  P69: Diff Viewer. Create apps/diff-viewer/ WASM app.
+       Window x=80, y=60, w=1360, h=760. Capabilities: stdio=true, display=true, filesystem=true.
+       Two-step path input: first path A, then path B (Enter each time).
+       Reads both files and computes line-by-line diff:
+         - Lines only in A: show as "- <line>" in red
+         - Lines only in B: show as "+ <line>" in green
+         - Common lines: show as "  <line>" in dim
+       Very simple diff: compare line-by-line with LCS (longest common subsequence) algorithm.
+       Scrollable. ↑↓ to navigate. Ctrl+C or Esc back to path input.
 
 ## Queue (implement in order after current batch)
-- [ ] P68 — Log Viewer: reads /data/*.log files; real-time tail (polls every 2s via re-read); grep filter; color severity
-- [ ] P69 — Diff Viewer: reads two files from path input; shows unified diff line-by-line; + lines green, - lines red
 - [ ] P70 — CSV Viewer: reads /data/*.csv; table view with column headers; ↑↓←→ scroll; row count in status bar
+- [ ] P71 — JSON Viewer: reads /data/*.json; pretty-prints with indentation and color; collapse/expand objects; ↑↓ scroll
+- [ ] P72 — Stopwatch: start/stop/lap; lap times stored; large elapsed display; keyboard s/l/r
   P64: Clock Widget. Create apps/clock/ WASM app.
        Window x=300, y=200, w=320, h=360. Capabilities: stdio=true, display=true.
        Shows a digital clock face: HH:MM:SS in large text (use 'l' font size).
@@ -113,6 +110,8 @@ notes: |
 - [x] P63: Task Manager — apps/task-manager/ (640×560); TOML [[task]] list; add/delete/toggle-done; ↑↓ nav; Ctrl+W save
 - [x] P64: Clock Widget — apps/clock/ (320×360); digital HH:MM:SS large font; date line; Instant elapsed; ping-pong tick loop
 - [x] P65: Weather App — apps/weather/ (760×480); reads /data/weather.toml [[day]] entries; hi/lo/humidity; forecast strip; ←→ nav; r=refresh
+- [x] P66: Scientific Calculator — apps/sci-calculator/ (600×520); expression parser; sin/cos/tan/sqrt/log/ln/abs; deg/rad toggle; ANS; keyboard entry
+- [x] P67: Pomodoro Timer — apps/pomodoro/ (440×380); 25/5/15min work-break cycle; Instant elapsed; progress bar; pomodoro dots; Space/n/r
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

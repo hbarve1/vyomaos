@@ -1,0 +1,14 @@
+[app]
+name    = "sci-calculator"
+version = "0.1.0"
+wasm    = "sci-calculator.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+x = 200
+y = 100
+w = 600
+h = 520
