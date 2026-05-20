@@ -7,36 +7,35 @@ repo: /Users/hbarve1/codes/hbarve1/vyomaos
 ## Current batch
 status: ready
 phases:
-  - P56 — App Store UI
-  - P57 — Audio Player Stub
+  - P58 — Image Viewer
+  - P59 — Hex Editor
 notes: |
-  P56: App Store UI. Create apps/app-store/ WASM app.
-       Window x=0, y=20, w=1440, h=880. Capabilities: stdio=true, display=true, shell=true.
-       Full-screen overlay (like app-launcher) but with Install/Remove actions.
-       On start: sends @supervisor: pkg-list, parses reply.
-       Also sends @supervisor: pkg-installed, gets installed list.
-       Layout: search bar at top (y=60, w=800), 4-col grid of app cards below.
-       Each card (w=320, h=80): shows name, install status ([+]=installed, [ ]=not installed).
-       Navigation: arrow keys or Tab moves between cards (grid nav).
-       Enter on uninstalled: sends @supervisor: pkg-install <name>.
-       Enter on installed: sends @supervisor: pkg-remove <name>.
-       After install/remove: re-query both lists and refresh display.
-       Ctrl+C: fills black + exit.
-       Search filter: typing chars filters the grid in real time.
+  P58: Image Viewer. Create apps/image-viewer/ WASM app.
+       Window x=100, y=60, w=1240, h=760. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
+       On start: lists /data/*.ppm files via std::fs::read_dir.
+       Displays file list if multiple files, or auto-loads the first one.
+       Loads a PPM P6 file: reads header (P6, width height, maxval), then raw RGB bytes.
+       Renders the image by writing fill_rect commands for each row as a colored strip.
+       Since VYOMA_DRAW doesn't have a pixel blit command, downsample: for each row, output fill_rect calls
+       per horizontal segment of same color (run-length). For simplicity: output one fill_rect per pixel
+       row strip of 1px height, 1px width (limit to first 640×400 pixels to avoid too many commands).
+       Actually: render as 2×2 pixel blocks (so a 320×200 image fills 640×400 area).
+       Up/Down: scroll image. Left/Right: prev/next file. Ctrl+C: quit.
 
-  P57: Audio Player Stub. Create apps/audio-player/ WASM app.
-       Window x=500, y=300, w=440, h=260. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
-       Shows a minimal audio player UI (no actual audio output — stub that reads /data/*.raw files).
-       Displays: title bar, track name, [◀◀] [▶/‖] [▶▶] controls, progress bar (cosmetic).
-       Lists /data/ directory for .raw files on start (via std::fs::read_dir).
-       Up/Down: navigate track list. Space: toggle play/pause state (cosmetic).
-       Left/Right: prev/next track. Ctrl+C: quit.
-       Progress bar advances by 1px per second using poll timer (std::time::Instant + sleep 1s in REPLY handler).
+  P59: Hex Editor. Create apps/hex-editor/ WASM app.
+       Window x=80, y=60, w=1280, h=760. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
+       On start: shows a file path input field.
+       After entering a path and pressing Enter: loads the file, shows hex+ASCII view.
+       Layout: 16 bytes per row. Left: hex values (00-FF). Right: ASCII printable chars (. for non-printable).
+       Address column at left (8 hex digits).
+       Scrollable: Up/Down scrolls by 1 row, PgUp/PgDn by 16 rows.
+       Edit mode: Enter on a hex cell makes it editable; type 2 hex digits to change byte; Esc cancels.
+       Ctrl+W: saves file. Ctrl+C: back to path input or quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P58 — Image Viewer: display PPM/raw images from /data; @supervisor: screenshot integration
-- [ ] P59 — Hex Editor: view/edit binary files from /data as hex+ASCII
 - [ ] P60 — Calendar Widget: month view, marks today, Up/Down/Left/Right navigate months
+- [ ] P61 — Markdown Viewer: reads /data/*.md files, renders headers/bold/bullets as styled text
+- [ ] P62 — Password Manager: stores encrypted key-value pairs in /data/vault.enc; AES-like XOR cipher
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -77,6 +76,8 @@ notes: |
 - [x] P53: Color Picker — apps/color-picker/ (640×500); 64×64 HSV gradient (4px cells); value slider; pure integer HSV→RGB; Ctrl+W outputs "color: #RRGGBBFF"
 - [x] P54: Process Inspector — apps/process-inspector/ (840×720); ps-raw poll 2s; scrollable table; Enter→detail; @supervisor: win-info added; q/Ctrl+C back/quit
 - [x] P55: Font Chooser — apps/font-chooser/ (440×340); 3 buttons S/M/L with preview; Enter → @supervisor: font-size; static FONT_SIZE in supervisor
+- [x] P56: App Store UI — apps/app-store/ (1440×880); pkg-list query; 4-col grid; search filter; Enter install/remove; re-queries after action; Ctrl+C exit
+- [x] P57: Audio Player Stub — apps/audio-player/ (440×260); lists /data/*.raw; scrollable track list; play/pause/prev/next; cosmetic progress bar (advances on keypress when playing)
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

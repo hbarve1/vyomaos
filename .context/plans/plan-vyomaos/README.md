@@ -63,6 +63,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 53 — Color Picker | `apps/color-picker/` 64×64 HSV gradient + value slider; mouse click; Ctrl+W outputs `color: #RRGGBBFF` | **complete** | — |
 | 54 — Process Inspector | `apps/process-inspector/` table+detail view; ps-raw poll 2s; Enter → detail; `@supervisor: win-info <app>`; q/Ctrl+C back/quit | **complete** | — |
 | 55 — Font Chooser | `apps/font-chooser/` 3-option list S/M/L; preview in each size; Enter → `@supervisor: font-size <s\|m\|l>`; `static FONT_SIZE` global | **complete** | — |
+| 56 — App Store UI | `apps/app-store/` full-screen overlay; pkg-list search+grid; Enter install/remove; re-queries after action; search filter | **complete** | — |
+| 57 — Audio Player Stub | `apps/audio-player/` track list from /data/*.raw; play/pause/prev/next; cosmetic progress bar; Ctrl+C quit | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
