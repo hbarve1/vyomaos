@@ -1,0 +1,18 @@
+[app]
+name    = "system-monitor"
+version = "0.1.0"
+wasm    = "system-monitor.wasm"
+
+[capabilities]
+stdio      = true
+filesystem = false
+network    = false
+display    = true
+shell      = true   # keyboard focus so user can press q to quit
+mouse      = false
+
+[window]
+x = 0
+y = 0
+w = 1440
+h = 900

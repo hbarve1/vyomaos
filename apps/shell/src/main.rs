@@ -166,6 +166,7 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  pkg install <n>   — install a package".into());
             push_line(lines, "  pkg remove <n>    — remove a package".into());
             push_line(lines, "  pkg installed     — list installed packages".into());
+            push_line(lines, "  focus <app>        — give keyboard focus to an app".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
         "clear" => {
@@ -254,12 +255,21 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
                 }
             }
         }
+        other if other.starts_with("focus ") => {
+            let app = other[6..].trim();
+            if app.is_empty() {
+                push_line(lines, "usage: focus <appname>".into());
+            } else {
+                println!("@supervisor: focus {app}");
+            }
+        }
         other if other.starts_with("run ") => {
             let app = other[4..].trim();
             if app.is_empty() {
                 push_line(lines, "usage: run <appname>".into());
             } else {
                 println!("@supervisor: run /apps/{app}/vyoma.toml");
+                println!("@supervisor: focus {app}");
                 push_line(lines, format!("launching {app}..."));
             }
         }

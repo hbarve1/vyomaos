@@ -29,6 +29,17 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 19 — Watchdog | Silent-app detection + restart with exponential backoff; `watchdog_secs` per-app | **complete** | 7 |
 | 20 — Font Scaling | 8×8/8×16/16×32 text sizes via `draw_text` size field; gui-demo large header | **complete** | 6 |
 | 21 — Window Regions | Per-app window regions with offset+clip; `region` field in boot.toml; supervisor clips all draw ops to app bounds | **complete** | — |
+| 22 — Mouse Input | virtio-mouse-pci; evdev reader; VYOMA_INPUT:mouse events; per-app mouse capability | **complete** | — |
+| 23 — TUI Widget Primitives | `rect_border`, `clear_region`, `draw_text_wrap` VYOMA_DRAW commands; shell panel uses all three | **complete** | — |
+| 24 — File Manager | Scrollable /data browser; ↑/↓ navigate; Enter view file; q quit; full-screen window | **complete** | — |
+| 25 — Text Editor | Path input → full edit mode; cursor nav; insert/delete/split/merge; Ctrl+W save; Ctrl+C save+quit | **complete** | — |
+| 26 — System Monitor | Polls ps-raw every 1s; table of name/status/uptime/restarts; q to quit | **complete** | — |
+| 27 — App Namespaces | Per-app Linux mount+PID namespace via clone(CLONE_NEWNS\|CLONE_NEWPID) | pending | — |
+| 28 — Signed App Bundles | `wasm_sha256` in vyoma.toml; supervisor verifies at load | pending | — |
+| 29 — Multi-Resolution Display | Read actual framebuffer resolution; broadcast VYOMA_SYSTEM:screen to apps | pending | — |
+| 30 — OTA Hot-Swap | `@supervisor: update <app> <url>`; download, verify SHA256, hot-replace, restart | pending | — |
+
+See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
 ## Constraints
 
