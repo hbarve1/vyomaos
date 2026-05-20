@@ -1,32 +1,35 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-22
+last_updated: 2026-05-23
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Current batch
 status: ready
 phases:
-  - P34 — Window Manager App
-  - P35 — Desktop Wallpaper
+  - P36 — Window Resize Events
+  - P37 — Taskbar App
 notes: |
-  P34: Create apps/window-manager/ WASM app. It manages layout of other apps via @supervisor: IPC.
-       On start: sends @supervisor: list to get running apps, sends @supervisor: raise <name> and
-       @supervisor: lower <name> to arrange them. Listens on stdin for REPLY: messages.
-       Provides a simple tiling layout: top half = first display app, bottom half = second display app.
-       It issues @supervisor: focus commands too. Full app: Cargo.toml, vyoma.toml, src/main.rs.
-       vyoma.toml: capabilities = { stdio=true, shell=true }, no [window] (no direct drawing).
-  P35: supervisor/src/main.rs — handle new @supervisor: command "wallpaper <color>" where color
-       is an RGBA hex value (e.g. 0x1E1E2EFF). On receiving this command, supervisor calls
-       fill_rect on the framebuffer to fill the entire screen (0, 0, screen_w, screen_h) with
-       that color, then flushes. This becomes the bottom layer since it's painted once directly.
-       Shell: add `wallpaper <color>` command routing to @supervisor: wallpaper <color>.
-       Also on supervisor startup (after display::init()), paint a default background color
-       0x0D1117FF to fill the screen.
+  P36: supervisor/src/main.rs — handle new @supervisor: command "resize <app> <w> <h>".
+       Update the app's win_region in AppRegistry (w and h fields only, keep x and y).
+       Then send "VYOMA_SYSTEM:resize:<w>,<h>" to the app's inbox so it can redraw.
+       Also update the win_region in the app's AppState.win_region.
+       Shell: add `resize <app> <w> <h>` command routing to @supervisor: resize.
+       Apps that receive VYOMA_SYSTEM:resize should read the new w,h and redraw.
+       (No changes needed to existing apps — the protocol is delivered and apps can
+        optionally handle it. The resize command is infrastructure.)
+
+  P37: Create apps/taskbar/ WASM app. Full-width dock at bottom of screen (y=860, h=40).
+       Shows: VyomaOS label on left, running app names in center (clickable to focus),
+       and a simple clock on right (seconds counter since start).
+       Uses VYOMA_DRAW. Polls @supervisor: ps-raw every 2s to update app list.
+       Window: x=0, y=860, w=1440, h=40.
+       On each poll reply: clear the taskbar, redraw app name buttons, flush.
+       App buttons: each app name rendered as text; clicking (VYOMA_INPUT:mouse) sends
+       @supervisor: focus <name> for the app under the click x position.
+       Capabilities: stdio=true, display=true, shell=true, mouse=true.
 
 ## Queue (implement in order after current batch)
-- [ ] P36 — Window Resize Events: VYOMA_SYSTEM:resize:<w>,<h> to app on resize; apps redraw at new dims
-- [ ] P37 — Taskbar App: dock, running app icons, clock, system tray; click to focus
 - [ ] P38 — App Launcher: Meta key overlay, search + launch; queries app registry
 - [ ] P39 — Notifications: toast overlay; @supervisor: notify <app> <msg>
 - [ ] P40 — Settings App: display/font/theme/boot config; writes /data/settings.toml
@@ -58,6 +61,8 @@ notes: |
 - [x] P31: Double-Buffered Compositor — Framebuffer.back: Vec<u8>; all draw ops write to back; flush()/present blit back→mmap; VYOMA_DRAW:present alias added
 - [x] P32: Window Decorations — chrome (title bar + close button) painted at flush/present; VYOMA_SYSTEM:window_event:close on close-button click; guard wy>=20
 - [x] P33: Z-Ordering — Z_ORDER OnceLock<Mutex<Vec<String>>>; z_order_push_front/back; click-to-raise sets focus; @supervisor: raise/lower; shell raise/lower commands
+- [x] P34: Window Manager App — apps/window-manager/; queries list on start; raises apps in sorted order; focuses top app; shell `retile` via stdin
+- [x] P35: Desktop Wallpaper — default 0x0D1117FF painted at startup; @supervisor: wallpaper <rgba>; shell `wallpaper <rgba>`
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

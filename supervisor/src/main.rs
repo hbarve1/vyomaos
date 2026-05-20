@@ -308,6 +308,13 @@ fn main() {
     #[cfg(target_os = "linux")]
     if display::init() {
         eprintln!("vyoma-supervisor: display ready");
+        // P35: paint default desktop background before any app draws
+        if let Some(fb_lock) = display::get() {
+            let mut fb = fb_lock.lock().unwrap();
+            let (w, h) = (fb.width, fb.height);
+            fb.fill_rect(0, 0, w, h, 0x0D1117FF);
+            fb.flush();
+        }
     }
 
     let boot_raw = match fs::read_to_string(BOOT_CONFIG_PATH) {
@@ -1388,6 +1395,25 @@ fn handle_supervisor_command(
                 Ok(()) => send_reply(sender, &format!("REPLY:removed {name}"), inbox),
                 Err(e) => send_reply(sender, &format!("REPLY:error: {e}"), inbox),
             }
+        }
+
+        // P35: wallpaper <rgba_hex> — fill screen with solid color
+        "wallpaper" => {
+            let color_str = parts.get(1).unwrap_or(&"").trim();
+            let rgba = color_str
+                .strip_prefix("0x").or_else(|| color_str.strip_prefix("0X"))
+                .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+                .or_else(|| color_str.parse::<u32>().ok())
+                .unwrap_or(0x0D1117FF);
+            #[cfg(target_os = "linux")]
+            if let Some(fb_lock) = display::get() {
+                let mut fb = fb_lock.lock().unwrap();
+                let (w, h) = (fb.width, fb.height);
+                fb.fill_rect(0, 0, w, h, rgba);
+                fb.flush();
+            }
+            eprintln!("vyoma-supervisor: wallpaper set to {rgba:#010x}");
+            send_reply(sender, &format!("REPLY:wallpaper {rgba:#010x}"), inbox);
         }
 
         // P33: raise/lower window in Z-order

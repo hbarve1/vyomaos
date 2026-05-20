@@ -170,6 +170,7 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  raise <app>        — bring window to front (Z-order)".into());
             push_line(lines, "  lower <app>        — send window to back (Z-order)".into());
             push_line(lines, "  update <app> <url> — OTA hot-swap wasm binary from url".into());
+            push_line(lines, "  wallpaper <rgba>   — set desktop background color".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
         "clear" => {
@@ -256,6 +257,15 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
                 _ => {
                     push_line(lines, "pkg: list | install <n> | remove <n> | installed".into());
                 }
+            }
+        }
+        other if other.starts_with("wallpaper ") => {
+            let color = other[10..].trim();
+            if color.is_empty() {
+                push_line(lines, "usage: wallpaper <rgba_hex>  e.g. wallpaper 0x1E1E2EFF".into());
+            } else {
+                println!("@supervisor: wallpaper {color}");
+                push_line(lines, format!("setting wallpaper to {color}..."));
             }
         }
         other if other.starts_with("raise ") => {

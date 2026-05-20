@@ -41,6 +41,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 31 — Double-Buffered Compositor | `Framebuffer.back: Vec<u8>`; all draw ops → back-buffer; `flush()`/`present` blit back→mmap; no tearing | **complete** | — |
 | 32 — Window Decorations | Title bar + close button chrome painted at flush/present on top of app content; `VYOMA_SYSTEM:window_event:close` on click | **complete** | — |
 | 33 — Z-Ordering | `Z_ORDER` global stack; click-to-raise sets focus; `@supervisor: raise/lower`; shell `raise`/`lower` commands | **complete** | — |
+| 34 — Window Manager App | `apps/window-manager/`; queries list on start; raises in sorted order; focuses top app | **complete** | — |
+| 35 — Desktop Wallpaper | Default `0x0D1117FF` at startup; `@supervisor: wallpaper <rgba>`; shell `wallpaper` command | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
