@@ -181,6 +181,9 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  dns <hostname>     — resolve hostname to IP via supervisor".into());
             push_line(lines, "  tls-info           — check TLS cert/key availability".into());
             push_line(lines, "  download <url> <dest> — download file from HTTP URL to /data path".into());
+            push_line(lines, "  clip-set <text>    — copy text to supervisor clipboard".into());
+            push_line(lines, "  clip-get           — paste text from supervisor clipboard".into());
+            push_line(lines, "  screenshot [path]  — save framebuffer PPM to /data/screenshot.ppm".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
         "clear" => {
@@ -381,6 +384,24 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
                 }
                 _ => push_line(lines, "usage: download <url> <dest>".into()),
             }
+        }
+        other if other.starts_with("clip-set ") => {
+            let text = other[9..].trim();
+            if text.is_empty() {
+                push_line(lines, "usage: clip-set <text>".into());
+            } else {
+                println!("@supervisor: clipboard-set {text}");
+                push_line(lines, format!("clipboard set ({} chars)", text.len()));
+            }
+        }
+        "clip-get" => {
+            println!("@supervisor: clipboard-get");
+        }
+        other if other.starts_with("screenshot") => {
+            let path = other[10..].trim();
+            let dest = if path.is_empty() { "/data/screenshot.ppm" } else { path };
+            println!("@supervisor: screenshot {dest}");
+            push_line(lines, format!("saving screenshot to {dest}..."));
         }
         other => {
             push_line(lines, format!("unknown: {other}"));

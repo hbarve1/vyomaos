@@ -7,24 +7,37 @@ repo: /Users/hbarve1/codes/hbarve1/vyomaos
 ## Current batch
 status: ready
 phases:
-  - P50 — Clipboard Manager
-  - P51 — Screenshot
+  - P52 — Virtual Keyboard
+  - P53 — Color Picker
 notes: |
-  P50: Clipboard Manager.
-       supervisor/src/main.rs: add static CLIPBOARD: OnceLock<Mutex<String>>.
-       Handle @supervisor: clipboard-set <text> — stores text in CLIPBOARD; replies REPLY:clipboard-set ok.
-       Handle @supervisor: clipboard-get — reads CLIPBOARD; replies REPLY:clipboard <text>.
-       Shell: add `clip-set <text>` and `clip-get` commands.
+  P52: Virtual Keyboard. Create apps/virtual-keyboard/ WASM app.
+       Window x=220, y=560, w=1000, h=320. Capabilities: stdio=true, display=true, shell=true.
+       On-screen QWERTY keyboard layout with rows:
+         Row 0 (y=60):  Q W E R T Y U I O P
+         Row 1 (y=120): A S D F G H J K L
+         Row 2 (y=180): Z X C V B N M
+         Row 3 (y=240): [Space 400px] [Backspace] [Enter]
+       Each key: w=80, h=50, C_KEY_BG=0x21262DFF, C_KEY_BORDER=0x30363DFF, C_KEY_TEXT=0xFFFFFFFF.
+       Highlighted key uses C_SEL=0x1F4068FF bg + C_ACCENT=0x58A6FFFF border.
+       Mouse click (VYOMA_INPUT:mouse:down:x,y) finds which key was hit.
+       Sends @supervisor: focus shell then writes the character to the focused app via
+       @supervisor: input <char>  (supervisor must forward single-char input to focused app stdin).
+       For Backspace: sends @supervisor: input \x7f
+       For Enter: sends @supervisor: input \n (empty string — matches how raw tty sends enter)
+       Ctrl+C closes the virtual keyboard (fill black + flush + exit).
 
-  P51: Screenshot.
-       supervisor/src/main.rs: handle @supervisor: screenshot <path>.
-       Reads the back-buffer (or front mmap) from the Framebuffer struct.
-       Writes raw PPM format (P6, 1440 900, 255, then RGB bytes stripped of alpha) to <path>.
-       Shell: add `screenshot <path>` command routing to @supervisor: screenshot.
+  P53: Color Picker. Create apps/color-picker/ WASM app.
+       Window x=400, y=150, w=640, h=500. Capabilities: stdio=true, display=true, shell=true.
+       Displays a 256×256 hue/saturation gradient (HSV: vary H 0-360 on x, S 0-1 on y, V=1.0).
+       Below that: a Value slider (0-1) 256×20.
+       Renders each pixel by converting HSV to RGBA using integer math.
+       Shows current color as a 100×60 preview swatch + hex code label.
+       Mouse click: if in gradient area → update H+S; if in value slider → update V.
+       Ctrl+W: prints chosen color hex to stdout as a line ("color: #RRGGBBFF") then exits.
+       Ctrl+C: exits without output.
+       No external crates — pure integer HSV→RGB math.
 
 ## Queue (implement in order after current batch)
-- [ ] P52 — Virtual Keyboard: on-screen keyboard WASM app for touch input
-- [ ] P53 — Color Picker: WASM color picker widget; writes chosen RGBA hex to stdout
 - [ ] P54 — Terminal Emulator: VT100 WASM app; shell-spawn supervisor command
 - [ ] P55 — Process Inspector: detailed app info; restarts/uptime; navigable ps-raw list
 - [ ] P56 — WebSocket: WASI socket WS upgrade; real-time apps
@@ -62,6 +75,8 @@ notes: |
 - [x] P47: SSH Client / TCP Tunnel — apps/ssh-client/ (1240×700); @supervisor: tcp-connect/tcp-send/tcp-recv/tcp-close; TCP_CONNS global map; TCP_NEXT_ID atomic; form→connected terminal view
 - [x] P48: Network Config UI — apps/network-config/ (1040×600); DHCP/Static toggle (d/s keys); 5 IP fields; reads+writes /data/network.toml; Tab/arrows/Ctrl+W/Ctrl+C
 - [x] P49: Download Manager — @supervisor: download <url> <dest>; background thread; http_get(); REPLY:download-progress/done/error; shell `download` command
+- [x] P50: Clipboard Manager — static CLIPBOARD: OnceLock<Mutex<String>>; @supervisor: clipboard-set/get; REPLY:clipboard-set ok / REPLY:clipboard <text>; shell clip-set/clip-get
+- [x] P51: Screenshot — display::Framebuffer.screenshot() method; @supervisor: screenshot <path>; writes P6 PPM (BGRA→RGB); shell `screenshot [path]` defaults to /data/screenshot.ppm
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

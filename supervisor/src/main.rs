@@ -247,6 +247,10 @@ static TCP_CONNS: OnceLock<Mutex<std::collections::HashMap<u32, std::net::TcpStr
 static TCP_NEXT_ID: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(1);
 
+// ── P50: Clipboard ────────────────────────────────────────────────────────────
+
+static CLIPBOARD: OnceLock<Mutex<String>> = OnceLock::new();
+
 fn z_order_push_front(name: &str) {
     if let Some(m) = Z_ORDER.get() {
         let mut v = m.lock().unwrap();
@@ -372,6 +376,7 @@ fn main() {
 
     let _ = Z_ORDER.set(Mutex::new(Vec::new()));
     let _ = TCP_CONNS.set(Mutex::new(std::collections::HashMap::new()));
+    let _ = CLIPBOARD.set(Mutex::new(String::new()));
 
     let inbox:        Inbox       = Arc::new(Mutex::new(HashMap::new()));
     let focused:      FocusedApp  = Arc::new(Mutex::new(None));
@@ -1737,6 +1742,46 @@ fn handle_supervisor_command(
             let id: u32 = parts.get(1).unwrap_or(&"0").trim().parse().unwrap_or(0);
             TCP_CONNS.get().unwrap().lock().unwrap().remove(&id);
             send_reply(sender, &format!("REPLY:tcp-close {id} ok"), inbox);
+        }
+
+        // P50: clipboard-set <text> — store text in global clipboard
+        "clipboard-set" => {
+            let text = parts.get(1).unwrap_or(&"").trim().to_string();
+            *CLIPBOARD.get().unwrap().lock().unwrap() = text;
+            send_reply(sender, "REPLY:clipboard-set ok", inbox);
+        }
+
+        // P50: clipboard-get — return current clipboard contents
+        "clipboard-get" => {
+            let text = CLIPBOARD.get().unwrap().lock().unwrap().clone();
+            send_reply(sender, &format!("REPLY:clipboard {text}"), inbox);
+        }
+
+        // P51: screenshot <path> — write back-buffer as PPM to path
+        "screenshot" => {
+            let path = parts.get(1).unwrap_or(&"").trim().to_string();
+            if path.is_empty() {
+                send_reply(sender, "REPLY:screenshot error no-path", inbox);
+                return;
+            }
+            #[cfg(target_os = "linux")]
+            {
+                match display::get() {
+                    Some(fb_lock) => {
+                        let fb = fb_lock.lock().unwrap();
+                        match fb.screenshot(&path) {
+                            Ok(()) => {
+                                eprintln!("vyoma-supervisor: screenshot saved to {path}");
+                                send_reply(sender, &format!("REPLY:screenshot ok {path}"), inbox);
+                            }
+                            Err(e) => send_reply(sender, &format!("REPLY:screenshot error {e}"), inbox),
+                        }
+                    }
+                    None => send_reply(sender, "REPLY:screenshot error no-display", inbox),
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            send_reply(sender, "REPLY:screenshot error linux-only", inbox);
         }
 
         // P49: download <url> <dest> — fetch URL, write to dest path in background
