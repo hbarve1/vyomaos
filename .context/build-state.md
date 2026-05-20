@@ -90,4 +90,7 @@ screen: 1440x900 (virtio-gpu, declared in vyoma.toml [window])
 3. Implement fully — no stubs, no TODOs
 4. Update this file: check off completed phases, move next batch from queue
 5. Update .context/plans/plan-vyomaos/README.md rows
-6. If all queue items done: write "status: COMPLETE — all P24-P50 done" and stop
+6. **Commit + push** — stage only changed/new files (never .claude/ .gemini/ *.lock),
+   commit message format: `feat(pNN-pMM): <short description>\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>`
+   then `git push origin develop`
+7. If all queue items done: write "status: COMPLETE — all phases done" and stop
