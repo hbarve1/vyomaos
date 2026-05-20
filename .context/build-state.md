@@ -7,31 +7,36 @@ repo: /Users/hbarve1/codes/hbarve1/vyomaos
 ## Current batch
 status: ready
 phases:
-  - P54 — Process Inspector
-  - P55 — Font Chooser
+  - P56 — App Store UI
+  - P57 — Audio Player Stub
 notes: |
-  P54: Process Inspector. Create apps/process-inspector/ WASM app.
-       Window x=300, y=80, w=840, h=720. Capabilities: stdio=true, display=true, shell=true.
-       Sends @supervisor: ps-raw every 2s (poll via a loop with a 2s sleep via std::thread::sleep).
-       Parses ps-raw reply format: "name|status|uptime|restarts|pid" per entry, pipe-separated entries.
-       Displays scrollable table with columns: Name, Status, Uptime, Restarts.
-       Up/Down: scroll list. Enter: select app and show detail view (full info + log excerpt).
-       Detail view shows: name, status, uptime, restart count, win_region (query @supervisor: win-info <app>).
-       q / Ctrl+C: back to list (or quit if on list).
-       Use draw helpers: fill, text, border, flush.
+  P56: App Store UI. Create apps/app-store/ WASM app.
+       Window x=0, y=20, w=1440, h=880. Capabilities: stdio=true, display=true, shell=true.
+       Full-screen overlay (like app-launcher) but with Install/Remove actions.
+       On start: sends @supervisor: pkg-list, parses reply.
+       Also sends @supervisor: pkg-installed, gets installed list.
+       Layout: search bar at top (y=60, w=800), 4-col grid of app cards below.
+       Each card (w=320, h=80): shows name, install status ([+]=installed, [ ]=not installed).
+       Navigation: arrow keys or Tab moves between cards (grid nav).
+       Enter on uninstalled: sends @supervisor: pkg-install <name>.
+       Enter on installed: sends @supervisor: pkg-remove <name>.
+       After install/remove: re-query both lists and refresh display.
+       Ctrl+C: fills black + exit.
+       Search filter: typing chars filters the grid in real time.
 
-  P55: Font Chooser App. Create apps/font-chooser/ WASM app.
-       Window x=500, y=200, w=440, h=340. Capabilities: stdio=true, display=true, shell=true.
-       Shows 3 font size options: "Small (8×8)", "Medium (8×16)", "Large (16×32)".
-       Each option: full-width button (w=400, h=72), navigable with Up/Down, highlighted with C_SEL+C_ACCENT border.
-       Preview text rendered below each option label using the draw_text size field (s/m/l).
-       Enter selects and sends @supervisor: font-size <s|m|l> (supervisor stores in FONT_SIZE global).
-       Ctrl+C quits.
+  P57: Audio Player Stub. Create apps/audio-player/ WASM app.
+       Window x=500, y=300, w=440, h=260. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
+       Shows a minimal audio player UI (no actual audio output — stub that reads /data/*.raw files).
+       Displays: title bar, track name, [◀◀] [▶/‖] [▶▶] controls, progress bar (cosmetic).
+       Lists /data/ directory for .raw files on start (via std::fs::read_dir).
+       Up/Down: navigate track list. Space: toggle play/pause state (cosmetic).
+       Left/Right: prev/next track. Ctrl+C: quit.
+       Progress bar advances by 1px per second using poll timer (std::time::Instant + sleep 1s in REPLY handler).
 
 ## Queue (implement in order after current batch)
-- [ ] P56 — Terminal Emulator: VT100-ish WASM TUI; shell commands go to a child process
-- [ ] P57 — WebSocket: WASI socket WS upgrade; real-time apps
-- [ ] P58 — App Store UI: pkg-list + search + install/remove; full-screen overlay
+- [ ] P58 — Image Viewer: display PPM/raw images from /data; @supervisor: screenshot integration
+- [ ] P59 — Hex Editor: view/edit binary files from /data as hex+ASCII
+- [ ] P60 — Calendar Widget: month view, marks today, Up/Down/Left/Right navigate months
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -70,6 +75,8 @@ notes: |
 - [x] P51: Screenshot — display::Framebuffer.screenshot() method; @supervisor: screenshot <path>; writes P6 PPM (BGRA→RGB); shell `screenshot [path]` defaults to /data/screenshot.ppm
 - [x] P52: Virtual Keyboard — apps/virtual-keyboard/ (1000×320 at y=560); QWERTY + Space/Backspace/Enter; mouse click sends @supervisor: input <char>; supervisor P52 `input` cmd routes char to focused app stdin
 - [x] P53: Color Picker — apps/color-picker/ (640×500); 64×64 HSV gradient (4px cells); value slider; pure integer HSV→RGB; Ctrl+W outputs "color: #RRGGBBFF"
+- [x] P54: Process Inspector — apps/process-inspector/ (840×720); ps-raw poll 2s; scrollable table; Enter→detail; @supervisor: win-info added; q/Ctrl+C back/quit
+- [x] P55: Font Chooser — apps/font-chooser/ (440×340); 3 buttons S/M/L with preview; Enter → @supervisor: font-size; static FONT_SIZE in supervisor
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

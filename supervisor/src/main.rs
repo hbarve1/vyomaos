@@ -251,6 +251,10 @@ static TCP_NEXT_ID: std::sync::atomic::AtomicU32 =
 
 static CLIPBOARD: OnceLock<Mutex<String>> = OnceLock::new();
 
+// ── P55: Global font size preference ─────────────────────────────────────────
+
+static FONT_SIZE: OnceLock<Mutex<String>> = OnceLock::new();
+
 fn z_order_push_front(name: &str) {
     if let Some(m) = Z_ORDER.get() {
         let mut v = m.lock().unwrap();
@@ -377,6 +381,7 @@ fn main() {
     let _ = Z_ORDER.set(Mutex::new(Vec::new()));
     let _ = TCP_CONNS.set(Mutex::new(std::collections::HashMap::new()));
     let _ = CLIPBOARD.set(Mutex::new(String::new()));
+    let _ = FONT_SIZE.set(Mutex::new("m".to_string()));
 
     let inbox:        Inbox       = Arc::new(Mutex::new(HashMap::new()));
     let focused:      FocusedApp  = Arc::new(Mutex::new(None));
@@ -974,6 +979,35 @@ fn handle_supervisor_command(
             if let Some(name) = parts.get(1).map(|s| s.trim()) {
                 *focused.lock().unwrap() = Some(name.to_string());
                 eprintln!("vyoma-supervisor: focus → {name}");
+            }
+        }
+
+        // P54: win-info <app> — return window region of an app
+        "win-info" => {
+            let app_name = parts.get(1).unwrap_or(&"").trim().to_string();
+            let reg = app_registry.lock().unwrap();
+            if let Some(st) = reg.get(&app_name) {
+                let region = st.lock().unwrap().win_region;
+                let coords = match region {
+                    Some((x, y, w, h)) => format!("{x},{y},{w},{h}"),
+                    None => "none".to_string(),
+                };
+                send_reply(sender, &format!("REPLY:win-info {app_name} {coords}"), inbox);
+            } else {
+                send_reply(sender, &format!("REPLY:win-info {app_name} not-found"), inbox);
+            }
+        }
+
+        // P55: font-size <s|m|l> — store global font size preference
+        "font-size" => {
+            let size = parts.get(1).unwrap_or(&"m").trim().to_string();
+            let valid = matches!(size.as_str(), "s" | "m" | "l");
+            if valid {
+                *FONT_SIZE.get().unwrap().lock().unwrap() = size.clone();
+                eprintln!("vyoma-supervisor: font-size → {size}");
+                send_reply(sender, &format!("REPLY:font-size {size}"), inbox);
+            } else {
+                send_reply(sender, "REPLY:font-size error invalid-size", inbox);
             }
         }
 

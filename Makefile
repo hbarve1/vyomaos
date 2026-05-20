@@ -109,8 +109,10 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/browser/Cargo.toml        --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/ssh-client/Cargo.toml     --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/network-config/Cargo.toml    --target wasm32-wasip2 --release
-	$(DOCKER_RUN) cargo build --manifest-path apps/virtual-keyboard/Cargo.toml  --target wasm32-wasip2 --release
-	$(DOCKER_RUN) cargo build --manifest-path apps/color-picker/Cargo.toml      --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/virtual-keyboard/Cargo.toml   --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/color-picker/Cargo.toml       --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/process-inspector/Cargo.toml  --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/font-chooser/Cargo.toml       --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────
