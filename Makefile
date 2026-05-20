@@ -119,6 +119,8 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/hex-editor/Cargo.toml         --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/calendar/Cargo.toml           --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/markdown-viewer/Cargo.toml    --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/password-manager/Cargo.toml  --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/task-manager/Cargo.toml      --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────

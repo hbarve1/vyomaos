@@ -1,0 +1,15 @@
+[app]
+name    = "password-manager"
+version = "0.1.0"
+wasm    = "password-manager.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+filesystem = true
+
+[window]
+x = 160
+y = 80
+w = 960
+h = 640

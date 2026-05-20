@@ -7,29 +7,37 @@ repo: /Users/hbarve1/codes/hbarve1/vyomaos
 ## Current batch
 status: ready
 phases:
-  - P62 — Password Manager
-  - P63 — Task Manager
+  - P64 — Clock Widget
+  - P65 — Weather App
 notes: |
-  P62: Password Manager. Create apps/password-manager/ WASM app.
-       Window x=160, y=80, w=960, h=640. Capabilities: stdio=true, display=true, filesystem=true.
-       Stores key-value pairs encrypted in /data/vault.enc using XOR cipher with a master key.
-       Master key is prompted at launch (typed inline, shown as ****).
-       After unlock: shows list of stored entries (site/username/password).
-       'a' = add new entry (prompts for site/user/pass fields one at a time).
-       'd' on selected = delete. 'c' = copy password (outputs "clip-set" command).
-       Ctrl+W saves. Ctrl+C quits.
+  P64: Clock Widget. Create apps/clock/ WASM app.
+       Window x=300, y=200, w=320, h=360. Capabilities: stdio=true, display=true.
+       Shows a digital clock face: HH:MM:SS in large text (use 'l' font size).
+       Below: date line (e.g., "Wednesday  20 May 2026").
+       Since WASM has no system clock, use a hardcoded start datetime (2026-05-20 00:00:00)
+       and advance it on each REPLY tick. App sends "@supervisor: tick" to get a REPLY every second.
+       Actually: use a simpler approach — display a static time on first render, then on each
+       keypress/REPLY advance the second counter. Poll with `@supervisor: ping` every ~1s if available,
+       or just show a static time + note "press any key to tick".
+       Ctrl+C: quit.
 
-  P63: Task Manager. Create apps/task-manager/ WASM app.
-       Window x=200, y=80, w=640, h=560. Capabilities: stdio=true, display=true, filesystem=true.
-       To-do list stored in /data/tasks.toml as [[task]] entries with fields: title, done.
-       Shows scrollable list; done items shown with strikethrough indicator (✓).
-       Enter toggles done/undone on selected task. 'a' enters add mode (type title, Enter to confirm).
-       'd' deletes selected. ↑↓ navigate. Ctrl+W saves. Ctrl+C quits.
+  P65: Weather App. Create apps/weather/ WASM app.
+       Window x=200, y=100, w=760, h=480. Capabilities: stdio=true, display=true, filesystem=true.
+       Reads /data/weather.toml for weather data. Format:
+         [[day]]
+         date = "2026-05-20"
+         condition = "Sunny"
+         temp_hi = 28
+         temp_lo = 18
+         humidity = 55
+       Shows current day's data prominently. Left/Right navigate to prev/next day entries.
+       'r' re-reads the file (refresh). Shows "No weather data" if file missing.
+       Ctrl+C: quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P64 — Clock Widget: analog clock face drawn with fill_rect pixels; digital time display; uses hardcoded start time + elapsed tracking
-- [ ] P65 — Weather App: reads /data/weather.toml; shows temp/conditions/forecast; arrow nav days; Ctrl+R refresh (re-reads file)
-- [ ] P66 — Calculator Scientific: extends calculator app pattern; adds sin/cos/tan/sqrt/pow; RPN or infix mode toggle
+- [ ] P66 — Scientific Calculator: extends calculator; adds sin/cos/tan/sqrt/log/pow buttons; toggle deg/rad
+- [ ] P67 — Pomodoro Timer: 25min work + 5min break cycle; visual countdown; spacebar start/pause; n for next phase
+- [ ] P68 — Log Viewer: reads /data/*.log files; real-time tail (polls every 2s via re-read); grep filter; color severity
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -76,6 +84,8 @@ notes: |
 - [x] P59: Hex Editor — apps/hex-editor/ (1280×760); path input → hex+ASCII view; 16 bytes/row; edit mode (2 hex digits); u/d page nav; Ctrl+W save
 - [x] P60: Calendar Widget — apps/calendar/ (640×520); month grid Sun–Sat; today highlighted; ←→↑↓ navigate months; weekend accent color
 - [x] P61: Markdown Viewer — apps/markdown-viewer/ (1240×760); lists /data/*.md; H1/H2/H3/bold/code/bullet rendering; ↑↓ scroll ←→ prev/next
+- [x] P62: Password Manager — apps/password-manager/ (960×640); XOR-encrypted vault.enc; master password unlock; add/delete entries; 'c' copy pass to clipboard
+- [x] P63: Task Manager — apps/task-manager/ (640×560); TOML [[task]] list; add/delete/toggle-done; ↑↓ nav; Ctrl+W save
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

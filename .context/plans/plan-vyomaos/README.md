@@ -69,6 +69,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 59 — Hex Editor | `apps/hex-editor/` path input → hex+ASCII view; 16 bytes/row; edit mode (2 hex digits); u/d page nav; Ctrl+W save | **complete** | — |
 | 60 — Calendar Widget | `apps/calendar/` month view 7-col grid; marks today; ←→↑↓ navigate months; weekend color highlight | **complete** | — |
 | 61 — Markdown Viewer | `apps/markdown-viewer/` lists /data/*.md; renders H1/H2/H3/bold/code/bullets; ↑↓ scroll ←→ prev/next | **complete** | — |
+| 62 — Password Manager | `apps/password-manager/` XOR-encrypted vault; master password unlock; add/delete entries; copy password to clipboard | **complete** | — |
+| 63 — Task Manager | `apps/task-manager/` TOML task list; add/delete/toggle done; ↑↓ nav; Ctrl+W save | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
