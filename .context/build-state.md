@@ -1,37 +1,33 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23
+last_updated: 2026-05-24
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Current batch
 status: ready
 phases:
-  - P36 — Window Resize Events
-  - P37 — Taskbar App
+  - P38 — App Launcher
+  - P39 — Notifications
 notes: |
-  P36: supervisor/src/main.rs — handle new @supervisor: command "resize <app> <w> <h>".
-       Update the app's win_region in AppRegistry (w and h fields only, keep x and y).
-       Then send "VYOMA_SYSTEM:resize:<w>,<h>" to the app's inbox so it can redraw.
-       Also update the win_region in the app's AppState.win_region.
-       Shell: add `resize <app> <w> <h>` command routing to @supervisor: resize.
-       Apps that receive VYOMA_SYSTEM:resize should read the new w,h and redraw.
-       (No changes needed to existing apps — the protocol is delivered and apps can
-        optionally handle it. The resize command is infrastructure.)
+  P38: Create apps/app-launcher/ WASM app. A full-screen overlay (x=0, y=0, w=1440, h=900)
+       that shows available apps from @supervisor: pkg-list and installed apps. Semi-transparent
+       background (0x000000CC — use fill with rgba that shows through). Shows a grid of app
+       name buttons. Typing filters app names. Enter or click launches selected app via
+       @supervisor: run /apps/<name>/vyoma.toml (or /data/apps/<name>/vyoma.toml for installed).
+       Listens for keyboard input: printable chars append to search buffer, Backspace removes,
+       Ctrl+C or Escape exits (quit self). Shows "App Launcher" title at top. Capabilities:
+       stdio=true, display=true, shell=true. Keyboard focus must be given to it via shell: run app-launcher.
 
-  P37: Create apps/taskbar/ WASM app. Full-width dock at bottom of screen (y=860, h=40).
-       Shows: VyomaOS label on left, running app names in center (clickable to focus),
-       and a simple clock on right (seconds counter since start).
-       Uses VYOMA_DRAW. Polls @supervisor: ps-raw every 2s to update app list.
-       Window: x=0, y=860, w=1440, h=40.
-       On each poll reply: clear the taskbar, redraw app name buttons, flush.
-       App buttons: each app name rendered as text; clicking (VYOMA_INPUT:mouse) sends
-       @supervisor: focus <name> for the app under the click x position.
-       Capabilities: stdio=true, display=true, shell=true, mouse=true.
+  P39: supervisor/src/main.rs — handle new @supervisor: command "notify <title> <msg>".
+       Supervisor draws a toast notification overlay directly on the framebuffer:
+       a 400×60 rect at top-right (x=1020, y=10) with background 0x21262DFF, border 0x58A6FFFF,
+       title text in 0xFFFFFFFF at (1028, 18), message text in 0x8B949EFF at (1028, 34).
+       After drawing, flush to screen. Toast stays for 3 seconds then supervisor clears it
+       (fill_rect the same region with wallpaper black 0x0D1117FF and flush) in a background thread.
+       Shell: add `notify <title> <msg>` command routing to @supervisor: notify.
 
 ## Queue (implement in order after current batch)
-- [ ] P38 — App Launcher: Meta key overlay, search + launch; queries app registry
-- [ ] P39 — Notifications: toast overlay; @supervisor: notify <app> <msg>
 - [ ] P40 — Settings App: display/font/theme/boot config; writes /data/settings.toml
 - [ ] P41 — Power Manager: ACPI shutdown/reboot via @supervisor: shutdown|reboot
 - [ ] P42 — Session Manager: save/restore window positions to /data/session.toml
@@ -63,6 +59,8 @@ notes: |
 - [x] P33: Z-Ordering — Z_ORDER OnceLock<Mutex<Vec<String>>>; z_order_push_front/back; click-to-raise sets focus; @supervisor: raise/lower; shell raise/lower commands
 - [x] P34: Window Manager App — apps/window-manager/; queries list on start; raises apps in sorted order; focuses top app; shell `retile` via stdin
 - [x] P35: Desktop Wallpaper — default 0x0D1117FF painted at startup; @supervisor: wallpaper <rgba>; shell `wallpaper <rgba>`
+- [x] P36: Window Resize Events — @supervisor: resize <app> <w> <h>; updates AppState.win_region; sends VYOMA_SYSTEM:resize:<w>,<h> to app; shell `resize` command
+- [x] P37: Taskbar App — apps/taskbar/ at y=860 h=40; ps-raw poll every 2s; app buttons with click-to-focus; elapsed clock; brand label
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

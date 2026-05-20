@@ -1441,6 +1441,44 @@ fn handle_supervisor_command(
             send_reply(sender, &format!("REPLY:lowered {app_name}"), inbox);
         }
 
+        // P36: resize <app> <w> <h> — update win_region and notify app
+        "resize" => {
+            let rest = parts.get(1).unwrap_or(&"").trim();
+            let mut args = rest.splitn(3, ' ');
+            let app_name = args.next().unwrap_or("").trim().to_string();
+            let w_str    = args.next().unwrap_or("").trim();
+            let h_str    = args.next().unwrap_or("").trim();
+            if app_name.is_empty() || w_str.is_empty() || h_str.is_empty() {
+                send_reply(sender, "REPLY:error: usage: resize <app> <w> <h>", inbox);
+                return;
+            }
+            let (new_w, new_h) = match (w_str.parse::<u32>(), h_str.parse::<u32>()) {
+                (Ok(w), Ok(h)) if w > 0 && h > 0 => (w, h),
+                _ => {
+                    send_reply(sender, "REPLY:error: w and h must be positive integers", inbox);
+                    return;
+                }
+            };
+            let updated = {
+                let reg = app_registry.lock().unwrap();
+                if let Some(state_arc) = reg.get(&app_name) {
+                    let mut st = state_arc.lock().unwrap();
+                    let (x, y) = st.win_region.map(|(x, y, _, _)| (x, y)).unwrap_or((0, 0));
+                    st.win_region = Some((x, y, new_w, new_h));
+                    true
+                } else {
+                    false
+                }
+            };
+            if !updated {
+                send_reply(sender, &format!("REPLY:error: app {app_name} not found"), inbox);
+                return;
+            }
+            send_reply(&app_name, &format!("VYOMA_SYSTEM:resize:{new_w},{new_h}"), inbox);
+            eprintln!("vyoma-supervisor: resize {app_name} → {new_w}×{new_h}");
+            send_reply(sender, &format!("REPLY:resized {app_name} to {new_w}x{new_h}"), inbox);
+        }
+
         other => {
             eprintln!("vyoma-supervisor: unknown @supervisor command from {sender}: {other}");
         }

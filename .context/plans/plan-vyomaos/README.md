@@ -43,6 +43,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 33 — Z-Ordering | `Z_ORDER` global stack; click-to-raise sets focus; `@supervisor: raise/lower`; shell `raise`/`lower` commands | **complete** | — |
 | 34 — Window Manager App | `apps/window-manager/`; queries list on start; raises in sorted order; focuses top app | **complete** | — |
 | 35 — Desktop Wallpaper | Default `0x0D1117FF` at startup; `@supervisor: wallpaper <rgba>`; shell `wallpaper` command | **complete** | — |
+| 36 — Window Resize Events | `@supervisor: resize <app> <w> <h>`; updates win_region; `VYOMA_SYSTEM:resize:<w>,<h>` to app | **complete** | — |
+| 37 — Taskbar App | `apps/taskbar/` dock at y=860; ps-raw poll 2s; app buttons + clock; click-to-focus | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

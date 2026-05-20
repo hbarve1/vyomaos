@@ -171,6 +171,7 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  lower <app>        — send window to back (Z-order)".into());
             push_line(lines, "  update <app> <url> — OTA hot-swap wasm binary from url".into());
             push_line(lines, "  wallpaper <rgba>   — set desktop background color".into());
+            push_line(lines, "  resize <app> <w> <h> — resize app window".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
         "clear" => {
@@ -257,6 +258,15 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
                 _ => {
                     push_line(lines, "pkg: list | install <n> | remove <n> | installed".into());
                 }
+            }
+        }
+        other if other.starts_with("resize ") => {
+            let args = other[7..].trim();
+            if args.split_whitespace().count() < 3 {
+                push_line(lines, "usage: resize <app> <w> <h>".into());
+            } else {
+                println!("@supervisor: resize {args}");
+                push_line(lines, format!("resizing {args}..."));
             }
         }
         other if other.starts_with("wallpaper ") => {
