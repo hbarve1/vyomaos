@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P157+P158 complete -->
+last_updated: 2026-05-21  <!-- P159+P160 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,31 +18,34 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P159 — RSS Reader
-  - P160 — Video Player Stub
+  - P161 — E-Book Reader
+  - P162 — Network Speed Test
 notes: |
-  P159: RSS Reader. Create apps/rss-reader/ WASM app.
-        Window x=60, y=30, w=1280, h=760. Capabilities: stdio=true, display=true.
-        3 simulated feeds: "VyomaOS News", "Dev Blog", "Tech Headlines".
-        Each feed has 10 hard-coded articles with title, source, date, summary.
-        Two-panel: left=feed list (w=220), right=article list + detail.
-        Tab switches between feeds. ↑↓ navigate articles. Enter reads full summary.
-        R=refresh (LCG randomizes order). Ctrl+C exit.
+  P161: E-Book Reader. Create apps/ebook/ WASM app.
+        Window x=60, y=30, w=1200, h=760. Capabilities: stdio=true, display=true.
+        5 built-in chapters (hard-coded text): intro to VyomaOS, WASM security model,
+        display protocol, IPC broker design, future roadmap.
+        Each chapter has a title + body paragraphs (~10 paragraphs per chapter).
+        Two-panel: left=chapter list (w=200), right=reading pane.
+        ↑↓/PgUp/PgDn scroll within chapter. ←→ prev/next chapter.
+        B=bookmark (toggle), G=go to bookmark. Status bar: chapter N/5, page position.
 
-  P160: Video Player Stub. Create apps/video-player/ WASM app.
+  P162: Network Speed Test. Create apps/speed-test/ WASM app.
         Window x=60, y=30, w=960, h=640. Capabilities: stdio=true, display=true.
-        Simulated video: LCG-generated noise frames (40×30 "pixels" at 6px cells = 240×180 px canvas).
-        Ping-pong tick drives frame advance when playing.
-        Each frame: LCG fills pixel grid with varied colors creating noise/animation effect.
-        Controls: Space=play/pause, N=next frame, P=prev frame, R=restart, +/-=speed (1x/2x/4x).
-        Progress bar below canvas. Frame counter (frame N/total). Status bar with speed.
-        Pre-set playlist of 3 simulated "videos" (each 60 frames, different LCG seeds).
+        Simulated bandwidth test: ping-pong tick drives progress.
+        3 phases: Ping (20 ticks, shows min/max/avg ms), Download (40 ticks, Mbps graph),
+                  Upload (20 ticks, Mbps graph).
+        LCG generates realistic-ish values: ping 8-45ms, download 50-900Mbps, upload 20-300Mbps.
+        Bar graphs for each phase. Final result card shows: ping/dl/ul with grade (A/B/C/D).
+        Space=start/restart. Status bar shows current phase.
 
 ## Queue (implement in order after current batch)
-- [ ] P161 — E-Book Reader: apps/ebook/ 5 built-in chapters; page-turn; bookmark; search
-- [ ] P162 — Network Speed Test: apps/speed-test/ simulated bandwidth; ping; jitter; graph
+- [ ] P163 — Pomodoro Pro: apps/pomodoro-pro/ configurable intervals; task list integration; stats history
+- [ ] P164 — Astronomy Viewer: apps/astronomy/ procedural star map; constellation lines; planet positions; LCG
 
 ## Completed (recent — full list in plan README)
+- [x] P159 — RSS Reader: apps/rss-reader/ 3 feeds × 10 articles; two-panel; Tab/↑↓/Enter/R
+- [x] P160 — Video Player: apps/video-player/ LCG noise frames 40×30 @6px; 3 videos; Space/N/P/R/+/-
 - [x] P157 — IRC Client: apps/irc/ 3 channels; LCG bots; /join /msg /quit; Tab switch; nick list
 - [x] P158 — Photo Editor: apps/photo-editor/ PPM load; crop/resize/rotate90; brightness/contrast; save
 - [x] P155 — File Archiver: apps/archiver/ custom .tar; two-panel; N/A/X/Del/Ctrl+W/Ctrl+L; demo.tar
