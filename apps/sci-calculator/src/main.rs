@@ -150,14 +150,21 @@ fn parse_unary(s: &str, deg: bool) -> Result<f64, String> {
     }
 
     // Named functions: sin, cos, tan, sqrt, log, abs
-    let funcs = [
-        ("sin(",  |v: f64, d: bool| f64::sin(to_rad(v, d))),
-        ("cos(",  |v: f64, d: bool| f64::cos(to_rad(v, d))),
-        ("tan(",  |v: f64, d: bool| f64::tan(to_rad(v, d))),
-        ("sqrt(", |v: f64, _: bool| v.sqrt()),
-        ("log(",  |v: f64, _: bool| v.log10()),
-        ("ln(",   |v: f64, _: bool| v.ln()),
-        ("abs(",  |v: f64, _: bool| v.abs()),
+    fn sin_fn(v: f64, d: bool) -> f64 { f64::sin(to_rad(v, d)) }
+    fn cos_fn(v: f64, d: bool) -> f64 { f64::cos(to_rad(v, d)) }
+    fn tan_fn(v: f64, d: bool) -> f64 { f64::tan(to_rad(v, d)) }
+    fn sqrt_fn(v: f64, _: bool) -> f64 { v.sqrt() }
+    fn log_fn(v: f64, _: bool)  -> f64 { v.log10() }
+    fn ln_fn(v: f64, _: bool)   -> f64 { v.ln() }
+    fn abs_fn(v: f64, _: bool)  -> f64 { v.abs() }
+    let funcs: [(&str, fn(f64, bool) -> f64); 7] = [
+        ("sin(",  sin_fn),
+        ("cos(",  cos_fn),
+        ("tan(",  tan_fn),
+        ("sqrt(", sqrt_fn),
+        ("log(",  log_fn),
+        ("ln(",   ln_fn),
+        ("abs(",  abs_fn),
     ];
     for (prefix, func) in &funcs {
         if s.to_ascii_lowercase().starts_with(prefix) && s.ends_with(')') {

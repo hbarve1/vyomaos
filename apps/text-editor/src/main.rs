@@ -77,14 +77,15 @@ fn main() {
 
 fn handle(raw: &str, mode: &mut Mode) -> bool {
     match mode {
-        Mode::PathInput { buf } => handle_path(raw, buf, mode),
+        Mode::PathInput { .. } => handle_path(raw, mode),
         Mode::Edit { path, lines, cl, cc, scroll, modified } => {
             handle_edit(raw, path, lines, cl, cc, scroll, modified)
         }
     }
 }
 
-fn handle_path(raw: &str, buf: &mut String, mode: &mut Mode) -> bool {
+fn handle_path(raw: &str, mode: &mut Mode) -> bool {
+    let buf = match mode { Mode::PathInput { buf } => buf, _ => return false };
     match raw {
         "\x03" => return true,
         "\x7f" => { buf.pop(); }

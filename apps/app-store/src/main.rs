@@ -178,7 +178,7 @@ fn main() {
             }
             "\x1b[B" => {
                 let n = s.filtered().len();
-                if s.cursor + COLS as usize < n { s.cursor += COLS as usize; }
+                if s.cursor + (COLS as usize) < n { s.cursor += COLS as usize; }
                 s.status.clear();
                 draw(&s);
             }

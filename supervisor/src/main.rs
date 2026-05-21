@@ -1846,7 +1846,9 @@ fn handle_supervisor_command(
             }
             let sender_name = sender.to_string();
             let inbox_clone = Arc::clone(inbox);
+            let dest_clone  = dest.clone();
             thread::spawn(move || {
+                let dest = dest_clone;
                 send_reply(&sender_name, &format!("REPLY:download-progress {dest} 0"), &inbox_clone);
                 match http_get(&url) {
                     Ok(bytes) => {
