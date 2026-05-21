@@ -1,63 +1,56 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-20
+last_updated: 2026-05-21
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
+
+## Goal: macOS-like OS
+The next major milestone is a macOS-like desktop experience:
+- Menu Bar (top bar): app name, menus, clock, system tray icons
+- Dock (bottom): app icons, running indicator dots, click to launch/focus
+- Spotlight: Cmd+Space overlay for instant app search + launch
+- Desktop: wallpaper + file icons, right-click context
+- App Switcher: Alt+Tab window cycling
+- Notification Center: slide-in panel from right edge
+- Mission Control: bird's-eye view of all windows
+- Finder v2: sidebar + breadcrumbs + icon grid
 
 ## Current batch
 status: ready
 phases:
-  - P70 — CSV Viewer
-  - P71 — JSON Viewer
+  - P78 — Desktop Icons
+  - P79 — Context Menu
 notes: |
-  P70: CSV Viewer. Create apps/csv-viewer/ WASM app.
-       Window x=80, y=60, w=1360, h=760. Capabilities: stdio=true, display=true, filesystem=true.
-       Lists /data/*.csv files on start; auto-loads single file.
-       Parses CSV: split by comma, handle quoted fields.
-       Table view: first row = column headers (shown in accent color).
-       Fixed column widths calculated from header names (max 20 chars each).
-       ↑↓: scroll rows; ←→: scroll columns (if too wide); status bar shows row/col count.
-       Ctrl+C: quit.
+  P78: Desktop Icons. Create apps/desktop/ WASM app.
+       Window x=0, y=28, w=1440, h=832 (between menu bar and dock).
+       Capabilities: stdio=true, display=true, shell=true, filesystem=true.
+       Background: 0x0D1117FF (same as wallpaper). No border/chrome (y>0 so chrome appears — guard: display at y=28).
+       Actually draw at y=28 by using fill from 0,0 within the window coord space.
+       Lists files in /data/ via @supervisor: ls-data (supervisor responds REPLY:ls-data <space-sep filenames>).
+       Fallback if supervisor doesn't support ls-data: show a set of fixed icons (Desktop, Downloads, Documents).
+       Each icon: 80×80 box at grid positions; 8 per row; y starting at 20 within window.
+       Icon shows: colored folder/file icon (fill square + border), filename below (truncated to 10 chars).
+       ↑↓←→ to navigate; Enter → opens file with appropriate viewer based on extension:
+         .md → run markdown-viewer, .json → run json-viewer, .csv → run csv-viewer,
+         .ppm → run image-viewer, .log → run log-viewer, else → run text-editor.
+       'n' → prompt for new filename (show text input at bottom); Enter → create /data/<name> (write @supervisor: touch <path>).
 
-  P71: JSON Viewer. Create apps/json-viewer/ WASM app.
-       Window x=80, y=60, w=1360, h=760. Capabilities: stdio=true, display=true, filesystem=true.
-       Lists /data/*.json files on start; auto-loads single file.
-       Parses JSON text and pretty-prints with 2-space indentation.
-       Colors: keys in accent, strings in green, numbers in orange, booleans in blue, null in dim.
-       ↑↓: scroll; Ctrl+C: quit.
-
-## Queue (implement in order after current batch)
-- [ ] P72 — Stopwatch: start/stop/lap; lap times list; large elapsed display; keyboard s/l/r; Instant-based
-- [ ] P73 — Unit Converter: length/weight/temp tabs; input field; arrows select unit pair; live conversion
-- [ ] P74 — Contact Book: stores name/phone/email in /data/contacts.toml; add/delete/search; ↑↓ nav
-  P64: Clock Widget. Create apps/clock/ WASM app.
-       Window x=300, y=200, w=320, h=360. Capabilities: stdio=true, display=true.
-       Shows a digital clock face: HH:MM:SS in large text (use 'l' font size).
-       Below: date line (e.g., "Wednesday  20 May 2026").
-       Since WASM has no system clock, use a hardcoded start datetime (2026-05-20 00:00:00)
-       and advance it on each REPLY tick. App sends "@supervisor: tick" to get a REPLY every second.
-       Actually: use a simpler approach — display a static time on first render, then on each
-       keypress/REPLY advance the second counter. Poll with `@supervisor: ping` every ~1s if available,
-       or just show a static time + note "press any key to tick".
-       Ctrl+C: quit.
-
-  P65: Weather App. Create apps/weather/ WASM app.
-       Window x=200, y=100, w=760, h=480. Capabilities: stdio=true, display=true, filesystem=true.
-       Reads /data/weather.toml for weather data. Format:
-         [[day]]
-         date = "2026-05-20"
-         condition = "Sunny"
-         temp_hi = 28
-         temp_lo = 18
-         humidity = 55
-       Shows current day's data prominently. Left/Right navigate to prev/next day entries.
-       'r' re-reads the file (refresh). Shows "No weather data" if file missing.
-       Ctrl+C: quit.
+  P79: Context Menu. Create apps/context-menu/ WASM app.
+       Window x=0, y=0, w=200, h=auto (8px padding + items*28). Capabilities: stdio=true, display=true, shell=true.
+       Launched by @supervisor: run context-menu; receives menu spec via stdin within first 100ms:
+         "MENU:<x>,<y>:<item1>|<item2>|<item3>..."
+       Positions window at (x, y) by printing @supervisor: reposition context-menu <x> <y>.
+       Draws floating menu: dark bg + border, each item is a 28px row.
+       ↑↓ navigate, Enter selects → prints "@supervisor: context-reply <item>" + exits.
+       Esc/Ctrl+C → exits without reply.
+       Clicking outside (not possible without mouse) → Esc handles it.
+       Items highlighted in C_SEL on cursor row.
 
 ## Queue (implement in order after current batch)
-- [ ] P66 — Scientific Calculator: extends calculator; adds sin/cos/tan/sqrt/log/pow buttons; toggle deg/rad
-- [ ] P67 — Pomodoro Timer: 25min work + 5min break cycle; visual countdown; spacebar start/pause; n for next phase
-- [ ] P68 — Log Viewer: reads /data/*.log files; real-time tail (polls every 2s via re-read); grep filter; color severity
+- [ ] P80 — Finder v2: sidebar (Favorites: Desktop/Downloads/Documents), breadcrumb path bar, icon grid view, file open on Enter
+- [ ] P78 — Desktop Icons: file listing on desktop background; icons for /data files; Enter opens with appropriate app; 'n' to create new file
+- [ ] P79 — Context Menu: supervisor support for @supervisor: context-menu x,y item1|item2|...; floating menu window; result sent back as REPLY:context-menu <item>
+- [ ] P80 — Finder v2: sidebar (Favorites: Desktop/Downloads/Documents), breadcrumb path bar, icon grid view, double-click to open
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -112,6 +105,14 @@ notes: |
 - [x] P67: Pomodoro Timer — apps/pomodoro/ (440×380); 25/5/15min work-break cycle; Instant elapsed; progress bar; pomodoro dots; Space/n/r
 - [x] P68: Log Viewer — apps/log-viewer/ (1360×760); color by severity; follow-tail mode; ping-pong reload; substring filter; ↑↓ scroll
 - [x] P69: Diff Viewer — apps/diff-viewer/ (1360×760); two-step path input; LCS diff; +/- coloring; row tinting; ↑↓ scroll
+- [x] P70: CSV Viewer — apps/csv-viewer/ (1360×760); quoted-field CSV parser; header row; scrollable table; ←→ col scroll
+- [x] P71: JSON Viewer — apps/json-viewer/ (1360×760); pure-char JSON pretty-printer; key/string/number/bool/null colors; ↑↓ scroll ←→ files
+- [x] P72: Menu Bar — apps/menu-bar/ (1440×28, y=0); clock via ping-pong; focused app name via ps-raw; wifi/vol placeholders; no chrome
+- [x] P73: Dock — apps/dock/ (800×60, y=868); 9 app icons; running dot indicator; number keys 1–9 to launch/focus
+- [x] P74: Spotlight — apps/spotlight/ (600×400); case-insensitive search over 31 apps; Enter launch; Esc close
+- [x] P75: App Switcher — apps/app-switcher/ (1000×200); ps-raw thumbnail grid; Tab/→ cycle; Enter focus
+- [x] P76: Notification Center — apps/notification-center/ (400×600); last-10 store; NOTIFY: stdin; 'c' clear; Esc close
+- [x] P77: Mission Control — apps/mission-control/ (1440×900); 3-col card grid from ps-raw; ↑↓←→ nav; Enter focus
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

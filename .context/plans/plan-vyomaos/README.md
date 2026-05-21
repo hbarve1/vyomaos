@@ -77,6 +77,14 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 67 — Pomodoro Timer | `apps/pomodoro/` 25/5/15min work-break cycle; Instant-based elapsed; progress bar; pomodoro dot counter; Space/n/r keys | **complete** | — |
 | 68 — Log Viewer | `apps/log-viewer/` lists /data/*.log; color by severity; follow-tail mode; substring filter; ping-pong reload | **complete** | — |
 | 69 — Diff Viewer | `apps/diff-viewer/` two-step path input; LCS diff algorithm; +/- line coloring; row background tinting; ↑↓ scroll | **complete** | — |
+| 70 — CSV Viewer | `apps/csv-viewer/` quoted-field CSV parser; fixed-width column table; header row highlighted; ←→ col scroll; ↑↓ row scroll | **complete** | — |
+| 71 — JSON Viewer | `apps/json-viewer/` pure-char JSON pretty-printer; key/string/number/bool/null syntax colors; ↑↓ scroll; ←→ switch files | **complete** | — |
+| 72 — Menu Bar | `apps/menu-bar/` top bar (y=0, h=28, no chrome); clock (ping-pong); focused app name (ps-raw poll); wifi/vol placeholders | **complete** | — |
+| 73 — Dock | `apps/dock/` bottom dock (y=868, h=60); 9 app icons with color; running dot indicator (ps-raw); number keys 1–9 to launch | **complete** | — |
+| 74 — Spotlight | `apps/spotlight/` Cmd+Space overlay (600×400); case-insensitive search; 31 apps; Enter to launch; Esc to close | **complete** | — |
+| 75 — App Switcher | `apps/app-switcher/` Alt+Tab overlay (1000×200); thumbnail grid from ps-raw; Tab/→ cycle; Enter to focus | **complete** | — |
+| 76 — Notification Center | `apps/notification-center/` right-panel (400×600); stores last 10 notifications; NOTIFY: lines via stdin; 'c' clear; Esc close | **complete** | — |
+| 77 — Mission Control | `apps/mission-control/` full-screen overlay (1440×900); 3-col card grid of running apps from ps-raw; ↑↓←→ nav; Enter focus | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

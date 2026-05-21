@@ -2,6 +2,8 @@
 
 A **WASM-first operating system** with the long-term goal of becoming a lightweight but fully capable general-purpose OS — on par with Windows, macOS, Android, and Ubuntu — built from the ground up on a capability-secure WebAssembly foundation.
 
+> **This is an open research project. We're actively looking for contributors.** See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
+
 ## The Vision
 
 Most operating systems carry decades of accumulated complexity: C runtimes, shared libraries, POSIX quirks, shell injection surfaces. Every app inherits all of it. Android made progress — apps run in a managed runtime with a permission model — but native code still bypasses it entirely.
@@ -38,63 +40,40 @@ The result scales from an 18 MB embedded appliance today to a full desktop OS to
 - **Small footprint**: apps are 71–136 KB today. No shared library sprawl.
 - **Determinism**: WASM bytecode is byte-identical across builds and hosts.
 
-## Current State (Phase 17)
+## Current State (Phase 77+)
 
-VyomaOS boots in QEMU in under 5 seconds to a Rust supervisor running 10 concurrent WASM apps with a live GUI dashboard, interactive shell, HTTP server, and real-time keyboard input:
+VyomaOS boots in QEMU in under 5 seconds to a macOS-like desktop with 77+ WASM apps including a Menu Bar, Dock, Spotlight search, App Switcher, Notification Center, Mission Control, and a growing suite of productivity tools:
 
 ```
 Linux 5.10 (allnoconfig, ~2.3 MB)
   └── Rust supervisor (static musl, PID 1)
-        ├── hello-world.wasm    — boot demo
-        ├── calculator.wasm     — arithmetic demo
-        ├── factorial.wasm      — math demo
-        ├── ping.wasm ←──IPC──→ pong.wasm   — IPC demo
-        ├── storage-demo.wasm   — 9P persistent storage (/data)
-        ├── gui-demo.wasm       — live dashboard (DRM/virtio-gpu, 2s refresh)
-        ├── http-server.wasm    — HTTP status page at localhost:8080
-        ├── ticker.wasm         — uptime counter overlay
-        └── shell.wasm          — interactive command shell (raw TTY input)
+        ├── menu-bar.wasm        — top menu bar (clock, focused app, system tray)
+        ├── dock.wasm            — bottom dock with running indicators
+        ├── spotlight.wasm       — Cmd+Space app search overlay
+        ├── app-switcher.wasm    — Tab-cycle running apps
+        ├── mission-control.wasm — bird's-eye view of all windows
+        ├── notification-center.wasm — slide-in notification panel
+        ├── shell.wasm           — interactive command shell
+        ├── file-manager.wasm    — file browser
+        ├── text-editor.wasm     — full editor with save/load
+        ├── browser.wasm         — basic HTTP browser
+        ├── app-store.wasm       — package manager GUI
+        └── 65+ more apps...
 ```
 
 **Working features:**
+- macOS-like desktop: Menu Bar, Dock, Spotlight, App Switcher, Mission Control
 - Concurrent scheduler with restart policies (`never` / `always`)
 - Bidirectional IPC broker (`@<app>: <message>` routing)
+- Z-ordering and window focus management
+- Double-buffered compositor (back buffer → mmap blit)
 - seccomp BPF denylist + capability audit log
 - 9P virtio persistent storage (`/data`, survives reboots)
-- DRM/virtio-gpu display at 1440×900, fullscreen on macOS/Linux
-- `VYOMA_DRAW:` framebuffer protocol (`fill_rect`, `draw_text`, `flush`)
-- Embedded 8×16 bitmap font (95 printable ASCII glyphs)
-- virtio-net + WASI sockets (`-S inherit-network`)
-- `/dev/tty0` raw keyboard input with per-app focus routing
-- Process management: `ps`, `kill`, `restart`, `reload`, `log`, `logf`
-- Package manager: install/remove/list; persists via `/data/installed.txt`
-- Persistent app logs: `/data/logs/<name>.log`
-- Real-time shell input: per-keypress forwarding, live prompt
-
-## Roadmap
-
-| Phase | Feature | Status |
-|---|---|---|
-| P01 | Reproducible builds (Makefile + Docker) | complete |
-| P02 | Minimal allnoconfig kernel (virtio + 9P + DRM) | complete |
-| P03 | Rust PID 1 supervisor | complete |
-| P04 | Wasmtime WASI Preview 2 | complete |
-| P05 | App manifest + capability model | complete |
-| P06 | Multi-app concurrent scheduler + IPC broker | complete |
-| P07 | 9P virtio persistent storage | complete |
-| P08 | seccomp BPF denylist + capability audit log | complete |
-| P09 | DRM/virtio-gpu display + VYOMA_DRAW protocol | complete |
-| P10 | Embedded bitmap font + `draw_text` rendering | complete |
-| P11 | virtio-net + WASI sockets + HTTP server app | complete |
-| P12 | Interactive shell + keyboard routing + focus manager | complete |
-| P13 | Process management (ps, kill, restart, reload, log) | complete |
-| P14 | Package manager (install, remove, list, persist) | complete |
-| P15 | Live system dashboard (gui-demo 2s refresh) | complete |
-| P16 | Persistent app logs (/data/logs/<name>.log) | complete |
-| P17 | Real-time shell input (raw TTY, per-keypress) | complete |
-| P18 | — | next |
-
-Full implementation plans: [`.context/plans/plan-vyomaos/`](.context/plans/plan-vyomaos/README.md)
+- DRM/virtio-gpu display at 1440×900
+- `VYOMA_DRAW:` framebuffer protocol with font scaling (S/M/L)
+- virtio-net + WASI sockets
+- Process management, package manager, OTA updates, session manager
+- 77+ WASM apps covering productivity, dev tools, networking, media
 
 ## Getting Started
 
@@ -106,6 +85,41 @@ make run-gui DISPLAY_BACKEND=cocoa   # boot with virtio-gpu display (macOS)
 make run-gui DISPLAY_BACKEND=sdl     # boot with virtio-gpu display (Linux)
 ```
 
+## Contributing
+
+**VyomaOS is looking for contributors who are excited about rethinking the OS from scratch.**
+
+The project is at a genuinely interesting point: the foundation is solid (boot, IPC, display, security), and the surface area for new work is large. You don't need to understand the full codebase to contribute — each WASM app is self-contained in its own directory.
+
+**Where to start:**
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, architecture, and contribution guidelines
+- Browse [`apps/`](apps/) — each app is an independent Rust crate targeting `wasm32-wasip2`
+- Check [`.context/plans/plan-vyomaos/README.md`](.context/plans/plan-vyomaos/README.md) for planned phases
+- Open an issue to discuss a new app, feature, or design question
+
+**Good first contributions:**
+- A new WASM app (any utility, tool, or game — see CONTRIBUTING.md for the template)
+- Improving an existing app (better UX, new features, bug fixes)
+- Supervisor improvements (new `@supervisor:` commands, capability types)
+- Documentation (architecture writeups, tutorials, diagrams)
+- Testing infrastructure (boot smoke tests, CI setup)
+
+## Roadmap
+
+| Phase | Feature | Status |
+|---|---|---|
+| P01–P08 | Kernel, supervisor, WASM runtime, IPC, seccomp, storage | complete |
+| P09–P12 | DRM display, bitmap font, HTTP server, interactive shell | complete |
+| P13–P17 | Process management, package manager, persistent logs, real-time TTY | complete |
+| P18–P23 | Shell UX, watchdog, font scaling, window regions, mouse input, TUI primitives | complete |
+| P24–P51 | App ecosystem (file manager, editor, browser, system monitor, 27+ apps) | complete |
+| P52–P69 | More apps (virtual keyboard, color picker, process inspector, 17+ apps) | complete |
+| P70–P77 | CSV/JSON viewers, Menu Bar, Dock, Spotlight, App Switcher, Notification Center, Mission Control | complete |
+| P78–P80 | Desktop Icons, Context Menu, Finder v2 | in progress |
+| P81+ | Wayland compositor, GPU acceleration, multi-user, real hardware | planned |
+
+Full phase details: [`.context/plans/plan-vyomaos/`](.context/plans/plan-vyomaos/README.md)
+
 ## Guiding Principles
 
 - **WASM-first**: applications are WebAssembly modules, not ELF binaries.
@@ -116,7 +130,8 @@ make run-gui DISPLAY_BACKEND=sdl     # boot with virtio-gpu display (Linux)
 
 ## See Also
 
-- [Comparison matrix & performance tracker](docs/comparison-matrix.md) — VyomaOS vs Alpine, Flatcar, MirageOS, containers; phase-by-phase metrics
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to contribute
+- [Comparison matrix & performance tracker](docs/comparison-matrix.md) — VyomaOS vs Alpine, Flatcar, MirageOS, containers
 - [App manifest schema](docs/vyoma-manifest-schema.md) — capability manifest reference
 - [Build system](base/README.md)
 - [Apps](apps/README.md)

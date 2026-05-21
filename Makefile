@@ -127,6 +127,14 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/pomodoro/Cargo.toml        --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/log-viewer/Cargo.toml     --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/diff-viewer/Cargo.toml    --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/csv-viewer/Cargo.toml     --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/json-viewer/Cargo.toml    --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/menu-bar/Cargo.toml       --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/dock/Cargo.toml           --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/spotlight/Cargo.toml      --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/app-switcher/Cargo.toml        --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/notification-center/Cargo.toml --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/mission-control/Cargo.toml     --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────
