@@ -1,0 +1,15 @@
+[app]
+name    = "memory-game"
+version = "0.1.0"
+wasm    = "memory-game.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 200
+y = 60
+w = 760
+h = 680

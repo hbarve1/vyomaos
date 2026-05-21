@@ -106,6 +106,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 96 — Snake Game | `apps/snake/` classic snake game (800×680); 18px cells; arrow keys; ping-pong ticks; score+high score | **complete** | — |
 | 97 — Minesweeper | `apps/minesweeper/` 16×16 grid; 96 mines; first-click safe; BFS flood-fill; F flag; number colors; Win/Loss overlay | **complete** | — |
 | 98 — 15 Puzzle | `apps/fifteen-puzzle/` 4×4 sliding tiles; 200-step shuffle; arrow keys move blank; correct-tile highlight; Solved overlay | **complete** | — |
+| 99 — Breakout | `apps/breakout/` classic Breakout; 5×10 bricks; angle-adjust paddle; ping-pong physics; lives; score; Win/Loss | **complete** | — |
+| 100 — Memory Card Game | `apps/memory-game/` 4×4 face-down card grid; 8 pairs; flip/match logic; move counter; Solved overlay | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

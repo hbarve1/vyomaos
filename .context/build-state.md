@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P97+P98 complete -->
+last_updated: 2026-05-21  <!-- P99+P100 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,35 +18,34 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P99 — Breakout Game
-  - P100 — Memory Card Game
+  - P101 — Tetris
+  - P102 — Pong
 notes: |
-  P99: Breakout Game. Create apps/breakout/ WASM app.
-       Window x=120, y=40, w=800, h=800. Capabilities: stdio=true, display=true, shell=true.
-       Classic Arkanoid/Breakout. HEADER_H=40.
-       Paddle: w=100, h=12, y=720, moves ←→; speed 8px per key.
-       Ball: 12×12 px; initial vel (4, -4); bounces off walls + paddle + bricks.
-       Bricks: 5 rows × 10 cols; BRICK_W=68, BRICK_H=20; gap=4; top-left at (20, 60).
-       Row colors: row 0=red, 1=orange, 2=yellow, 3=green, 4=blue.
-       Score: +10 per brick. Lives: 3; ball falls below paddle → life lost.
-       Ping-pong game loop: move ball + check collisions every REPLY:pong.
-       Space to start; Esc to quit; R to restart.
-       Win: all bricks cleared. Loss: 0 lives. Overlay for both.
+  P101: Tetris. Create apps/tetris/ WASM app.
+        Window x=240, y=20, w=560, h=860. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=40. Classic Tetris with 7 tetrominoes (I,O,T,S,Z,J,L).
+        Grid: 10 cols × 20 rows. CELL=36px. Grid at center of window.
+        GRID_X = (560 - 10*36) / 2 = 80. GRID_Y = HEADER_H + 10 = 50.
+        Pieces: use standard Tetromino shapes as [[i8;2]; 4] relative offsets.
+        State: current piece (type, rotation, pos), board [[u32; 10]; 20] (0=empty, RGBA=filled).
+        Ping-pong game loop: one drop tick every N pongs (N=8 at start, decreases with score).
+        ← → move piece; ↑ rotate CW; ↓ soft drop (faster fall); Space hard drop.
+        Line clear: remove full rows, shift down, +100 per line, +400 for 4 (Tetris).
+        Score display in header. Level (speed) shown. 'r' restart. Esc quit.
+        Game over: piece spawns and immediately collides → show "Game Over".
 
-  P100: Memory Card Game. Create apps/memory-game/ WASM app.
-        Window x=200, y=60, w=760, h=680. Capabilities: stdio=true, display=true, shell=true.
-        4×4 grid of 16 face-down cards (8 pairs of symbols/emoji).
-        Symbols: use 8 distinct ASCII pairs, e.g.: A B C D E F G H (each appears twice).
-        State: Hidden | FaceUp | Matched. Arrow keys to move cursor.
-        Space/Enter: flip selected card (only if Hidden; max 2 face-up at a time).
-        After 2 flipped: if match → both Matched; else auto-flip back on next Space press.
-        Move counter increments each time 2 cards are compared.
-        Win: all 8 pairs matched → "Solved! N moves". R to restart (re-shuffle).
-        Card size: ~160×120. 4 cols × 4 rows. Symbols centered large on face-up cards.
+  P102: Pong. Create apps/pong/ WASM app.
+        Window x=180, y=60, w=800, h=700. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=40. Classic Pong.
+        Left paddle (player): ↑↓ keys, speed=8, x=20, h=80.
+        Right paddle (AI): tracks ball y with lag, x=780-12, h=80.
+        Ball: 12×12px; vel=(5,4) initially; bounces off top/bottom + paddles.
+        Score: first to 7 wins. Scores shown in header. Ping-pong game loop.
+        On goal: reset ball to center. Space to start/resume after goal. R=restart.
 
 ## Queue (implement in order after current batch)
-- [ ] P101 — Tetris: apps/tetris/ classic 7-piece falling blocks; 10×20 grid; arrow keys move/rotate; ping-pong drop timer; line clears; score; level speed-up
-- [ ] P102 — Pong: apps/pong/ two-paddle ball game; AI right paddle; arrow keys left paddle; score display; ping-pong physics loop
+- [ ] P103 — Space Invaders: apps/space-invaders/ player ship (←→), 3×10 alien grid descending; bullets; score; ping-pong game loop
+- [ ] P104 — 2048: apps/2048/ 4×4 grid; arrow keys slide+merge tiles; power-of-2 coloring; score; new tile on each move; "2048" win detection
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -130,6 +129,8 @@ notes: |
 - [x] P96: Snake — apps/snake/ (800×680); VecDeque snake; ping-pong ticks; wall/self collision; score+high score
 - [x] P97: Minesweeper — apps/minesweeper/ (760×680); 16×16 grid; 96 mines; BFS flood-fill; first-click safe; F flag; number colors 1-8; Win/Loss overlay
 - [x] P98: 15 Puzzle — apps/fifteen-puzzle/ (640×640); 4×4 tiles; 200-step shuffle; arrow keys slide blank; adjacent-tile highlight; "Solved! N moves" overlay
+- [x] P99: Breakout — apps/breakout/ (800×800); 5×10 bricks; angle-adjust paddle; ping-pong physics; 3 lives; score; Win/Loss overlay
+- [x] P100: Memory Card Game — apps/memory-game/ (760×680); 4×4 grid, 8 pairs; flip/match; face-up anti-cheat reset; Solved overlay; R reshuffle
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
