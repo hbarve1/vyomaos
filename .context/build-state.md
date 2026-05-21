@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P117+P118 complete -->
+last_updated: 2026-05-21  <!-- P119+P120 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,33 +18,35 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P119 — Dice Roller
-  - P120 — Color Palette Generator
+  - P121 — Maze Generator
+  - P122 — Pixel Art Editor
 notes: |
-  P119: Dice Roller. Create apps/dice/ WASM app.
-        Window x=340, y=80, w=760, h=620. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Virtual dice roller for tabletop RPGs.
-        Dice types: d4, d6, d8, d10, d12, d20 (6 types).
-        Count per type: 1..8 dice per roll.
-        Tab/←→: cycle selected die type. +/-: change count. Space/Enter: roll.
-        Roll: LCG random for each die. Show result per die + total sum.
-        History: last 8 rolls shown below (type, dice, results, total).
-        Each die displayed as colored box with value. d6=blue, d8=green, d12=orange, d20=red, d4=yellow, d10=purple.
-        'c': clear history. R: reroll same dice.
+  P121: Maze Generator. Create apps/maze/ WASM app.
+        Window x=200, y=40, w=840, h=760. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Recursive-backtracker maze with player navigation.
+        Grid: 25 cols × 25 rows. CELL=28px. MAZE_X=(840-25*28)/2=70. MAZE_Y=64.
+        Maze generation: iterative DFS with visited stack; knock walls between cells.
+        Cell: stores walls [N,E,S,W] as bools. Start=(0,0), End=(24,24).
+        Player: (px,py) starts at (0,0). Arrow keys move through open walls.
+        Trail: set of visited cells drawn with dim highlight.
+        End reached: "Solved!" overlay. 'n': new maze (different LCG seed). R: reset player to start.
+        Walls drawn as line segments. Player = bright filled square. End = green square.
 
-  P120: Color Palette Generator. Create apps/color-gen/ WASM app.
-        Window x=280, y=60, w=880, h=680. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Color harmony generator from a base hue.
-        Input: hue value 0-359 via +/- keys (or type digits). Base color shown as large swatch.
-        Harmony modes: Analogous (+/-30°), Complementary (+180°), Triadic (+120°/+240°), Split-comp (+150°/+210°), Tetradic (+90°/+180°/+270°).
-        Tab: cycle harmony mode. Shows 2-4 swatches depending on mode.
-        Each swatch: 160×160px with RGBA hex label below.
-        Saturation/Value fixed at 85%/90% for all colors. Pure integer HSV→RGB.
-        'c': copy hex of selected swatch to clipboard (@supervisor: clipboard-set).
+  P122: Pixel Art Editor. Create apps/pixel-art/ WASM app.
+        Window x=160, y=40, w=1000, h=760. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Pixel art editor with 32×32 canvas.
+        CELL=16px. CANVAS_X=80, CANVAS_Y=64. Canvas total=512×512px.
+        16-color palette on right side (starting at x=600).
+        Palette colors: black, white, red, green, blue, yellow, cyan, magenta,
+                        orange, purple, brown, pink, lime, navy, teal, grey.
+        Arrow keys: move cursor. Space: draw. 'e': erase. Tab: next color. 1-9,0,q-p: select color by index.
+        Undo: Ctrl+Z (or 'u'), up to 10 levels — store snapshots as Vec<[[u8;32];32]>.
+        'c': clear canvas. 'f': flood fill from cursor with current color (BFS).
+        Grid lines drawn as 1px dim lines between cells.
 
 ## Queue (implement in order after current batch)
-- [ ] P121 — Maze Generator: apps/maze/ recursive-backtracker maze; arrow keys navigate player; solve highlight; new maze key
-- [ ] P122 — Pixel Art Editor: apps/pixel-art/ 32×32 canvas; 16-color palette; undo stack (10 levels); fill tool; save to clipboard as hex
+- [ ] P123 — Simon Says: apps/simon/ color sequence memory game; growing pattern; 4 colors; ping-pong animate flashes
+- [ ] P124 — Hangman: apps/hangman/ 40-word list; 6 wrong guesses; letter display; gallows ASCII art; hint key
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -148,6 +150,8 @@ notes: |
 - [x] P116: Word Counter — apps/word-counter/ (880×640); multi-line editor; word/char/line/sentence/para counts; stats panel
 - [x] P117: Countdown Timer — apps/countdown/ (720×560); digit-input HHMMSS; ping-pong tick; progress bar; flash-done; pause/resume
 - [x] P118: Quiz Game — apps/quiz/ (920×680); 30 trivia Qs; 5 categories; A/B/C/D; LCG shuffle; score screen
+- [x] P119: Dice Roller — apps/dice/ (760×620); d4/d6/d8/d10/d12/d20; 1-8 count; LCG; history log; critical flag
+- [x] P120: Color Palette Generator — apps/color-gen/ (880×680); hue+/-; 5 harmony modes; HSV→RGB; clipboard copy
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

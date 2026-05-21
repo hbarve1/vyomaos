@@ -176,6 +176,8 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/word-counter/Cargo.toml            --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/countdown/Cargo.toml               --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/quiz/Cargo.toml                    --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/dice/Cargo.toml                    --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/color-gen/Cargo.toml               --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────

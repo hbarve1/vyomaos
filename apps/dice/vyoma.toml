@@ -1,0 +1,15 @@
+[app]
+name    = "dice"
+version = "0.1.0"
+wasm    = "dice.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 340
+y = 80
+w = 760
+h = 620
