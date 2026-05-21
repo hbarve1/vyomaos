@@ -1,0 +1,15 @@
+[app]
+name    = "flashcard"
+version = "0.1.0"
+wasm    = "flashcard.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 320
+y = 80
+w = 800
+h = 600

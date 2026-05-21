@@ -1,0 +1,15 @@
+[app]
+name    = "budget"
+version = "0.1.0"
+wasm    = "budget.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 300
+y = 60
+w = 840
+h = 680

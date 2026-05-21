@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P109+P110 complete -->
+last_updated: 2026-05-21  <!-- P111+P112 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,32 +18,32 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P111 — Flashcard
-  - P112 — Budget Tracker
+  - P113 — Habit Tracker
+  - P114 — Recipe Browser
 notes: |
-  P111: Flashcard. Create apps/flashcard/ WASM app.
-        Window x=320, y=80, w=800, h=600. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Flashcard study app with built-in deck of 20 Q&A pairs.
-        Card display area: centered, 680×360 at (60, 120). 
-        States: front (showing question) / back (showing answer).
-        Enter: flip card (toggle front/back). ←/→: prev/next card. R: shuffle deck (LCG).
-        Score tracking: 'y'=correct, 'n'=wrong (shown after flip to back). Score in header.
-        Topics: general knowledge / programming facts.
-        Deck of 20 cards hardcoded. Card number shown "3/20".
+  P113: Habit Tracker. Create apps/habit-tracker/ WASM app.
+        Window x=300, y=60, w=840, h=640. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Daily habit tracking with 7-day week grid.
+        10 hardcoded habits (user can toggle done/not-done for today).
+        Grid: rows=habits, cols=7 days (Mon-Sun). Today's column highlighted.
+        Each cell: filled circle (done) or empty circle (not done). Today's column editable.
+        Space/Enter: toggle today's habit for selected row. ↑↓: navigate habits.
+        Streak count computed per habit (consecutive days done ending today).
+        Store state in 70-bit in-memory grid [[bool; 7]; 10] (today = day 6 = rightmost col).
+        'n': advance to next day (shifts grid left, clears rightmost col). 'r': reset week.
 
-  P112: Budget Tracker. Create apps/budget/ WASM app.
-        Window x=300, y=60, w=840, h=680. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Personal budget tracker with income/expense entries.
-        Max 20 entries stored in-memory (no filesystem for simplicity).
-        Entry: type (Income/Expense), category (8 options), amount (integer), description (20 chars).
-        Add mode: Tab cycles fields; digits enter amount; a-z enter description; Enter=confirm; Esc=cancel.
-        'a': add entry. 'd': delete selected entry. ↑↓: navigate entries.
-        Summary bar: Total Income, Total Expense, Balance (green if positive, red if negative).
-        Categories: Food, Transport, Housing, Salary, Freelance, Shopping, Health, Other.
+  P114: Recipe Browser. Create apps/recipe/ WASM app.
+        Window x=260, y=40, w=920, h=760. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Recipe browser with 10 built-in recipes.
+        Two-panel layout: left=recipe list (240px); right=recipe detail.
+        ↑↓: navigate list. Enter: select recipe. ↑↓ in detail: scroll steps/ingredients.
+        Each recipe: name, prep_time, servings, ingredients (Vec<&str>), steps (Vec<&str>).
+        Search: type letter keys to filter recipe list; Backspace to clear.
+        Ingredients section then Steps section in detail panel with section headers.
 
 ## Queue (implement in order after current batch)
-- [ ] P113 — Habit Tracker: apps/habit-tracker/ daily habits checklist; week grid view; streak counter; 10 habits max
-- [ ] P114 — Recipe Browser: apps/recipe/ built-in 10 recipes; ingredient list + steps; ↑↓ nav; search filter
+- [ ] P115 — Expense Split: apps/expense-split/ group expense calculator; add people; add expenses; split evenly/custom
+- [ ] P116 — Word Counter: apps/word-counter/ text input area; real-time word/char/line counts; readability score
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -139,6 +139,8 @@ notes: |
 - [x] P108: Typing Tutor — apps/typing-tutor/ (880×560); 40-phrase list; per-char green/red; WPM+accuracy; progress bar; ping-pong tick
 - [x] P109: Paint — apps/paint/ (960×760); 160×120 canvas; 5×5 cells; 10-color palette; arrow+Space draw; erase; clear; Tab color cycle
 - [x] P110: Music Visualizer — apps/music-viz/ (800×560); 32 bars; integer sin approx; hue spectrum; ping-pong; speed/pause/randomize
+- [x] P111: Flashcard — apps/flashcard/ (800×600); 20 CS Q&A cards; flip; y/n scoring; LCG shuffle; progress bar
+- [x] P112: Budget Tracker — apps/budget/ (840×680); income/expense ledger; 8 categories; add form; balance summary
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

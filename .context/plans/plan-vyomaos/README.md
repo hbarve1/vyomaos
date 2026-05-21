@@ -118,6 +118,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 108 — Typing Tutor | `apps/typing-tutor/` 40-phrase list; per-char green/red feedback; WPM + accuracy; progress bar; ping-pong tick | **complete** | — |
 | 109 — Paint | `apps/paint/` 160×120 pixel canvas (5×5 cells); 10-color palette; arrow-key cursor; Space=draw; e=erase; c=clear; Tab=color | **complete** | — |
 | 110 — Music Visualizer | `apps/music-viz/` 32 animated bars; integer sin approximation; hue-spectrum colors; ping-pong driven; speed/pause/randomize | **complete** | — |
+| 111 — Flashcard | `apps/flashcard/` 20 CS/programming Q&A cards; flip/nav; y/n scoring; shuffle via LCG; progress bar | **complete** | — |
+| 112 — Budget Tracker | `apps/budget/` 20-entry ledger; income/expense; 8 categories; add form; delete; balance summary | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
