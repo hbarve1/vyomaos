@@ -128,6 +128,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 118 — Quiz Game | `apps/quiz/` 30 trivia questions; 5 categories; A/B/C/D select; confirm; green/red reveal; score screen | **complete** | — |
 | 119 — Dice Roller | `apps/dice/` d4/d6/d8/d10/d12/d20; 1-8 count; LCG roll; history log; critical hit flag | **complete** | — |
 | 120 — Color Palette Generator | `apps/color-gen/` hue input; 5 harmony modes; HSV→RGB swatches; hex labels; clipboard copy | **complete** | — |
+| 121 — Maze Generator | `apps/maze/` 25×25 recursive-backtracker; player nav; trail; R=reset; N=new maze | **complete** | — |
+| 122 — Pixel Art Editor | `apps/pixel-art/` 32×32 canvas; 16-color palette; draw/erase/fill/undo; Tab=next color | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

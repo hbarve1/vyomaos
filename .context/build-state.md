@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P119+P120 complete -->
+last_updated: 2026-05-21  <!-- P121+P122 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,35 +18,31 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P121 — Maze Generator
-  - P122 — Pixel Art Editor
+  - P123 — Simon Says
+  - P124 — Hangman
 notes: |
-  P121: Maze Generator. Create apps/maze/ WASM app.
-        Window x=200, y=40, w=840, h=760. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Recursive-backtracker maze with player navigation.
-        Grid: 25 cols × 25 rows. CELL=28px. MAZE_X=(840-25*28)/2=70. MAZE_Y=64.
-        Maze generation: iterative DFS with visited stack; knock walls between cells.
-        Cell: stores walls [N,E,S,W] as bools. Start=(0,0), End=(24,24).
-        Player: (px,py) starts at (0,0). Arrow keys move through open walls.
-        Trail: set of visited cells drawn with dim highlight.
-        End reached: "Solved!" overlay. 'n': new maze (different LCG seed). R: reset player to start.
-        Walls drawn as line segments. Player = bright filled square. End = green square.
+  P123: Simon Says. Create apps/simon/ WASM app.
+        Window x=300, y=80, w=800, h=700. Capabilities: stdio=true, display=true, shell=true.
+        Growing color-sequence memory game. 4 colors: Red, Green, Blue, Yellow.
+        Colors arranged as 4 quadrants. Each round: append 1 random color (LCG) to sequence.
+        Show sequence: flash each color bright then dim (ping-pong ticks for animation).
+        Player turn: press R/G/B/Y keys. Wrong = Game Over overlay with score.
+        Score = number of rounds survived. Best score persisted in memory (no file needed).
+        States: showing (animate sequence), waiting (player input), gameover.
+        Use ping-pong for animation: each tick advances flash step; 'n' to start new game.
 
-  P122: Pixel Art Editor. Create apps/pixel-art/ WASM app.
-        Window x=160, y=40, w=1000, h=760. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Pixel art editor with 32×32 canvas.
-        CELL=16px. CANVAS_X=80, CANVAS_Y=64. Canvas total=512×512px.
-        16-color palette on right side (starting at x=600).
-        Palette colors: black, white, red, green, blue, yellow, cyan, magenta,
-                        orange, purple, brown, pink, lime, navy, teal, grey.
-        Arrow keys: move cursor. Space: draw. 'e': erase. Tab: next color. 1-9,0,q-p: select color by index.
-        Undo: Ctrl+Z (or 'u'), up to 10 levels — store snapshots as Vec<[[u8;32];32]>.
-        'c': clear canvas. 'f': flood fill from cursor with current color (BFS).
-        Grid lines drawn as 1px dim lines between cells.
+  P124: Hangman. Create apps/hangman/ WASM app.
+        Window x=280, y=60, w=880, h=700. Capabilities: stdio=true, display=true, shell=true.
+        40-word list (nouns/verbs common English). 6 wrong guesses allowed.
+        Draw gallows + body parts with rect fills (head=circle approximated as square, body, L arm, R arm, L leg, R leg).
+        Letter display: _ _ _ _ pattern with correct guesses filled.
+        Keyboard: a-z letters; already-guessed letters dimmed; wrong=red, correct=green.
+        Win overlay when word complete. Loss overlay with word revealed.
+        'n': new game (LCG word selection). '?': hint (reveal one letter, counts as wrong guess).
 
 ## Queue (implement in order after current batch)
-- [ ] P123 — Simon Says: apps/simon/ color sequence memory game; growing pattern; 4 colors; ping-pong animate flashes
-- [ ] P124 — Hangman: apps/hangman/ 40-word list; 6 wrong guesses; letter display; gallows ASCII art; hint key
+- [ ] P125 — Typing Race: apps/typing-race/ multiplayer-sim race; 3 CPU racers; WPM-based progress bars; phrase typing
+- [ ] P126 — Asteroids: apps/asteroids/ ship + thrust; rotating rocks; wrap-around; bullets; ping-pong physics
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -152,6 +148,8 @@ notes: |
 - [x] P118: Quiz Game — apps/quiz/ (920×680); 30 trivia Qs; 5 categories; A/B/C/D; LCG shuffle; score screen
 - [x] P119: Dice Roller — apps/dice/ (760×620); d4/d6/d8/d10/d12/d20; 1-8 count; LCG; history log; critical flag
 - [x] P120: Color Palette Generator — apps/color-gen/ (880×680); hue+/-; 5 harmony modes; HSV→RGB; clipboard copy
+- [x] P121: Maze Generator — apps/maze/ (840×760); 25×25 iterative DFS; trail tracking; arrows nav; R=reset; N=new
+- [x] P122: Pixel Art Editor — apps/pixel-art/ (1000×760); 32×32 canvas; 16-color palette; draw/erase/fill/undo(10)
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
