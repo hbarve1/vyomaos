@@ -88,6 +88,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 78 — Desktop Icons | `apps/desktop/` desktop layer (1440×832, y=28); fixed folder icons + /data file icons; ↑↓←→ nav; Enter opens; n=new file | **complete** | — |
 | 79 — Context Menu | `apps/context-menu/` floating menu (220px wide); MENU:x,y:items stdin; ↑↓ nav; Enter selects → context-reply; Esc closes | **complete** | — |
 | 80 — Finder v2 | `apps/finder/` sidebar+grid (1280×760); 6 sidebar favorites; ls-data integration; file icon grid; s=toggle focus; Enter open | **complete** | — |
+| 81 — System Preferences | `apps/system-preferences/` sidebar+pane (900×700); Appearance/Display/Sound/Network/Security/About panes; Ctrl+W saves | **complete** | — |
+| 82 — Activity Monitor | `apps/activity-monitor/` process table (1200×700); ps-raw poll; CPU/mem bar charts; n/c/m sort; ↑↓ nav; q quit | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

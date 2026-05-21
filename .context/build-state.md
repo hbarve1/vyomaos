@@ -18,37 +18,41 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P81 — System Preferences
-  - P82 — Activity Monitor
+  - P83 — Quick Look
+  - P84 — Spaces / Virtual Desktops
 notes: |
-  P81: System Preferences. Create apps/system-preferences/ WASM app.
-       Window x=280, y=80, w=900, h=700. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
-       macOS System Preferences style: icon grid of preference panes at top, pane content below.
-       Panes: Appearance, Display, Sound, Network, Security, About.
-       Navigation: ↑↓←→ to select pane, Enter to open it; Backspace to return to pane list.
-       Each pane shows controls relevant to that section; Tab cycles through fields; Ctrl+W saves to /data/settings.toml.
-       Appearance: dark/light mode toggle, accent color (7 options, arrow keys), transparency toggle.
-       Display: resolution display (read-only: 1440x900), font-size (S/M/L via @supervisor: font-size).
-       Sound: placeholder (no audio yet): mute toggle, volume slider (cosmetic).
-       Network: shows @supervisor: net-info result; DHCP/Static display; link to run network-config.
-       Security: shows seccomp status (always "enabled"), WASM sandbox status ("active").
-       About: VyomaOS version, build date, supervisor version, wasmtime version.
-       Background: 0x161B22FF. Sidebar list on left 200px. Pane content on right.
+  P83: Quick Look. Create apps/quick-look/ WASM app.
+       Window x=200, y=100, w=1040, h=680. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
+       Preview overlay for files without fully opening an app.
+       Receives file path via stdin: "PREVIEW:/data/<filename>" → detects ext → renders inline.
+       Supported formats:
+         .md  → render first 40 lines as markdown (H1/H2/bullet/code coloring)
+         .json → pretty-print first 60 lines with syntax colors
+         .csv → render first 20 rows as a table (same as csv-viewer but read-only)
+         .log → show last 40 lines with severity coloring
+         .toml → show raw text in C_TEXT color
+         *    → show first 40 lines as raw text
+       Header: filename + extension type badge. Footer: "Space: close  ↑↓: scroll".
+       ↑↓ to scroll; Space/Esc to close (process exits).
+       Background: 0x1C2128F4 (semi-transparent dark overlay feel).
 
-  P82: Activity Monitor. Create apps/activity-monitor/ WASM app.
-       Window x=120, y=80, w=1200, h=700. Capabilities: stdio=true, display=true, shell=true.
-       macOS Activity Monitor style: table of running processes with resource bars.
-       Polls @supervisor: ps-raw every 2s (ping-pong loop).
-       Columns: Name (240px), Status (120px), Uptime (120px), Restarts (100px), CPU bar (200px), Mem bar (200px).
-       CPU/Mem are estimated cosmetically: assign pseudo-values from uptime % hash; not real OS metrics.
-       Bars: fill_rect proportional bar (green→yellow→red based on value).
-       ↑↓ navigate; q/Ctrl+C quit. Total at bottom: "N apps running".
-       Sort by name (default); press 'c' to sort by CPU, 'm' to sort by Mem, 'n' back to name.
-       Header row highlighted with C_TOOLBAR color. Alternating row bg.
+  P84: Spaces / Virtual Desktops. NOTE: This requires supervisor support.
+       Supervisor changes: add SPACES: OnceLock<Mutex<Vec<String>>> (list of space names).
+       @supervisor: spaces-list → REPLY:spaces-list <n> <current> (count and active index).
+       @supervisor: spaces-create → adds a new space, switches to it.
+       @supervisor: spaces-switch <n> → switch to space n (0-indexed); hides/shows app windows
+         (for now: just changes the "current space" concept; all windows remain visible — cosmetic).
+       @supervisor: spaces-current → REPLY:spaces-current <n>.
+       Menu-bar integration: menu-bar polls spaces-current and shows "Space <n>" in right area.
+       Create apps/spaces-switcher/ WASM app:
+         Window x=400, y=380, w=640, h=140. Capabilities: stdio=true, display=true, shell=true.
+         Shows current spaces as a horizontal row of labeled boxes.
+         ←→ to navigate; Enter to switch; 'n' to create new space; Esc to close.
+         Polled by menu-bar to show space indicator.
 
 ## Queue (implement in order after current batch)
-- [ ] P83 — Quick Look: preview overlay for files; detects ext and renders content inline (text files shown as text, PPM as pixel art, JSON pretty-printed, etc.); Space to preview from any file browser; Esc to close
-- [ ] P84 — Spaces / Virtual Desktops: @supervisor: spaces-create/switch/list; each space has its own window list; Ctrl+Left/Right to switch spaces; menu-bar shows current space number
+- [ ] P85 — Screen Lock: lock screen overlay (1440×900); shows clock + "Press any key to unlock"; blurs/hides other windows via wallpaper paint; @supervisor: screen-lock command; 'u' to unlock
+- [ ] P86 — Clipboard History: apps/clipboard-history/ shows last 20 clipboard entries; arrow keys navigate; Enter pastes selected into focused app via @supervisor: input-paste
 - [ ] P78 — Desktop Icons: file listing on desktop background; icons for /data files; Enter opens with appropriate app; 'n' to create new file
 - [ ] P79 — Context Menu: supervisor support for @supervisor: context-menu x,y item1|item2|...; floating menu window; result sent back as REPLY:context-menu <item>
 - [ ] P80 — Finder v2: sidebar (Favorites: Desktop/Downloads/Documents), breadcrumb path bar, icon grid view, double-click to open
@@ -117,6 +121,8 @@ notes: |
 - [x] P78: Desktop Icons — apps/desktop/ (1440×832, y=28); fixed folders + /data files; ↑↓←→; Enter opens; n=new file
 - [x] P79: Context Menu — apps/context-menu/ (220px); MENU: stdin spec; ↑↓; Enter selects → context-reply
 - [x] P80: Finder v2 — apps/finder/ (1280×760); sidebar+grid; 6 favorites; ls-data; file type → app routing; s=focus toggle
+- [x] P81: System Preferences — apps/system-preferences/ (900×700); 6 panes; appearance/display/sound/network/security/about
+- [x] P82: Activity Monitor — apps/activity-monitor/ (1200×700); ps-raw poll; CPU/mem bars; n/c/m sort; scroll
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

@@ -1,0 +1,16 @@
+[app]
+name    = "system-preferences"
+version = "0.1.0"
+wasm    = "system-preferences.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+shell      = true
+filesystem = true
+
+[window]
+x = 280
+y = 80
+w = 900
+h = 700
