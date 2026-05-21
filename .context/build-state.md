@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21
+last_updated: 2026-05-21  <!-- P97+P98 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,62 +18,35 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P97 — Minesweeper
-  - P98 — 15 Puzzle
+  - P99 — Breakout Game
+  - P100 — Memory Card Game
 notes: |
-  P97: Minesweeper. Create apps/minesweeper/ WASM app.
-       Window x=200, y=60, w=760, h=680. Capabilities: stdio=true, display=true, shell=true.
-       Classic Minesweeper. Grid: 16×16 cells, each 36×36 pixels.
-       96 mines (density ~37%). First reveal never hits a mine (place mines after first click).
-       State: grid of CellState { revealed, flagged, is_mine, adj_mine_count }.
-       Arrow keys to navigate cursor; F to flag/unflag; Enter/Space to reveal.
-       Flood-fill reveal: if adj_mine_count == 0, auto-reveal all adjacent non-mine cells.
-       Header: mine count (remaining) + flag count + time elapsed + smiley face.
-       Number colors: 1=blue, 2=green, 3=red, 4=purple, 5=maroon, 6=teal, 7=black, 8=gray.
-       Revealed mine = 💥 emoji or "X". Win: all non-mines revealed → "You Win!".
-       Esc to quit.
+  P99: Breakout Game. Create apps/breakout/ WASM app.
+       Window x=120, y=40, w=800, h=800. Capabilities: stdio=true, display=true, shell=true.
+       Classic Arkanoid/Breakout. HEADER_H=40.
+       Paddle: w=100, h=12, y=720, moves ←→; speed 8px per key.
+       Ball: 12×12 px; initial vel (4, -4); bounces off walls + paddle + bricks.
+       Bricks: 5 rows × 10 cols; BRICK_W=68, BRICK_H=20; gap=4; top-left at (20, 60).
+       Row colors: row 0=red, 1=orange, 2=yellow, 3=green, 4=blue.
+       Score: +10 per brick. Lives: 3; ball falls below paddle → life lost.
+       Ping-pong game loop: move ball + check collisions every REPLY:pong.
+       Space to start; Esc to quit; R to restart.
+       Win: all bricks cleared. Loss: 0 lives. Overlay for both.
 
-  P98: 15 Puzzle. Create apps/fifteen-puzzle/ WASM app.
-       Window x=300, y=100, w=640, h=640. Capabilities: stdio=true, display=true, shell=true.
-       4×4 grid of numbered tiles (1-15) + one blank space.
-       Arrow keys slide blank: press Left = blank moves left (tile on left moves right into blank).
-       On start: shuffle 100 random valid moves to create a solvable state.
-       Show move count. When solved (tiles 1-15 in order, blank bottom-right): "Solved! N moves".
-       Press 'r' to restart (new shuffle).
-       Each tile: 140×140 cell. Tile bg: C_CARD. Selected tile (adjacent to blank): slightly lighter.
-       Blank cell: draw nothing (just bg). Numbers centered in each tile.
-
-## Queue (implement in order after current batch)
-- [ ] P99 — Breakout Game: apps/breakout/ classic block-breaking game; paddle (arrow keys); ball physics; 5 rows × 10 cols of bricks; score; lives; ping-pong game loop
-- [ ] P100 — Memory Card Game: apps/memory-game/ 4×4 grid of face-down cards; arrow keys to select; Space to flip; match pairs; move counter; reveal all on win
-
-  (P93-P94 reference notes — completed):
-  P93: Unit Converter. Create apps/unit-converter/ WASM app.
-       Window x=300, y=150, w=760, h=560. Capabilities: stdio=true, display=true, shell=true.
-       Converts between common unit categories.
-       Categories (↑↓ to navigate): Length, Mass, Temperature, Speed, Area, Volume, Time.
-       For each category: 2-column layout — left column lists "from" units, right column lists "to" units.
-       Type a number for input; Tab switches between from/to selection; ↑↓ navigate units within each column.
-       Result shown large and centered below the unit selectors.
-       Backspace to delete input digits; only numbers and '.' and '-' accepted.
-       Temperature: special formula (°C↔°F↔K). Others: simple ratio factors.
-       Background: 0x161B22FF. Category tabs at top.
-
-  P94: QR Code Viewer. Create apps/qr-viewer/ WASM app.
-       Window x=300, y=100, w=760, h=680. Capabilities: stdio=true, display=true, shell=true.
-       Renders a QR code for a user-entered string using a minimal QR algorithm.
-       QR Version 1 (21×21 modules) encodes up to ~17 alphanumeric chars.
-       Rather than implementing full QR spec: encode short URLs/text using a hardcoded Version 1
-       pattern for known test strings, OR display a placeholder grid with finder patterns and data modules.
-       Each module: 12×12 pixel fill_rect; black module = 0x000000FF, white = 0xFFFFFFFF.
-       Input: text field at top; type URL/text; Enter to generate.
-       Below QR: shows encoded text + character count.
-       'c' → @supervisor: clipboard-set <text>.
-       Esc to close.
+  P100: Memory Card Game. Create apps/memory-game/ WASM app.
+        Window x=200, y=60, w=760, h=680. Capabilities: stdio=true, display=true, shell=true.
+        4×4 grid of 16 face-down cards (8 pairs of symbols/emoji).
+        Symbols: use 8 distinct ASCII pairs, e.g.: A B C D E F G H (each appears twice).
+        State: Hidden | FaceUp | Matched. Arrow keys to move cursor.
+        Space/Enter: flip selected card (only if Hidden; max 2 face-up at a time).
+        After 2 flipped: if match → both Matched; else auto-flip back on next Space press.
+        Move counter increments each time 2 cards are compared.
+        Win: all 8 pairs matched → "Solved! N moves". R to restart (re-shuffle).
+        Card size: ~160×120. 4 cols × 4 rows. Symbols centered large on face-up cards.
 
 ## Queue (implement in order after current batch)
-- [ ] P97 — Minesweeper: apps/minesweeper/ 16×16 grid; F flag; Enter reveal; flood fill empty cells; mine count in header
-- [ ] P98 — 15 Puzzle: apps/fifteen-puzzle/ 4×4 sliding tiles; arrow keys move blank; shuffle on start; move counter; "Solved!" on complete
+- [ ] P101 — Tetris: apps/tetris/ classic 7-piece falling blocks; 10×20 grid; arrow keys move/rotate; ping-pong drop timer; line clears; score; level speed-up
+- [ ] P102 — Pong: apps/pong/ two-paddle ball game; AI right paddle; arrow keys left paddle; score display; ping-pong physics loop
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -155,6 +128,8 @@ notes: |
 - [x] P94: QR Code Viewer — apps/qr-viewer/ (760×680); Version 1 21×21 QR; bit encoding; type+Enter; 'c' copies
 - [x] P95: Emoji Picker — apps/emoji-picker/ (760×560); 6 categories × 15 emoji; search filter; Tab cat; Enter copies
 - [x] P96: Snake — apps/snake/ (800×680); VecDeque snake; ping-pong ticks; wall/self collision; score+high score
+- [x] P97: Minesweeper — apps/minesweeper/ (760×680); 16×16 grid; 96 mines; BFS flood-fill; first-click safe; F flag; number colors 1-8; Win/Loss overlay
+- [x] P98: 15 Puzzle — apps/fifteen-puzzle/ (640×640); 4×4 tiles; 200-step shuffle; arrow keys slide blank; adjacent-tile highlight; "Solved! N moves" overlay
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

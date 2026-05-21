@@ -104,6 +104,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 94 — QR Code Viewer | `apps/qr-viewer/` QR code generator (760×680); Version 1 21×21; type text+Enter; c copy; simplified bit layout | **complete** | — |
 | 95 — Emoji Picker | `apps/emoji-picker/` emoji grid (760×560); 6 categories × 15 emoji; search filter; Tab category; Enter copies | **complete** | — |
 | 96 — Snake Game | `apps/snake/` classic snake game (800×680); 18px cells; arrow keys; ping-pong ticks; score+high score | **complete** | — |
+| 97 — Minesweeper | `apps/minesweeper/` 16×16 grid; 96 mines; first-click safe; BFS flood-fill; F flag; number colors; Win/Loss overlay | **complete** | — |
+| 98 — 15 Puzzle | `apps/fifteen-puzzle/` 4×4 sliding tiles; 200-step shuffle; arrow keys move blank; correct-tile highlight; Solved overlay | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
