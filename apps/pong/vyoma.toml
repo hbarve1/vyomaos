@@ -6,7 +6,6 @@ wasm    = "pong.wasm"
 [capabilities]
 stdio   = true
 display = true
-shell   = true
 
 [window]
 x = 180
