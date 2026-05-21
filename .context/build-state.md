@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P143+P144 complete -->
+last_updated: 2026-05-21  <!-- P145+P146 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,38 +18,41 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P145 — Genealogy Tree
-  - P146 — Mind Map
+  - P147 — Network Monitor
+  - P148 — Kanban Board
 notes: |
-  P145: Genealogy Tree. Create apps/genealogy/ WASM app.
+  P147: Network Monitor. Create apps/net-monitor/ WASM app.
         Window x=60, y=40, w=1200, h=760. Capabilities: stdio=true, display=true.
-        20 hardcoded people in 4 generations: Generation 0 (2 founders) → Gen1 (4) → Gen2 (8) → Gen3 (6).
-        Each person: name, birth_year, death_year (Some/None), generation.
-        Tree drawn top-to-bottom: Gen0 at top. Each node = box with name + years.
-        Connecting lines from parent to children. Nodes spaced evenly per generation.
-        ↑↓←→ to navigate selected person. Enter shows details (full box or sidebar).
-        Selected node highlighted with C_SEL border. Lines in C_BORDER.
-        Status bar: name, born, died, generation. No external data files needed.
+        Simulated network traffic: LCG generates "packets" each ping-pong tick.
+        Packet types: TCP, UDP, ICMP, HTTP, DNS. Each with source IP (10.0.0.x), dest IP, port, size.
+        Live scrolling packet list (bottom): 20 most recent packets with type/src/dst/size/color.
+        Throughput graph (top): 60-sample ring buffer. Y-axis = KB/s (0 to max). X = time.
+        Graph drawn as connected line segments (fill(x,y,2,h,col) style bars).
+        Stats panel (right): Total packets, bytes in/out, packets/sec, bytes/sec per protocol.
+        Ping-pong: each tick generates 1-5 random packets via LCG.
+        P=pause/resume. R=reset. C=clear history. Filter: t/u/i/h/d keys toggle protocol visibility.
+        Status bar: total packets, KB received, uptime ticks.
 
-  P146: Mind Map. Create apps/mind-map/ WASM app.
-        Window x=60, y=40, w=1200, h=760. Capabilities: stdio=true, display=true.
-        Central node "VyomaOS" at center. 6 branch nodes (Architecture, Apps, Security, Performance, UI, Future).
-        Each branch has 3 sub-nodes. Lines radiate from center.
-        Navigation: Tab cycles through nodes. ↑↓ within branch. Enter selects/expands.
-        Selected node highlighted; lines to selected node brighter.
-        Sub-nodes arranged in arc around their parent.
-        Status bar shows selected node name + level (root/branch/leaf).
-        R=reset selection to root. No editing needed (static map).
+  P148: Kanban Board. Create apps/kanban/ WASM app.
+        Window x=80, y=40, w=1100, h=760. Capabilities: stdio=true, display=true, filesystem=true.
+        3 columns: Todo, Doing, Done (each ~340px wide). Column headers with count badge.
+        Cards: struct Card { title: String, priority: u8 (1=high/2=med/3=low) }.
+        Start with 5 hardcoded cards in Todo, 2 in Doing, 1 in Done.
+        Navigation: ↑↓ to move cursor within column. ←→ to switch columns.
+        Enter: move selected card to next column (Todo→Doing→Done→Todo wrap).
+        N: add new card (prompts for title in status bar input). Del: remove selected card.
+        P: cycle priority (1→2→3→1). Priority colors: C_RED, C_YELLOW, C_HINT.
+        Ctrl+W saves to /data/kanban.csv. Ctrl+L loads. Cards sorted by priority within column.
 
 ## Queue (implement in order after current batch)
-- [ ] P147 — Network Monitor: apps/net-monitor/ live simulated packets; throughput graph; LCG packet gen; ping-pong
-- [ ] P148 — Kanban Board: apps/kanban/ 3 columns (Todo/Doing/Done); cards; arrow nav; Enter move card; C add card
+- [ ] P149 — Presentation Viewer: apps/presentation/ 10 slides; arrow nav; title+bullets; progress bar; fullscreen
+- [ ] P150 — Note Taking App: apps/notes/ multi-note list+editor; Ctrl+N new; Ctrl+D delete; Ctrl+W save; search
 
 ## Completed (recent — full list in plan README)
+- [x] P145 — Genealogy Tree: apps/genealogy/ 20 people 4 gens; Manhattan lines; ←→ siblings; ↑↓ parent/child
+- [x] P146 — Mind Map: apps/mind-map/ VyomaOS root + 6 branches + 18 leaves; Bresenham lines; Tab/nav
 - [x] P143 — Stock Chart: apps/stock-chart/ 5 stocks; LCG OHLC candles; volume bars; ping-pong; 1-5 select
 - [x] P144 — Code Runner: apps/code-runner/ 10 snippets; syntax highlight; 3-panel; Enter=run; scroll
-- [x] P141 — Morse Code Trainer: apps/morse/ Encode/Decode/Quiz; Tab switch; visual symbols; score
-- [x] P142 — ASCII Art Editor: apps/ascii-art/ 60×25 canvas; brush palette; draw mode; save/load
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
