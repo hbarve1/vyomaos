@@ -1,0 +1,16 @@
+[app]
+name    = "code-editor"
+version = "0.1.0"
+wasm    = "code-editor.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+shell      = true
+filesystem = true
+
+[window]
+x = 120
+y = 40
+w = 1200
+h = 800

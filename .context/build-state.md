@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P127+P128 complete -->
+last_updated: 2026-05-21  <!-- P129+P130 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,33 +18,31 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P129 — Music Player
-  - P130 — Code Editor
+  - P131 — Crypto Ticker
+  - P132 — Photo Filter
 notes: |
-  P129: Music Player. Create apps/music-player/ WASM app.
-        Window x=300, y=100, w=800, h=560. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
-        Lists /data/*.raw files (fake track list if none found — use 5 hardcoded track names).
-        Play/pause/next/prev controls. Space=play/pause, N=next, P=prev, Q=quit.
-        Progress bar advances via ping-pong ticks when playing. Seek not needed.
-        Waveform visualizer: 32 bars of simulated amplitude using LCG+sin approximation (like music-viz app).
-        Bars animate when playing, freeze when paused.
-        Track info: filename, track number, duration estimate (file_size/44100/2 seconds).
-        Volume display +/- keys adjust 0-100%.
+  P131: Crypto Ticker. Create apps/crypto-ticker/ WASM app.
+        Window x=280, y=60, w=960, h=640. Capabilities: stdio=true, display=true, shell=true.
+        5 simulated coins: BTC, ETH, SOL, ADA, DOT.
+        Each coin has: current price (starts hardcoded), % change, sparkline history (last 40 points).
+        Prices update via ping-pong ticks using LCG random walk (±0.5% per tick).
+        Sparkline: 40-point mini chart per coin, 120px wide × 40px tall; green if up, red if down.
+        Alert: if any coin changes >5% from session start, flash row in red/green.
+        Layout: 5 rows, each showing: coin name, price, 24h %, sparkline, alert marker.
+        'r': reset prices to base values. Tab: toggle sort (by name / by change %).
 
-  P130: Code Editor. Create apps/code-editor/ WASM app.
-        Window x=120, y=40, w=1200, h=800. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
-        Multi-line editor: Vec<String> lines, 80 chars wide display, scrollable.
-        Cursor: (row, col). Arrow keys navigate. Home/End (mapped as \x1b[H and \x1b[F).
-        Ctrl+W: save to /data/code.rs. Ctrl+L: load from /data/code.rs. Ctrl+C: exit.
-        Tab inserts 4 spaces. Backspace deletes char. Enter splits line. Printable chars insert.
-        Syntax highlighting: Rust keywords (fn/let/mut/if/else/for/while/struct/impl/use/pub/match)
-          colored C_SEL; string literals "..." colored C_GREEN; line comments // colored C_HINT.
-        Line numbers: left gutter 4 chars wide. Current line highlighted with subtle bg.
-        Status bar at bottom: row/col, filename, unsaved indicator.
+  P132: Photo Filter. Create apps/photo-filter/ WASM app.
+        Window x=200, y=60, w=1040, h=760. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
+        Lists /data/*.ppm files. If none, show placeholder message.
+        Load PPM P6 (binary, same as image-viewer app). Display as 4×4 block mosaic.
+        Filter options (F1-F5 keys): Original / Greyscale / Brightness+50 / Contrast×2 / Invert.
+        ←→ keys to cycle through files. Enter to apply selected filter and save as /data/filtered.ppm.
+        Show filter name in header. Preview updates instantly when filter selected.
+        For mosaic: each PPM pixel rendered as 4×4 filled rect (same as image-viewer).
 
 ## Queue (implement in order after current batch)
-- [ ] P131 — Crypto Ticker: apps/crypto-ticker/ simulated price feed; 5 coins; sparkline charts; ping-pong updates; alerts
-- [ ] P132 — Photo Filter: apps/photo-filter/ loads /data/*.ppm; brightness/contrast/invert/greyscale; save filtered copy
+- [ ] P133 — Terminal Emulator: apps/terminal/ line-based shell sim; command history; built-in cmds; ANSI color codes
+- [ ] P134 — Map Viewer: apps/map-viewer/ ASCII grid world map; zoom in/out; landmark labels; coordinate display
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -158,6 +156,8 @@ notes: |
 - [x] P126: Asteroids — apps/asteroids/ (900×800); fixed-point physics; rocks split; bullets; 3 lives; wrap; waves
 - [x] P127: Math Quiz — apps/math-quiz/ (840×660); 4 difficulties; +/-/×/÷ LCG questions; timer bar; streak/best; flash feedback
 - [x] P128: Paint Pro — apps/paint-pro/ (1280×800); 200×150 canvas; 3 brush sizes; BFS fill; undo(10); save/load /data
+- [x] P129: Music Player — apps/music-player/ (800×560); reads /data/*.raw; 32-bar waveform; ping-pong; vol; next/prev
+- [x] P130: Code Editor — apps/code-editor/ (1200×800); Vec<String> lines; Rust syntax highlight; gutter; save/load
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

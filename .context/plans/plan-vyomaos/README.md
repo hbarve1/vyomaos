@@ -136,6 +136,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 126 — Asteroids | `apps/asteroids/` rocks+bullets+ship; fixed-point physics; wrap-around; split on hit | **complete** | — |
 | 127 — Math Quiz | `apps/math-quiz/` 4 difficulties; +/-/×/÷; timer bar; streak; ping-pong tick | **complete** | — |
 | 128 — Paint Pro | `apps/paint-pro/` 200×150 canvas; 3 brush sizes; flood-fill; undo; save/load /data | **complete** | — |
+| 129 — Music Player | `apps/music-player/` reads /data/*.raw; waveform bars; ping-pong; vol +/-; next/prev | **complete** | — |
+| 130 — Code Editor | `apps/code-editor/` multi-line; Rust syntax highlight; line numbers; save/load; scrollable | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
