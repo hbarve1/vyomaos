@@ -1,0 +1,15 @@
+[app]
+name    = "countdown"
+version = "0.1.0"
+wasm    = "countdown.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 360
+y = 100
+w = 720
+h = 560

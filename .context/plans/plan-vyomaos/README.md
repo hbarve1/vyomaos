@@ -124,6 +124,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 114 — Recipe Browser | `apps/recipe/` 10 built-in recipes; two-panel list+detail; ingredients+steps; search filter | **complete** | — |
 | 115 — Expense Split | `apps/expense-split/` 6 people; 20 expenses; greedy settlement; 3-tab view; add/delete forms | **complete** | — |
 | 116 — Word Counter | `apps/word-counter/` multi-line text editor; words/chars/lines/sentences/paragraphs; avg metrics; stats panel | **complete** | — |
+| 117 — Countdown Timer | `apps/countdown/` digit-input HHMMSS; ping-pong tick; progress bar; flash-done; pause/resume | **complete** | — |
+| 118 — Quiz Game | `apps/quiz/` 30 trivia questions; 5 categories; A/B/C/D select; confirm; green/red reveal; score screen | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

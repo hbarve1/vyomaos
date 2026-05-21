@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P115+P116 complete -->
+last_updated: 2026-05-21  <!-- P117+P118 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,34 +18,33 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P117 — Countdown Timer
-  - P118 — Quiz Game
+  - P119 — Dice Roller
+  - P120 — Color Palette Generator
 notes: |
-  P117: Countdown Timer. Create apps/countdown/ WASM app.
-        Window x=360, y=100, w=720, h=560. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Visual countdown timer with HH:MM:SS display.
-        Large digit display centered (use 'l' font for each digit separately, spaced).
-        States: Setup (enter time), Running, Paused, Done.
-        Setup: digit keys set time (HHMMSS cycling input). Enter=start. 
-        Running: ping-pong tick decrements seconds. Space=pause/resume. R=reset.
-        Done: flash background red for 3 ticks, show "TIME'S UP!" overlay. R=reset.
-        Thin progress bar below digits showing elapsed fraction.
-        Header shows: state, total seconds set.
+  P119: Dice Roller. Create apps/dice/ WASM app.
+        Window x=340, y=80, w=760, h=620. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Virtual dice roller for tabletop RPGs.
+        Dice types: d4, d6, d8, d10, d12, d20 (6 types).
+        Count per type: 1..8 dice per roll.
+        Tab/←→: cycle selected die type. +/-: change count. Space/Enter: roll.
+        Roll: LCG random for each die. Show result per die + total sum.
+        History: last 8 rolls shown below (type, dice, results, total).
+        Each die displayed as colored box with value. d6=blue, d8=green, d12=orange, d20=red, d4=yellow, d10=purple.
+        'c': clear history. R: reroll same dice.
 
-  P118: Quiz Game. Create apps/quiz/ WASM app.
-        Window x=260, y=60, w=920, h=680. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Trivia quiz with 30 hardcoded questions.
-        Each question: question string, 4 choices, correct answer index (0-3).
-        Display: question at top, 4 choices labeled A/B/C/D.
-        A/B/C/D keys: select answer. Enter: confirm selection.
-        After confirm: show green=correct, red=wrong. Space/Enter: next question.
-        Score tracked: X/30 correct. Final score screen after last question. R=restart.
-        Category shown in header (5 categories: Science, History, Geography, Tech, General).
-        Questions shuffled via LCG seed on restart.
+  P120: Color Palette Generator. Create apps/color-gen/ WASM app.
+        Window x=280, y=60, w=880, h=680. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Color harmony generator from a base hue.
+        Input: hue value 0-359 via +/- keys (or type digits). Base color shown as large swatch.
+        Harmony modes: Analogous (+/-30°), Complementary (+180°), Triadic (+120°/+240°), Split-comp (+150°/+210°), Tetradic (+90°/+180°/+270°).
+        Tab: cycle harmony mode. Shows 2-4 swatches depending on mode.
+        Each swatch: 160×160px with RGBA hex label below.
+        Saturation/Value fixed at 85%/90% for all colors. Pure integer HSV→RGB.
+        'c': copy hex of selected swatch to clipboard (@supervisor: clipboard-set).
 
 ## Queue (implement in order after current batch)
-- [ ] P119 — Dice Roller: apps/dice/ multiple dice (d4/d6/d8/d10/d12/d20); roll animation; history log; total sum
-- [ ] P120 — Color Palette Generator: apps/color-gen/ base color input; analogous/complementary/triadic harmonies; swatch display
+- [ ] P121 — Maze Generator: apps/maze/ recursive-backtracker maze; arrow keys navigate player; solve highlight; new maze key
+- [ ] P122 — Pixel Art Editor: apps/pixel-art/ 32×32 canvas; 16-color palette; undo stack (10 levels); fill tool; save to clipboard as hex
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -147,6 +146,8 @@ notes: |
 - [x] P114: Recipe Browser — apps/recipe/ (920×760); 10 recipes; two-panel list+detail; ingredients+steps; search
 - [x] P115: Expense Split — apps/expense-split/ (800×680); 6 people; 20 expenses; greedy settlement; 3-tab view
 - [x] P116: Word Counter — apps/word-counter/ (880×640); multi-line editor; word/char/line/sentence/para counts; stats panel
+- [x] P117: Countdown Timer — apps/countdown/ (720×560); digit-input HHMMSS; ping-pong tick; progress bar; flash-done; pause/resume
+- [x] P118: Quiz Game — apps/quiz/ (920×680); 30 trivia Qs; 5 categories; A/B/C/D; LCG shuffle; score screen
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
