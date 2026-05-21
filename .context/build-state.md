@@ -18,34 +18,35 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P91 — World Clock
-  - P92 — Stopwatch
+  - P93 — Unit Converter
+  - P94 — QR Code Viewer
 notes: |
-  P91: World Clock. Create apps/world-clock/ WASM app.
-       Window x=200, y=100, w=960, h=500. Capabilities: stdio=true, display=true, shell=true.
-       Shows clocks for 6 time zones displayed as a 3×2 grid of cards.
-       Each card: 300×200px. Shows: timezone name (large), HH:MM:SS (large), UTC offset, and date.
-       Zones: UTC, US/Eastern (UTC-5), US/Pacific (UTC-8), Europe/London (UTC+1 BST), Asia/Tokyo (UTC+9), India/Kolkata (UTC+5:30).
-       Time derived from Instant elapsed + offset applied to base epoch (2026-05-21 09:00:00 UTC).
-       Ping-pong loop at 1s cadence to update.
-       ↑↓←→ to highlight a zone card; no other actions.
-       Background: 0x0D1117FF. Card bg: 0x161B22FF. Selected card border: C_SEL.
+  P93: Unit Converter. Create apps/unit-converter/ WASM app.
+       Window x=300, y=150, w=760, h=560. Capabilities: stdio=true, display=true, shell=true.
+       Converts between common unit categories.
+       Categories (↑↓ to navigate): Length, Mass, Temperature, Speed, Area, Volume, Time.
+       For each category: 2-column layout — left column lists "from" units, right column lists "to" units.
+       Type a number for input; Tab switches between from/to selection; ↑↓ navigate units within each column.
+       Result shown large and centered below the unit selectors.
+       Backspace to delete input digits; only numbers and '.' and '-' accepted.
+       Temperature: special formula (°C↔°F↔K). Others: simple ratio factors.
+       Background: 0x161B22FF. Category tabs at top.
 
-  P92: Stopwatch. Create apps/stopwatch/ WASM app.
-       Window x=400, y=200, w=640, h=480. Capabilities: stdio=true, display=true, shell=true.
-       Large digital stopwatch display.
-       Shows: HH:MM:SS.cc (centiseconds) in large 'l' font.
-       State: running/stopped, start_instant, accumulated.
-       Space: start/stop toggle.
-       r: reset (stops and zeros).
-       l: lap — records current time to lap list (last 5 shown).
-       Esc/Ctrl+C: exit.
-       Ping-pong loop at 100ms cadence when running (1s when stopped).
-       Lap list shown below the clock: up to 5 entries with lap number and time.
+  P94: QR Code Viewer. Create apps/qr-viewer/ WASM app.
+       Window x=300, y=100, w=760, h=680. Capabilities: stdio=true, display=true, shell=true.
+       Renders a QR code for a user-entered string using a minimal QR algorithm.
+       QR Version 1 (21×21 modules) encodes up to ~17 alphanumeric chars.
+       Rather than implementing full QR spec: encode short URLs/text using a hardcoded Version 1
+       pattern for known test strings, OR display a placeholder grid with finder patterns and data modules.
+       Each module: 12×12 pixel fill_rect; black module = 0x000000FF, white = 0xFFFFFFFF.
+       Input: text field at top; type URL/text; Enter to generate.
+       Below QR: shows encoded text + character count.
+       'c' → @supervisor: clipboard-set <text>.
+       Esc to close.
 
 ## Queue (implement in order after current batch)
-- [ ] P93 — Unit Converter: apps/unit-converter/ converts between common units; categories: length, mass, temperature, speed, area; arrow keys navigate categories; Tab moves between input and result
-- [ ] P94 — QR Code Viewer: apps/qr-viewer/ takes a short string and renders a QR code using fill_rect for modules; displays encoded text below; 'c' copies to clipboard
+- [ ] P95 — Emoji Picker: apps/emoji-picker/ scrollable grid of emoji characters; search by name; Enter copies to clipboard; categorized (Smileys, Objects, Symbols, Nature)
+- [ ] P96 — Mini Games Hub: apps/games-hub/ menu of mini-games; each game runs inline: Snake, Tetris (stub), Minesweeper, Number Puzzle (15-puzzle)
 - [ ] P78 — Desktop Icons: file listing on desktop background; icons for /data files; Enter opens with appropriate app; 'n' to create new file
 - [ ] P79 — Context Menu: supervisor support for @supervisor: context-menu x,y item1|item2|...; floating menu window; result sent back as REPLY:context-menu <item>
 - [ ] P80 — Finder v2: sidebar (Favorites: Desktop/Downloads/Documents), breadcrumb path bar, icon grid view, double-click to open
@@ -124,6 +125,8 @@ notes: |
 - [x] P88: Terminal Multiplexer — apps/tmux/ (1440×872); 2-4 split panes; Tab/Ctrl+N/Ctrl+W; simulated shell
 - [x] P89: Font Preview — apps/font-preview/ (1040×680); all 95 printable ASCII in s/m/l sizes; ↑↓ scroll
 - [x] P90: Draw Pad — apps/draw-pad/ (960×760); 200×150 px canvas; 4px cells; 10-color palette; Space=draw; e=erase
+- [x] P91: World Clock — apps/world-clock/ (960×500); 3×2 grid; 6 zones; ping-pong 1s update
+- [x] P92: Stopwatch — apps/stopwatch/ (640×480); HH:MM:SS.cc; Space/r/l; last-5 laps with delta
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

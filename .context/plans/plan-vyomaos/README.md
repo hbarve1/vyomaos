@@ -98,6 +98,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 88 — Terminal Multiplexer | `apps/tmux/` split-pane terminal (1440×872); 2-4 panes; Tab cycle; Ctrl+N new; Ctrl+W close; simulated shell | **complete** | — |
 | 89 — Font Preview | `apps/font-preview/` font size debug tool (1040×680); renders all 95 printable ASCII chars in s/m/l sizes; ↑↓ scroll | **complete** | — |
 | 90 — Draw Pad | `apps/draw-pad/` pixel canvas (960×760); 200×150 logical grid; arrow+Space draw; 10-color palette (0-9); Ctrl+W export | **complete** | — |
+| 91 — World Clock | `apps/world-clock/` 6-zone world clock (960×500); 3×2 card grid; UTC/Eastern/Pacific/London/Tokyo/Kolkata; ping-pong updates | **complete** | — |
+| 92 — Stopwatch | `apps/stopwatch/` digital stopwatch (640×480); HH:MM:SS.cc; Space start/stop; r reset; l lap; last-5 laps with delta | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

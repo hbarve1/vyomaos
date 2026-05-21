@@ -1,0 +1,15 @@
+[app]
+name    = "stopwatch"
+version = "0.1.0"
+wasm    = "stopwatch.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 400
+y = 200
+w = 640
+h = 480
