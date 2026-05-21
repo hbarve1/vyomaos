@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P161+P162 complete -->
+last_updated: 2026-05-21  <!-- P163+P164 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,33 +18,39 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P163 — Pomodoro Pro
-  - P164 — Astronomy Viewer
+  - P165 — Clipboard Pro
+  - P166 — System Info
 notes: |
-  P163: Pomodoro Pro. Create apps/pomodoro-pro/ WASM app.
-        Window x=60, y=30, w=840, h=640. Capabilities: stdio=true, display=true.
-        Configurable intervals: work (default 25min), short break (5min), long break (15min).
-        Task list: up to 10 tasks, each with a name and pomodoro count.
-        Ping-pong tick drives countdown (1 tick = 1 second simulated).
-        Stats history: total pomodoros today, total work time, longest streak.
-        +/- keys adjust current interval ±5min. N=new task, Del=remove, Enter=start/pause.
-        Visual progress ring drawn with fill_rect segments. Pomodoro dots ●○○○.
+  P165: Clipboard Pro. Create apps/clipboard-pro/ WASM app.
+        Window x=60, y=30, w=880, h=680. Capabilities: stdio=true, display=true.
+        Extended clipboard history: up to 50 entries stored in memory.
+        Each entry has: content (truncated to 80 chars for display), timestamp (tick), category (auto: text/code/url/number).
+        Three panels: history list (left, w=520), preview (right, top), categories (right, bottom).
+        Search: / key enters search mode, filters entries by substring.
+        Pin: P key pins an entry (shown with ★), pinned entries never expire.
+        Categories auto-detected: URL (starts http/https), code (contains { or fn), number (all digits), text (default).
+        Enter=copy to clipboard (@supervisor: clipboard-set). Del=remove. Ctrl+C=quit.
 
-  P164: Astronomy Viewer. Create apps/astronomy/ WASM app.
-        Window x=60, y=30, w=1200, h=800. Capabilities: stdio=true, display=true.
-        Procedural star map: 200 stars with LCG-generated positions, magnitudes, colors.
-        Star colors by temperature: hot=blue/white, medium=yellow, cool=orange/red.
-        8 constellation patterns (hard-coded lines between named stars).
-        5 "planets" with LCG orbital positions (circles of different sizes/colors).
-        ←→↑↓ pan the view. +/- zoom. C=toggle constellation lines. P=toggle planets.
-        Click on a star/planet shows name and magnitude in info panel.
-        Status bar: RA/Dec coordinates of center, zoom level.
+  P166: System Info. Create apps/system-info/ WASM app.
+        Window x=60, y=30, w=960, h=720. Capabilities: stdio=true, display=true.
+        Displays hardware/OS information in sections: OS, CPU, Memory, Display, Storage, Network.
+        Data is hard-coded to VyomaOS specs (no actual syscalls needed for display demo):
+          OS: VyomaOS 1.0.0 (Linux 5.10 kernel, Wasmtime 43.0.0)
+          CPU: x86_64, QEMU Virtual CPU, 1 core, 1000 MIPS
+          Memory: 256 MB total, ~42 MB used
+          Display: 1440×900 virtio-gpu, 32bpp, 60fps
+          Storage: /data ext4 64MB, /apps tmpfs 18MB
+          Network: virtio-net, 10.0.0.1, port 8080
+        ASCII art VyomaOS logo on the right side (drawn with text characters).
+        ↑↓ scroll. R=refresh (just redraws). Ctrl+C=quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P165 — Clipboard Pro: apps/clipboard-pro/ extended history 50 entries; search; pin; categories
-- [ ] P166 — System Info: apps/system-info/ hardware spec display; CPU/mem/disk/OS details; ASCII art logo
+- [ ] P167 — Timeline Viewer: apps/timeline/ historical events viewer; zoom; categories; decade/century nav
+- [ ] P168 — Language Flashcards: apps/lang-flash/ vocabulary cards; EN/ES/FR/DE; score tracking; spaced rep
 
 ## Completed (recent — full list in plan README)
+- [x] P163 — Pomodoro Pro: apps/pomodoro-pro/ work/break/long; task list; stats; progress ring; ±interval
+- [x] P164 — Astronomy Viewer: apps/astronomy/ 200 stars; 5 planets; 8 constellations; pan/zoom; info panel
 - [x] P161 — E-Book Reader: apps/ebook/ 5 chapters; TOC panel; scroll; B/G bookmark; ←→ chapter
 - [x] P162 — Network Speed Test: apps/speed-test/ ping/dl/ul phases; LCG; bar graphs; grade card
 - [x] P159 — RSS Reader: apps/rss-reader/ 3 feeds × 10 articles; two-panel; Tab/↑↓/Enter/R
