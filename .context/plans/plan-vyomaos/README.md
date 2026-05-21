@@ -100,6 +100,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 90 — Draw Pad | `apps/draw-pad/` pixel canvas (960×760); 200×150 logical grid; arrow+Space draw; 10-color palette (0-9); Ctrl+W export | **complete** | — |
 | 91 — World Clock | `apps/world-clock/` 6-zone world clock (960×500); 3×2 card grid; UTC/Eastern/Pacific/London/Tokyo/Kolkata; ping-pong updates | **complete** | — |
 | 92 — Stopwatch | `apps/stopwatch/` digital stopwatch (640×480); HH:MM:SS.cc; Space start/stop; r reset; l lap; last-5 laps with delta | **complete** | — |
+| 93 — Unit Converter | `apps/unit-converter/` 7-category converter (760×560); Length/Mass/Temp/Speed/Area/Volume/Time; Tab switch; ←→ category | **complete** | — |
+| 94 — QR Code Viewer | `apps/qr-viewer/` QR code generator (760×680); Version 1 21×21; type text+Enter; c copy; simplified bit layout | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

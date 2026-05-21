@@ -18,9 +18,12 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P93 — Unit Converter
-  - P94 — QR Code Viewer
+  - P95 — Emoji Picker
+  - P96 — Snake Game
 notes: |
+  P95+P96: See queue items above for specs. Implemented in next iteration.
+
+  (previously P93-P94 notes — now completed):
   P93: Unit Converter. Create apps/unit-converter/ WASM app.
        Window x=300, y=150, w=760, h=560. Capabilities: stdio=true, display=true, shell=true.
        Converts between common unit categories.
@@ -45,11 +48,8 @@ notes: |
        Esc to close.
 
 ## Queue (implement in order after current batch)
-- [ ] P95 — Emoji Picker: apps/emoji-picker/ scrollable grid of emoji characters; search by name; Enter copies to clipboard; categorized (Smileys, Objects, Symbols, Nature)
-- [ ] P96 — Mini Games Hub: apps/games-hub/ menu of mini-games; each game runs inline: Snake, Tetris (stub), Minesweeper, Number Puzzle (15-puzzle)
-- [ ] P78 — Desktop Icons: file listing on desktop background; icons for /data files; Enter opens with appropriate app; 'n' to create new file
-- [ ] P79 — Context Menu: supervisor support for @supervisor: context-menu x,y item1|item2|...; floating menu window; result sent back as REPLY:context-menu <item>
-- [ ] P80 — Finder v2: sidebar (Favorites: Desktop/Downloads/Documents), breadcrumb path bar, icon grid view, double-click to open
+- [ ] P97 — Minesweeper: apps/minesweeper/ 16×16 grid; F flag; Enter reveal; flood fill empty cells; mine count in header
+- [ ] P98 — 15 Puzzle: apps/fifteen-puzzle/ 4×4 sliding tiles; arrow keys move blank; shuffle on start; move counter; "Solved!" on complete
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -127,6 +127,8 @@ notes: |
 - [x] P90: Draw Pad — apps/draw-pad/ (960×760); 200×150 px canvas; 4px cells; 10-color palette; Space=draw; e=erase
 - [x] P91: World Clock — apps/world-clock/ (960×500); 3×2 grid; 6 zones; ping-pong 1s update
 - [x] P92: Stopwatch — apps/stopwatch/ (640×480); HH:MM:SS.cc; Space/r/l; last-5 laps with delta
+- [x] P93: Unit Converter — apps/unit-converter/ (760×560); 7 categories; ratio factors + temp formula; Tab side; ←→ category
+- [x] P94: QR Code Viewer — apps/qr-viewer/ (760×680); Version 1 21×21 QR; bit encoding; type+Enter; 'c' copies
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
