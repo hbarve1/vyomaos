@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P101+P102 complete -->
+last_updated: 2026-05-21  <!-- P103+P104 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,59 +18,39 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P103 — Space Invaders
-  - P104 — 2048
+  - P105 — Wordle
+  - P106 — Sudoku
 notes: |
-  P103: Space Invaders. Create apps/space-invaders/ WASM app.
-        Window x=180, y=40, w=800, h=820. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=40. Classic Space Invaders.
-        Aliens: 3 rows × 10 cols. Each alien 40×24px; gap 8px; ALIEN_X0=40, ALIEN_Y0=80.
-        Alien movement: march left/right 2px each tick; when edge reached, drop 20px + reverse.
-        Player ship: y=740, w=40, h=20; ←→ speed=8; initial x=(W-40)/2.
-        Bullets: player fires up (vel=-12); aliens fire down (vel=6); 1 player bullet max.
-        Hit detection: bullet AABB vs alien/player.
-        Score: +10 per alien; 30 aliens total.
-        Ping-pong game loop: move bullets + check hits every REPLY:pong; alien march every 3 pongs.
-        Space: fire bullet; Esc: quit; R: restart.
-        Win: all aliens destroyed. Loss: alien reaches y>700 OR player ship hit.
+  P105: Wordle. Create apps/wordle/ WASM app.
+        Window x=300, y=60, w=520, h=700. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Classic Wordle: 6 attempts to guess a 5-letter word.
+        CELL_W=72, CELL_H=72, GAP=8. GRID_X=(520-5*72-4*8)/2=28. GRID_Y=64.
+        Built-in word list of 50+ common 5-letter words; daily word = words[lcg_seed % len].
+        Letter states: Absent=grey(0x3A3F4BFF), Present=yellow(0xB59F3BFF), Correct=green(0x538D4EFF).
+        Keyboard row display at y=580: QWERTYUIOP / ASDFGHJKL / ZXCVBNM
+        Each key box 36×40px, colored by best state seen for that letter.
+        Input: letter keys a-z append to current guess (max 5); Backspace deletes; Enter submits.
+        On Enter: validate 5 letters, score each position, update keyboard colors, advance row.
+        Win: all 5 correct → "Genius! 🎉" overlay (omit emoji actually). Show "PERFECT" in green.
+        Loss: 6 wrong guesses → "The word was: XXXXX" overlay. R=restart with next word.
 
-  P104: 2048. Create apps/2048/ WASM app.
-        Window x=260, y=60, w=600, h=700. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Classic 2048 game.
-        4×4 grid. CELL=120; GRID_X=(600-4*120)/2=60; GRID_Y=48+20=68.
-        Arrow keys: slide all tiles in direction; merge adjacent equal tiles (first merge wins).
-        After each valid move: spawn tile (90% chance=2, 10% chance=4) at random empty cell.
-        Score: sum of merged tile values. Best score tracked in session.
-        Tile colors: 2=0x1A1A2EFF, 4=0x16213EFF, 8=0xFF6B35FF, 16=0xFF4500FF,
-                     32=0xFF2222FF, 64=0xFF0000FF, 128=0xFAD02CFF, 256=0xF5A623FF,
-                     512=0x56B4D3FF, 1024=0x3FB950FF, 2048=0x58A6FFFF.
-        Win: any tile reaches 2048 → "You reached 2048!" overlay; can continue.
-        Loss: no valid moves → "Game Over" overlay.
-        'r' restart; Esc quit.
-        Window x=240, y=20, w=560, h=860. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=40. Classic Tetris with 7 tetrominoes (I,O,T,S,Z,J,L).
-        Grid: 10 cols × 20 rows. CELL=36px. Grid at center of window.
-        GRID_X = (560 - 10*36) / 2 = 80. GRID_Y = HEADER_H + 10 = 50.
-        Pieces: use standard Tetromino shapes as [[i8;2]; 4] relative offsets.
-        State: current piece (type, rotation, pos), board [[u32; 10]; 20] (0=empty, RGBA=filled).
-        Ping-pong game loop: one drop tick every N pongs (N=8 at start, decreases with score).
-        ← → move piece; ↑ rotate CW; ↓ soft drop (faster fall); Space hard drop.
-        Line clear: remove full rows, shift down, +100 per line, +400 for 4 (Tetris).
-        Score display in header. Level (speed) shown. 'r' restart. Esc quit.
-        Game over: piece spawns and immediately collides → show "Game Over".
-
-  P102: Pong. Create apps/pong/ WASM app.
-        Window x=180, y=60, w=800, h=700. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=40. Classic Pong.
-        Left paddle (player): ↑↓ keys, speed=8, x=20, h=80.
-        Right paddle (AI): tracks ball y with lag, x=780-12, h=80.
-        Ball: 12×12px; vel=(5,4) initially; bounces off top/bottom + paddles.
-        Score: first to 7 wins. Scores shown in header. Ping-pong game loop.
-        On goal: reset ball to center. Space to start/resume after goal. R=restart.
+  P106: Sudoku. Create apps/sudoku/ WASM app.
+        Window x=240, y=40, w=640, h=740. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Classic 9×9 Sudoku.
+        CELL=60. GRID_X=(640-9*60)/2=50. GRID_Y=64.
+        Pre-baked puzzle array (givens) + solution array (hardcoded valid pair).
+        Board: [[u8; 9]; 9] for current values; given: [[bool; 9]; 9] marks fixed cells.
+        cursor: (row, col). Arrow keys move cursor. 1-9 enter digit (only non-given cells).
+        Backspace/0 clear cell. 'c' check solution: highlight conflicts in red.
+        Conflict: same digit in same row/col/3×3 box.
+        'r' reset to givens. 's' auto-solve (fill from solution array).
+        Bold lines at every 3rd cell boundary (draw extra rect_border for 3×3 boxes).
+        Selected cell: C_SEL_BG highlight. Given cells: C_TEXT bold; user cells: C_SEL.
+        Conflict cells: C_RED. Correct+complete: "Solved!" overlay in C_GREEN.
 
 ## Queue (implement in order after current batch)
-- [ ] P105 — Wordle: apps/wordle/ 6 guess word game; 5-letter words; color feedback (green/yellow/grey); keyboard display
-- [ ] P106 — Sudoku: apps/sudoku/ 9×9 grid; pre-filled puzzle; arrow keys + number entry; conflict highlighting; solve check
+- [ ] P107 — Chess: apps/chess/ two-player chess; full move validation; check/checkmate detection; piece Unicode chars
+- [ ] P108 — Typing Tutor: apps/typing-tutor/ random word prompts; WPM counter; accuracy %; color feedback per char
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -158,6 +138,8 @@ notes: |
 - [x] P100: Memory Card Game — apps/memory-game/ (760×680); 4×4 grid, 8 pairs; flip/match; face-up anti-cheat reset; Solved overlay; R reshuffle
 - [x] P101: Tetris — apps/tetris/ (560×860); 7 tetrominoes × 4 rotations; LCG shuffle; wall kicks; ghost outline; hard drop; line-clear scoring; level speed-up
 - [x] P102: Pong — apps/pong/ (800×700); player vs AI; angle-adjust on paddle hit; AI 4px/tick lag; score-to-7; Win/Loss overlay
+- [x] P103: Space Invaders — apps/space-invaders/ (800×820); 3×10 alien grid; march+drop; 1 player bullet + 3 alien bullets; ping-pong tick; Win/Loss overlay
+- [x] P104: 2048 — apps/2048/ (600×700); 4×4 grid; slide+merge; LCG spawn; score+best tracking; non-blocking Win; Game Over detection
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

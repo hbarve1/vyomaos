@@ -160,6 +160,8 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/memory-game/Cargo.toml             --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/tetris/Cargo.toml                  --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/pong/Cargo.toml                    --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/space-invaders/Cargo.toml          --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/2048/Cargo.toml                    --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────

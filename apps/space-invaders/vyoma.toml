@@ -1,0 +1,15 @@
+[app]
+name    = "space-invaders"
+version = "0.1.0"
+wasm    = "space-invaders.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 180
+y = 40
+w = 800
+h = 820

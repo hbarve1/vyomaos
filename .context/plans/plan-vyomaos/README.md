@@ -110,6 +110,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 100 — Memory Card Game | `apps/memory-game/` 4×4 face-down card grid; 8 pairs; flip/match logic; move counter; Solved overlay | **complete** | — |
 | 101 — Tetris | `apps/tetris/` 7 tetrominoes; 4 rotations; wall kicks; ghost piece; hard drop; line clears; levels; next-piece preview | **complete** | — |
 | 102 — Pong | `apps/pong/` player vs AI; angle-adjust paddle hit; AI lag tracking; score to 7; Win overlay | **complete** | — |
+| 103 — Space Invaders | `apps/space-invaders/` 3×10 alien grid; march+drop; player bullet+3 alien bullets; ping-pong loop; Win/Loss overlay | **complete** | — |
+| 104 — 2048 | `apps/2048/` 4×4 grid; slide+merge; LCG spawn; score+best; non-blocking Win; Game Over detection | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
