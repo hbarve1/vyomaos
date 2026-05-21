@@ -140,6 +140,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 130 — Code Editor | `apps/code-editor/` multi-line; Rust syntax highlight; line numbers; save/load; scrollable | **complete** | — |
 | 131 — Crypto Ticker | `apps/crypto-ticker/` 5 coins; LCG random walk; sparklines; alert >5%; sort by % | **complete** | — |
 | 132 — Photo Filter | `apps/photo-filter/` PPM loader; 5 filters; 4×4 mosaic preview; save filtered.ppm | **complete** | — |
+| 133 — Terminal Emulator | `apps/terminal/` Line-based shell; scrollback 200 lines; Tab complete; Up/Dn history; PgUp/Dn scroll; built-in cmds; ping-pong | **complete** | — |
+| 134 — Map Viewer | `apps/map-viewer/` 80×40 procedural ASCII world map; 4 zoom levels; pan; 12 landmarks; legend; grid at ≥16px | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

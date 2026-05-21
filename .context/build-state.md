@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P131+P132 complete -->
+last_updated: 2026-05-21  <!-- P133+P134 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,32 +18,39 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P133 — Terminal Emulator
-  - P134 — Map Viewer
+  - P135 — File Diff Tool
+  - P136 — Spreadsheet
 notes: |
-  P133: Terminal Emulator. Create apps/terminal/ WASM app.
-        Window x=100, y=40, w=1100, h=760. Capabilities: stdio=true, display=true, shell=true.
-        Line-based shell simulator with scrollback. Vec<(String, u32)> history of (line, color).
-        Input line at bottom. Tab completion (cycle through built-in cmds). Up/Down = history.
-        Built-in commands: help, clear, ls (fake file list), echo <text>, date (tick-based),
-          version, whoami, pwd, cat <file>, ping (ping-pong test), exit.
-        ANSI-style color: each built-in output line has a color (green for success, red for error,
-          hint for meta). Prompt: "vyoma> " in C_ORANGE.
-        Scrollback: 200 lines max. PgUp/PgDn scroll. Home = top, End = bottom.
-        CHAR_W=8, LINE_H=18, GUTTER_W=0. Visible lines = (H - HEADER_H - INPUT_H) / LINE_H.
+  P135: File Diff Tool. Create apps/file-diff/ WASM app.
+        Window x=80, y=40, w=1360, h=760. Capabilities: stdio=true, display=true, filesystem=true.
+        Two-step path input (left file, right file from /data/).
+        LCS diff: compute longest common subsequence; derive +/- context.
+        Unified diff view: lines prefixed with ' ' (common), '+' (added), '-' (removed).
+        Colors: C_GREEN for '+' lines, C_RED for '-' lines, C_HINT for context.
+        Header shows filename A and B. ↑↓ scroll. PgUp/PgDn page scroll. Ctrl+C to go back.
+        Max 500 lines per file. Line numbers shown in gutter (4 chars).
+        CHAR_W=8, LINE_H=18, GUTTER_W=40. Visible lines = (H - HEADER_H - STATUS_H) / LINE_H.
 
-  P134: Map Viewer. Create apps/map-viewer/ WASM app.
-        Window x=120, y=40, w=1200, h=800. Capabilities: stdio=true, display=true, shell=true.
-        Static ASCII world map: 80×40 char grid. Each char = terrain type.
-        Terrain chars: '.' ocean, '#' mountain, '^' hill, '~' desert, '*' forest, ',' plains, 'C' city.
-        Pan: arrow keys move viewport. Zoom: +/- scales cell size (8px/12px/16px/20px).
-        Landmark labels: 12 hardcoded landmarks (city names) at (x,y) positions.
-        Coordinate display: shows (lon, lat) of cursor based on map position.
-        'r': reset to center. Map data hardcoded as &[&str; 40] of 80-char strings.
+  P136: Spreadsheet. Create apps/spreadsheet/ WASM app.
+        Window x=60, y=40, w=1200, h=760. Capabilities: stdio=true, display=true, filesystem=true.
+        10 columns × 20 rows grid. Column headers A-J, row numbers 1-20.
+        Cells store String (raw input). Formula cells start with '='.
+        Supported formulas: =SUM(A1:A5), =AVG(B1:B10), =cell ref (=A1), plain number/text.
+        Arrow keys navigate. Enter confirms cell edit. Tab moves right.
+        Backspace deletes last char in edit mode. Any printable char enters edit mode.
+        Ctrl+W saves as CSV to /data/spreadsheet.csv. Ctrl+L loads from /data/spreadsheet.csv.
+        Selected cell highlighted in C_SEL border. Status bar shows cell address + raw value.
+        CELL_W=100, CELL_H=22, HEADER_ROW_H=24, ROW_NUM_W=36.
 
 ## Queue (implement in order after current batch)
-- [ ] P135 — File Diff Tool: apps/file-diff/ compare two /data/ files line-by-line; LCS diff; colored +/- output; side-by-side
-- [ ] P136 — Spreadsheet: apps/spreadsheet/ 10×10 grid; formula eval (SUM/AVG); arrow nav; cell edit; Ctrl+W save CSV
+- [ ] P137 — Image Gallery: apps/image-gallery/ 3-column thumbnail grid from /data/*.ppm; Enter fullscreen; ←→↑↓ nav; caption from filename
+- [ ] P138 — Text Adventure: apps/text-adventure/ 10-room story; inventory; look/go/take/drop/use; scrollback history
+
+## Completed (recent — full list in plan README)
+- [x] P133 — Terminal Emulator: apps/terminal/ WASM shell; scrollback; Tab complete; history; ping built-in
+- [x] P134 — Map Viewer: apps/map-viewer/ 80×40 procedural ASCII world; 4 zooms; pan; 12 landmarks
+- [x] P131 — Crypto Ticker: apps/crypto-ticker/ 5 coins; LCG walk; sparklines ×40 pts; alert >5%; sort
+- [x] P132 — Photo Filter: apps/photo-filter/ PPM P6 loader; 5 filters; 4×4 mosaic; save filtered.ppm
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage

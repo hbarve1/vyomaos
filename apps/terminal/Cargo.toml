@@ -1,0 +1,12 @@
+[package]
+name    = "terminal"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "terminal"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+strip = true
