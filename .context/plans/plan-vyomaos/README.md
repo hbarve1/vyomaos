@@ -85,6 +85,9 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 75 — App Switcher | `apps/app-switcher/` Alt+Tab overlay (1000×200); thumbnail grid from ps-raw; Tab/→ cycle; Enter to focus | **complete** | — |
 | 76 — Notification Center | `apps/notification-center/` right-panel (400×600); stores last 10 notifications; NOTIFY: lines via stdin; 'c' clear; Esc close | **complete** | — |
 | 77 — Mission Control | `apps/mission-control/` full-screen overlay (1440×900); 3-col card grid of running apps from ps-raw; ↑↓←→ nav; Enter focus | **complete** | — |
+| 78 — Desktop Icons | `apps/desktop/` desktop layer (1440×832, y=28); fixed folder icons + /data file icons; ↑↓←→ nav; Enter opens; n=new file | **complete** | — |
+| 79 — Context Menu | `apps/context-menu/` floating menu (220px wide); MENU:x,y:items stdin; ↑↓ nav; Enter selects → context-reply; Esc closes | **complete** | — |
+| 80 — Finder v2 | `apps/finder/` sidebar+grid (1280×760); 6 sidebar favorites; ls-data integration; file icon grid; s=toggle focus; Enter open | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

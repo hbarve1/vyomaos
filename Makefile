@@ -135,6 +135,9 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/app-switcher/Cargo.toml        --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/notification-center/Cargo.toml --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/mission-control/Cargo.toml     --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/desktop/Cargo.toml             --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/context-menu/Cargo.toml        --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/finder/Cargo.toml              --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────

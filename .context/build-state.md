@@ -18,36 +18,37 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P78 — Desktop Icons
-  - P79 — Context Menu
+  - P81 — System Preferences
+  - P82 — Activity Monitor
 notes: |
-  P78: Desktop Icons. Create apps/desktop/ WASM app.
-       Window x=0, y=28, w=1440, h=832 (between menu bar and dock).
-       Capabilities: stdio=true, display=true, shell=true, filesystem=true.
-       Background: 0x0D1117FF (same as wallpaper). No border/chrome (y>0 so chrome appears — guard: display at y=28).
-       Actually draw at y=28 by using fill from 0,0 within the window coord space.
-       Lists files in /data/ via @supervisor: ls-data (supervisor responds REPLY:ls-data <space-sep filenames>).
-       Fallback if supervisor doesn't support ls-data: show a set of fixed icons (Desktop, Downloads, Documents).
-       Each icon: 80×80 box at grid positions; 8 per row; y starting at 20 within window.
-       Icon shows: colored folder/file icon (fill square + border), filename below (truncated to 10 chars).
-       ↑↓←→ to navigate; Enter → opens file with appropriate viewer based on extension:
-         .md → run markdown-viewer, .json → run json-viewer, .csv → run csv-viewer,
-         .ppm → run image-viewer, .log → run log-viewer, else → run text-editor.
-       'n' → prompt for new filename (show text input at bottom); Enter → create /data/<name> (write @supervisor: touch <path>).
+  P81: System Preferences. Create apps/system-preferences/ WASM app.
+       Window x=280, y=80, w=900, h=700. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
+       macOS System Preferences style: icon grid of preference panes at top, pane content below.
+       Panes: Appearance, Display, Sound, Network, Security, About.
+       Navigation: ↑↓←→ to select pane, Enter to open it; Backspace to return to pane list.
+       Each pane shows controls relevant to that section; Tab cycles through fields; Ctrl+W saves to /data/settings.toml.
+       Appearance: dark/light mode toggle, accent color (7 options, arrow keys), transparency toggle.
+       Display: resolution display (read-only: 1440x900), font-size (S/M/L via @supervisor: font-size).
+       Sound: placeholder (no audio yet): mute toggle, volume slider (cosmetic).
+       Network: shows @supervisor: net-info result; DHCP/Static display; link to run network-config.
+       Security: shows seccomp status (always "enabled"), WASM sandbox status ("active").
+       About: VyomaOS version, build date, supervisor version, wasmtime version.
+       Background: 0x161B22FF. Sidebar list on left 200px. Pane content on right.
 
-  P79: Context Menu. Create apps/context-menu/ WASM app.
-       Window x=0, y=0, w=200, h=auto (8px padding + items*28). Capabilities: stdio=true, display=true, shell=true.
-       Launched by @supervisor: run context-menu; receives menu spec via stdin within first 100ms:
-         "MENU:<x>,<y>:<item1>|<item2>|<item3>..."
-       Positions window at (x, y) by printing @supervisor: reposition context-menu <x> <y>.
-       Draws floating menu: dark bg + border, each item is a 28px row.
-       ↑↓ navigate, Enter selects → prints "@supervisor: context-reply <item>" + exits.
-       Esc/Ctrl+C → exits without reply.
-       Clicking outside (not possible without mouse) → Esc handles it.
-       Items highlighted in C_SEL on cursor row.
+  P82: Activity Monitor. Create apps/activity-monitor/ WASM app.
+       Window x=120, y=80, w=1200, h=700. Capabilities: stdio=true, display=true, shell=true.
+       macOS Activity Monitor style: table of running processes with resource bars.
+       Polls @supervisor: ps-raw every 2s (ping-pong loop).
+       Columns: Name (240px), Status (120px), Uptime (120px), Restarts (100px), CPU bar (200px), Mem bar (200px).
+       CPU/Mem are estimated cosmetically: assign pseudo-values from uptime % hash; not real OS metrics.
+       Bars: fill_rect proportional bar (green→yellow→red based on value).
+       ↑↓ navigate; q/Ctrl+C quit. Total at bottom: "N apps running".
+       Sort by name (default); press 'c' to sort by CPU, 'm' to sort by Mem, 'n' back to name.
+       Header row highlighted with C_TOOLBAR color. Alternating row bg.
 
 ## Queue (implement in order after current batch)
-- [ ] P80 — Finder v2: sidebar (Favorites: Desktop/Downloads/Documents), breadcrumb path bar, icon grid view, file open on Enter
+- [ ] P83 — Quick Look: preview overlay for files; detects ext and renders content inline (text files shown as text, PPM as pixel art, JSON pretty-printed, etc.); Space to preview from any file browser; Esc to close
+- [ ] P84 — Spaces / Virtual Desktops: @supervisor: spaces-create/switch/list; each space has its own window list; Ctrl+Left/Right to switch spaces; menu-bar shows current space number
 - [ ] P78 — Desktop Icons: file listing on desktop background; icons for /data files; Enter opens with appropriate app; 'n' to create new file
 - [ ] P79 — Context Menu: supervisor support for @supervisor: context-menu x,y item1|item2|...; floating menu window; result sent back as REPLY:context-menu <item>
 - [ ] P80 — Finder v2: sidebar (Favorites: Desktop/Downloads/Documents), breadcrumb path bar, icon grid view, double-click to open
@@ -113,6 +114,9 @@ notes: |
 - [x] P75: App Switcher — apps/app-switcher/ (1000×200); ps-raw thumbnail grid; Tab/→ cycle; Enter focus
 - [x] P76: Notification Center — apps/notification-center/ (400×600); last-10 store; NOTIFY: stdin; 'c' clear; Esc close
 - [x] P77: Mission Control — apps/mission-control/ (1440×900); 3-col card grid from ps-raw; ↑↓←→ nav; Enter focus
+- [x] P78: Desktop Icons — apps/desktop/ (1440×832, y=28); fixed folders + /data files; ↑↓←→; Enter opens; n=new file
+- [x] P79: Context Menu — apps/context-menu/ (220px); MENU: stdin spec; ↑↓; Enter selects → context-reply
+- [x] P80: Finder v2 — apps/finder/ (1280×760); sidebar+grid; 6 favorites; ls-data; file type → app routing; s=focus toggle
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
