@@ -102,6 +102,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 92 — Stopwatch | `apps/stopwatch/` digital stopwatch (640×480); HH:MM:SS.cc; Space start/stop; r reset; l lap; last-5 laps with delta | **complete** | — |
 | 93 — Unit Converter | `apps/unit-converter/` 7-category converter (760×560); Length/Mass/Temp/Speed/Area/Volume/Time; Tab switch; ←→ category | **complete** | — |
 | 94 — QR Code Viewer | `apps/qr-viewer/` QR code generator (760×680); Version 1 21×21; type text+Enter; c copy; simplified bit layout | **complete** | — |
+| 95 — Emoji Picker | `apps/emoji-picker/` emoji grid (760×560); 6 categories × 15 emoji; search filter; Tab category; Enter copies | **complete** | — |
+| 96 — Snake Game | `apps/snake/` classic snake game (800×680); 18px cells; arrow keys; ping-pong ticks; score+high score | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

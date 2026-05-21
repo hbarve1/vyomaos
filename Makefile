@@ -152,6 +152,8 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/stopwatch/Cargo.toml              --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/unit-converter/Cargo.toml         --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/qr-viewer/Cargo.toml              --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/emoji-picker/Cargo.toml           --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/snake/Cargo.toml                  --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────

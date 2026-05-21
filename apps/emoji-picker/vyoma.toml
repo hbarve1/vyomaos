@@ -1,0 +1,15 @@
+[app]
+name    = "emoji-picker"
+version = "0.1.0"
+wasm    = "emoji-picker.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 200
+y = 100
+w = 760
+h = 560

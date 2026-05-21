@@ -18,12 +18,36 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P95 — Emoji Picker
-  - P96 — Snake Game
+  - P97 — Minesweeper
+  - P98 — 15 Puzzle
 notes: |
-  P95+P96: See queue items above for specs. Implemented in next iteration.
+  P97: Minesweeper. Create apps/minesweeper/ WASM app.
+       Window x=200, y=60, w=760, h=680. Capabilities: stdio=true, display=true, shell=true.
+       Classic Minesweeper. Grid: 16×16 cells, each 36×36 pixels.
+       96 mines (density ~37%). First reveal never hits a mine (place mines after first click).
+       State: grid of CellState { revealed, flagged, is_mine, adj_mine_count }.
+       Arrow keys to navigate cursor; F to flag/unflag; Enter/Space to reveal.
+       Flood-fill reveal: if adj_mine_count == 0, auto-reveal all adjacent non-mine cells.
+       Header: mine count (remaining) + flag count + time elapsed + smiley face.
+       Number colors: 1=blue, 2=green, 3=red, 4=purple, 5=maroon, 6=teal, 7=black, 8=gray.
+       Revealed mine = 💥 emoji or "X". Win: all non-mines revealed → "You Win!".
+       Esc to quit.
 
-  (previously P93-P94 notes — now completed):
+  P98: 15 Puzzle. Create apps/fifteen-puzzle/ WASM app.
+       Window x=300, y=100, w=640, h=640. Capabilities: stdio=true, display=true, shell=true.
+       4×4 grid of numbered tiles (1-15) + one blank space.
+       Arrow keys slide blank: press Left = blank moves left (tile on left moves right into blank).
+       On start: shuffle 100 random valid moves to create a solvable state.
+       Show move count. When solved (tiles 1-15 in order, blank bottom-right): "Solved! N moves".
+       Press 'r' to restart (new shuffle).
+       Each tile: 140×140 cell. Tile bg: C_CARD. Selected tile (adjacent to blank): slightly lighter.
+       Blank cell: draw nothing (just bg). Numbers centered in each tile.
+
+## Queue (implement in order after current batch)
+- [ ] P99 — Breakout Game: apps/breakout/ classic block-breaking game; paddle (arrow keys); ball physics; 5 rows × 10 cols of bricks; score; lives; ping-pong game loop
+- [ ] P100 — Memory Card Game: apps/memory-game/ 4×4 grid of face-down cards; arrow keys to select; Space to flip; match pairs; move counter; reveal all on win
+
+  (P93-P94 reference notes — completed):
   P93: Unit Converter. Create apps/unit-converter/ WASM app.
        Window x=300, y=150, w=760, h=560. Capabilities: stdio=true, display=true, shell=true.
        Converts between common unit categories.
@@ -129,6 +153,8 @@ notes: |
 - [x] P92: Stopwatch — apps/stopwatch/ (640×480); HH:MM:SS.cc; Space/r/l; last-5 laps with delta
 - [x] P93: Unit Converter — apps/unit-converter/ (760×560); 7 categories; ratio factors + temp formula; Tab side; ←→ category
 - [x] P94: QR Code Viewer — apps/qr-viewer/ (760×680); Version 1 21×21 QR; bit encoding; type+Enter; 'c' copies
+- [x] P95: Emoji Picker — apps/emoji-picker/ (760×560); 6 categories × 15 emoji; search filter; Tab cat; Enter copies
+- [x] P96: Snake — apps/snake/ (800×680); VecDeque snake; ping-pong ticks; wall/self collision; score+high score
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
