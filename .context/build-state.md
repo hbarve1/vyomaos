@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P107+P108 complete -->
+last_updated: 2026-05-21  <!-- P109+P110 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,33 +18,32 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P109 — Paint
-  - P110 — Music Visualizer
+  - P111 — Flashcard
+  - P112 — Budget Tracker
 notes: |
-  P109: Paint. Create apps/paint/ WASM app.
-        Window x=160, y=40, w=960, h=760. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Freehand pixel drawing canvas.
-        Canvas: 160×120 logical pixels rendered as 5×5 pixel cells = 800×600 display area.
-        CANVAS_X=80, CANVAS_Y=64. Color palette strip below canvas (10 colors).
-        Colors: black, white, red, green, blue, yellow, cyan, magenta, orange, grey.
-        Cursor: (cx, cy) on canvas. Arrow keys move cursor. Space: draw pixel at cursor with current color.
-        'e': erase (set to black). 'c': clear canvas. Tab: cycle through palette colors.
-        Current color shown in header. Cursor cell highlighted with C_SEL border.
-        Ping-pong not needed — event-driven only.
+  P111: Flashcard. Create apps/flashcard/ WASM app.
+        Window x=320, y=80, w=800, h=600. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Flashcard study app with built-in deck of 20 Q&A pairs.
+        Card display area: centered, 680×360 at (60, 120). 
+        States: front (showing question) / back (showing answer).
+        Enter: flip card (toggle front/back). ←/→: prev/next card. R: shuffle deck (LCG).
+        Score tracking: 'y'=correct, 'n'=wrong (shown after flip to back). Score in header.
+        Topics: general knowledge / programming facts.
+        Deck of 20 cards hardcoded. Card number shown "3/20".
 
-  P110: Music Visualizer. Create apps/music-viz/ WASM app.
-        Window x=240, y=60, w=800, h=560. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Animated frequency bar visualizer driven by ping-pong ticks.
-        32 bars across width. Each bar height oscillates via sin/cos LCG-seeded pattern.
-        Colors: spectrum from red to violet across bars (hue-based).
-        +/- keys: increase/decrease animation speed. Space: toggle pause. R: randomize pattern.
-        Bar heights computed from: base_h[i] + amplitude * sin(tick * freq[i] + phase[i]).
-        Each bar: 20px wide, gap 5px. Max bar height = 400px. Bars drawn from bottom.
-        Header shows: BPM estimate, speed multiplier, paused indicator.
+  P112: Budget Tracker. Create apps/budget/ WASM app.
+        Window x=300, y=60, w=840, h=680. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Personal budget tracker with income/expense entries.
+        Max 20 entries stored in-memory (no filesystem for simplicity).
+        Entry: type (Income/Expense), category (8 options), amount (integer), description (20 chars).
+        Add mode: Tab cycles fields; digits enter amount; a-z enter description; Enter=confirm; Esc=cancel.
+        'a': add entry. 'd': delete selected entry. ↑↓: navigate entries.
+        Summary bar: Total Income, Total Expense, Balance (green if positive, red if negative).
+        Categories: Food, Transport, Housing, Salary, Freelance, Shopping, Health, Other.
 
 ## Queue (implement in order after current batch)
-- [ ] P111 — Flashcard: apps/flashcard/ Q&A card deck; flip animation (redraw); arrow keys nav; Enter flip; score tracking
-- [ ] P112 — Budget Tracker: apps/budget/ income/expense entries; category totals; balance display; add/delete via form
+- [ ] P113 — Habit Tracker: apps/habit-tracker/ daily habits checklist; week grid view; streak counter; 10 habits max
+- [ ] P114 — Recipe Browser: apps/recipe/ built-in 10 recipes; ingredient list + steps; ↑↓ nav; search filter
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -138,6 +137,8 @@ notes: |
 - [x] P106: Sudoku — apps/sudoku/ (640×740); hardcoded puzzle+solution; cursor nav; digit entry; conflict detection; check/reset/solve
 - [x] P107: Chess — apps/chess/ (680×720); standard board; full piece movement rules; pawn promotion; Win on king capture; rank/file labels
 - [x] P108: Typing Tutor — apps/typing-tutor/ (880×560); 40-phrase list; per-char green/red; WPM+accuracy; progress bar; ping-pong tick
+- [x] P109: Paint — apps/paint/ (960×760); 160×120 canvas; 5×5 cells; 10-color palette; arrow+Space draw; erase; clear; Tab color cycle
+- [x] P110: Music Visualizer — apps/music-viz/ (800×560); 32 bars; integer sin approx; hue spectrum; ping-pong; speed/pause/randomize
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

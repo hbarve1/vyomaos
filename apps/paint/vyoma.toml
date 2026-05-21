@@ -1,0 +1,15 @@
+[app]
+name    = "paint"
+version = "0.1.0"
+wasm    = "paint.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 160
+y = 40
+w = 960
+h = 760
