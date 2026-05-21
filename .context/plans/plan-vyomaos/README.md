@@ -162,6 +162,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 152 — Terminal Emulator v2 | `apps/term2/` 80+ col terminal; help/ls/cat/echo/clear/date/uname/history; scrollback 500; cursor blink | **complete** | — |
 | 153 — Spreadsheet v2 | `apps/spreadsheet2/` 20×15 grid; =SUM/AVG/MIN/MAX/COUNT; cell refs; arithmetic; circular ref detect; CSV save/load | **complete** | — |
 | 154 — Drawing App v2 | `apps/draw2/` 300×200 canvas 3px cells; brush/eraser/fill/line; 16 colors; undo 10; PPM save/load | **complete** | — |
+| 155 — File Archiver | `apps/archiver/` custom .tar format; two-panel archive list+contents; N/A/X/Del/Ctrl+W/Ctrl+L; pre-populated demo.tar | **complete** | — |
+| 156 — System Logger | `apps/syslog/` ring-buffer 200 entries; 7 tags × 5 levels; ping-pong tick; F1-F5 filter; P/R/C/E; scroll; scrollbar | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

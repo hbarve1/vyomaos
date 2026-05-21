@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P153+P154 complete -->
+last_updated: 2026-05-21  <!-- P155+P156 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,36 +18,34 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P155 — File Archiver
-  - P156 — System Logger
+  - P157 — IRC Client
+  - P158 — Photo Editor
 notes: |
-  P155: File Archiver. Create apps/archiver/ WASM app.
-        Window x=60, y=30, w=1200, h=760. Capabilities: stdio=true, display=true, filesystem=true.
-        Two-panel: left=archive list (archives in /data/*.tar), right=contents of selected archive.
-        Custom .tar format: header per file = "FILE:<name>:<size>\n" then raw bytes, then "END\n".
-        Operations: N=new archive (prompt name), A=add file (prompt filename from /data/), X=extract,
-                    Del=remove selected file from archive, Ctrl+W=save archive, Ctrl+L=reload.
-        Navigation: Tab=switch panel, ↑↓=navigate, Enter=open archive (left) or extract file (right).
-        Show file sizes, archive total size in status bar.
-        Pre-populate with a demo archive containing 3 canned text files.
+  P157: IRC Client. Create apps/irc/ WASM app.
+        Window x=60, y=30, w=1280, h=760. Capabilities: stdio=true, display=true.
+        Simulated multi-channel chat with 3 channels: #general, #dev, #random.
+        Nick list panel on right (w=160). Messages panel takes rest.
+        Simulated LCG-driven bots post messages every ping-pong tick.
+        Commands: /join <channel>, /msg <text>, /quit — typed in input bar at bottom.
+        ↑↓ scroll message history. Tab switches channel. Ctrl+C exit.
+        Input bar shows: [#channel] nick> <input>
 
-  P156: System Logger. Create apps/syslog/ WASM app.
-        Window x=60, y=30, w=1360, h=800. Capabilities: stdio=true, display=true.
-        Ring buffer: last 200 log entries. Each entry: {level, tag, message, tick}.
-        Levels: DEBUG (C_HINT), INFO (C_TEXT), WARN (C_YELLOW), ERROR (C_RED), FATAL (C_RED bold).
-        Ping-pong tick: generates 1-3 new simulated log entries per tick (LCG seeded).
-        Generated entries mix all severity levels with realistic-looking messages.
-        Tags: [kernel], [supervisor], [display], [ipc], [fs], [net], [app].
-        Navigation: ↑↓ scroll, PgUp/PgDn fast scroll, Home/End jump.
-        Filters: F1-F5 toggle DEBUG/INFO/WARN/ERROR/FATAL visibility.
-        P=pause live tail. R=resume. C=clear log. E=export to /data/syslog.txt.
-        Status bar: entry count, filtered count, current scroll position.
+  P158: Photo Editor. Create apps/photo-editor/ WASM app.
+        Window x=60, y=30, w=1280, h=800. Capabilities: stdio=true, display=true, filesystem=true.
+        Loads PPM P6 files from /data/. Two-pane: file list left (w=200), preview right.
+        Operations on selected file: C=crop (prompt x,y,w,h), R=resize (prompt w,h), 
+                                     T=rotate 90°, B=brightness ±10, N=contrast ±10,
+                                     S=save as /data/edited.ppm.
+        Preview: render image scaled to fit panel using 2×2 or 3×3 pixel blocks.
+        Status bar shows: file, dimensions, operation result.
 
 ## Queue (implement in order after current batch)
-- [ ] P157 — IRC Client: apps/irc/ simulated multi-channel chat; #general #dev #random; nick list; /join /msg /quit
-- [ ] P158 — Photo Editor: apps/photo-editor/ PPM load; crop/resize/rotate 90; brightness/contrast; save
+- [ ] P159 — RSS Reader: apps/rss-reader/ simulated feed items; 3 feeds; two-panel; ←→ feed; ↑↓ item
+- [ ] P160 — Video Player Stub: apps/video-player/ simulated frames; play/pause; progress bar; LCG noise frames
 
 ## Completed (recent — full list in plan README)
+- [x] P155 — File Archiver: apps/archiver/ custom .tar; two-panel; N/A/X/Del/Ctrl+W/Ctrl+L; demo.tar
+- [x] P156 — System Logger: apps/syslog/ ring-buf 200; 7 tags; 5 levels; F1-F5 filter; P/R/C/E scroll
 - [x] P153 — Spreadsheet v2: apps/spreadsheet2/ 20×15; =SUM/AVG/MIN/MAX/COUNT; arithmetic; circ detect
 - [x] P154 — Drawing App v2: apps/draw2/ 300×200 canvas; brush/eraser/fill/line; undo; PPM save
 - [x] P151 — Markdown Editor: apps/md-editor/ split-pane editor+preview; H1/H2/H3/bold/code; Ctrl+O/W/L
