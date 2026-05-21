@@ -90,6 +90,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 80 — Finder v2 | `apps/finder/` sidebar+grid (1280×760); 6 sidebar favorites; ls-data integration; file icon grid; s=toggle focus; Enter open | **complete** | — |
 | 81 — System Preferences | `apps/system-preferences/` sidebar+pane (900×700); Appearance/Display/Sound/Network/Security/About panes; Ctrl+W saves | **complete** | — |
 | 82 — Activity Monitor | `apps/activity-monitor/` process table (1200×700); ps-raw poll; CPU/mem bar charts; n/c/m sort; ↑↓ nav; q quit | **complete** | — |
+| 83 — Quick Look | `apps/quick-look/` file preview overlay (1040×680); PREVIEW: stdin; md/json/csv/log/text rendering; ↑↓ scroll; Space/Esc close | **complete** | — |
+| 84 — Spaces Switcher | `apps/spaces-switcher/` virtual desktop switcher (640×140); @supervisor: spaces-list/switch/create; ←→ nav; Enter switch; n new | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

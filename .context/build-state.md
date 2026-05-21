@@ -18,41 +18,35 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P83 — Quick Look
-  - P84 — Spaces / Virtual Desktops
+  - P85 — Screen Lock
+  - P86 — Clipboard History
 notes: |
-  P83: Quick Look. Create apps/quick-look/ WASM app.
-       Window x=200, y=100, w=1040, h=680. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
-       Preview overlay for files without fully opening an app.
-       Receives file path via stdin: "PREVIEW:/data/<filename>" → detects ext → renders inline.
-       Supported formats:
-         .md  → render first 40 lines as markdown (H1/H2/bullet/code coloring)
-         .json → pretty-print first 60 lines with syntax colors
-         .csv → render first 20 rows as a table (same as csv-viewer but read-only)
-         .log → show last 40 lines with severity coloring
-         .toml → show raw text in C_TEXT color
-         *    → show first 40 lines as raw text
-       Header: filename + extension type badge. Footer: "Space: close  ↑↓: scroll".
-       ↑↓ to scroll; Space/Esc to close (process exits).
-       Background: 0x1C2128F4 (semi-transparent dark overlay feel).
+  P85: Screen Lock. Create apps/screen-lock/ WASM app.
+       Window x=0, y=0, w=1440, h=900. Full-screen overlay. Capabilities: stdio=true, display=true, shell=true.
+       Shows a dark overlay with a large clock, date, and lock icon.
+       Top half: large HH:MM time (using 'l' font size), date line below.
+       Center: padlock icon (drawn from fill/border primitives), "VyomaOS" label.
+       Bottom: "Press any key to unlock" hint.
+       Any keypress → exit (unlock). No actual auth — cosmetic for now.
+       Background: 0x0D1117FF (fully opaque to block view of other windows).
+       Raised to front via @supervisor: raise screen-lock on startup.
+       Can be launched via shell `run screen-lock`.
 
-  P84: Spaces / Virtual Desktops. NOTE: This requires supervisor support.
-       Supervisor changes: add SPACES: OnceLock<Mutex<Vec<String>>> (list of space names).
-       @supervisor: spaces-list → REPLY:spaces-list <n> <current> (count and active index).
-       @supervisor: spaces-create → adds a new space, switches to it.
-       @supervisor: spaces-switch <n> → switch to space n (0-indexed); hides/shows app windows
-         (for now: just changes the "current space" concept; all windows remain visible — cosmetic).
-       @supervisor: spaces-current → REPLY:spaces-current <n>.
-       Menu-bar integration: menu-bar polls spaces-current and shows "Space <n>" in right area.
-       Create apps/spaces-switcher/ WASM app:
-         Window x=400, y=380, w=640, h=140. Capabilities: stdio=true, display=true, shell=true.
-         Shows current spaces as a horizontal row of labeled boxes.
-         ←→ to navigate; Enter to switch; 'n' to create new space; Esc to close.
-         Polled by menu-bar to show space indicator.
+  P86: Clipboard History. Create apps/clipboard-history/ WASM app.
+       Window x=1000, y=60, w=420, h=560. Capabilities: stdio=true, display=true, shell=true.
+       Shows last 20 clipboard entries queried via @supervisor: clipboard-get (one entry).
+       NOTE: clipboard-get returns only the current entry; history is maintained locally during session.
+       Intercepts clipboard-set messages via stdin: "@supervisor: clipboard-set" replies come back.
+       On startup: queries @supervisor: clipboard-get to populate initial entry.
+       Each entry shown as a truncated row (max 48 chars). ↑↓ navigate.
+       Enter on an entry → @supervisor: clipboard-set <entry> (re-sets clipboard to that entry).
+       'c' on an entry → sends @supervisor: input-paste <entry> to focused app (best-effort inject).
+       Ctrl+C/Esc → close.
+       Background: 0x161B22FF. Header: "Clipboard History". Footer: "Enter: restore  c: paste  Esc: close".
 
 ## Queue (implement in order after current batch)
-- [ ] P85 — Screen Lock: lock screen overlay (1440×900); shows clock + "Press any key to unlock"; blurs/hides other windows via wallpaper paint; @supervisor: screen-lock command; 'u' to unlock
-- [ ] P86 — Clipboard History: apps/clipboard-history/ shows last 20 clipboard entries; arrow keys navigate; Enter pastes selected into focused app via @supervisor: input-paste
+- [ ] P87 — Widget Board: dashboard-style widget area on desktop; draggable widgets (cosmetic only, arrow keys to select): Clock widget, Weather widget, System Stats mini widget, Notes sticky; all draw inline in the widget board window
+- [ ] P88 — Terminal Multiplexer: split-pane shell; 2 or 4 panes each running a separate @supervisor: run shell; Tab cycles panes; Ctrl+N new pane; Ctrl+W close pane
 - [ ] P78 — Desktop Icons: file listing on desktop background; icons for /data files; Enter opens with appropriate app; 'n' to create new file
 - [ ] P79 — Context Menu: supervisor support for @supervisor: context-menu x,y item1|item2|...; floating menu window; result sent back as REPLY:context-menu <item>
 - [ ] P80 — Finder v2: sidebar (Favorites: Desktop/Downloads/Documents), breadcrumb path bar, icon grid view, double-click to open
@@ -123,6 +117,8 @@ notes: |
 - [x] P80: Finder v2 — apps/finder/ (1280×760); sidebar+grid; 6 favorites; ls-data; file type → app routing; s=focus toggle
 - [x] P81: System Preferences — apps/system-preferences/ (900×700); 6 panes; appearance/display/sound/network/security/about
 - [x] P82: Activity Monitor — apps/activity-monitor/ (1200×700); ps-raw poll; CPU/mem bars; n/c/m sort; scroll
+- [x] P83: Quick Look — apps/quick-look/ (1040×680); PREVIEW: stdin; md/json/csv/log/text render; ↑↓ scroll
+- [x] P84: Spaces Switcher — apps/spaces-switcher/ (640×140); spaces-list/switch/create; ←→ nav; Enter switch
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
