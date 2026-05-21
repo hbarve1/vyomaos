@@ -1,0 +1,16 @@
+[app]
+name    = "image-gallery"
+version = "0.1.0"
+wasm    = "image-gallery.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+filesystem = true
+shell      = true
+
+[window]
+x = 40
+y = 40
+w = 1360
+h = 840

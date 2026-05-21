@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P135+P136 complete -->
+last_updated: 2026-05-21  <!-- P137+P138 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,36 +18,39 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P137 — Image Gallery
-  - P138 — Text Adventure
+  - P139 — Music Composer
+  - P140 — Chat Simulator
 notes: |
-  P137: Image Gallery. Create apps/image-gallery/ WASM app.
-        Window x=40, y=40, w=1360, h=840. Capabilities: stdio=true, display=true, filesystem=true.
-        Lists /data/*.ppm files. 3-column thumbnail grid view (each thumb 200×150 px scaled to 4×4 cells).
-        Arrow keys ←→↑↓ to navigate thumbnails. Enter = fullscreen view of selected image.
-        In fullscreen: ←→ prev/next, Esc/Backspace back to grid. Filename caption below each thumb.
-        PPM P6 loader (same as photo-filter). Scale to fit 4×4 block pixels.
-        Status bar shows "N images  |  image X/N".
+  P139: Music Composer. Create apps/music-composer/ WASM app.
+        Window x=60, y=40, w=1200, h=760. Capabilities: stdio=true, display=true.
+        Piano roll grid: 16 steps × 12 notes (C4 to B4, one octave).
+        Cells toggle on/off with Enter/Space. Arrow keys navigate cursor.
+        LCG-driven playback: ping-pong advances step pointer; highlights active column.
+        BPM: +/- adjusts (40–200 BPM range). P=play/pause, R=reset/clear, S=stop.
+        Notes display as colored blocks; active step column highlighted.
+        Row labels: note names (C4 D4 E4 F4 G4 A4 B4 + sharps). Step numbers 1-16 on top.
+        Ctrl+W saves to /data/composer.txt (step data), Ctrl+L loads.
+        Ping-pong tick rate determined by BPM (120 BPM = 500ms/beat, but we use 1 tick per input).
 
-  P138: Text Adventure. Create apps/text-adventure/ WASM app.
-        Window x=100, y=40, w=1100, h=760. Capabilities: stdio=true, display=true.
-        10 rooms (a small dungeon/castle). struct Room { name, desc, exits: HashMap<dir,room_id>, items: Vec<item_id> }.
-        Directions: north/south/east/west (n/s/e/w shortcuts). Commands: look, go <dir>, take <item>,
-          drop <item>, use <item>, inventory (i), help, quit.
-        Player has Vec<item_id> inventory. Items: key, torch, sword, potion, map, coin, book, candle.
-        Puzzle: locked door needs key. Potion = restore health message. Sword = defeat monster.
-        Scrollback history: Vec<(String, u32)> with colors. VT-style prompt line at bottom.
-        CHAR_W=8, LINE_H=18. Visible scrollback = (H - HEADER_H - INPUT_H) / LINE_H.
+  P140: Chat Simulator. Create apps/chat/ WASM app.
+        Window x=80, y=40, w=1100, h=760. Capabilities: stdio=true, display=true.
+        5 bots: Alice, Bob, Carol, Dave, Eve — each with a different LCG seed.
+        Messages: Vec<(timestamp_tick, username, text, color)>. Scrollback: 200 messages max.
+        User is "You" (C_GREEN). Bot names in different colors (C_SEL, C_ORANGE, C_YELLOW, C_RED, C_HINT).
+        Bots respond via ping-pong ticks (LCG decides if they respond and what).
+        Bot message pool: 20 generic phrases per bot. LCG selects phrase + adds @You mentions 20% of time.
+        Input line at bottom. Enter sends your message. Bots reply within 1-3 ticks.
+        @mention highlights your name in bright color. PgUp/Dn scroll history.
 
 ## Queue (implement in order after current batch)
-- [ ] P139 — Music Composer: apps/music-composer/ piano roll; 16 steps × 12 notes; LCG playback; BPM; save/load
-- [ ] P140 — Chat Simulator: apps/chat/ fake multi-user chat; 5 bots with LCG responses; scrollback; @mention highlight
+- [ ] P141 — Morse Code Trainer: apps/morse/ encode/decode; 26 letters; animated dots/dashes; quiz mode; score
+- [ ] P142 — ASCII Art Editor: apps/ascii-art/ 60×25 char canvas; brush chars (│─┼▓░ etc); palette; save/load
 
 ## Completed (recent — full list in plan README)
+- [x] P137 — Image Gallery: apps/image-gallery/ PPM thumbs 4-col grid; 3px blocks; fullscreen; prev/next
+- [x] P138 — Text Adventure: apps/text-adventure/ 10-room castle; take/drop/use/go; monster+sword puzzle
 - [x] P135 — File Diff Tool: apps/file-diff/ two-step input; LCS diff; +/- tinted rows; line numbers; scroll
 - [x] P136 — Spreadsheet: apps/spreadsheet/ 10×20 grid; =SUM/AVG/cellref; arrow nav; edit mode; CSV save/load
-- [x] P133 — Terminal Emulator: apps/terminal/ WASM shell; scrollback; Tab complete; history; ping built-in
-- [x] P134 — Map Viewer: apps/map-viewer/ 80×40 procedural ASCII world; 4 zooms; pan; 12 landmarks
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage

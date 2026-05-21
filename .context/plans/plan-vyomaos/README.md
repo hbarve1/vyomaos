@@ -144,6 +144,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 134 — Map Viewer | `apps/map-viewer/` 80×40 procedural ASCII world map; 4 zoom levels; pan; 12 landmarks; legend; grid at ≥16px | **complete** | — |
 | 135 — File Diff Tool | `apps/file-diff/` Two-step path input; LCS unified diff; +/- coloring; row tint; line numbers; ↑↓ scroll | **complete** | — |
 | 136 — Spreadsheet | `apps/spreadsheet/` 10×20 grid; =SUM/AVG formula eval; cell refs; arrow nav; edit mode; CSV save/load | **complete** | — |
+| 137 — Image Gallery | `apps/image-gallery/` PPM thumbnail grid (4 cols); 3×3 px blocks; ←→↑↓ nav; Enter fullscreen; prev/next; Esc back | **complete** | — |
+| 138 — Text Adventure | `apps/text-adventure/` 10-room castle; take/drop/use/go commands; monster+key+sword puzzle; scrollback | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
