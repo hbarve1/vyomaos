@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P149+P150 complete -->
+last_updated: 2026-05-21  <!-- P151+P152 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,37 +18,43 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P151 — Markdown Editor
-  - P152 — Terminal Emulator v2
+  - P153 — Spreadsheet v2
+  - P154 — Drawing App v2
 notes: |
-  P151: Markdown Editor. Create apps/md-editor/ WASM app.
+  P153: Spreadsheet v2. Create apps/spreadsheet2/ WASM app.
         Window x=60, y=30, w=1360, h=800. Capabilities: stdio=true, display=true, filesystem=true.
-        Split-pane: left half = raw Markdown editor; right half = live preview.
-        Editor: full text editing (printable chars, Backspace, Enter newline, ↑↓←→).
-        Preview: render H1 (C_ORANGE large), H2 (C_SEL), H3 (C_YELLOW), **bold** (C_TEXT),
-                 `code` (C_GREEN), - bullet (C_HINT dot + C_TEXT), blank line = paragraph gap.
-        Tab = toggle focus between editor and preview.
-        Ctrl+W = save to /data/md-editor.md. Ctrl+L = load.
-        Ctrl+O = prompt for filename (status bar input), then load that file from /data/.
-        Start with a hardcoded example Markdown document in the editor.
-        Status bar: filename + cursor row:col + "EDITOR"/"PREVIEW" focus label.
+        20 columns × 15 rows (A–T columns, rows 1–15). Column headers A–T, row numbers 1–15.
+        CELL_W=64, CELL_H=22, ROW_NUM_W=36, COL_HDR_H=22.
+        Arrow keys navigate. Enter = confirm edit, move down. Tab = move right.
+        Start editing by typing any printable char (replaces cell). Backspace in edit mode.
+        Formulas: lines starting with = are evaluated:
+          =SUM(A1:A10), =AVG(B1:B5), =MIN(C1:C3), =MAX(D1:D5), =COUNT(A1:A5)
+          =A1+B1, =A1*B2 (basic arithmetic with cell refs)
+          Circular references → "#CIRC"
+        Numbers right-aligned, text left-aligned, formula result right-aligned.
+        Selected cell highlighted (C_SEL_BG). Edit mode shows cursor in cell.
+        Ctrl+W saves to /data/spreadsheet2.csv. Ctrl+L loads.
+        Pre-populate 3 columns with sample data (labels in col A, numbers in B, formulas in C).
 
-  P152: Terminal Emulator v2. Create apps/term2/ WASM app.
-        Window x=40, y=20, w=1360, h=860. Capabilities: stdio=true, display=true.
-        80-column × 48-row simulated terminal. Monospace cell grid (CHAR_W=8, CHAR_H=16).
-        Simulated shell: built-in commands: help, ls, cat, echo, clear, date, uname, history.
-        echo just repeats. ls shows a hardcoded file list. cat responds with "no such file" or a
-        canned snippet if the file name matches (e.g., cat hello.rs shows a hello world snippet).
-        Scrollback buffer: up to 500 lines. PgUp/PgDn scroll. Ctrl+C returns to prompt.
-        Cursor blink: ping-pong tick every 20 REPLY: events toggles cursor visibility.
-        ANSI color: prompt in C_GREEN, commands in C_TEXT, output in C_HINT, errors in C_RED.
-        @supervisor: ping → REPLY: drives tick for cursor blink.
+  P154: Drawing App v2. Create apps/draw2/ WASM app.
+        Window x=60, y=30, w=1280, h=800. Capabilities: stdio=true, display=true, filesystem=true.
+        300×200 pixel canvas (displayed as 3×3 px cells = 900×600 canvas area).
+        Tools: brush (B), eraser (E), fill/flood (F), line (L). Tool switcher shown in sidebar.
+        Palette: 16 colors in sidebar. Number keys 1–9, then a–g for colors.
+        Arrow keys move cursor. Space = apply tool at cursor. Hold Shift conceptually = press twice.
+        Undo: up to 10 levels (Ctrl+Z). Clear canvas: Ctrl+X.
+        Save to /data/draw2.ppm (P6 PPM). Ctrl+W saves. Ctrl+L loads.
+        Sidebar (right 200px): tool selector, palette, current color swatch, cursor coords.
+        Line tool: press Space at start, move, press Space at end — Bresenham rasterize.
+        Fill tool: BFS flood fill at cursor position.
 
 ## Queue (implement in order after current batch)
-- [ ] P153 — Spreadsheet v2: apps/spreadsheet2/ 20×15 grid; =SUM/AVG/MIN/MAX/COUNT; cell refs; Ctrl+W CSV save
-- [ ] P154 — Drawing App v2: apps/draw2/ 300×200 canvas; brush/eraser/fill/line tools; palette; undo; save PPM
+- [ ] P155 — File Archiver: apps/archiver/ list/add/extract .tar-like format; /data/*.tar; Ctrl+W create archive
+- [ ] P156 — System Logger: apps/syslog/ ring buffer 200 entries; severity levels; ping-pong tail; filter; export
 
 ## Completed (recent — full list in plan README)
+- [x] P151 — Markdown Editor: apps/md-editor/ split-pane editor+preview; H1/H2/H3/bold/code; Ctrl+O/W/L
+- [x] P152 — Terminal Emulator v2: apps/term2/ shell commands; scrollback 500; cursor blink; history
 - [x] P149 — Presentation Viewer: apps/presentation/ 10 slides; bullets; progress bar; fullscreen
 - [x] P150 — Note Taking App: apps/notes/ sidebar+editor; search; CSV save/load; Ctrl+N/D/W/L/F
 - [x] P147 — Network Monitor: apps/net-monitor/ LCG packets; throughput graph; proto filter; ping-pong

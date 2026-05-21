@@ -158,6 +158,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 148 — Kanban Board | `apps/kanban/` 3-column board (Todo/Doing/Done); card CRUD; priority badge; CSV save/load; column scroll | **complete** | — |
 | 149 — Presentation Viewer | `apps/presentation/` 10 slides; title+bullets; ←/→ navigate; progress bar; fullscreen toggle; F key | **complete** | — |
 | 150 — Note Taking App | `apps/notes/` sidebar list + editor; multi-note; Ctrl+N/D/W/L/F; search filter; CSV save/load | **complete** | — |
+| 151 — Markdown Editor | `apps/md-editor/` split-pane editor+preview; H1/H2/H3/bold/code/bullet render; Ctrl+O open; Ctrl+W save | **complete** | — |
+| 152 — Terminal Emulator v2 | `apps/term2/` 80+ col terminal; help/ls/cat/echo/clear/date/uname/history; scrollback 500; cursor blink | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

@@ -1,0 +1,14 @@
+[app]
+name    = "term2"
+version = "0.1.0"
+wasm    = "term2.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+x = 40
+y = 20
+w = 1360
+h = 860
