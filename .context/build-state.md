@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P141+P142 complete -->
+last_updated: 2026-05-21  <!-- P143+P144 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,39 +18,38 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P143 — Stock Chart
-  - P144 — Code Runner
+  - P145 — Genealogy Tree
+  - P146 — Mind Map
 notes: |
-  P143: Stock Chart. Create apps/stock-chart/ WASM app.
+  P145: Genealogy Tree. Create apps/genealogy/ WASM app.
         Window x=60, y=40, w=1200, h=760. Capabilities: stdio=true, display=true.
-        5 fake stocks: VYMA, WASM, RUST, KRNL, CLUD. Each starts at a different price.
-        Candlestick chart: OHLC (open/high/low/close) data. LCG generates price walk each tick.
-        Chart area: 80 candles × height 400px. Candle width = chart_w / 80.
-        Green candle (close>open), red candle (close<open). Wick = high-low line.
-        Volume bars below chart (40px height). ↑↓ or 1-5 keys to switch stock.
-        Time axis labels every 10 candles. Price axis on right with 5 levels.
-        Ping-pong: each tick adds one new candle. R=reset all data.
-        Status bar: stock name, current price, % change from start, high/low.
+        20 hardcoded people in 4 generations: Generation 0 (2 founders) → Gen1 (4) → Gen2 (8) → Gen3 (6).
+        Each person: name, birth_year, death_year (Some/None), generation.
+        Tree drawn top-to-bottom: Gen0 at top. Each node = box with name + years.
+        Connecting lines from parent to children. Nodes spaced evenly per generation.
+        ↑↓←→ to navigate selected person. Enter shows details (full box or sidebar).
+        Selected node highlighted with C_SEL border. Lines in C_BORDER.
+        Status bar: name, born, died, generation. No external data files needed.
 
-  P144: Code Runner. Create apps/code-runner/ WASM app.
-        Window x=80, y=40, w=1200, h=760. Capabilities: stdio=true, display=true.
-        10 hardcoded Rust code snippets (hello world, fibonacci, fizzbuzz, sorting, closures, etc).
-        Left panel: snippet list with names. Right panel: syntax-highlighted code (reuse colorize pattern).
-        ↑↓ to select snippet. Enter to "run" (show hardcoded fake output in output panel).
-        Three-panel layout: snippet list (left 250px) + code (middle) + output (bottom 180px).
-        Output panel shows fake "cargo run" output + compile time + "Process exited with code 0".
-        Syntax highlighting: same pattern as code-editor (//=hint, "strings"=green, numbers=orange, keywords=sel).
-        Ctrl+C to exit.
+  P146: Mind Map. Create apps/mind-map/ WASM app.
+        Window x=60, y=40, w=1200, h=760. Capabilities: stdio=true, display=true.
+        Central node "VyomaOS" at center. 6 branch nodes (Architecture, Apps, Security, Performance, UI, Future).
+        Each branch has 3 sub-nodes. Lines radiate from center.
+        Navigation: Tab cycles through nodes. ↑↓ within branch. Enter selects/expands.
+        Selected node highlighted; lines to selected node brighter.
+        Sub-nodes arranged in arc around their parent.
+        Status bar shows selected node name + level (root/branch/leaf).
+        R=reset selection to root. No editing needed (static map).
 
 ## Queue (implement in order after current batch)
-- [ ] P145 — Genealogy Tree: apps/genealogy/ 20 hardcoded people; parent/child lines; nav with arrows; name+dates
-- [ ] P146 — Mind Map: apps/mind-map/ central node + 6 branches + 3 sub-nodes each; navigate; add/rename nodes
+- [ ] P147 — Network Monitor: apps/net-monitor/ live simulated packets; throughput graph; LCG packet gen; ping-pong
+- [ ] P148 — Kanban Board: apps/kanban/ 3 columns (Todo/Doing/Done); cards; arrow nav; Enter move card; C add card
 
 ## Completed (recent — full list in plan README)
+- [x] P143 — Stock Chart: apps/stock-chart/ 5 stocks; LCG OHLC candles; volume bars; ping-pong; 1-5 select
+- [x] P144 — Code Runner: apps/code-runner/ 10 snippets; syntax highlight; 3-panel; Enter=run; scroll
 - [x] P141 — Morse Code Trainer: apps/morse/ Encode/Decode/Quiz; Tab switch; visual symbols; score
-- [x] P142 — ASCII Art Editor: apps/ascii-art/ 60×25 canvas; brush palette; draw mode; type-in-place; save/load
-- [x] P139 — Music Composer: apps/music-composer/ 12×16 piano roll; toggle; ping-pong playback; BPM; save/load
-- [x] P140 — Chat Simulator: apps/chat/ 5 LCG bots; @mention; scrollback; ping-pong ticks
+- [x] P142 — ASCII Art Editor: apps/ascii-art/ 60×25 canvas; brush palette; draw mode; save/load
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
