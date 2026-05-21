@@ -172,6 +172,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 162 — Network Speed Test | `apps/speed-test/` ping/download/upload phases; LCG smooth walk; bar graphs; grade card (A+–D); Space start | **complete** | — |
 | 163 — Pomodoro Pro | `apps/pomodoro-pro/` 25/5/15min configurable; task list (10); progress ring; pomodoro dots; stats; Tab session | **complete** | — |
 | 164 — Astronomy Viewer | `apps/astronomy/` 200 LCG stars; 5 planets; 8 constellations; pan/zoom; info panel; C/P toggles | **complete** | — |
+| 165 — Clipboard Pro | `apps/clipboard-pro/` 50-entry history; auto category (text/code/url/number); search; pin; preview panel | **complete** | — |
+| 166 — System Info | `apps/system-info/` 7 sections (OS/CPU/MEM/DSP/DSK/NET/SEC); ASCII logo; build box; scrollable | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

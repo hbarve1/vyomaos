@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P163+P164 complete -->
+last_updated: 2026-05-21  <!-- P165+P166 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,37 +18,37 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P165 — Clipboard Pro
-  - P166 — System Info
+  - P167 — Timeline Viewer
+  - P168 — Language Flashcards
 notes: |
-  P165: Clipboard Pro. Create apps/clipboard-pro/ WASM app.
-        Window x=60, y=30, w=880, h=680. Capabilities: stdio=true, display=true.
-        Extended clipboard history: up to 50 entries stored in memory.
-        Each entry has: content (truncated to 80 chars for display), timestamp (tick), category (auto: text/code/url/number).
-        Three panels: history list (left, w=520), preview (right, top), categories (right, bottom).
-        Search: / key enters search mode, filters entries by substring.
-        Pin: P key pins an entry (shown with ★), pinned entries never expire.
-        Categories auto-detected: URL (starts http/https), code (contains { or fn), number (all digits), text (default).
-        Enter=copy to clipboard (@supervisor: clipboard-set). Del=remove. Ctrl+C=quit.
+  P167: Timeline Viewer. Create apps/timeline/ WASM app.
+        Window x=60, y=30, w=1200, h=720. Capabilities: stdio=true, display=true.
+        Display historical events on a horizontal timeline.
+        5 categories: Science, Technology, Politics, Art, Space.
+        ~40 hard-coded events spanning years 1400–2030.
+        Navigation: ←→ scroll decades; +/- zoom (year-range); 1-5 filter by category; Tab show all.
+        Each event shown as a vertical tick mark + label below timeline bar.
+        Decade ruler at top. Info panel at bottom shows selected event details.
+        ↑↓ navigate events; Enter selects. R=reset view.
 
-  P166: System Info. Create apps/system-info/ WASM app.
-        Window x=60, y=30, w=960, h=720. Capabilities: stdio=true, display=true.
-        Displays hardware/OS information in sections: OS, CPU, Memory, Display, Storage, Network.
-        Data is hard-coded to VyomaOS specs (no actual syscalls needed for display demo):
-          OS: VyomaOS 1.0.0 (Linux 5.10 kernel, Wasmtime 43.0.0)
-          CPU: x86_64, QEMU Virtual CPU, 1 core, 1000 MIPS
-          Memory: 256 MB total, ~42 MB used
-          Display: 1440×900 virtio-gpu, 32bpp, 60fps
-          Storage: /data ext4 64MB, /apps tmpfs 18MB
-          Network: virtio-net, 10.0.0.1, port 8080
-        ASCII art VyomaOS logo on the right side (drawn with text characters).
-        ↑↓ scroll. R=refresh (just redraws). Ctrl+C=quit.
+  P168: Language Flashcards. Create apps/lang-flash/ WASM app.
+        Window x=60, y=30, w=800, h=600. Capabilities: stdio=true, display=true.
+        Vocabulary flashcard app with 4 languages: EN (English), ES (Spanish), FR (French), DE (German).
+        30 word pairs per language (common nouns/verbs/adjectives).
+        Front shows English word, back shows translation in selected language.
+        Space=flip card; ←→ prev/next card; 1-4 select language.
+        Score tracking: correct/incorrect per session (y=correct, n=incorrect).
+        Spaced repetition: cards answered wrong shown more frequently (weight×2 on wrong).
+        LCG-based card shuffle. Stats panel: score%, streak, total reviewed.
+        R=reset scores; S=shuffle deck.
 
 ## Queue (implement in order after current batch)
-- [ ] P167 — Timeline Viewer: apps/timeline/ historical events viewer; zoom; categories; decade/century nav
-- [ ] P168 — Language Flashcards: apps/lang-flash/ vocabulary cards; EN/ES/FR/DE; score tracking; spaced rep
+- [ ] P169 — Budget Planner v2: apps/budget2/ monthly budget; income/expense; category pie chart (ASCII); savings goal
+- [ ] P170 — Code Snippet Manager: apps/snippets/ tag+search; syntax highlight; copy; Ctrl+N new; edit
 
 ## Completed (recent — full list in plan README)
+- [x] P165 — Clipboard Pro: apps/clipboard-pro/ 50-entry history; categories; search; pin; preview panel
+- [x] P166 — System Info: apps/system-info/ 7 sections; ASCII logo; build box; scrollable
 - [x] P163 — Pomodoro Pro: apps/pomodoro-pro/ work/break/long; task list; stats; progress ring; ±interval
 - [x] P164 — Astronomy Viewer: apps/astronomy/ 200 stars; 5 planets; 8 constellations; pan/zoom; info panel
 - [x] P161 — E-Book Reader: apps/ebook/ 5 chapters; TOC panel; scroll; B/G bookmark; ←→ chapter
