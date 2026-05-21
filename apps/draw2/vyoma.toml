@@ -1,0 +1,15 @@
+[app]
+name    = "draw2"
+version = "0.1.0"
+wasm    = "draw2.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+filesystem = true
+
+[window]
+x = 60
+y = 30
+w = 1280
+h = 800

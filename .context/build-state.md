@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P151+P152 complete -->
+last_updated: 2026-05-21  <!-- P153+P154 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,41 +18,38 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P153 — Spreadsheet v2
-  - P154 — Drawing App v2
+  - P155 — File Archiver
+  - P156 — System Logger
 notes: |
-  P153: Spreadsheet v2. Create apps/spreadsheet2/ WASM app.
-        Window x=60, y=30, w=1360, h=800. Capabilities: stdio=true, display=true, filesystem=true.
-        20 columns × 15 rows (A–T columns, rows 1–15). Column headers A–T, row numbers 1–15.
-        CELL_W=64, CELL_H=22, ROW_NUM_W=36, COL_HDR_H=22.
-        Arrow keys navigate. Enter = confirm edit, move down. Tab = move right.
-        Start editing by typing any printable char (replaces cell). Backspace in edit mode.
-        Formulas: lines starting with = are evaluated:
-          =SUM(A1:A10), =AVG(B1:B5), =MIN(C1:C3), =MAX(D1:D5), =COUNT(A1:A5)
-          =A1+B1, =A1*B2 (basic arithmetic with cell refs)
-          Circular references → "#CIRC"
-        Numbers right-aligned, text left-aligned, formula result right-aligned.
-        Selected cell highlighted (C_SEL_BG). Edit mode shows cursor in cell.
-        Ctrl+W saves to /data/spreadsheet2.csv. Ctrl+L loads.
-        Pre-populate 3 columns with sample data (labels in col A, numbers in B, formulas in C).
+  P155: File Archiver. Create apps/archiver/ WASM app.
+        Window x=60, y=30, w=1200, h=760. Capabilities: stdio=true, display=true, filesystem=true.
+        Two-panel: left=archive list (archives in /data/*.tar), right=contents of selected archive.
+        Custom .tar format: header per file = "FILE:<name>:<size>\n" then raw bytes, then "END\n".
+        Operations: N=new archive (prompt name), A=add file (prompt filename from /data/), X=extract,
+                    Del=remove selected file from archive, Ctrl+W=save archive, Ctrl+L=reload.
+        Navigation: Tab=switch panel, ↑↓=navigate, Enter=open archive (left) or extract file (right).
+        Show file sizes, archive total size in status bar.
+        Pre-populate with a demo archive containing 3 canned text files.
 
-  P154: Drawing App v2. Create apps/draw2/ WASM app.
-        Window x=60, y=30, w=1280, h=800. Capabilities: stdio=true, display=true, filesystem=true.
-        300×200 pixel canvas (displayed as 3×3 px cells = 900×600 canvas area).
-        Tools: brush (B), eraser (E), fill/flood (F), line (L). Tool switcher shown in sidebar.
-        Palette: 16 colors in sidebar. Number keys 1–9, then a–g for colors.
-        Arrow keys move cursor. Space = apply tool at cursor. Hold Shift conceptually = press twice.
-        Undo: up to 10 levels (Ctrl+Z). Clear canvas: Ctrl+X.
-        Save to /data/draw2.ppm (P6 PPM). Ctrl+W saves. Ctrl+L loads.
-        Sidebar (right 200px): tool selector, palette, current color swatch, cursor coords.
-        Line tool: press Space at start, move, press Space at end — Bresenham rasterize.
-        Fill tool: BFS flood fill at cursor position.
+  P156: System Logger. Create apps/syslog/ WASM app.
+        Window x=60, y=30, w=1360, h=800. Capabilities: stdio=true, display=true.
+        Ring buffer: last 200 log entries. Each entry: {level, tag, message, tick}.
+        Levels: DEBUG (C_HINT), INFO (C_TEXT), WARN (C_YELLOW), ERROR (C_RED), FATAL (C_RED bold).
+        Ping-pong tick: generates 1-3 new simulated log entries per tick (LCG seeded).
+        Generated entries mix all severity levels with realistic-looking messages.
+        Tags: [kernel], [supervisor], [display], [ipc], [fs], [net], [app].
+        Navigation: ↑↓ scroll, PgUp/PgDn fast scroll, Home/End jump.
+        Filters: F1-F5 toggle DEBUG/INFO/WARN/ERROR/FATAL visibility.
+        P=pause live tail. R=resume. C=clear log. E=export to /data/syslog.txt.
+        Status bar: entry count, filtered count, current scroll position.
 
 ## Queue (implement in order after current batch)
-- [ ] P155 — File Archiver: apps/archiver/ list/add/extract .tar-like format; /data/*.tar; Ctrl+W create archive
-- [ ] P156 — System Logger: apps/syslog/ ring buffer 200 entries; severity levels; ping-pong tail; filter; export
+- [ ] P157 — IRC Client: apps/irc/ simulated multi-channel chat; #general #dev #random; nick list; /join /msg /quit
+- [ ] P158 — Photo Editor: apps/photo-editor/ PPM load; crop/resize/rotate 90; brightness/contrast; save
 
 ## Completed (recent — full list in plan README)
+- [x] P153 — Spreadsheet v2: apps/spreadsheet2/ 20×15; =SUM/AVG/MIN/MAX/COUNT; arithmetic; circ detect
+- [x] P154 — Drawing App v2: apps/draw2/ 300×200 canvas; brush/eraser/fill/line; undo; PPM save
 - [x] P151 — Markdown Editor: apps/md-editor/ split-pane editor+preview; H1/H2/H3/bold/code; Ctrl+O/W/L
 - [x] P152 — Terminal Emulator v2: apps/term2/ shell commands; scrollback 500; cursor blink; history
 - [x] P149 — Presentation Viewer: apps/presentation/ 10 slides; bullets; progress bar; fullscreen

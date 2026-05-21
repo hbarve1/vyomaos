@@ -160,6 +160,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 150 — Note Taking App | `apps/notes/` sidebar list + editor; multi-note; Ctrl+N/D/W/L/F; search filter; CSV save/load | **complete** | — |
 | 151 — Markdown Editor | `apps/md-editor/` split-pane editor+preview; H1/H2/H3/bold/code/bullet render; Ctrl+O open; Ctrl+W save | **complete** | — |
 | 152 — Terminal Emulator v2 | `apps/term2/` 80+ col terminal; help/ls/cat/echo/clear/date/uname/history; scrollback 500; cursor blink | **complete** | — |
+| 153 — Spreadsheet v2 | `apps/spreadsheet2/` 20×15 grid; =SUM/AVG/MIN/MAX/COUNT; cell refs; arithmetic; circular ref detect; CSV save/load | **complete** | — |
+| 154 — Drawing App v2 | `apps/draw2/` 300×200 canvas 3px cells; brush/eraser/fill/line; 16 colors; undo 10; PPM save/load | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
