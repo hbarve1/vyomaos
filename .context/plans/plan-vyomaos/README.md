@@ -92,6 +92,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 82 — Activity Monitor | `apps/activity-monitor/` process table (1200×700); ps-raw poll; CPU/mem bar charts; n/c/m sort; ↑↓ nav; q quit | **complete** | — |
 | 83 — Quick Look | `apps/quick-look/` file preview overlay (1040×680); PREVIEW: stdin; md/json/csv/log/text rendering; ↑↓ scroll; Space/Esc close | **complete** | — |
 | 84 — Spaces Switcher | `apps/spaces-switcher/` virtual desktop switcher (640×140); @supervisor: spaces-list/switch/create; ←→ nav; Enter switch; n new | **complete** | — |
+| 85 — Screen Lock | `apps/screen-lock/` full-screen lock overlay (1440×900); large clock; padlock icon; any key unlocks | **complete** | — |
+| 86 — Clipboard History | `apps/clipboard-history/` last-20 clipboard entries (420×560); Enter restore; c paste; Del remove | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

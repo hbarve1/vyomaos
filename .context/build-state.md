@@ -18,35 +18,37 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P85 — Screen Lock
-  - P86 — Clipboard History
+  - P87 — Widget Board
+  - P88 — Terminal Multiplexer
 notes: |
-  P85: Screen Lock. Create apps/screen-lock/ WASM app.
-       Window x=0, y=0, w=1440, h=900. Full-screen overlay. Capabilities: stdio=true, display=true, shell=true.
-       Shows a dark overlay with a large clock, date, and lock icon.
-       Top half: large HH:MM time (using 'l' font size), date line below.
-       Center: padlock icon (drawn from fill/border primitives), "VyomaOS" label.
-       Bottom: "Press any key to unlock" hint.
-       Any keypress → exit (unlock). No actual auth — cosmetic for now.
-       Background: 0x0D1117FF (fully opaque to block view of other windows).
-       Raised to front via @supervisor: raise screen-lock on startup.
-       Can be launched via shell `run screen-lock`.
+  P87: Widget Board. Create apps/widget-board/ WASM app.
+       Window x=0, y=28, w=400, h=500. Capabilities: stdio=true, display=true, shell=true.
+       Dashboard-style widget panel. Polls via ping-pong (1s cadence) + ps-raw.
+       Shows 4 widgets stacked vertically, each ~100px tall:
+         1. Clock: large HH:MM:SS, current date
+         2. System Stats: # running apps, # restarts total (from ps-raw)
+         3. Quick Launch: 3 icon buttons — Shell, Browser, Settings
+         4. Notes: static "VyomaOS is running" status message
+       ↑↓ to navigate between widgets; Enter on Quick Launch to run the selected app.
+       No complex layout — simple rows of cards.
+       Background: 0x161B22F0 (slightly transparent). Border: C_BORDER.
 
-  P86: Clipboard History. Create apps/clipboard-history/ WASM app.
-       Window x=1000, y=60, w=420, h=560. Capabilities: stdio=true, display=true, shell=true.
-       Shows last 20 clipboard entries queried via @supervisor: clipboard-get (one entry).
-       NOTE: clipboard-get returns only the current entry; history is maintained locally during session.
-       Intercepts clipboard-set messages via stdin: "@supervisor: clipboard-set" replies come back.
-       On startup: queries @supervisor: clipboard-get to populate initial entry.
-       Each entry shown as a truncated row (max 48 chars). ↑↓ navigate.
-       Enter on an entry → @supervisor: clipboard-set <entry> (re-sets clipboard to that entry).
-       'c' on an entry → sends @supervisor: input-paste <entry> to focused app (best-effort inject).
-       Ctrl+C/Esc → close.
-       Background: 0x161B22FF. Header: "Clipboard History". Footer: "Enter: restore  c: paste  Esc: close".
+  P88: Terminal Multiplexer. Create apps/tmux/ WASM app.
+       Window x=0, y=28, w=1440, h=872. Capabilities: stdio=true, display=true, shell=true.
+       Simulated split-pane terminal view. Shows 2 or 4 pane slots.
+       Mode: starts in 2-pane (left | right) layout.
+       Each pane is a visual box with a title "Pane N" + scrollable fake prompt area.
+       Since WASM apps can't actually spawn subprocesses, panes simulate terminal sessions:
+         - Show a fake prompt: "$ " + echo recent commands typed
+         - Characters typed go to the active pane's buffer and display
+         - Enter runs the "command" (just displays it and echoes a fake response)
+       Tab to cycle active pane; Ctrl+N to add pane (up to 4); Ctrl+W to close active pane.
+       Active pane: highlighted title border in C_SEL.
+       Escape/Ctrl+C exits the multiplexer.
 
 ## Queue (implement in order after current batch)
-- [ ] P87 — Widget Board: dashboard-style widget area on desktop; draggable widgets (cosmetic only, arrow keys to select): Clock widget, Weather widget, System Stats mini widget, Notes sticky; all draw inline in the widget board window
-- [ ] P88 — Terminal Multiplexer: split-pane shell; 2 or 4 panes each running a separate @supervisor: run shell; Tab cycles panes; Ctrl+N new pane; Ctrl+W close pane
+- [ ] P89 — Font Preview: apps/font-preview/ shows all 3 font sizes (S/M/L) rendering the full ASCII printable range; useful for debugging display output
+- [ ] P90 — Draw Pad: apps/draw-pad/ simple pixel canvas; arrow keys move cursor; Space to draw; color palette (10 colors); Ctrl+S saves as PPM to /data/drawing.ppm
 - [ ] P78 — Desktop Icons: file listing on desktop background; icons for /data files; Enter opens with appropriate app; 'n' to create new file
 - [ ] P79 — Context Menu: supervisor support for @supervisor: context-menu x,y item1|item2|...; floating menu window; result sent back as REPLY:context-menu <item>
 - [ ] P80 — Finder v2: sidebar (Favorites: Desktop/Downloads/Documents), breadcrumb path bar, icon grid view, double-click to open
@@ -119,6 +121,8 @@ notes: |
 - [x] P82: Activity Monitor — apps/activity-monitor/ (1200×700); ps-raw poll; CPU/mem bars; n/c/m sort; scroll
 - [x] P83: Quick Look — apps/quick-look/ (1040×680); PREVIEW: stdin; md/json/csv/log/text render; ↑↓ scroll
 - [x] P84: Spaces Switcher — apps/spaces-switcher/ (640×140); spaces-list/switch/create; ←→ nav; Enter switch
+- [x] P85: Screen Lock — apps/screen-lock/ (1440×900); large clock + padlock icon; any key unlocks
+- [x] P86: Clipboard History — apps/clipboard-history/ (420×560); last-20 entries; Enter restore; c paste; Del remove
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

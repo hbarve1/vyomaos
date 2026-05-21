@@ -1,0 +1,15 @@
+[app]
+name    = "clipboard-history"
+version = "0.1.0"
+wasm    = "clipboard-history.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 1000
+y = 60
+w = 420
+h = 560

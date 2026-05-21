@@ -1,0 +1,15 @@
+[app]
+name    = "screen-lock"
+version = "0.1.0"
+wasm    = "screen-lock.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 0
+y = 0
+w = 1440
+h = 900
