@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P99+P100 complete -->
+last_updated: 2026-05-21  <!-- P101+P102 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,10 +18,35 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P101 — Tetris
-  - P102 — Pong
+  - P103 — Space Invaders
+  - P104 — 2048
 notes: |
-  P101: Tetris. Create apps/tetris/ WASM app.
+  P103: Space Invaders. Create apps/space-invaders/ WASM app.
+        Window x=180, y=40, w=800, h=820. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=40. Classic Space Invaders.
+        Aliens: 3 rows × 10 cols. Each alien 40×24px; gap 8px; ALIEN_X0=40, ALIEN_Y0=80.
+        Alien movement: march left/right 2px each tick; when edge reached, drop 20px + reverse.
+        Player ship: y=740, w=40, h=20; ←→ speed=8; initial x=(W-40)/2.
+        Bullets: player fires up (vel=-12); aliens fire down (vel=6); 1 player bullet max.
+        Hit detection: bullet AABB vs alien/player.
+        Score: +10 per alien; 30 aliens total.
+        Ping-pong game loop: move bullets + check hits every REPLY:pong; alien march every 3 pongs.
+        Space: fire bullet; Esc: quit; R: restart.
+        Win: all aliens destroyed. Loss: alien reaches y>700 OR player ship hit.
+
+  P104: 2048. Create apps/2048/ WASM app.
+        Window x=260, y=60, w=600, h=700. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Classic 2048 game.
+        4×4 grid. CELL=120; GRID_X=(600-4*120)/2=60; GRID_Y=48+20=68.
+        Arrow keys: slide all tiles in direction; merge adjacent equal tiles (first merge wins).
+        After each valid move: spawn tile (90% chance=2, 10% chance=4) at random empty cell.
+        Score: sum of merged tile values. Best score tracked in session.
+        Tile colors: 2=0x1A1A2EFF, 4=0x16213EFF, 8=0xFF6B35FF, 16=0xFF4500FF,
+                     32=0xFF2222FF, 64=0xFF0000FF, 128=0xFAD02CFF, 256=0xF5A623FF,
+                     512=0x56B4D3FF, 1024=0x3FB950FF, 2048=0x58A6FFFF.
+        Win: any tile reaches 2048 → "You reached 2048!" overlay; can continue.
+        Loss: no valid moves → "Game Over" overlay.
+        'r' restart; Esc quit.
         Window x=240, y=20, w=560, h=860. Capabilities: stdio=true, display=true, shell=true.
         HEADER_H=40. Classic Tetris with 7 tetrominoes (I,O,T,S,Z,J,L).
         Grid: 10 cols × 20 rows. CELL=36px. Grid at center of window.
@@ -44,8 +69,8 @@ notes: |
         On goal: reset ball to center. Space to start/resume after goal. R=restart.
 
 ## Queue (implement in order after current batch)
-- [ ] P103 — Space Invaders: apps/space-invaders/ player ship (←→), 3×10 alien grid descending; bullets; score; ping-pong game loop
-- [ ] P104 — 2048: apps/2048/ 4×4 grid; arrow keys slide+merge tiles; power-of-2 coloring; score; new tile on each move; "2048" win detection
+- [ ] P105 — Wordle: apps/wordle/ 6 guess word game; 5-letter words; color feedback (green/yellow/grey); keyboard display
+- [ ] P106 — Sudoku: apps/sudoku/ 9×9 grid; pre-filled puzzle; arrow keys + number entry; conflict highlighting; solve check
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -131,6 +156,8 @@ notes: |
 - [x] P98: 15 Puzzle — apps/fifteen-puzzle/ (640×640); 4×4 tiles; 200-step shuffle; arrow keys slide blank; adjacent-tile highlight; "Solved! N moves" overlay
 - [x] P99: Breakout — apps/breakout/ (800×800); 5×10 bricks; angle-adjust paddle; ping-pong physics; 3 lives; score; Win/Loss overlay
 - [x] P100: Memory Card Game — apps/memory-game/ (760×680); 4×4 grid, 8 pairs; flip/match; face-up anti-cheat reset; Solved overlay; R reshuffle
+- [x] P101: Tetris — apps/tetris/ (560×860); 7 tetrominoes × 4 rotations; LCG shuffle; wall kicks; ghost outline; hard drop; line-clear scoring; level speed-up
+- [x] P102: Pong — apps/pong/ (800×700); player vs AI; angle-adjust on paddle hit; AI 4px/tick lag; score-to-7; Win/Loss overlay
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

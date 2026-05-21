@@ -1,10 +1,10 @@
 [package]
-name    = "pong"
+name    = "tetris"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "pong"
+name = "tetris"
 path = "src/main.rs"
 
 [profile.release]

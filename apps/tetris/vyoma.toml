@@ -1,7 +1,7 @@
 [app]
-name    = "pong"
+name    = "tetris"
 version = "0.1.0"
-wasm    = "pong.wasm"
+wasm    = "tetris.wasm"
 
 [capabilities]
 stdio   = true
@@ -9,7 +9,7 @@ display = true
 shell   = true
 
 [window]
-x = 180
-y = 60
-w = 800
-h = 700
+x = 240
+y = 20
+w = 560
+h = 860
