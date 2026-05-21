@@ -1,0 +1,15 @@
+[app]
+name    = "math-quiz"
+version = "0.1.0"
+wasm    = "math-quiz.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 300
+y = 80
+w = 840
+h = 660

@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P125+P126 complete -->
+last_updated: 2026-05-21  <!-- P127+P128 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,33 +18,33 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P127 — Math Quiz
-  - P128 — Paint Pro
+  - P129 — Music Player
+  - P130 — Code Editor
 notes: |
-  P127: Math Quiz. Create apps/math-quiz/ WASM app.
-        Window x=300, y=80, w=840, h=660. Capabilities: stdio=true, display=true, shell=true.
-        Arithmetic drill: +, -, ×, ÷ (integer). 4 difficulty levels (Easy/Med/Hard/Expert).
-        Each question: 2 operands chosen via LCG for current difficulty.
-        Player types answer digits (Backspace to delete, Enter to submit).
-        Per-question timer bar (10 seconds) using ping-pong ticks; timeout = wrong answer.
-        Streak counter: consecutive correct. High score = max streak in session.
-        After submit: flash green (correct) or red (wrong) then next question.
-        Tab: cycle difficulty. N: new session (reset streak).
+  P129: Music Player. Create apps/music-player/ WASM app.
+        Window x=300, y=100, w=800, h=560. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
+        Lists /data/*.raw files (fake track list if none found — use 5 hardcoded track names).
+        Play/pause/next/prev controls. Space=play/pause, N=next, P=prev, Q=quit.
+        Progress bar advances via ping-pong ticks when playing. Seek not needed.
+        Waveform visualizer: 32 bars of simulated amplitude using LCG+sin approximation (like music-viz app).
+        Bars animate when playing, freeze when paused.
+        Track info: filename, track number, duration estimate (file_size/44100/2 seconds).
+        Volume display +/- keys adjust 0-100%.
 
-  P128: Paint Pro. Create apps/paint-pro/ WASM app.
-        Window x=80, y=40, w=1280, h=800. Capabilities: stdio=true, display=true, shell=true.
-        Canvas: 200×150 logical pixels at 5×5 physical cells = 1000×750px area.
-        Brush sizes: 1/2/3 (1=1px, 2=3×3, 3=5×5). Keys 1/2/3 to select.
-        10-color palette on right (same colors as paint app). Tab=next color.
-        Tools: draw (Space/hold), erase (E), fill (F, BFS flood-fill), clear (C).
-        Arrow keys move cursor. In draw mode: auto-draw on move too.
-        Opacity simulation: dim active-color fill by drawing with C_HINT overlay on alternate cells when brush>1.
-        Save: Ctrl+W writes canvas to /data/paint-pro.bin as raw RGBA bytes.
-        Load: Ctrl+L reads /data/paint-pro.bin if exists. Undo: U (10 levels).
+  P130: Code Editor. Create apps/code-editor/ WASM app.
+        Window x=120, y=40, w=1200, h=800. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
+        Multi-line editor: Vec<String> lines, 80 chars wide display, scrollable.
+        Cursor: (row, col). Arrow keys navigate. Home/End (mapped as \x1b[H and \x1b[F).
+        Ctrl+W: save to /data/code.rs. Ctrl+L: load from /data/code.rs. Ctrl+C: exit.
+        Tab inserts 4 spaces. Backspace deletes char. Enter splits line. Printable chars insert.
+        Syntax highlighting: Rust keywords (fn/let/mut/if/else/for/while/struct/impl/use/pub/match)
+          colored C_SEL; string literals "..." colored C_GREEN; line comments // colored C_HINT.
+        Line numbers: left gutter 4 chars wide. Current line highlighted with subtle bg.
+        Status bar at bottom: row/col, filename, unsaved indicator.
 
 ## Queue (implement in order after current batch)
-- [ ] P129 — Music Player: apps/music-player/ /data/*.raw playlist; play/pause/next/prev; waveform stub bars; metadata display
-- [ ] P130 — Code Editor: apps/code-editor/ syntax highlight (Rust keywords); line numbers; Ctrl+W save; Ctrl+L load; Tab=spaces
+- [ ] P131 — Crypto Ticker: apps/crypto-ticker/ simulated price feed; 5 coins; sparkline charts; ping-pong updates; alerts
+- [ ] P132 — Photo Filter: apps/photo-filter/ loads /data/*.ppm; brightness/contrast/invert/greyscale; save filtered copy
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -156,6 +156,8 @@ notes: |
 - [x] P124: Hangman — apps/hangman/ (880×700); 40-word list; 6 wrongs; gallows rects; a-z keys; hint; win/loss overlay
 - [x] P125: Typing Race — apps/typing-race/ (1040×640); 10 phrases; 3 CPU racers; ping-pong advance; WPM; win/loss overlay
 - [x] P126: Asteroids — apps/asteroids/ (900×800); fixed-point physics; rocks split; bullets; 3 lives; wrap; waves
+- [x] P127: Math Quiz — apps/math-quiz/ (840×660); 4 difficulties; +/-/×/÷ LCG questions; timer bar; streak/best; flash feedback
+- [x] P128: Paint Pro — apps/paint-pro/ (1280×800); 200×150 canvas; 3 brush sizes; BFS fill; undo(10); save/load /data
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
