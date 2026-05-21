@@ -224,6 +224,8 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/astronomy/Cargo.toml              --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/clipboard-pro/Cargo.toml          --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/system-info/Cargo.toml            --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/timeline/Cargo.toml               --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/lang-flash/Cargo.toml             --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────

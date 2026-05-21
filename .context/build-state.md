@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P165+P166 complete -->
+last_updated: 2026-05-21  <!-- P167+P168 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,35 +18,36 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P167 — Timeline Viewer
-  - P168 — Language Flashcards
+  - P169 — Budget Planner v2
+  - P170 — Code Snippet Manager
 notes: |
-  P167: Timeline Viewer. Create apps/timeline/ WASM app.
-        Window x=60, y=30, w=1200, h=720. Capabilities: stdio=true, display=true.
-        Display historical events on a horizontal timeline.
-        5 categories: Science, Technology, Politics, Art, Space.
-        ~40 hard-coded events spanning years 1400–2030.
-        Navigation: ←→ scroll decades; +/- zoom (year-range); 1-5 filter by category; Tab show all.
-        Each event shown as a vertical tick mark + label below timeline bar.
-        Decade ruler at top. Info panel at bottom shows selected event details.
-        ↑↓ navigate events; Enter selects. R=reset view.
+  P169: Budget Planner v2. Create apps/budget2/ WASM app.
+        Window x=60, y=30, w=1000, h=700. Capabilities: stdio=true, display=true.
+        Monthly budget planner with income and expense tracking.
+        8 expense categories: Housing, Food, Transport, Utilities, Health, Entertainment, Savings, Other.
+        Tab switches month (12 months). Up/Down navigate categories. +/- adjust amount by $50.
+        ASCII bar chart showing spending per category vs budget.
+        Budget targets per category (hard-coded defaults). Over-budget categories shown in red.
+        Savings goal tracking: total income - total expenses = savings, shown vs goal.
+        A=add income entry; E=add expense entry (inline form); R=reset month; Ctrl+C=quit.
 
-  P168: Language Flashcards. Create apps/lang-flash/ WASM app.
-        Window x=60, y=30, w=800, h=600. Capabilities: stdio=true, display=true.
-        Vocabulary flashcard app with 4 languages: EN (English), ES (Spanish), FR (French), DE (German).
-        30 word pairs per language (common nouns/verbs/adjectives).
-        Front shows English word, back shows translation in selected language.
-        Space=flip card; ←→ prev/next card; 1-4 select language.
-        Score tracking: correct/incorrect per session (y=correct, n=incorrect).
-        Spaced repetition: cards answered wrong shown more frequently (weight×2 on wrong).
-        LCG-based card shuffle. Stats panel: score%, streak, total reviewed.
-        R=reset scores; S=shuffle deck.
+  P170: Code Snippet Manager. Create apps/snippets/ WASM app.
+        Window x=60, y=30, w=1200, h=760. Capabilities: stdio=true, display=true.
+        Code snippet manager with tag-based search and syntax highlighting.
+        20 built-in Rust/Python/Shell snippets with title, language, tags, code.
+        Two panels: snippet list (left w=320) with title+language badge; code view (right).
+        Search: / enters search mode, filters by title or tags; Esc to clear.
+        Ctrl+N creates new snippet (title input → language select → code entry).
+        Syntax highlight: keywords in orange, strings in green, comments in hint color.
+        C=copy snippet to clipboard (@supervisor: clipboard-set). ↑↓=navigate. Ctrl+C=quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P169 — Budget Planner v2: apps/budget2/ monthly budget; income/expense; category pie chart (ASCII); savings goal
-- [ ] P170 — Code Snippet Manager: apps/snippets/ tag+search; syntax highlight; copy; Ctrl+N new; edit
+- [ ] P171 — Star Map: apps/star-map/ interactive constellation map; click stars; myth panel; magnitude filter
+- [ ] P172 — Pixel Font Editor: apps/font-editor/ 8×16 glyph editor; 95 ASCII chars; export as hex array
 
 ## Completed (recent — full list in plan README)
+- [x] P167 — Timeline Viewer: apps/timeline/ 39 events 1440–2026; 5 categories; ←→ scroll; +/- zoom; info panel
+- [x] P168 — Language Flashcards: apps/lang-flash/ 30 vocab; EN/ES/FR/DE; Y/N scoring; spaced rep; streak
 - [x] P165 — Clipboard Pro: apps/clipboard-pro/ 50-entry history; categories; search; pin; preview panel
 - [x] P166 — System Info: apps/system-info/ 7 sections; ASCII logo; build box; scrollable
 - [x] P163 — Pomodoro Pro: apps/pomodoro-pro/ work/break/long; task list; stats; progress ring; ±interval
