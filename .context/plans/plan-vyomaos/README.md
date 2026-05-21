@@ -154,6 +154,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 144 — Code Runner | `apps/code-runner/` 10 Rust snippets; syntax highlight; 3-panel (list/code/output); Enter=run; PgUp/Dn scroll | **complete** | — |
 | 145 — Genealogy Tree | `apps/genealogy/` 20 people × 4 gens; Manhattan-routed parent lines; ←→ siblings; ↑↓ parent/child | **complete** | — |
 | 146 — Mind Map | `apps/mind-map/` VyomaOS root + 6 branches + 18 leaves; Bresenham lines; Tab/↑↓/R nav; color by branch | **complete** | — |
+| 147 — Network Monitor | `apps/net-monitor/` LCG packet simulation; 60-sample throughput graph; 20-packet scrolling list; 5-proto filter; ping-pong ticks | **complete** | — |
+| 148 — Kanban Board | `apps/kanban/` 3-column board (Todo/Doing/Done); card CRUD; priority badge; CSV save/load; column scroll | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

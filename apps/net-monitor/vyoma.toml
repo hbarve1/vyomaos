@@ -1,0 +1,15 @@
+[app]
+name    = "net-monitor"
+version = "0.1.0"
+wasm    = "net-monitor.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 60
+y = 40
+w = 1200
+h = 760

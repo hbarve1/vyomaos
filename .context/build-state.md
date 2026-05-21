@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P145+P146 complete -->
+last_updated: 2026-05-21  <!-- P147+P148 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,37 +18,39 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P147 — Network Monitor
-  - P148 — Kanban Board
+  - P149 — Presentation Viewer
+  - P150 — Note Taking App
 notes: |
-  P147: Network Monitor. Create apps/net-monitor/ WASM app.
-        Window x=60, y=40, w=1200, h=760. Capabilities: stdio=true, display=true.
-        Simulated network traffic: LCG generates "packets" each ping-pong tick.
-        Packet types: TCP, UDP, ICMP, HTTP, DNS. Each with source IP (10.0.0.x), dest IP, port, size.
-        Live scrolling packet list (bottom): 20 most recent packets with type/src/dst/size/color.
-        Throughput graph (top): 60-sample ring buffer. Y-axis = KB/s (0 to max). X = time.
-        Graph drawn as connected line segments (fill(x,y,2,h,col) style bars).
-        Stats panel (right): Total packets, bytes in/out, packets/sec, bytes/sec per protocol.
-        Ping-pong: each tick generates 1-5 random packets via LCG.
-        P=pause/resume. R=reset. C=clear history. Filter: t/u/i/h/d keys toggle protocol visibility.
-        Status bar: total packets, KB received, uptime ticks.
+  P149: Presentation Viewer. Create apps/presentation/ WASM app.
+        Window x=60, y=30, w=1280, h=800. Capabilities: stdio=true, display=true.
+        10 hardcoded slides. Each slide: title (large, C_ORANGE) + up to 5 bullet points.
+        Navigation: ←/→ or PgUp/PgDn to move between slides.
+        Progress bar at bottom (filled = slides seen / total).
+        Slide number indicator (e.g., "3 / 10") bottom-right.
+        F key toggles fullscreen mode (hides chrome, fills slide area).
+        Keyboard hint bar at bottom. Ctrl+C exits.
+        Slides: VyomaOS intro, architecture, apps, roadmap, etc. — use real content.
 
-  P148: Kanban Board. Create apps/kanban/ WASM app.
+  P150: Note Taking App. Create apps/notes/ WASM app.
         Window x=80, y=40, w=1100, h=760. Capabilities: stdio=true, display=true, filesystem=true.
-        3 columns: Todo, Doing, Done (each ~340px wide). Column headers with count badge.
-        Cards: struct Card { title: String, priority: u8 (1=high/2=med/3=low) }.
-        Start with 5 hardcoded cards in Todo, 2 in Doing, 1 in Done.
-        Navigation: ↑↓ to move cursor within column. ←→ to switch columns.
-        Enter: move selected card to next column (Todo→Doing→Done→Todo wrap).
-        N: add new card (prompts for title in status bar input). Del: remove selected card.
-        P: cycle priority (1→2→3→1). Priority colors: C_RED, C_YELLOW, C_HINT.
-        Ctrl+W saves to /data/kanban.csv. Ctrl+L loads. Cards sorted by priority within column.
+        Two-panel layout: left sidebar (250px) = note list; right = editor.
+        Multi-note: Vec<Note> { title: String, body: String }.
+        Start with 3 hardcoded example notes.
+        Ctrl+N = new note (prompts title in status bar). Ctrl+D = delete current note.
+        Tab = toggle focus between list and editor.
+        In list: ↑↓ navigate notes; Enter = open in editor.
+        In editor: full text editing (printable chars, Backspace, Enter for newline).
+        Ctrl+W saves all notes to /data/notes.csv (title,body one-per-line with \n escaped as \\n).
+        Ctrl+L loads from /data/notes.csv. Ctrl+F search (filters list by substring).
+        Status bar shows current note title + edit hint.
 
 ## Queue (implement in order after current batch)
-- [ ] P149 — Presentation Viewer: apps/presentation/ 10 slides; arrow nav; title+bullets; progress bar; fullscreen
-- [ ] P150 — Note Taking App: apps/notes/ multi-note list+editor; Ctrl+N new; Ctrl+D delete; Ctrl+W save; search
+- [ ] P151 — Markdown Editor: apps/md-editor/ split-pane (raw left, preview right); H1/H2/bold/code/bullet; Ctrl+W save
+- [ ] P152 — Terminal Emulator v2: apps/term2/ 80×24 VT100; scrollback 500 lines; cursor blink (ping-pong); ANSI colors
 
 ## Completed (recent — full list in plan README)
+- [x] P147 — Network Monitor: apps/net-monitor/ LCG packets; throughput graph; proto filter; ping-pong
+- [x] P148 — Kanban Board: apps/kanban/ 3-col board; card CRUD; priority; CSV save/load
 - [x] P145 — Genealogy Tree: apps/genealogy/ 20 people 4 gens; Manhattan lines; ←→ siblings; ↑↓ parent/child
 - [x] P146 — Mind Map: apps/mind-map/ VyomaOS root + 6 branches + 18 leaves; Bresenham lines; Tab/nav
 - [x] P143 — Stock Chart: apps/stock-chart/ 5 stocks; LCG OHLC candles; volume bars; ping-pong; 1-5 select
