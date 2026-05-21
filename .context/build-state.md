@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P103+P104 complete -->
+last_updated: 2026-05-21  <!-- P105+P106 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,39 +18,39 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P105 — Wordle
-  - P106 — Sudoku
+  - P107 — Chess
+  - P108 — Typing Tutor
 notes: |
-  P105: Wordle. Create apps/wordle/ WASM app.
-        Window x=300, y=60, w=520, h=700. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Classic Wordle: 6 attempts to guess a 5-letter word.
-        CELL_W=72, CELL_H=72, GAP=8. GRID_X=(520-5*72-4*8)/2=28. GRID_Y=64.
-        Built-in word list of 50+ common 5-letter words; daily word = words[lcg_seed % len].
-        Letter states: Absent=grey(0x3A3F4BFF), Present=yellow(0xB59F3BFF), Correct=green(0x538D4EFF).
-        Keyboard row display at y=580: QWERTYUIOP / ASDFGHJKL / ZXCVBNM
-        Each key box 36×40px, colored by best state seen for that letter.
-        Input: letter keys a-z append to current guess (max 5); Backspace deletes; Enter submits.
-        On Enter: validate 5 letters, score each position, update keyboard colors, advance row.
-        Win: all 5 correct → "Genius! 🎉" overlay (omit emoji actually). Show "PERFECT" in green.
-        Loss: 6 wrong guesses → "The word was: XXXXX" overlay. R=restart with next word.
+  P107: Chess. Create apps/chess/ WASM app.
+        Window x=200, y=40, w=680, h=720. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Two-player chess (local).
+        CELL=72. BOARD_X=(680-8*72)/2=44. BOARD_Y=64.
+        Pieces: K/Q/R/B/N/P for each color. Represented as i8: +1..+6 = white K/Q/R/B/N/P, -1..-6 = black.
+        Board: [[i8; 8]; 8] with standard starting position.
+        Cursor: (row, col). Arrow keys move. Enter to select/move.
+        Selection: first Enter selects piece (highlight valid moves); second Enter on valid target = move.
+        Move validation: per piece type (no check detection needed for MVP — just movement rules).
+        Promotion: pawn reaching last rank auto-promotes to queen.
+        Turn indicator in header: "White's turn" / "Black's turn".
+        Piece display: single-char text centered in each cell ("K","Q","R","B","N","P").
+        White pieces: C_TEXT on light cell; Black pieces: C_ORANGE on dark cell.
+        Light cells: 0x2D333BFF; Dark cells: 0x1C2128FF; Selected: C_SEL_BG; Valid move dot: C_GREEN overlay.
 
-  P106: Sudoku. Create apps/sudoku/ WASM app.
-        Window x=240, y=40, w=640, h=740. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Classic 9×9 Sudoku.
-        CELL=60. GRID_X=(640-9*60)/2=50. GRID_Y=64.
-        Pre-baked puzzle array (givens) + solution array (hardcoded valid pair).
-        Board: [[u8; 9]; 9] for current values; given: [[bool; 9]; 9] marks fixed cells.
-        cursor: (row, col). Arrow keys move cursor. 1-9 enter digit (only non-given cells).
-        Backspace/0 clear cell. 'c' check solution: highlight conflicts in red.
-        Conflict: same digit in same row/col/3×3 box.
-        'r' reset to givens. 's' auto-solve (fill from solution array).
-        Bold lines at every 3rd cell boundary (draw extra rect_border for 3×3 boxes).
-        Selected cell: C_SEL_BG highlight. Given cells: C_TEXT bold; user cells: C_SEL.
-        Conflict cells: C_RED. Correct+complete: "Solved!" overlay in C_GREEN.
+  P108: Typing Tutor. Create apps/typing-tutor/ WASM app.
+        Window x=280, y=60, w=880, h=560. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Typing practice with random prompts.
+        Built-in 40-phrase list; random selection via LCG seed.
+        Display prompt text in white; typed chars colored green (correct) or red (wrong) + underline cursor.
+        Track: chars typed, errors, start_time (ping-pong tick count as proxy for time).
+        WPM = (correct_chars / 5) / (elapsed_ticks / 60) — display live updating.
+        Accuracy = correct_chars / total_chars × 100%.
+        On phrase complete: show WPM + accuracy + "Press R for next phrase".
+        Backspace: delete last char. Ctrl+C: quit. R: new phrase.
+        Phrase display: wrap at 60 chars; 2 lines max. Font size 'm'. Cursor = bright block under next char.
 
 ## Queue (implement in order after current batch)
-- [ ] P107 — Chess: apps/chess/ two-player chess; full move validation; check/checkmate detection; piece Unicode chars
-- [ ] P108 — Typing Tutor: apps/typing-tutor/ random word prompts; WPM counter; accuracy %; color feedback per char
+- [ ] P109 — Paint: apps/paint/ freehand drawing canvas; color palette; brush sizes; arrow keys move cursor; space=draw
+- [ ] P110 — Music Visualizer: apps/music-viz/ animated frequency bars; ping-pong driven; color spectrum; keyboard tempo
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -140,6 +140,8 @@ notes: |
 - [x] P102: Pong — apps/pong/ (800×700); player vs AI; angle-adjust on paddle hit; AI 4px/tick lag; score-to-7; Win/Loss overlay
 - [x] P103: Space Invaders — apps/space-invaders/ (800×820); 3×10 alien grid; march+drop; 1 player bullet + 3 alien bullets; ping-pong tick; Win/Loss overlay
 - [x] P104: 2048 — apps/2048/ (600×700); 4×4 grid; slide+merge; LCG spawn; score+best tracking; non-blocking Win; Game Over detection
+- [x] P105: Wordle — apps/wordle/ (520×700); 60-word list; 6 guesses; per-cell green/yellow/absent; keyboard color tracker; Win/Loss overlay
+- [x] P106: Sudoku — apps/sudoku/ (640×740); hardcoded puzzle+solution; cursor nav; digit entry; conflict detection; check/reset/solve
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

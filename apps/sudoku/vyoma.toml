@@ -1,0 +1,15 @@
+[app]
+name    = "sudoku"
+version = "0.1.0"
+wasm    = "sudoku.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 240
+y = 40
+w = 640
+h = 740
