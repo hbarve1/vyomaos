@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P159+P160 complete -->
+last_updated: 2026-05-21  <!-- P161+P162 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,32 +18,35 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P161 — E-Book Reader
-  - P162 — Network Speed Test
+  - P163 — Pomodoro Pro
+  - P164 — Astronomy Viewer
 notes: |
-  P161: E-Book Reader. Create apps/ebook/ WASM app.
-        Window x=60, y=30, w=1200, h=760. Capabilities: stdio=true, display=true.
-        5 built-in chapters (hard-coded text): intro to VyomaOS, WASM security model,
-        display protocol, IPC broker design, future roadmap.
-        Each chapter has a title + body paragraphs (~10 paragraphs per chapter).
-        Two-panel: left=chapter list (w=200), right=reading pane.
-        ↑↓/PgUp/PgDn scroll within chapter. ←→ prev/next chapter.
-        B=bookmark (toggle), G=go to bookmark. Status bar: chapter N/5, page position.
+  P163: Pomodoro Pro. Create apps/pomodoro-pro/ WASM app.
+        Window x=60, y=30, w=840, h=640. Capabilities: stdio=true, display=true.
+        Configurable intervals: work (default 25min), short break (5min), long break (15min).
+        Task list: up to 10 tasks, each with a name and pomodoro count.
+        Ping-pong tick drives countdown (1 tick = 1 second simulated).
+        Stats history: total pomodoros today, total work time, longest streak.
+        +/- keys adjust current interval ±5min. N=new task, Del=remove, Enter=start/pause.
+        Visual progress ring drawn with fill_rect segments. Pomodoro dots ●○○○.
 
-  P162: Network Speed Test. Create apps/speed-test/ WASM app.
-        Window x=60, y=30, w=960, h=640. Capabilities: stdio=true, display=true.
-        Simulated bandwidth test: ping-pong tick drives progress.
-        3 phases: Ping (20 ticks, shows min/max/avg ms), Download (40 ticks, Mbps graph),
-                  Upload (20 ticks, Mbps graph).
-        LCG generates realistic-ish values: ping 8-45ms, download 50-900Mbps, upload 20-300Mbps.
-        Bar graphs for each phase. Final result card shows: ping/dl/ul with grade (A/B/C/D).
-        Space=start/restart. Status bar shows current phase.
+  P164: Astronomy Viewer. Create apps/astronomy/ WASM app.
+        Window x=60, y=30, w=1200, h=800. Capabilities: stdio=true, display=true.
+        Procedural star map: 200 stars with LCG-generated positions, magnitudes, colors.
+        Star colors by temperature: hot=blue/white, medium=yellow, cool=orange/red.
+        8 constellation patterns (hard-coded lines between named stars).
+        5 "planets" with LCG orbital positions (circles of different sizes/colors).
+        ←→↑↓ pan the view. +/- zoom. C=toggle constellation lines. P=toggle planets.
+        Click on a star/planet shows name and magnitude in info panel.
+        Status bar: RA/Dec coordinates of center, zoom level.
 
 ## Queue (implement in order after current batch)
-- [ ] P163 — Pomodoro Pro: apps/pomodoro-pro/ configurable intervals; task list integration; stats history
-- [ ] P164 — Astronomy Viewer: apps/astronomy/ procedural star map; constellation lines; planet positions; LCG
+- [ ] P165 — Clipboard Pro: apps/clipboard-pro/ extended history 50 entries; search; pin; categories
+- [ ] P166 — System Info: apps/system-info/ hardware spec display; CPU/mem/disk/OS details; ASCII art logo
 
 ## Completed (recent — full list in plan README)
+- [x] P161 — E-Book Reader: apps/ebook/ 5 chapters; TOC panel; scroll; B/G bookmark; ←→ chapter
+- [x] P162 — Network Speed Test: apps/speed-test/ ping/dl/ul phases; LCG; bar graphs; grade card
 - [x] P159 — RSS Reader: apps/rss-reader/ 3 feeds × 10 articles; two-panel; Tab/↑↓/Enter/R
 - [x] P160 — Video Player: apps/video-player/ LCG noise frames 40×30 @6px; 3 videos; Space/N/P/R/+/-
 - [x] P157 — IRC Client: apps/irc/ 3 channels; LCG bots; /join /msg /quit; Tab switch; nick list

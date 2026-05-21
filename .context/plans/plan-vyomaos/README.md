@@ -168,6 +168,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 158 — Photo Editor | `apps/photo-editor/` PPM P6 load; file list panel; crop/resize/rotate90/brightness/contrast; block preview; save edited.ppm | **complete** | — |
 | 159 — RSS Reader | `apps/rss-reader/` 3 feeds × 10 articles; feed list + article list + detail pane; Tab/↑↓/Enter; R=shuffle | **complete** | — |
 | 160 — Video Player Stub | `apps/video-player/` LCG noise frames 40×30 @6px cells; 3 playlists; play/pause/seek; +/-speed; progress bar | **complete** | — |
+| 161 — E-Book Reader | `apps/ebook/` 5 built-in chapters (VyomaOS topics); TOC panel; word-wrapped text; scroll; B/G bookmark; ←→ chapter | **complete** | — |
+| 162 — Network Speed Test | `apps/speed-test/` ping/download/upload phases; LCG smooth walk; bar graphs; grade card (A+–D); Space start | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
