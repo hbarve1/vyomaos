@@ -1,0 +1,15 @@
+[app]
+name    = "widget-board"
+version = "0.1.0"
+wasm    = "widget-board.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 0
+y = 28
+w = 400
+h = 500

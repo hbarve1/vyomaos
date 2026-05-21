@@ -94,6 +94,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 84 — Spaces Switcher | `apps/spaces-switcher/` virtual desktop switcher (640×140); @supervisor: spaces-list/switch/create; ←→ nav; Enter switch; n new | **complete** | — |
 | 85 — Screen Lock | `apps/screen-lock/` full-screen lock overlay (1440×900); large clock; padlock icon; any key unlocks | **complete** | — |
 | 86 — Clipboard History | `apps/clipboard-history/` last-20 clipboard entries (420×560); Enter restore; c paste; Del remove | **complete** | — |
+| 87 — Widget Board | `apps/widget-board/` dashboard panel (400×500); clock/stats/quick-launch/notes widgets; ↑↓ nav; Enter launch | **complete** | — |
+| 88 — Terminal Multiplexer | `apps/tmux/` split-pane terminal (1440×872); 2-4 panes; Tab cycle; Ctrl+N new; Ctrl+W close; simulated shell | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

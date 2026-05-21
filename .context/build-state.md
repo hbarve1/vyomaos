@@ -18,37 +18,34 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P87 — Widget Board
-  - P88 — Terminal Multiplexer
+  - P89 — Font Preview
+  - P90 — Draw Pad
 notes: |
-  P87: Widget Board. Create apps/widget-board/ WASM app.
-       Window x=0, y=28, w=400, h=500. Capabilities: stdio=true, display=true, shell=true.
-       Dashboard-style widget panel. Polls via ping-pong (1s cadence) + ps-raw.
-       Shows 4 widgets stacked vertically, each ~100px tall:
-         1. Clock: large HH:MM:SS, current date
-         2. System Stats: # running apps, # restarts total (from ps-raw)
-         3. Quick Launch: 3 icon buttons — Shell, Browser, Settings
-         4. Notes: static "VyomaOS is running" status message
-       ↑↓ to navigate between widgets; Enter on Quick Launch to run the selected app.
-       No complex layout — simple rows of cards.
-       Background: 0x161B22F0 (slightly transparent). Border: C_BORDER.
+  P89: Font Preview. Create apps/font-preview/ WASM app.
+       Window x=200, y=100, w=1040, h=680. Capabilities: stdio=true, display=true, shell=true.
+       Shows all 3 font sizes (s/m/l) for debugging the VYOMA_DRAW draw_text command.
+       Layout: 3 sections stacked vertically, one per font size.
+       Each section: header "Font Size: S/M/L" + renders full printable ASCII (32-126) in rows of 32 chars.
+       Different color per section: S=C_DIM, M=C_TEXT, L=C_SEL.
+       ↑↓ scrolls; Esc closes. No other interactions.
+       Background: 0x0D1117FF.
 
-  P88: Terminal Multiplexer. Create apps/tmux/ WASM app.
-       Window x=0, y=28, w=1440, h=872. Capabilities: stdio=true, display=true, shell=true.
-       Simulated split-pane terminal view. Shows 2 or 4 pane slots.
-       Mode: starts in 2-pane (left | right) layout.
-       Each pane is a visual box with a title "Pane N" + scrollable fake prompt area.
-       Since WASM apps can't actually spawn subprocesses, panes simulate terminal sessions:
-         - Show a fake prompt: "$ " + echo recent commands typed
-         - Characters typed go to the active pane's buffer and display
-         - Enter runs the "command" (just displays it and echoes a fake response)
-       Tab to cycle active pane; Ctrl+N to add pane (up to 4); Ctrl+W to close active pane.
-       Active pane: highlighted title border in C_SEL.
-       Escape/Ctrl+C exits the multiplexer.
+  P90: Draw Pad. Create apps/draw-pad/ WASM app.
+       Window x=100, y=60, w=960, h=760. Capabilities: stdio=true, display=true, shell=true.
+       Pixel canvas with a movable cursor. Grid of 2×2 pixel cells.
+       Canvas: 400×300 logical pixels → rendered as 2×2 blocks (800×600 display area).
+       State: Vec<Vec<u32>> grid of rgba values, initialized to C_BG.
+       Cursor: (cx, cy) position in logical pixels, drawn as a 4×4 bright green highlight.
+       Arrow keys move cursor; Space toggles current color on/off at cursor.
+       Color palette: 10 colors shown as clickable swatches (keyboard 0-9 to select).
+       'e' to erase (fill cursor cell with background).
+       'c' to clear canvas.
+       Ctrl+W → writes canvas as PPM P6 to @supervisor: write-ppm /data/drawing.ppm (supervisor stub).
+       Palette at bottom of window (below canvas).
 
 ## Queue (implement in order after current batch)
-- [ ] P89 — Font Preview: apps/font-preview/ shows all 3 font sizes (S/M/L) rendering the full ASCII printable range; useful for debugging display output
-- [ ] P90 — Draw Pad: apps/draw-pad/ simple pixel canvas; arrow keys move cursor; Space to draw; color palette (10 colors); Ctrl+S saves as PPM to /data/drawing.ppm
+- [ ] P91 — World Clock: apps/world-clock/ shows clocks for multiple time zones (UTC, US/Eastern, US/Pacific, Europe/London, Asia/Tokyo); each zone shown as a card with HH:MM and timezone label
+- [ ] P92 — Stopwatch: apps/stopwatch/ large HH:MM:SS.mmm display; Space start/stop; r reset; l lap (shows last 5 laps); Esc close
 - [ ] P78 — Desktop Icons: file listing on desktop background; icons for /data files; Enter opens with appropriate app; 'n' to create new file
 - [ ] P79 — Context Menu: supervisor support for @supervisor: context-menu x,y item1|item2|...; floating menu window; result sent back as REPLY:context-menu <item>
 - [ ] P80 — Finder v2: sidebar (Favorites: Desktop/Downloads/Documents), breadcrumb path bar, icon grid view, double-click to open
@@ -123,6 +120,8 @@ notes: |
 - [x] P84: Spaces Switcher — apps/spaces-switcher/ (640×140); spaces-list/switch/create; ←→ nav; Enter switch
 - [x] P85: Screen Lock — apps/screen-lock/ (1440×900); large clock + padlock icon; any key unlocks
 - [x] P86: Clipboard History — apps/clipboard-history/ (420×560); last-20 entries; Enter restore; c paste; Del remove
+- [x] P87: Widget Board — apps/widget-board/ (400×500); clock/stats/quick-launch/notes; ↑↓ nav; Enter to launch
+- [x] P88: Terminal Multiplexer — apps/tmux/ (1440×872); 2-4 split panes; Tab/Ctrl+N/Ctrl+W; simulated shell
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
