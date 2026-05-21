@@ -176,6 +176,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 166 — System Info | `apps/system-info/` 7 sections (OS/CPU/MEM/DSP/DSK/NET/SEC); ASCII logo; build box; scrollable | **complete** | — |
 | 167 — Timeline Viewer | `apps/timeline/` 39 events 1440–2026; 5 categories; ←→ scroll; +/- zoom; ↑↓ select; info panel | **complete** | — |
 | 168 — Language Flashcards | `apps/lang-flash/` 30 vocab cards; EN/ES/FR/DE; Y/N scoring; spaced rep; streak; shuffle | **complete** | — |
+| 169 — Budget Planner v2 | `apps/budget2/` 12 months; 8 categories; bar chart; savings goal; +/- adjust; A/E add | **complete** | — |
+| 170 — Code Snippet Manager | `apps/snippets/` 20 built-in snippets; Rust/Python/Shell; search; syntax highlight; copy | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

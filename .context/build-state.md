@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P167+P168 complete -->
+last_updated: 2026-05-21  <!-- P169+P170 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,34 +18,37 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P169 — Budget Planner v2
-  - P170 — Code Snippet Manager
+  - P171 — Star Map
+  - P172 — Pixel Font Editor
 notes: |
-  P169: Budget Planner v2. Create apps/budget2/ WASM app.
-        Window x=60, y=30, w=1000, h=700. Capabilities: stdio=true, display=true.
-        Monthly budget planner with income and expense tracking.
-        8 expense categories: Housing, Food, Transport, Utilities, Health, Entertainment, Savings, Other.
-        Tab switches month (12 months). Up/Down navigate categories. +/- adjust amount by $50.
-        ASCII bar chart showing spending per category vs budget.
-        Budget targets per category (hard-coded defaults). Over-budget categories shown in red.
-        Savings goal tracking: total income - total expenses = savings, shown vs goal.
-        A=add income entry; E=add expense entry (inline form); R=reset month; Ctrl+C=quit.
-
-  P170: Code Snippet Manager. Create apps/snippets/ WASM app.
+  P171: Star Map. Create apps/star-map/ WASM app.
         Window x=60, y=30, w=1200, h=760. Capabilities: stdio=true, display=true.
-        Code snippet manager with tag-based search and syntax highlighting.
-        20 built-in Rust/Python/Shell snippets with title, language, tags, code.
-        Two panels: snippet list (left w=320) with title+language badge; code view (right).
-        Search: / enters search mode, filters by title or tags; Esc to clear.
-        Ctrl+N creates new snippet (title input → language select → code entry).
-        Syntax highlight: keywords in orange, strings in green, comments in hint color.
-        C=copy snippet to clipboard (@supervisor: clipboard-set). ↑↓=navigate. Ctrl+C=quit.
+        Interactive star map showing 88 constellations + bright stars.
+        150 named stars with RA/Dec, magnitude, spectral type, and mythological name.
+        12 constellations with stick-figure line patterns and legend panel.
+        Projection: simple equirectangular (RA→X, Dec→Y) with pan/zoom.
+        Star rendering: magnitude 1→5px, 2→4px, 3→3px, 4→2px, 5→1px dot.
+        Spectral colors: O/B=blue-white, A=white, F=yellow-white, G=yellow, K=orange, M=red.
+        Info panel at bottom: selected star name, constellation, magnitude, RA/Dec, myth.
+        ←→↑↓ pan; +/- zoom; C=toggle constellations; N=toggle names; R=reset; Ctrl+C=quit.
+
+  P172: Pixel Font Editor. Create apps/font-editor/ WASM app.
+        Window x=60, y=30, w=1000, h=760. Capabilities: stdio=true, display=true.
+        8×16 pixel glyph editor for the 95 printable ASCII characters (0x20–0x7E).
+        Left panel: glyph grid editor (8 cols × 16 rows), each cell = 20×20px clickable toggle.
+        Right panel: character browser (grid of all 95 chars, 10 per row), preview at 1×/2×/4×.
+        Navigation: ←→ prev/next glyph; Tab=preview size cycle; Space=toggle pixel under cursor.
+        Arrow keys move edit cursor within glyph; Space toggles pixel.
+        C=copy glyph as hex byte array to status; R=reset glyph to blank; Ctrl+C=quit.
+        Glyphs start as all-blank (user draws them from scratch).
 
 ## Queue (implement in order after current batch)
-- [ ] P171 — Star Map: apps/star-map/ interactive constellation map; click stars; myth panel; magnitude filter
-- [ ] P172 — Pixel Font Editor: apps/font-editor/ 8×16 glyph editor; 95 ASCII chars; export as hex array
+- [ ] P173 — Recipe Planner: apps/recipe-planner/ meal plan calendar; weekly view; shopping list gen
+- [ ] P174 — Syntax Highlighter Demo: apps/syntax-demo/ live editor; Rust/Python/JSON; real-time highlight
 
 ## Completed (recent — full list in plan README)
+- [x] P169 — Budget Planner v2: apps/budget2/ 12 months; 8 categories; bar chart; savings goal; +/-
+- [x] P170 — Code Snippet Manager: apps/snippets/ 20 snippets; Rust/Python/Shell; search; copy
 - [x] P167 — Timeline Viewer: apps/timeline/ 39 events 1440–2026; 5 categories; ←→ scroll; +/- zoom; info panel
 - [x] P168 — Language Flashcards: apps/lang-flash/ 30 vocab; EN/ES/FR/DE; Y/N scoring; spaced rep; streak
 - [x] P165 — Clipboard Pro: apps/clipboard-pro/ 50-entry history; categories; search; pin; preview panel
