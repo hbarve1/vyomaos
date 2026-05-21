@@ -1,0 +1,16 @@
+[app]
+name    = "ascii-art"
+version = "0.1.0"
+wasm    = "ascii-art.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+filesystem = true
+shell      = true
+
+[window]
+x = 60
+y = 40
+w = 1200
+h = 760

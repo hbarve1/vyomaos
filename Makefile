@@ -198,6 +198,8 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/text-adventure/Cargo.toml         --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/music-composer/Cargo.toml         --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/chat/Cargo.toml                   --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/morse/Cargo.toml                  --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/ascii-art/Cargo.toml              --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────

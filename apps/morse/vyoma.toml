@@ -1,0 +1,15 @@
+[app]
+name    = "morse"
+version = "0.1.0"
+wasm    = "morse.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 100
+y = 40
+w = 900
+h = 640

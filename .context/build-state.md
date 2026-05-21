@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P139+P140 complete -->
+last_updated: 2026-05-21  <!-- P141+P142 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,38 +18,39 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P141 — Morse Code Trainer
-  - P142 — ASCII Art Editor
+  - P143 — Stock Chart
+  - P144 — Code Runner
 notes: |
-  P141: Morse Code Trainer. Create apps/morse/ WASM app.
-        Window x=100, y=40, w=900, h=640. Capabilities: stdio=true, display=true.
-        Two modes: Encode (text → morse) and Decode (morse → text). Tab switches modes.
-        Encode: type text → show morse code below with dots/dashes. Large display.
-        Decode: type dots/dashes (. = dot, - = dash, Space = letter sep, / = word sep) → show letters.
-        Quiz mode (Q): shows a random letter, user types its morse; LCG selects letters; score tracking.
-        Display: large font for the morse pattern. Visual dot (●) and dash (━) symbols.
-        26 letters A-Z and 10 digits 0-9. MORSE: &[(&str, &str)] = &[("A",".-"),("B","-..."),...].
-        Backspace to delete. Enter to confirm in quiz mode.
+  P143: Stock Chart. Create apps/stock-chart/ WASM app.
+        Window x=60, y=40, w=1200, h=760. Capabilities: stdio=true, display=true.
+        5 fake stocks: VYMA, WASM, RUST, KRNL, CLUD. Each starts at a different price.
+        Candlestick chart: OHLC (open/high/low/close) data. LCG generates price walk each tick.
+        Chart area: 80 candles × height 400px. Candle width = chart_w / 80.
+        Green candle (close>open), red candle (close<open). Wick = high-low line.
+        Volume bars below chart (40px height). ↑↓ or 1-5 keys to switch stock.
+        Time axis labels every 10 candles. Price axis on right with 5 levels.
+        Ping-pong: each tick adds one new candle. R=reset all data.
+        Status bar: stock name, current price, % change from start, high/low.
 
-  P142: ASCII Art Editor. Create apps/ascii-art/ WASM app.
-        Window x=60, y=40, w=1200, h=760. Capabilities: stdio=true, display=true, filesystem=true.
-        60×25 character canvas. CHAR_W=12, CHAR_H=20 (large font size).
-        Current brush char: selected from palette. Palette: space, ░▒▓█ │─┼╔╗╚╝╠╣╦╩═║ ●○◆◇▲▼ +*~#@%&
-        Arrow keys move cursor. Space = place brush char. Backspace = place space (erase).
-        Tab = cycle brush char. Hold Shift+Arrow = extend selection (future — for now just nav).
-        Ctrl+W saves to /data/ascii-art.txt. Ctrl+L loads.
-        Cursor shown as blinking block border. Status bar shows (col, row) and current brush char.
-        Canvas displayed in monospace grid starting at HEADER_H + 8.
+  P144: Code Runner. Create apps/code-runner/ WASM app.
+        Window x=80, y=40, w=1200, h=760. Capabilities: stdio=true, display=true.
+        10 hardcoded Rust code snippets (hello world, fibonacci, fizzbuzz, sorting, closures, etc).
+        Left panel: snippet list with names. Right panel: syntax-highlighted code (reuse colorize pattern).
+        ↑↓ to select snippet. Enter to "run" (show hardcoded fake output in output panel).
+        Three-panel layout: snippet list (left 250px) + code (middle) + output (bottom 180px).
+        Output panel shows fake "cargo run" output + compile time + "Process exited with code 0".
+        Syntax highlighting: same pattern as code-editor (//=hint, "strings"=green, numbers=orange, keywords=sel).
+        Ctrl+C to exit.
 
 ## Queue (implement in order after current batch)
-- [ ] P143 — Stock Chart: apps/stock-chart/ 5 fake stocks; candlestick chart; OHLC data; volume bars; LCG walk
-- [ ] P144 — Code Runner: apps/code-runner/ 10 hardcoded Rust snippets; syntax highlight; fake "run" output; ↑↓ select
+- [ ] P145 — Genealogy Tree: apps/genealogy/ 20 hardcoded people; parent/child lines; nav with arrows; name+dates
+- [ ] P146 — Mind Map: apps/mind-map/ central node + 6 branches + 3 sub-nodes each; navigate; add/rename nodes
 
 ## Completed (recent — full list in plan README)
+- [x] P141 — Morse Code Trainer: apps/morse/ Encode/Decode/Quiz; Tab switch; visual symbols; score
+- [x] P142 — ASCII Art Editor: apps/ascii-art/ 60×25 canvas; brush palette; draw mode; type-in-place; save/load
 - [x] P139 — Music Composer: apps/music-composer/ 12×16 piano roll; toggle; ping-pong playback; BPM; save/load
 - [x] P140 — Chat Simulator: apps/chat/ 5 LCG bots; @mention; scrollback; ping-pong ticks
-- [x] P137 — Image Gallery: apps/image-gallery/ PPM thumbs 4-col grid; 3px blocks; fullscreen; prev/next
-- [x] P138 — Text Adventure: apps/text-adventure/ 10-room castle; take/drop/use/go; monster+sword puzzle
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
