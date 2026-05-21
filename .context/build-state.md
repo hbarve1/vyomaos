@@ -18,34 +18,34 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P89 — Font Preview
-  - P90 — Draw Pad
+  - P91 — World Clock
+  - P92 — Stopwatch
 notes: |
-  P89: Font Preview. Create apps/font-preview/ WASM app.
-       Window x=200, y=100, w=1040, h=680. Capabilities: stdio=true, display=true, shell=true.
-       Shows all 3 font sizes (s/m/l) for debugging the VYOMA_DRAW draw_text command.
-       Layout: 3 sections stacked vertically, one per font size.
-       Each section: header "Font Size: S/M/L" + renders full printable ASCII (32-126) in rows of 32 chars.
-       Different color per section: S=C_DIM, M=C_TEXT, L=C_SEL.
-       ↑↓ scrolls; Esc closes. No other interactions.
-       Background: 0x0D1117FF.
+  P91: World Clock. Create apps/world-clock/ WASM app.
+       Window x=200, y=100, w=960, h=500. Capabilities: stdio=true, display=true, shell=true.
+       Shows clocks for 6 time zones displayed as a 3×2 grid of cards.
+       Each card: 300×200px. Shows: timezone name (large), HH:MM:SS (large), UTC offset, and date.
+       Zones: UTC, US/Eastern (UTC-5), US/Pacific (UTC-8), Europe/London (UTC+1 BST), Asia/Tokyo (UTC+9), India/Kolkata (UTC+5:30).
+       Time derived from Instant elapsed + offset applied to base epoch (2026-05-21 09:00:00 UTC).
+       Ping-pong loop at 1s cadence to update.
+       ↑↓←→ to highlight a zone card; no other actions.
+       Background: 0x0D1117FF. Card bg: 0x161B22FF. Selected card border: C_SEL.
 
-  P90: Draw Pad. Create apps/draw-pad/ WASM app.
-       Window x=100, y=60, w=960, h=760. Capabilities: stdio=true, display=true, shell=true.
-       Pixel canvas with a movable cursor. Grid of 2×2 pixel cells.
-       Canvas: 400×300 logical pixels → rendered as 2×2 blocks (800×600 display area).
-       State: Vec<Vec<u32>> grid of rgba values, initialized to C_BG.
-       Cursor: (cx, cy) position in logical pixels, drawn as a 4×4 bright green highlight.
-       Arrow keys move cursor; Space toggles current color on/off at cursor.
-       Color palette: 10 colors shown as clickable swatches (keyboard 0-9 to select).
-       'e' to erase (fill cursor cell with background).
-       'c' to clear canvas.
-       Ctrl+W → writes canvas as PPM P6 to @supervisor: write-ppm /data/drawing.ppm (supervisor stub).
-       Palette at bottom of window (below canvas).
+  P92: Stopwatch. Create apps/stopwatch/ WASM app.
+       Window x=400, y=200, w=640, h=480. Capabilities: stdio=true, display=true, shell=true.
+       Large digital stopwatch display.
+       Shows: HH:MM:SS.cc (centiseconds) in large 'l' font.
+       State: running/stopped, start_instant, accumulated.
+       Space: start/stop toggle.
+       r: reset (stops and zeros).
+       l: lap — records current time to lap list (last 5 shown).
+       Esc/Ctrl+C: exit.
+       Ping-pong loop at 100ms cadence when running (1s when stopped).
+       Lap list shown below the clock: up to 5 entries with lap number and time.
 
 ## Queue (implement in order after current batch)
-- [ ] P91 — World Clock: apps/world-clock/ shows clocks for multiple time zones (UTC, US/Eastern, US/Pacific, Europe/London, Asia/Tokyo); each zone shown as a card with HH:MM and timezone label
-- [ ] P92 — Stopwatch: apps/stopwatch/ large HH:MM:SS.mmm display; Space start/stop; r reset; l lap (shows last 5 laps); Esc close
+- [ ] P93 — Unit Converter: apps/unit-converter/ converts between common units; categories: length, mass, temperature, speed, area; arrow keys navigate categories; Tab moves between input and result
+- [ ] P94 — QR Code Viewer: apps/qr-viewer/ takes a short string and renders a QR code using fill_rect for modules; displays encoded text below; 'c' copies to clipboard
 - [ ] P78 — Desktop Icons: file listing on desktop background; icons for /data files; Enter opens with appropriate app; 'n' to create new file
 - [ ] P79 — Context Menu: supervisor support for @supervisor: context-menu x,y item1|item2|...; floating menu window; result sent back as REPLY:context-menu <item>
 - [ ] P80 — Finder v2: sidebar (Favorites: Desktop/Downloads/Documents), breadcrumb path bar, icon grid view, double-click to open
@@ -122,6 +122,8 @@ notes: |
 - [x] P86: Clipboard History — apps/clipboard-history/ (420×560); last-20 entries; Enter restore; c paste; Del remove
 - [x] P87: Widget Board — apps/widget-board/ (400×500); clock/stats/quick-launch/notes; ↑↓ nav; Enter to launch
 - [x] P88: Terminal Multiplexer — apps/tmux/ (1440×872); 2-4 split panes; Tab/Ctrl+N/Ctrl+W; simulated shell
+- [x] P89: Font Preview — apps/font-preview/ (1040×680); all 95 printable ASCII in s/m/l sizes; ↑↓ scroll
+- [x] P90: Draw Pad — apps/draw-pad/ (960×760); 200×150 px canvas; 4px cells; 10-color palette; Space=draw; e=erase
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
