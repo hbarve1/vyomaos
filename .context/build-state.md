@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P155+P156 complete -->
+last_updated: 2026-05-21  <!-- P157+P158 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,32 +18,33 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P157 — IRC Client
-  - P158 — Photo Editor
+  - P159 — RSS Reader
+  - P160 — Video Player Stub
 notes: |
-  P157: IRC Client. Create apps/irc/ WASM app.
+  P159: RSS Reader. Create apps/rss-reader/ WASM app.
         Window x=60, y=30, w=1280, h=760. Capabilities: stdio=true, display=true.
-        Simulated multi-channel chat with 3 channels: #general, #dev, #random.
-        Nick list panel on right (w=160). Messages panel takes rest.
-        Simulated LCG-driven bots post messages every ping-pong tick.
-        Commands: /join <channel>, /msg <text>, /quit — typed in input bar at bottom.
-        ↑↓ scroll message history. Tab switches channel. Ctrl+C exit.
-        Input bar shows: [#channel] nick> <input>
+        3 simulated feeds: "VyomaOS News", "Dev Blog", "Tech Headlines".
+        Each feed has 10 hard-coded articles with title, source, date, summary.
+        Two-panel: left=feed list (w=220), right=article list + detail.
+        Tab switches between feeds. ↑↓ navigate articles. Enter reads full summary.
+        R=refresh (LCG randomizes order). Ctrl+C exit.
 
-  P158: Photo Editor. Create apps/photo-editor/ WASM app.
-        Window x=60, y=30, w=1280, h=800. Capabilities: stdio=true, display=true, filesystem=true.
-        Loads PPM P6 files from /data/. Two-pane: file list left (w=200), preview right.
-        Operations on selected file: C=crop (prompt x,y,w,h), R=resize (prompt w,h), 
-                                     T=rotate 90°, B=brightness ±10, N=contrast ±10,
-                                     S=save as /data/edited.ppm.
-        Preview: render image scaled to fit panel using 2×2 or 3×3 pixel blocks.
-        Status bar shows: file, dimensions, operation result.
+  P160: Video Player Stub. Create apps/video-player/ WASM app.
+        Window x=60, y=30, w=960, h=640. Capabilities: stdio=true, display=true.
+        Simulated video: LCG-generated noise frames (40×30 "pixels" at 6px cells = 240×180 px canvas).
+        Ping-pong tick drives frame advance when playing.
+        Each frame: LCG fills pixel grid with varied colors creating noise/animation effect.
+        Controls: Space=play/pause, N=next frame, P=prev frame, R=restart, +/-=speed (1x/2x/4x).
+        Progress bar below canvas. Frame counter (frame N/total). Status bar with speed.
+        Pre-set playlist of 3 simulated "videos" (each 60 frames, different LCG seeds).
 
 ## Queue (implement in order after current batch)
-- [ ] P159 — RSS Reader: apps/rss-reader/ simulated feed items; 3 feeds; two-panel; ←→ feed; ↑↓ item
-- [ ] P160 — Video Player Stub: apps/video-player/ simulated frames; play/pause; progress bar; LCG noise frames
+- [ ] P161 — E-Book Reader: apps/ebook/ 5 built-in chapters; page-turn; bookmark; search
+- [ ] P162 — Network Speed Test: apps/speed-test/ simulated bandwidth; ping; jitter; graph
 
 ## Completed (recent — full list in plan README)
+- [x] P157 — IRC Client: apps/irc/ 3 channels; LCG bots; /join /msg /quit; Tab switch; nick list
+- [x] P158 — Photo Editor: apps/photo-editor/ PPM load; crop/resize/rotate90; brightness/contrast; save
 - [x] P155 — File Archiver: apps/archiver/ custom .tar; two-panel; N/A/X/Del/Ctrl+W/Ctrl+L; demo.tar
 - [x] P156 — System Logger: apps/syslog/ ring-buf 200; 7 tags; 5 levels; F1-F5 filter; P/R/C/E scroll
 - [x] P153 — Spreadsheet v2: apps/spreadsheet2/ 20×15; =SUM/AVG/MIN/MAX/COUNT; arithmetic; circ detect

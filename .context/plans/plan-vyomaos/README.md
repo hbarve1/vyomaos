@@ -164,6 +164,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 154 — Drawing App v2 | `apps/draw2/` 300×200 canvas 3px cells; brush/eraser/fill/line; 16 colors; undo 10; PPM save/load | **complete** | — |
 | 155 — File Archiver | `apps/archiver/` custom .tar format; two-panel archive list+contents; N/A/X/Del/Ctrl+W/Ctrl+L; pre-populated demo.tar | **complete** | — |
 | 156 — System Logger | `apps/syslog/` ring-buffer 200 entries; 7 tags × 5 levels; ping-pong tick; F1-F5 filter; P/R/C/E; scroll; scrollbar | **complete** | — |
+| 157 — IRC Client | `apps/irc/` 3 channels (#general/#dev/#random); LCG bots; nick list panel; /join /msg /quit; Tab switch chan; ↑↓ scroll | **complete** | — |
+| 158 — Photo Editor | `apps/photo-editor/` PPM P6 load; file list panel; crop/resize/rotate90/brightness/contrast; block preview; save edited.ppm | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
