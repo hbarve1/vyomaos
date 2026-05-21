@@ -182,6 +182,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 172 — Pixel Font Editor | `apps/font-editor/` 8×16 glyph editor; 95 ASCII chars; cell toggle; preview 1×/2×/4×; hex copy | **complete** | — |
 | 173 — Recipe Planner | `apps/recipe-planner/` 60 recipes; 7×3 week grid; shopping list; R=randomize; detail panel | **complete** | — |
 | 174 — Syntax Highlighter | `apps/syntax-demo/` Rust/Python/JSON; split pane; live edit; keyword/string/number colors | **complete** | — |
+| 175 — Alarm Clock | `apps/alarm/` 7-segment digital clock; up to 5 alarms; ping-pong tick; flash on fire | **complete** | — |
+| 176 — Geo Quiz | `apps/geo-quiz/` 60 questions; 4 MCQ; 15-tick timer; hint system; streak; end screen | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

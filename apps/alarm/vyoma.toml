@@ -1,0 +1,14 @@
+[app]
+name    = "alarm"
+version = "0.1.0"
+wasm    = "alarm.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+x = 60
+y = 30
+w = 640
+h = 480
