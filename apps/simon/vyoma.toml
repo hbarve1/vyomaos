@@ -1,0 +1,15 @@
+[app]
+name    = "simon"
+version = "0.1.0"
+wasm    = "simon.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 300
+y = 80
+w = 800
+h = 700

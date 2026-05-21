@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P121+P122 complete -->
+last_updated: 2026-05-21  <!-- P123+P124 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,31 +18,32 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P123 — Simon Says
-  - P124 — Hangman
+  - P125 — Typing Race
+  - P126 — Asteroids
 notes: |
-  P123: Simon Says. Create apps/simon/ WASM app.
-        Window x=300, y=80, w=800, h=700. Capabilities: stdio=true, display=true, shell=true.
-        Growing color-sequence memory game. 4 colors: Red, Green, Blue, Yellow.
-        Colors arranged as 4 quadrants. Each round: append 1 random color (LCG) to sequence.
-        Show sequence: flash each color bright then dim (ping-pong ticks for animation).
-        Player turn: press R/G/B/Y keys. Wrong = Game Over overlay with score.
-        Score = number of rounds survived. Best score persisted in memory (no file needed).
-        States: showing (animate sequence), waiting (player input), gameover.
-        Use ping-pong for animation: each tick advances flash step; 'n' to start new game.
+  P125: Typing Race. Create apps/typing-race/ WASM app.
+        Window x=200, y=60, w=1040, h=640. Capabilities: stdio=true, display=true, shell=true.
+        Player types a phrase; 3 CPU "racers" advance based on simulated WPM (40/60/80 WPM).
+        Phrase list: 10 short phrases (20-40 chars). LCG selects phrase.
+        Progress bars: 4 rows (You + CPU1 + CPU2 + CPU3), width=600px.
+        CPU progress advances per ping-pong tick proportional to their WPM.
+        Player progress = chars correctly typed / total chars.
+        Win/Loss detection: first to 100% wins. Overlay shows winner + WPM.
+        'n': new race. Backspace allowed. Wrong char typed shows red highlight on current char.
 
-  P124: Hangman. Create apps/hangman/ WASM app.
-        Window x=280, y=60, w=880, h=700. Capabilities: stdio=true, display=true, shell=true.
-        40-word list (nouns/verbs common English). 6 wrong guesses allowed.
-        Draw gallows + body parts with rect fills (head=circle approximated as square, body, L arm, R arm, L leg, R leg).
-        Letter display: _ _ _ _ pattern with correct guesses filled.
-        Keyboard: a-z letters; already-guessed letters dimmed; wrong=red, correct=green.
-        Win overlay when word complete. Loss overlay with word revealed.
-        'n': new game (LCG word selection). '?': hint (reveal one letter, counts as wrong guess).
+  P126: Asteroids. Create apps/asteroids/ WASM app.
+        Window x=100, y=40, w=900, h=800. Capabilities: stdio=true, display=true, shell=true.
+        Ship as 3 filled rects forming a triangle (fixed-dir simplification in integer math).
+        4 directions: Up/Down/Left/Right keys for thrust (no rotation — top-down view).
+        Rocks: Vec of (x,y,dx,dy,size) with wrap-around on edges. 6 initial rocks.
+        Bullets: Space fires; Vec of (x,y,dx,dy,age); max 4 simultaneous; bullet size 4px.
+        Collision: bullet+rock → split (size/2) rocks if size>16 else destroy; ship+rock → life lost.
+        Lives: 3. Score: +10 small, +20 medium, +40 large. New wave when all rocks cleared.
+        Ping-pong physics loop. Ship drawn as 3-rect cross. Rocks as filled squares.
 
 ## Queue (implement in order after current batch)
-- [ ] P125 — Typing Race: apps/typing-race/ multiplayer-sim race; 3 CPU racers; WPM-based progress bars; phrase typing
-- [ ] P126 — Asteroids: apps/asteroids/ ship + thrust; rotating rocks; wrap-around; bullets; ping-pong physics
+- [ ] P127 — Math Quiz: apps/math-quiz/ arithmetic drill; 4 difficulty levels; timer per question; score streak
+- [ ] P128 — Paint Pro: apps/paint-pro/ brush sizes; opacity simulation; fill tool; color mixer panel; save to /data
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -150,6 +151,8 @@ notes: |
 - [x] P120: Color Palette Generator — apps/color-gen/ (880×680); hue+/-; 5 harmony modes; HSV→RGB; clipboard copy
 - [x] P121: Maze Generator — apps/maze/ (840×760); 25×25 iterative DFS; trail tracking; arrows nav; R=reset; N=new
 - [x] P122: Pixel Art Editor — apps/pixel-art/ (1000×760); 32×32 canvas; 16-color palette; draw/erase/fill/undo(10)
+- [x] P123: Simon Says — apps/simon/ (800×700); 4-quadrant colors; ping-pong flash animation; growing sequence; R/G/B/Y
+- [x] P124: Hangman — apps/hangman/ (880×700); 40-word list; 6 wrongs; gallows rects; a-z keys; hint; win/loss overlay
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
