@@ -114,6 +114,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 104 — 2048 | `apps/2048/` 4×4 grid; slide+merge; LCG spawn; score+best; non-blocking Win; Game Over detection | **complete** | — |
 | 105 — Wordle | `apps/wordle/` 60-word list; 6-guess rows; per-cell green/yellow/absent scoring; keyboard color tracker; Win/Loss overlay | **complete** | — |
 | 106 — Sudoku | `apps/sudoku/` hardcoded puzzle+solution; cursor nav; digit entry; conflict highlighting; check/reset/solve modes | **complete** | — |
+| 107 — Chess | `apps/chess/` standard chess board; full piece movement rules; pawn promotion; cursor+Enter select/move; Win on king capture | **complete** | — |
+| 108 — Typing Tutor | `apps/typing-tutor/` 40-phrase list; per-char green/red feedback; WPM + accuracy; progress bar; ping-pong tick | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

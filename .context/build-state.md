@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P105+P106 complete -->
+last_updated: 2026-05-21  <!-- P107+P108 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,39 +18,33 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P107 — Chess
-  - P108 — Typing Tutor
+  - P109 — Paint
+  - P110 — Music Visualizer
 notes: |
-  P107: Chess. Create apps/chess/ WASM app.
-        Window x=200, y=40, w=680, h=720. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Two-player chess (local).
-        CELL=72. BOARD_X=(680-8*72)/2=44. BOARD_Y=64.
-        Pieces: K/Q/R/B/N/P for each color. Represented as i8: +1..+6 = white K/Q/R/B/N/P, -1..-6 = black.
-        Board: [[i8; 8]; 8] with standard starting position.
-        Cursor: (row, col). Arrow keys move. Enter to select/move.
-        Selection: first Enter selects piece (highlight valid moves); second Enter on valid target = move.
-        Move validation: per piece type (no check detection needed for MVP — just movement rules).
-        Promotion: pawn reaching last rank auto-promotes to queen.
-        Turn indicator in header: "White's turn" / "Black's turn".
-        Piece display: single-char text centered in each cell ("K","Q","R","B","N","P").
-        White pieces: C_TEXT on light cell; Black pieces: C_ORANGE on dark cell.
-        Light cells: 0x2D333BFF; Dark cells: 0x1C2128FF; Selected: C_SEL_BG; Valid move dot: C_GREEN overlay.
+  P109: Paint. Create apps/paint/ WASM app.
+        Window x=160, y=40, w=960, h=760. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Freehand pixel drawing canvas.
+        Canvas: 160×120 logical pixels rendered as 5×5 pixel cells = 800×600 display area.
+        CANVAS_X=80, CANVAS_Y=64. Color palette strip below canvas (10 colors).
+        Colors: black, white, red, green, blue, yellow, cyan, magenta, orange, grey.
+        Cursor: (cx, cy) on canvas. Arrow keys move cursor. Space: draw pixel at cursor with current color.
+        'e': erase (set to black). 'c': clear canvas. Tab: cycle through palette colors.
+        Current color shown in header. Cursor cell highlighted with C_SEL border.
+        Ping-pong not needed — event-driven only.
 
-  P108: Typing Tutor. Create apps/typing-tutor/ WASM app.
-        Window x=280, y=60, w=880, h=560. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Typing practice with random prompts.
-        Built-in 40-phrase list; random selection via LCG seed.
-        Display prompt text in white; typed chars colored green (correct) or red (wrong) + underline cursor.
-        Track: chars typed, errors, start_time (ping-pong tick count as proxy for time).
-        WPM = (correct_chars / 5) / (elapsed_ticks / 60) — display live updating.
-        Accuracy = correct_chars / total_chars × 100%.
-        On phrase complete: show WPM + accuracy + "Press R for next phrase".
-        Backspace: delete last char. Ctrl+C: quit. R: new phrase.
-        Phrase display: wrap at 60 chars; 2 lines max. Font size 'm'. Cursor = bright block under next char.
+  P110: Music Visualizer. Create apps/music-viz/ WASM app.
+        Window x=240, y=60, w=800, h=560. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Animated frequency bar visualizer driven by ping-pong ticks.
+        32 bars across width. Each bar height oscillates via sin/cos LCG-seeded pattern.
+        Colors: spectrum from red to violet across bars (hue-based).
+        +/- keys: increase/decrease animation speed. Space: toggle pause. R: randomize pattern.
+        Bar heights computed from: base_h[i] + amplitude * sin(tick * freq[i] + phase[i]).
+        Each bar: 20px wide, gap 5px. Max bar height = 400px. Bars drawn from bottom.
+        Header shows: BPM estimate, speed multiplier, paused indicator.
 
 ## Queue (implement in order after current batch)
-- [ ] P109 — Paint: apps/paint/ freehand drawing canvas; color palette; brush sizes; arrow keys move cursor; space=draw
-- [ ] P110 — Music Visualizer: apps/music-viz/ animated frequency bars; ping-pong driven; color spectrum; keyboard tempo
+- [ ] P111 — Flashcard: apps/flashcard/ Q&A card deck; flip animation (redraw); arrow keys nav; Enter flip; score tracking
+- [ ] P112 — Budget Tracker: apps/budget/ income/expense entries; category totals; balance display; add/delete via form
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -142,6 +136,8 @@ notes: |
 - [x] P104: 2048 — apps/2048/ (600×700); 4×4 grid; slide+merge; LCG spawn; score+best tracking; non-blocking Win; Game Over detection
 - [x] P105: Wordle — apps/wordle/ (520×700); 60-word list; 6 guesses; per-cell green/yellow/absent; keyboard color tracker; Win/Loss overlay
 - [x] P106: Sudoku — apps/sudoku/ (640×740); hardcoded puzzle+solution; cursor nav; digit entry; conflict detection; check/reset/solve
+- [x] P107: Chess — apps/chess/ (680×720); standard board; full piece movement rules; pawn promotion; Win on king capture; rank/file labels
+- [x] P108: Typing Tutor — apps/typing-tutor/ (880×560); 40-phrase list; per-char green/red; WPM+accuracy; progress bar; ping-pong tick
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
