@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P129+P130 complete -->
+last_updated: 2026-05-21  <!-- P131+P132 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,31 +18,32 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P131 — Crypto Ticker
-  - P132 — Photo Filter
+  - P133 — Terminal Emulator
+  - P134 — Map Viewer
 notes: |
-  P131: Crypto Ticker. Create apps/crypto-ticker/ WASM app.
-        Window x=280, y=60, w=960, h=640. Capabilities: stdio=true, display=true, shell=true.
-        5 simulated coins: BTC, ETH, SOL, ADA, DOT.
-        Each coin has: current price (starts hardcoded), % change, sparkline history (last 40 points).
-        Prices update via ping-pong ticks using LCG random walk (±0.5% per tick).
-        Sparkline: 40-point mini chart per coin, 120px wide × 40px tall; green if up, red if down.
-        Alert: if any coin changes >5% from session start, flash row in red/green.
-        Layout: 5 rows, each showing: coin name, price, 24h %, sparkline, alert marker.
-        'r': reset prices to base values. Tab: toggle sort (by name / by change %).
+  P133: Terminal Emulator. Create apps/terminal/ WASM app.
+        Window x=100, y=40, w=1100, h=760. Capabilities: stdio=true, display=true, shell=true.
+        Line-based shell simulator with scrollback. Vec<(String, u32)> history of (line, color).
+        Input line at bottom. Tab completion (cycle through built-in cmds). Up/Down = history.
+        Built-in commands: help, clear, ls (fake file list), echo <text>, date (tick-based),
+          version, whoami, pwd, cat <file>, ping (ping-pong test), exit.
+        ANSI-style color: each built-in output line has a color (green for success, red for error,
+          hint for meta). Prompt: "vyoma> " in C_ORANGE.
+        Scrollback: 200 lines max. PgUp/PgDn scroll. Home = top, End = bottom.
+        CHAR_W=8, LINE_H=18, GUTTER_W=0. Visible lines = (H - HEADER_H - INPUT_H) / LINE_H.
 
-  P132: Photo Filter. Create apps/photo-filter/ WASM app.
-        Window x=200, y=60, w=1040, h=760. Capabilities: stdio=true, display=true, shell=true, filesystem=true.
-        Lists /data/*.ppm files. If none, show placeholder message.
-        Load PPM P6 (binary, same as image-viewer app). Display as 4×4 block mosaic.
-        Filter options (F1-F5 keys): Original / Greyscale / Brightness+50 / Contrast×2 / Invert.
-        ←→ keys to cycle through files. Enter to apply selected filter and save as /data/filtered.ppm.
-        Show filter name in header. Preview updates instantly when filter selected.
-        For mosaic: each PPM pixel rendered as 4×4 filled rect (same as image-viewer).
+  P134: Map Viewer. Create apps/map-viewer/ WASM app.
+        Window x=120, y=40, w=1200, h=800. Capabilities: stdio=true, display=true, shell=true.
+        Static ASCII world map: 80×40 char grid. Each char = terrain type.
+        Terrain chars: '.' ocean, '#' mountain, '^' hill, '~' desert, '*' forest, ',' plains, 'C' city.
+        Pan: arrow keys move viewport. Zoom: +/- scales cell size (8px/12px/16px/20px).
+        Landmark labels: 12 hardcoded landmarks (city names) at (x,y) positions.
+        Coordinate display: shows (lon, lat) of cursor based on map position.
+        'r': reset to center. Map data hardcoded as &[&str; 40] of 80-char strings.
 
 ## Queue (implement in order after current batch)
-- [ ] P133 — Terminal Emulator: apps/terminal/ line-based shell sim; command history; built-in cmds; ANSI color codes
-- [ ] P134 — Map Viewer: apps/map-viewer/ ASCII grid world map; zoom in/out; landmark labels; coordinate display
+- [ ] P135 — File Diff Tool: apps/file-diff/ compare two /data/ files line-by-line; LCS diff; colored +/- output; side-by-side
+- [ ] P136 — Spreadsheet: apps/spreadsheet/ 10×10 grid; formula eval (SUM/AVG); arrow nav; cell edit; Ctrl+W save CSV
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -158,6 +159,8 @@ notes: |
 - [x] P128: Paint Pro — apps/paint-pro/ (1280×800); 200×150 canvas; 3 brush sizes; BFS fill; undo(10); save/load /data
 - [x] P129: Music Player — apps/music-player/ (800×560); reads /data/*.raw; 32-bar waveform; ping-pong; vol; next/prev
 - [x] P130: Code Editor — apps/code-editor/ (1200×800); Vec<String> lines; Rust syntax highlight; gutter; save/load
+- [x] P131: Crypto Ticker — apps/crypto-ticker/ (960×640); 5 coins; LCG walk; sparklines ×40 pts; alert >5%; sort
+- [x] P132: Photo Filter — apps/photo-filter/ (1040×760); PPM P6 loader; 5 filters; 4×4 mosaic; save filtered.ppm
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
