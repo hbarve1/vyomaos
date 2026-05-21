@@ -180,6 +180,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 170 — Code Snippet Manager | `apps/snippets/` 20 built-in snippets; Rust/Python/Shell; search; syntax highlight; copy | **complete** | — |
 | 171 — Star Map | `apps/star-map/` 62 named stars; 12 constellations; spectral colors; pan/zoom; info panel | **complete** | — |
 | 172 — Pixel Font Editor | `apps/font-editor/` 8×16 glyph editor; 95 ASCII chars; cell toggle; preview 1×/2×/4×; hex copy | **complete** | — |
+| 173 — Recipe Planner | `apps/recipe-planner/` 60 recipes; 7×3 week grid; shopping list; R=randomize; detail panel | **complete** | — |
+| 174 — Syntax Highlighter | `apps/syntax-demo/` Rust/Python/JSON; split pane; live edit; keyword/string/number colors | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

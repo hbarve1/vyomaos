@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P171+P172 complete -->
+last_updated: 2026-05-21  <!-- P173+P174 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,34 +18,37 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P173 — Recipe Planner
-  - P174 — Syntax Highlighter Demo
+  - P175 — Alarm Clock
+  - P176 — Geo Quiz
 notes: |
-  P173: Recipe Planner. Create apps/recipe-planner/ WASM app.
-        Window x=60, y=30, w=1100, h=720. Capabilities: stdio=true, display=true.
-        Weekly meal planner calendar: 7 days × 3 meals (Breakfast, Lunch, Dinner).
-        20 hard-coded recipes per meal type (60 total).
-        Left panel: week grid showing assigned recipes per cell.
-        Right panel: recipe detail (ingredients, prep time, calories).
-        ←→ navigate days, ↑↓ navigate meal slot, Enter=assign random recipe from LCG.
-        S=show shopping list (aggregated ingredients for entire week).
-        R=randomize full week. C=clear cell. Tab=toggle view (week/shopping list).
+  P175: Alarm Clock. Create apps/alarm/ WASM app.
+        Window x=60, y=30, w=640, h=480. Capabilities: stdio=true, display=true.
+        Digital clock showing current time (simulated via ping-pong tick count as HH:MM:SS).
+        Up to 5 alarms: each has HH:MM time, label, enabled toggle.
+        A=add alarm (inline form: HH:MM + label); D=delete selected; E=toggle enabled.
+        ↑↓ navigate alarm list. When alarm fires: flash background + @supervisor: notify.
+        Time simulated: starts at 00:00:00, advances 1 second per ping-pong tick.
+        Large digital display: hours:minutes:seconds in the center.
+        Date display: "Mon 21 May 2026".
+        Progress bar showing minutes elapsed in current hour.
 
-  P174: Syntax Highlighter Demo. Create apps/syntax-demo/ WASM app.
-        Window x=60, y=30, w=1200, h=760. Capabilities: stdio=true, display=true.
-        Split-pane: left=editor, right=highlighted output.
-        Support Rust, Python, JSON highlighting modes (1/2/3 keys to switch).
-        Editor: type lines, Backspace=delete, Enter=new line, Ctrl+W=clear.
-        Highlighting: keywords(orange), strings(green), comments(hint), numbers(purple),
-          types(yellow), operators(SEL blue), brackets(text).
-        Scroll with ↑↓. Pre-loaded example code for each language.
-        Show line numbers in gutter.
+  P176: Geo Quiz. Create apps/geo-quiz/ WASM app.
+        Window x=60, y=30, w=880, h=640. Capabilities: stdio=true, display=true.
+        Geography quiz: 40 country/capital questions, plus 20 continent/country questions.
+        Question displayed with 4 multiple-choice options (A/B/C/D).
+        LCG shuffle question order + answer order each session.
+        Score panel: correct/wrong, percentage, current streak, best streak.
+        Timer bar: 15 seconds per question (ping-pong ticks).
+        Hint: press H for a hint (removes 2 wrong options; costs 5 points).
+        End screen: final score, top-5 mistakes, play again button (R=restart).
 
 ## Queue (implement in order after current batch)
-- [ ] P175 — Alarm Clock: apps/alarm/ set alarms; HH:MM; ping-pong tick; flash+notify on trigger
-- [ ] P176 — Geo Quiz: apps/geo-quiz/ country/capital quiz; LCG shuffle; 30 questions; score/streak
+- [ ] P177 — Chess Puzzles: apps/chess-puzzles/ 20 hard-coded positions; mate-in-N; solution checker
+- [ ] P178 — Music Theory: apps/music-theory/ scales/chords; note wheel; interval quiz; key signatures
 
 ## Completed (recent — full list in plan README)
+- [x] P173 — Recipe Planner: apps/recipe-planner/ 60 recipes; 7×3 week grid; shopping list; R=randomize
+- [x] P174 — Syntax Highlighter: apps/syntax-demo/ Rust/Python/JSON; split pane; live edit; colors
 - [x] P171 — Star Map: apps/star-map/ 62 named stars; 12 constellations; spectral colors; pan/zoom
 - [x] P172 — Pixel Font Editor: apps/font-editor/ 8×16 glyph editor; 95 ASCII; preview 1×/2×/4×; hex
 - [x] P169 — Budget Planner v2: apps/budget2/ 12 months; 8 categories; bar chart; savings goal; +/-
