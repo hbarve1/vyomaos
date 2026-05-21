@@ -146,6 +146,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 136 — Spreadsheet | `apps/spreadsheet/` 10×20 grid; =SUM/AVG formula eval; cell refs; arrow nav; edit mode; CSV save/load | **complete** | — |
 | 137 — Image Gallery | `apps/image-gallery/` PPM thumbnail grid (4 cols); 3×3 px blocks; ←→↑↓ nav; Enter fullscreen; prev/next; Esc back | **complete** | — |
 | 138 — Text Adventure | `apps/text-adventure/` 10-room castle; take/drop/use/go commands; monster+key+sword puzzle; scrollback | **complete** | — |
+| 139 — Music Composer | `apps/music-composer/` 12-note × 16-step piano roll; toggle cells; ping-pong playback; BPM adj; save/load | **complete** | — |
+| 140 — Chat Simulator | `apps/chat/` 5 bots (LCG responses); @You mentions; scrollback 200; ping-pong ticks; color usernames | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
