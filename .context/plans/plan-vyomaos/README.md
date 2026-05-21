@@ -75,6 +75,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 65 — Weather App | `apps/weather/` reads /data/weather.toml [[day]] entries; condition/hi-lo/humidity display; forecast strip; ←→ nav; r=refresh | **complete** | — |
 | 66 — Scientific Calculator | `apps/sci-calculator/` expression evaluator; sin/cos/tan/sqrt/log/ln/abs; deg/rad toggle; ANS var; keyboard entry | **complete** | — |
 | 67 — Pomodoro Timer | `apps/pomodoro/` 25/5/15min work-break cycle; Instant-based elapsed; progress bar; pomodoro dot counter; Space/n/r keys | **complete** | — |
+| 68 — Log Viewer | `apps/log-viewer/` lists /data/*.log; color by severity; follow-tail mode; substring filter; ping-pong reload | **complete** | — |
+| 69 — Diff Viewer | `apps/diff-viewer/` two-step path input; LCS diff algorithm; +/- line coloring; row background tinting; ↑↓ scroll | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

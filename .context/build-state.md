@@ -7,31 +7,29 @@ repo: /Users/hbarve1/codes/hbarve1/vyomaos
 ## Current batch
 status: ready
 phases:
-  - P68 — Log Viewer
-  - P69 — Diff Viewer
+  - P70 — CSV Viewer
+  - P71 — JSON Viewer
 notes: |
-  P68: Log Viewer. Create apps/log-viewer/ WASM app.
+  P70: CSV Viewer. Create apps/csv-viewer/ WASM app.
        Window x=80, y=60, w=1360, h=760. Capabilities: stdio=true, display=true, filesystem=true.
-       Lists /data/*.log files on start; auto-loads if only one.
-       Tail mode: shows last N lines; re-reads file every 2s (poll via @supervisor: ping + REPLY:pong loop).
-       Filter mode: typing chars filters visible lines by substring. Esc clears filter.
-       Colors: lines containing "ERROR" or "error" → red; "WARN" → orange; "INFO" → accent; rest dim.
-       ↑↓: scroll; 'f': toggle follow/tail mode; Ctrl+C: quit.
+       Lists /data/*.csv files on start; auto-loads single file.
+       Parses CSV: split by comma, handle quoted fields.
+       Table view: first row = column headers (shown in accent color).
+       Fixed column widths calculated from header names (max 20 chars each).
+       ↑↓: scroll rows; ←→: scroll columns (if too wide); status bar shows row/col count.
+       Ctrl+C: quit.
 
-  P69: Diff Viewer. Create apps/diff-viewer/ WASM app.
+  P71: JSON Viewer. Create apps/json-viewer/ WASM app.
        Window x=80, y=60, w=1360, h=760. Capabilities: stdio=true, display=true, filesystem=true.
-       Two-step path input: first path A, then path B (Enter each time).
-       Reads both files and computes line-by-line diff:
-         - Lines only in A: show as "- <line>" in red
-         - Lines only in B: show as "+ <line>" in green
-         - Common lines: show as "  <line>" in dim
-       Very simple diff: compare line-by-line with LCS (longest common subsequence) algorithm.
-       Scrollable. ↑↓ to navigate. Ctrl+C or Esc back to path input.
+       Lists /data/*.json files on start; auto-loads single file.
+       Parses JSON text and pretty-prints with 2-space indentation.
+       Colors: keys in accent, strings in green, numbers in orange, booleans in blue, null in dim.
+       ↑↓: scroll; Ctrl+C: quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P70 — CSV Viewer: reads /data/*.csv; table view with column headers; ↑↓←→ scroll; row count in status bar
-- [ ] P71 — JSON Viewer: reads /data/*.json; pretty-prints with indentation and color; collapse/expand objects; ↑↓ scroll
-- [ ] P72 — Stopwatch: start/stop/lap; lap times stored; large elapsed display; keyboard s/l/r
+- [ ] P72 — Stopwatch: start/stop/lap; lap times list; large elapsed display; keyboard s/l/r; Instant-based
+- [ ] P73 — Unit Converter: length/weight/temp tabs; input field; arrows select unit pair; live conversion
+- [ ] P74 — Contact Book: stores name/phone/email in /data/contacts.toml; add/delete/search; ↑↓ nav
   P64: Clock Widget. Create apps/clock/ WASM app.
        Window x=300, y=200, w=320, h=360. Capabilities: stdio=true, display=true.
        Shows a digital clock face: HH:MM:SS in large text (use 'l' font size).
@@ -112,6 +110,8 @@ notes: |
 - [x] P65: Weather App — apps/weather/ (760×480); reads /data/weather.toml [[day]] entries; hi/lo/humidity; forecast strip; ←→ nav; r=refresh
 - [x] P66: Scientific Calculator — apps/sci-calculator/ (600×520); expression parser; sin/cos/tan/sqrt/log/ln/abs; deg/rad toggle; ANS; keyboard entry
 - [x] P67: Pomodoro Timer — apps/pomodoro/ (440×380); 25/5/15min work-break cycle; Instant elapsed; progress bar; pomodoro dots; Space/n/r
+- [x] P68: Log Viewer — apps/log-viewer/ (1360×760); color by severity; follow-tail mode; ping-pong reload; substring filter; ↑↓ scroll
+- [x] P69: Diff Viewer — apps/diff-viewer/ (1360×760); two-step path input; LCS diff; +/- coloring; row tinting; ↑↓ scroll
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
