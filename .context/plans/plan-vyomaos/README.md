@@ -120,6 +120,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 110 — Music Visualizer | `apps/music-viz/` 32 animated bars; integer sin approximation; hue-spectrum colors; ping-pong driven; speed/pause/randomize | **complete** | — |
 | 111 — Flashcard | `apps/flashcard/` 20 CS/programming Q&A cards; flip/nav; y/n scoring; shuffle via LCG; progress bar | **complete** | — |
 | 112 — Budget Tracker | `apps/budget/` 20-entry ledger; income/expense; 8 categories; add form; delete; balance summary | **complete** | — |
+| 113 — Habit Tracker | `apps/habit-tracker/` 10 habits; 7-day week grid; toggle today; streak counter; next-day shift; reset | **complete** | — |
+| 114 — Recipe Browser | `apps/recipe/` 10 built-in recipes; two-panel list+detail; ingredients+steps; search filter | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

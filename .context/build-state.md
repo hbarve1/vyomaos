@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P111+P112 complete -->
+last_updated: 2026-05-21  <!-- P113+P114 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,32 +18,31 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P113 — Habit Tracker
-  - P114 — Recipe Browser
+  - P115 — Expense Split
+  - P116 — Word Counter
 notes: |
-  P113: Habit Tracker. Create apps/habit-tracker/ WASM app.
-        Window x=300, y=60, w=840, h=640. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Daily habit tracking with 7-day week grid.
-        10 hardcoded habits (user can toggle done/not-done for today).
-        Grid: rows=habits, cols=7 days (Mon-Sun). Today's column highlighted.
-        Each cell: filled circle (done) or empty circle (not done). Today's column editable.
-        Space/Enter: toggle today's habit for selected row. ↑↓: navigate habits.
-        Streak count computed per habit (consecutive days done ending today).
-        Store state in 70-bit in-memory grid [[bool; 7]; 10] (today = day 6 = rightmost col).
-        'n': advance to next day (shifts grid left, clears rightmost col). 'r': reset week.
+  P115: Expense Split. Create apps/expense-split/ WASM app.
+        Window x=320, y=60, w=800, h=680. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Group expense splitter.
+        Up to 6 people. 'p': add person (type name). 'e': add expense (payer, amount, desc).
+        Expenses stored in-memory (max 20). Each expense: payer index, amount, description.
+        Settlement view: per-person paid vs owed amounts; who owes whom.
+        ↑↓: navigate expenses. 'd': delete expense. Tab: switch view (people/expenses/settlements).
+        Settlement algorithm: compute net per person; greedy min-transactions settlement.
+        No filesystem — all in session memory.
 
-  P114: Recipe Browser. Create apps/recipe/ WASM app.
-        Window x=260, y=40, w=920, h=760. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Recipe browser with 10 built-in recipes.
-        Two-panel layout: left=recipe list (240px); right=recipe detail.
-        ↑↓: navigate list. Enter: select recipe. ↑↓ in detail: scroll steps/ingredients.
-        Each recipe: name, prep_time, servings, ingredients (Vec<&str>), steps (Vec<&str>).
-        Search: type letter keys to filter recipe list; Backspace to clear.
-        Ingredients section then Steps section in detail panel with section headers.
+  P116: Word Counter. Create apps/word-counter/ WASM app.
+        Window x=280, y=60, w=880, h=640. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Real-time text analysis tool.
+        Large text input area (20 lines × 80 chars). Backspace, printable chars, Enter.
+        Live counts: words, characters (with/without spaces), lines, sentences, paragraphs.
+        Readability: avg word length, avg sentence length.
+        Stats panel on right side (200px): shows all metrics.
+        Ctrl+A: clear text. Ctrl+C: quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P115 — Expense Split: apps/expense-split/ group expense calculator; add people; add expenses; split evenly/custom
-- [ ] P116 — Word Counter: apps/word-counter/ text input area; real-time word/char/line counts; readability score
+- [ ] P117 — Countdown Timer: apps/countdown/ set HH:MM:SS; ping-pong tick; visual countdown ring/bar; alarm visual flash
+- [ ] P118 — Quiz Game: apps/quiz/ 30 trivia questions; 4-choice MCQ; score tracking; category tags
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -141,6 +140,8 @@ notes: |
 - [x] P110: Music Visualizer — apps/music-viz/ (800×560); 32 bars; integer sin approx; hue spectrum; ping-pong; speed/pause/randomize
 - [x] P111: Flashcard — apps/flashcard/ (800×600); 20 CS Q&A cards; flip; y/n scoring; LCG shuffle; progress bar
 - [x] P112: Budget Tracker — apps/budget/ (840×680); income/expense ledger; 8 categories; add form; balance summary
+- [x] P113: Habit Tracker — apps/habit-tracker/ (840×640); 10 habits; 7-day grid; streak; next-day shift
+- [x] P114: Recipe Browser — apps/recipe/ (920×760); 10 recipes; two-panel list+detail; ingredients+steps; search
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
