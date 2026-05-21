@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P113+P114 complete -->
+last_updated: 2026-05-21  <!-- P115+P116 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,31 +18,34 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P115 — Expense Split
-  - P116 — Word Counter
+  - P117 — Countdown Timer
+  - P118 — Quiz Game
 notes: |
-  P115: Expense Split. Create apps/expense-split/ WASM app.
-        Window x=320, y=60, w=800, h=680. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Group expense splitter.
-        Up to 6 people. 'p': add person (type name). 'e': add expense (payer, amount, desc).
-        Expenses stored in-memory (max 20). Each expense: payer index, amount, description.
-        Settlement view: per-person paid vs owed amounts; who owes whom.
-        ↑↓: navigate expenses. 'd': delete expense. Tab: switch view (people/expenses/settlements).
-        Settlement algorithm: compute net per person; greedy min-transactions settlement.
-        No filesystem — all in session memory.
+  P117: Countdown Timer. Create apps/countdown/ WASM app.
+        Window x=360, y=100, w=720, h=560. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Visual countdown timer with HH:MM:SS display.
+        Large digit display centered (use 'l' font for each digit separately, spaced).
+        States: Setup (enter time), Running, Paused, Done.
+        Setup: digit keys set time (HHMMSS cycling input). Enter=start. 
+        Running: ping-pong tick decrements seconds. Space=pause/resume. R=reset.
+        Done: flash background red for 3 ticks, show "TIME'S UP!" overlay. R=reset.
+        Thin progress bar below digits showing elapsed fraction.
+        Header shows: state, total seconds set.
 
-  P116: Word Counter. Create apps/word-counter/ WASM app.
-        Window x=280, y=60, w=880, h=640. Capabilities: stdio=true, display=true, shell=true.
-        HEADER_H=48. Real-time text analysis tool.
-        Large text input area (20 lines × 80 chars). Backspace, printable chars, Enter.
-        Live counts: words, characters (with/without spaces), lines, sentences, paragraphs.
-        Readability: avg word length, avg sentence length.
-        Stats panel on right side (200px): shows all metrics.
-        Ctrl+A: clear text. Ctrl+C: quit.
+  P118: Quiz Game. Create apps/quiz/ WASM app.
+        Window x=260, y=60, w=920, h=680. Capabilities: stdio=true, display=true, shell=true.
+        HEADER_H=48. Trivia quiz with 30 hardcoded questions.
+        Each question: question string, 4 choices, correct answer index (0-3).
+        Display: question at top, 4 choices labeled A/B/C/D.
+        A/B/C/D keys: select answer. Enter: confirm selection.
+        After confirm: show green=correct, red=wrong. Space/Enter: next question.
+        Score tracked: X/30 correct. Final score screen after last question. R=restart.
+        Category shown in header (5 categories: Science, History, Geography, Tech, General).
+        Questions shuffled via LCG seed on restart.
 
 ## Queue (implement in order after current batch)
-- [ ] P117 — Countdown Timer: apps/countdown/ set HH:MM:SS; ping-pong tick; visual countdown ring/bar; alarm visual flash
-- [ ] P118 — Quiz Game: apps/quiz/ 30 trivia questions; 4-choice MCQ; score tracking; category tags
+- [ ] P119 — Dice Roller: apps/dice/ multiple dice (d4/d6/d8/d10/d12/d20); roll animation; history log; total sum
+- [ ] P120 — Color Palette Generator: apps/color-gen/ base color input; analogous/complementary/triadic harmonies; swatch display
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -142,6 +145,8 @@ notes: |
 - [x] P112: Budget Tracker — apps/budget/ (840×680); income/expense ledger; 8 categories; add form; balance summary
 - [x] P113: Habit Tracker — apps/habit-tracker/ (840×640); 10 habits; 7-day grid; streak; next-day shift
 - [x] P114: Recipe Browser — apps/recipe/ (920×760); 10 recipes; two-panel list+detail; ingredients+steps; search
+- [x] P115: Expense Split — apps/expense-split/ (800×680); 6 people; 20 expenses; greedy settlement; 3-tab view
+- [x] P116: Word Counter — apps/word-counter/ (880×640); multi-line editor; word/char/line/sentence/para counts; stats panel
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |

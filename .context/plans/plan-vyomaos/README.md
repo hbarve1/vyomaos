@@ -122,6 +122,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 112 — Budget Tracker | `apps/budget/` 20-entry ledger; income/expense; 8 categories; add form; delete; balance summary | **complete** | — |
 | 113 — Habit Tracker | `apps/habit-tracker/` 10 habits; 7-day week grid; toggle today; streak counter; next-day shift; reset | **complete** | — |
 | 114 — Recipe Browser | `apps/recipe/` 10 built-in recipes; two-panel list+detail; ingredients+steps; search filter | **complete** | — |
+| 115 — Expense Split | `apps/expense-split/` 6 people; 20 expenses; greedy settlement; 3-tab view; add/delete forms | **complete** | — |
+| 116 — Word Counter | `apps/word-counter/` multi-line text editor; words/chars/lines/sentences/paragraphs; avg metrics; stats panel | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
