@@ -1,0 +1,15 @@
+[app]
+name    = "typing-race"
+version = "0.1.0"
+wasm    = "typing-race.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 200
+y = 60
+w = 1040
+h = 640

@@ -132,6 +132,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 122 — Pixel Art Editor | `apps/pixel-art/` 32×32 canvas; 16-color palette; draw/erase/fill/undo; Tab=next color | **complete** | — |
 | 123 — Simon Says | `apps/simon/` 4-color sequence memory; ping-pong animation; growing pattern; R/G/B/Y keys | **complete** | — |
 | 124 — Hangman | `apps/hangman/` 40-word list; 6 wrong guesses; gallows drawing; a-z keys; hint key | **complete** | — |
+| 125 — Typing Race | `apps/typing-race/` 10 phrases; 3 CPU racers (40/60/80 WPM); progress bars; ping-pong | **complete** | — |
+| 126 — Asteroids | `apps/asteroids/` rocks+bullets+ship; fixed-point physics; wrap-around; split on hit | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

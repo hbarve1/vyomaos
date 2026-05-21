@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P123+P124 complete -->
+last_updated: 2026-05-21  <!-- P125+P126 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,32 +18,33 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P125 — Typing Race
-  - P126 — Asteroids
+  - P127 — Math Quiz
+  - P128 — Paint Pro
 notes: |
-  P125: Typing Race. Create apps/typing-race/ WASM app.
-        Window x=200, y=60, w=1040, h=640. Capabilities: stdio=true, display=true, shell=true.
-        Player types a phrase; 3 CPU "racers" advance based on simulated WPM (40/60/80 WPM).
-        Phrase list: 10 short phrases (20-40 chars). LCG selects phrase.
-        Progress bars: 4 rows (You + CPU1 + CPU2 + CPU3), width=600px.
-        CPU progress advances per ping-pong tick proportional to their WPM.
-        Player progress = chars correctly typed / total chars.
-        Win/Loss detection: first to 100% wins. Overlay shows winner + WPM.
-        'n': new race. Backspace allowed. Wrong char typed shows red highlight on current char.
+  P127: Math Quiz. Create apps/math-quiz/ WASM app.
+        Window x=300, y=80, w=840, h=660. Capabilities: stdio=true, display=true, shell=true.
+        Arithmetic drill: +, -, ×, ÷ (integer). 4 difficulty levels (Easy/Med/Hard/Expert).
+        Each question: 2 operands chosen via LCG for current difficulty.
+        Player types answer digits (Backspace to delete, Enter to submit).
+        Per-question timer bar (10 seconds) using ping-pong ticks; timeout = wrong answer.
+        Streak counter: consecutive correct. High score = max streak in session.
+        After submit: flash green (correct) or red (wrong) then next question.
+        Tab: cycle difficulty. N: new session (reset streak).
 
-  P126: Asteroids. Create apps/asteroids/ WASM app.
-        Window x=100, y=40, w=900, h=800. Capabilities: stdio=true, display=true, shell=true.
-        Ship as 3 filled rects forming a triangle (fixed-dir simplification in integer math).
-        4 directions: Up/Down/Left/Right keys for thrust (no rotation — top-down view).
-        Rocks: Vec of (x,y,dx,dy,size) with wrap-around on edges. 6 initial rocks.
-        Bullets: Space fires; Vec of (x,y,dx,dy,age); max 4 simultaneous; bullet size 4px.
-        Collision: bullet+rock → split (size/2) rocks if size>16 else destroy; ship+rock → life lost.
-        Lives: 3. Score: +10 small, +20 medium, +40 large. New wave when all rocks cleared.
-        Ping-pong physics loop. Ship drawn as 3-rect cross. Rocks as filled squares.
+  P128: Paint Pro. Create apps/paint-pro/ WASM app.
+        Window x=80, y=40, w=1280, h=800. Capabilities: stdio=true, display=true, shell=true.
+        Canvas: 200×150 logical pixels at 5×5 physical cells = 1000×750px area.
+        Brush sizes: 1/2/3 (1=1px, 2=3×3, 3=5×5). Keys 1/2/3 to select.
+        10-color palette on right (same colors as paint app). Tab=next color.
+        Tools: draw (Space/hold), erase (E), fill (F, BFS flood-fill), clear (C).
+        Arrow keys move cursor. In draw mode: auto-draw on move too.
+        Opacity simulation: dim active-color fill by drawing with C_HINT overlay on alternate cells when brush>1.
+        Save: Ctrl+W writes canvas to /data/paint-pro.bin as raw RGBA bytes.
+        Load: Ctrl+L reads /data/paint-pro.bin if exists. Undo: U (10 levels).
 
 ## Queue (implement in order after current batch)
-- [ ] P127 — Math Quiz: apps/math-quiz/ arithmetic drill; 4 difficulty levels; timer per question; score streak
-- [ ] P128 — Paint Pro: apps/paint-pro/ brush sizes; opacity simulation; fill tool; color mixer panel; save to /data
+- [ ] P129 — Music Player: apps/music-player/ /data/*.raw playlist; play/pause/next/prev; waveform stub bars; metadata display
+- [ ] P130 — Code Editor: apps/code-editor/ syntax highlight (Rust keywords); line numbers; Ctrl+W save; Ctrl+L load; Tab=spaces
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
@@ -153,6 +154,8 @@ notes: |
 - [x] P122: Pixel Art Editor — apps/pixel-art/ (1000×760); 32×32 canvas; 16-color palette; draw/erase/fill/undo(10)
 - [x] P123: Simon Says — apps/simon/ (800×700); 4-quadrant colors; ping-pong flash animation; growing sequence; R/G/B/Y
 - [x] P124: Hangman — apps/hangman/ (880×700); 40-word list; 6 wrongs; gallows rects; a-z keys; hint; win/loss overlay
+- [x] P125: Typing Race — apps/typing-race/ (1040×640); 10 phrases; 3 CPU racers; ping-pong advance; WPM; win/loss overlay
+- [x] P126: Asteroids — apps/asteroids/ (900×800); fixed-point physics; rocks split; bullets; 3 lives; wrap; waves
 
 ## Reference patterns (minimise file reads each iteration)
 app_structure: |
