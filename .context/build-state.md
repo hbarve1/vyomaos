@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P133+P134 complete -->
+last_updated: 2026-05-21  <!-- P135+P136 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,39 +18,36 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P135 — File Diff Tool
-  - P136 — Spreadsheet
+  - P137 — Image Gallery
+  - P138 — Text Adventure
 notes: |
-  P135: File Diff Tool. Create apps/file-diff/ WASM app.
-        Window x=80, y=40, w=1360, h=760. Capabilities: stdio=true, display=true, filesystem=true.
-        Two-step path input (left file, right file from /data/).
-        LCS diff: compute longest common subsequence; derive +/- context.
-        Unified diff view: lines prefixed with ' ' (common), '+' (added), '-' (removed).
-        Colors: C_GREEN for '+' lines, C_RED for '-' lines, C_HINT for context.
-        Header shows filename A and B. ↑↓ scroll. PgUp/PgDn page scroll. Ctrl+C to go back.
-        Max 500 lines per file. Line numbers shown in gutter (4 chars).
-        CHAR_W=8, LINE_H=18, GUTTER_W=40. Visible lines = (H - HEADER_H - STATUS_H) / LINE_H.
+  P137: Image Gallery. Create apps/image-gallery/ WASM app.
+        Window x=40, y=40, w=1360, h=840. Capabilities: stdio=true, display=true, filesystem=true.
+        Lists /data/*.ppm files. 3-column thumbnail grid view (each thumb 200×150 px scaled to 4×4 cells).
+        Arrow keys ←→↑↓ to navigate thumbnails. Enter = fullscreen view of selected image.
+        In fullscreen: ←→ prev/next, Esc/Backspace back to grid. Filename caption below each thumb.
+        PPM P6 loader (same as photo-filter). Scale to fit 4×4 block pixels.
+        Status bar shows "N images  |  image X/N".
 
-  P136: Spreadsheet. Create apps/spreadsheet/ WASM app.
-        Window x=60, y=40, w=1200, h=760. Capabilities: stdio=true, display=true, filesystem=true.
-        10 columns × 20 rows grid. Column headers A-J, row numbers 1-20.
-        Cells store String (raw input). Formula cells start with '='.
-        Supported formulas: =SUM(A1:A5), =AVG(B1:B10), =cell ref (=A1), plain number/text.
-        Arrow keys navigate. Enter confirms cell edit. Tab moves right.
-        Backspace deletes last char in edit mode. Any printable char enters edit mode.
-        Ctrl+W saves as CSV to /data/spreadsheet.csv. Ctrl+L loads from /data/spreadsheet.csv.
-        Selected cell highlighted in C_SEL border. Status bar shows cell address + raw value.
-        CELL_W=100, CELL_H=22, HEADER_ROW_H=24, ROW_NUM_W=36.
+  P138: Text Adventure. Create apps/text-adventure/ WASM app.
+        Window x=100, y=40, w=1100, h=760. Capabilities: stdio=true, display=true.
+        10 rooms (a small dungeon/castle). struct Room { name, desc, exits: HashMap<dir,room_id>, items: Vec<item_id> }.
+        Directions: north/south/east/west (n/s/e/w shortcuts). Commands: look, go <dir>, take <item>,
+          drop <item>, use <item>, inventory (i), help, quit.
+        Player has Vec<item_id> inventory. Items: key, torch, sword, potion, map, coin, book, candle.
+        Puzzle: locked door needs key. Potion = restore health message. Sword = defeat monster.
+        Scrollback history: Vec<(String, u32)> with colors. VT-style prompt line at bottom.
+        CHAR_W=8, LINE_H=18. Visible scrollback = (H - HEADER_H - INPUT_H) / LINE_H.
 
 ## Queue (implement in order after current batch)
-- [ ] P137 — Image Gallery: apps/image-gallery/ 3-column thumbnail grid from /data/*.ppm; Enter fullscreen; ←→↑↓ nav; caption from filename
-- [ ] P138 — Text Adventure: apps/text-adventure/ 10-room story; inventory; look/go/take/drop/use; scrollback history
+- [ ] P139 — Music Composer: apps/music-composer/ piano roll; 16 steps × 12 notes; LCG playback; BPM; save/load
+- [ ] P140 — Chat Simulator: apps/chat/ fake multi-user chat; 5 bots with LCG responses; scrollback; @mention highlight
 
 ## Completed (recent — full list in plan README)
+- [x] P135 — File Diff Tool: apps/file-diff/ two-step input; LCS diff; +/- tinted rows; line numbers; scroll
+- [x] P136 — Spreadsheet: apps/spreadsheet/ 10×20 grid; =SUM/AVG/cellref; arrow nav; edit mode; CSV save/load
 - [x] P133 — Terminal Emulator: apps/terminal/ WASM shell; scrollback; Tab complete; history; ping built-in
 - [x] P134 — Map Viewer: apps/map-viewer/ 80×40 procedural ASCII world; 4 zooms; pan; 12 landmarks
-- [x] P131 — Crypto Ticker: apps/crypto-ticker/ 5 coins; LCG walk; sparklines ×40 pts; alert >5%; sort
-- [x] P132 — Photo Filter: apps/photo-filter/ PPM P6 loader; 5 filters; 4×4 mosaic; save filtered.ppm
 
 ## Completed
 - [x] P01–P08: Build foundation, kernel, supervisor, WASM runtime, IPC, seccomp, storage
