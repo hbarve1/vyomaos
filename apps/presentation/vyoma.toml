@@ -1,0 +1,14 @@
+[app]
+name    = "presentation"
+version = "0.1.0"
+wasm    = "presentation.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+x = 60
+y = 30
+w = 1280
+h = 800

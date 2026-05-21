@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P147+P148 complete -->
+last_updated: 2026-05-21  <!-- P149+P150 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,37 +18,39 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P149 — Presentation Viewer
-  - P150 — Note Taking App
+  - P151 — Markdown Editor
+  - P152 — Terminal Emulator v2
 notes: |
-  P149: Presentation Viewer. Create apps/presentation/ WASM app.
-        Window x=60, y=30, w=1280, h=800. Capabilities: stdio=true, display=true.
-        10 hardcoded slides. Each slide: title (large, C_ORANGE) + up to 5 bullet points.
-        Navigation: ←/→ or PgUp/PgDn to move between slides.
-        Progress bar at bottom (filled = slides seen / total).
-        Slide number indicator (e.g., "3 / 10") bottom-right.
-        F key toggles fullscreen mode (hides chrome, fills slide area).
-        Keyboard hint bar at bottom. Ctrl+C exits.
-        Slides: VyomaOS intro, architecture, apps, roadmap, etc. — use real content.
+  P151: Markdown Editor. Create apps/md-editor/ WASM app.
+        Window x=60, y=30, w=1360, h=800. Capabilities: stdio=true, display=true, filesystem=true.
+        Split-pane: left half = raw Markdown editor; right half = live preview.
+        Editor: full text editing (printable chars, Backspace, Enter newline, ↑↓←→).
+        Preview: render H1 (C_ORANGE large), H2 (C_SEL), H3 (C_YELLOW), **bold** (C_TEXT),
+                 `code` (C_GREEN), - bullet (C_HINT dot + C_TEXT), blank line = paragraph gap.
+        Tab = toggle focus between editor and preview.
+        Ctrl+W = save to /data/md-editor.md. Ctrl+L = load.
+        Ctrl+O = prompt for filename (status bar input), then load that file from /data/.
+        Start with a hardcoded example Markdown document in the editor.
+        Status bar: filename + cursor row:col + "EDITOR"/"PREVIEW" focus label.
 
-  P150: Note Taking App. Create apps/notes/ WASM app.
-        Window x=80, y=40, w=1100, h=760. Capabilities: stdio=true, display=true, filesystem=true.
-        Two-panel layout: left sidebar (250px) = note list; right = editor.
-        Multi-note: Vec<Note> { title: String, body: String }.
-        Start with 3 hardcoded example notes.
-        Ctrl+N = new note (prompts title in status bar). Ctrl+D = delete current note.
-        Tab = toggle focus between list and editor.
-        In list: ↑↓ navigate notes; Enter = open in editor.
-        In editor: full text editing (printable chars, Backspace, Enter for newline).
-        Ctrl+W saves all notes to /data/notes.csv (title,body one-per-line with \n escaped as \\n).
-        Ctrl+L loads from /data/notes.csv. Ctrl+F search (filters list by substring).
-        Status bar shows current note title + edit hint.
+  P152: Terminal Emulator v2. Create apps/term2/ WASM app.
+        Window x=40, y=20, w=1360, h=860. Capabilities: stdio=true, display=true.
+        80-column × 48-row simulated terminal. Monospace cell grid (CHAR_W=8, CHAR_H=16).
+        Simulated shell: built-in commands: help, ls, cat, echo, clear, date, uname, history.
+        echo just repeats. ls shows a hardcoded file list. cat responds with "no such file" or a
+        canned snippet if the file name matches (e.g., cat hello.rs shows a hello world snippet).
+        Scrollback buffer: up to 500 lines. PgUp/PgDn scroll. Ctrl+C returns to prompt.
+        Cursor blink: ping-pong tick every 20 REPLY: events toggles cursor visibility.
+        ANSI color: prompt in C_GREEN, commands in C_TEXT, output in C_HINT, errors in C_RED.
+        @supervisor: ping → REPLY: drives tick for cursor blink.
 
 ## Queue (implement in order after current batch)
-- [ ] P151 — Markdown Editor: apps/md-editor/ split-pane (raw left, preview right); H1/H2/bold/code/bullet; Ctrl+W save
-- [ ] P152 — Terminal Emulator v2: apps/term2/ 80×24 VT100; scrollback 500 lines; cursor blink (ping-pong); ANSI colors
+- [ ] P153 — Spreadsheet v2: apps/spreadsheet2/ 20×15 grid; =SUM/AVG/MIN/MAX/COUNT; cell refs; Ctrl+W CSV save
+- [ ] P154 — Drawing App v2: apps/draw2/ 300×200 canvas; brush/eraser/fill/line tools; palette; undo; save PPM
 
 ## Completed (recent — full list in plan README)
+- [x] P149 — Presentation Viewer: apps/presentation/ 10 slides; bullets; progress bar; fullscreen
+- [x] P150 — Note Taking App: apps/notes/ sidebar+editor; search; CSV save/load; Ctrl+N/D/W/L/F
 - [x] P147 — Network Monitor: apps/net-monitor/ LCG packets; throughput graph; proto filter; ping-pong
 - [x] P148 — Kanban Board: apps/kanban/ 3-col board; card CRUD; priority; CSV save/load
 - [x] P145 — Genealogy Tree: apps/genealogy/ 20 people 4 gens; Manhattan lines; ←→ siblings; ↑↓ parent/child
