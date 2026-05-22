@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-21  <!-- P175+P176 complete -->
+last_updated: 2026-05-22  <!-- P177+P178 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,31 +18,32 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P177 — Chess Puzzles
-  - P178 — Music Theory
+  - P179 — Weather Dashboard
+  - P180 — Code Diff Tool
 notes: |
-  P177: Chess Puzzles. Create apps/chess-puzzles/ WASM app.
-        Window x=60, y=30, w=760, h=720. Capabilities: stdio=true, display=true.
-        20 hard-coded chess positions as FEN strings (mate-in-1 and mate-in-2 puzzles).
-        Render 8×8 board with pieces using Unicode text (♜♞♝♛♚♟ / ♖♘♗♕♔♙).
-        Arrow keys to navigate board cursor; Enter to select piece; arrow to move target.
-        Solution checker: validate if the player's move matches the puzzle answer.
-        Show puzzle number, difficulty (★/★★), side to move, and success/fail overlay.
-        ←→ to navigate puzzles; R=reset current puzzle.
+  P179: Weather Dashboard. Create apps/weather-dash/ WASM app.
+        Window x=60, y=30, w=880, h=640. Capabilities: stdio=true, display=true.
+        Simulated 7-day forecast: daily hi/lo temp, weather condition (Sunny/Cloudy/Rainy/Stormy/Snowy).
+        Current conditions panel: temperature, humidity, wind speed, feels-like. LCG-simulated.
+        Hourly forecast strip: 24 bars showing temperature curve.
+        Animated weather icons using fill_rect (sun rays, clouds, rain drops, snowflakes).
+        Ping-pong tick advances simulation time (1 tick = 1 hour).
+        ←→ navigate days, R=refresh/re-randomize.
 
-  P178: Music Theory. Create apps/music-theory/ WASM app.
-        Window x=60, y=30, w=880, h=680. Capabilities: stdio=true, display=true.
-        Three tabs: Scales, Chords, Interval Quiz (Tab to cycle).
-        Scales tab: note wheel (12 notes in circle); select root + scale type; highlights scale tones.
-        Chords tab: pick root + chord type (maj/min/7/maj7/dim/aug); shows notes + voicing.
-        Interval Quiz: random root+interval question; 4 MCQ options; score + streak.
-        All 12 chromatic notes; 8 scale types (major, minor, dorian, phrygian, lydian, mixolydian, locrian, pentatonic); 6 chord types.
+  P180: Code Diff Tool. Create apps/code-diff/ WASM app.
+        Window x=60, y=30, w=1200, h=720. Capabilities: stdio=true, display=true.
+        Side-by-side diff view of two hard-coded file versions (e.g. Rust function before/after refactor).
+        LCS diff algorithm: green=added, red=removed, gray=unchanged, yellow=changed.
+        Line numbers on both sides. Scrollable (↑↓). Stats panel: +N/-N/~N lines.
+        5 hard-coded diff pairs to browse (Tab to switch pairs).
 
 ## Queue (implement in order after current batch)
-- [ ] P179 — Weather Dashboard: apps/weather-dash/ animated weather; hourly forecast; 7-day; LCG simulation
-- [ ] P180 — Code Diff Tool: apps/code-diff/ two-file compare; LCS diff; side-by-side; line numbers; stats
+- [ ] P181 — 3D Cube Viewer: apps/cube3d/ rotating wireframe cube; ASCII-style 3D projection; ±rotation
+- [ ] P182 — Recipe Generator: apps/recipe-gen/ ingredient-based; 40 ingredients; LCG combinations; steps
 
 ## Completed (recent — full list in plan README)
+- [x] P177 — Chess Puzzles: apps/chess-puzzles/ 20 positions; mate-in-1/2; arrow+Enter input; solution checker
+- [x] P178 — Music Theory: apps/music-theory/ 3 tabs (scales/chords/quiz); note wheel; interval quiz; streak
 - [x] P175 — Alarm Clock: apps/alarm/ 7-segment digital clock; 5 alarms; ping-pong tick; flash+notify on fire
 - [x] P176 — Geo Quiz: apps/geo-quiz/ 60 questions; 4 MCQ; 15-tick timer; hint (-5pts); streak; end screen
 - [x] P173 — Recipe Planner: apps/recipe-planner/ 60 recipes; 7×3 week grid; shopping list; R=randomize

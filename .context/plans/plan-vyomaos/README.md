@@ -184,6 +184,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 174 — Syntax Highlighter | `apps/syntax-demo/` Rust/Python/JSON; split pane; live edit; keyword/string/number colors | **complete** | — |
 | 175 — Alarm Clock | `apps/alarm/` 7-segment digital clock; up to 5 alarms; ping-pong tick; flash on fire | **complete** | — |
 | 176 — Geo Quiz | `apps/geo-quiz/` 60 questions; 4 MCQ; 15-tick timer; hint system; streak; end screen | **complete** | — |
+| 177 — Chess Puzzles | `apps/chess-puzzles/` 20 positions; mate-in-1/2; arrow+Enter move input; solution checker | **complete** | — |
+| 178 — Music Theory | `apps/music-theory/` 3 tabs: scales, chords, interval quiz; note wheel; ping-pong quiz | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

@@ -1,0 +1,14 @@
+[app]
+name    = "music-theory"
+version = "0.1.0"
+wasm    = "music-theory.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+x = 60
+y = 30
+w = 880
+h = 680
