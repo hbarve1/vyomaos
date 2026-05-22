@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-22  <!-- P179+P180 complete -->
+last_updated: 2026-05-22  <!-- P181+P182 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,32 +18,32 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P181 — 3D Cube Viewer
-  - P182 — Recipe Generator
+  - P183 — Habit Streak Calendar
+  - P184 — Password Generator
 notes: |
-  P181: 3D Cube Viewer. Create apps/cube3d/ WASM app.
-        Window x=60, y=30, w=800, h=700. Capabilities: stdio=true, display=true.
-        Rotating wireframe cube using integer fixed-point 3D projection (no floats).
-        Project 8 vertices using rotation matrices (integer sin/cos lookup table ×1000).
-        Draw 12 edges using Bresenham line (fill_rect 2px segments along each edge).
-        Ping-pong tick auto-rotates on each tick (increment angle by 3°).
-        Keys: ←→↑↓ = manual rotate X/Y; +/- = zoom; R = reset; Q = quit.
-        Show current angles and zoom factor in status bar.
-
-  P182: Recipe Generator. Create apps/recipe-gen/ WASM app.
+  P183: Habit Streak Calendar. Create apps/habit-streak/ WASM app.
         Window x=60, y=30, w=960, h=700. Capabilities: stdio=true, display=true.
-        40 hard-coded ingredients in 5 categories (protein, vegetable, grain, dairy, spice).
-        LCG selects 3-5 ingredients randomly to build a recipe.
-        Display: ingredient list panel (left), generated recipe steps panel (right).
-        Recipe steps: 5-7 steps generated from ingredient combination templates.
-        R = generate new recipe; ←→ = browse recipe history (last 10); Q = quit.
-        Show recipe name (auto-generated from main ingredient), prep time, servings.
+        10 hard-coded habits (Exercise, Read, Meditate, Code, Sleep 8h, No Sugar,
+          Walk 10k, Hydrate, Journal, Stretch).
+        GitHub-style heat map: 52 columns × 7 rows = 364 days of history per habit.
+        Cell size: 12×12px with 2px gap. LCG-simulated completion history.
+        Show streak count and completion rate for each habit.
+        ↑↓ navigate habits; ←→ scroll weeks; Tab toggle between heat map and list views.
+
+  P184: Password Generator. Create apps/pass-gen/ WASM app.
+        Window x=60, y=30, w=760, h=560. Capabilities: stdio=true, display=true.
+        Configurable: length (8-64, +/- keys), charset (uppercase/lowercase/digits/symbols, toggle).
+        LCG-based generation. Entropy bar (bits = log2(charset_size^length)).
+        History of last 10 generated passwords. Enter=generate new. C=copy (clipboard).
+        Show charset size, estimated crack time (color-coded: red/yellow/green).
 
 ## Queue (implement in order after current batch)
-- [ ] P183 — Habit Streak Calendar: apps/habit-streak/ 10 habits; GitHub-style heat map; 52-week grid; streak count
-- [ ] P184 — Password Generator: apps/pass-gen/ configurable length/charset; entropy bar; history 10; copy
+- [ ] P185 — Pixel Clock: apps/pixel-clock/ 64×32 pixel LED-style clock; color themes; ping-pong 1s
+- [ ] P186 — Typing Practice: apps/typing-practice/ WPM tracker; 20 passages; per-char accuracy; PB tracking
 
 ## Completed (recent — full list in plan README)
+- [x] P181 — 3D Cube Viewer: apps/cube3d/ integer fixed-point; sin/cos table; Bresenham; depth color; ping-pong
+- [x] P182 — Recipe Generator: apps/recipe-gen/ 40 ingredients; LCG; 7 steps; history 10; category tags
 - [x] P179 — Weather Dashboard: apps/weather-dash/ LCG 7-day forecast; hourly bars; animated icons; city selector
 - [x] P180 — Code Diff Tool: apps/code-diff/ LCS diff; side-by-side; green/red/yellow tint; 5 pairs; Tab/scroll
 - [x] P177 — Chess Puzzles: apps/chess-puzzles/ 20 positions; mate-in-1/2; arrow+Enter input; solution checker

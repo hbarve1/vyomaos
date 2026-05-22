@@ -188,6 +188,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 178 — Music Theory | `apps/music-theory/` 3 tabs: scales, chords, interval quiz; note wheel; ping-pong quiz | **complete** | — |
 | 179 — Weather Dashboard | `apps/weather-dash/` LCG 7-day forecast; hourly bar chart; animated icons; city selector | **complete** | — |
 | 180 — Code Diff Tool | `apps/code-diff/` LCS diff; side-by-side; green/red/yellow; line numbers; 5 pairs; Tab/scroll | **complete** | — |
+| 181 — 3D Cube Viewer | `apps/cube3d/` integer fixed-point 3D; sin/cos table; Bresenham edges; depth color; ping-pong rotate | **complete** | — |
+| 182 — Recipe Generator | `apps/recipe-gen/` 40 ingredients; LCG recipe; 7 steps; history 10; category color tags | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
