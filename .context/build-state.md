@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-22  <!-- P177+P178 complete -->
+last_updated: 2026-05-22  <!-- P179+P180 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,30 +18,34 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P179 — Weather Dashboard
-  - P180 — Code Diff Tool
+  - P181 — 3D Cube Viewer
+  - P182 — Recipe Generator
 notes: |
-  P179: Weather Dashboard. Create apps/weather-dash/ WASM app.
-        Window x=60, y=30, w=880, h=640. Capabilities: stdio=true, display=true.
-        Simulated 7-day forecast: daily hi/lo temp, weather condition (Sunny/Cloudy/Rainy/Stormy/Snowy).
-        Current conditions panel: temperature, humidity, wind speed, feels-like. LCG-simulated.
-        Hourly forecast strip: 24 bars showing temperature curve.
-        Animated weather icons using fill_rect (sun rays, clouds, rain drops, snowflakes).
-        Ping-pong tick advances simulation time (1 tick = 1 hour).
-        ←→ navigate days, R=refresh/re-randomize.
+  P181: 3D Cube Viewer. Create apps/cube3d/ WASM app.
+        Window x=60, y=30, w=800, h=700. Capabilities: stdio=true, display=true.
+        Rotating wireframe cube using integer fixed-point 3D projection (no floats).
+        Project 8 vertices using rotation matrices (integer sin/cos lookup table ×1000).
+        Draw 12 edges using Bresenham line (fill_rect 2px segments along each edge).
+        Ping-pong tick auto-rotates on each tick (increment angle by 3°).
+        Keys: ←→↑↓ = manual rotate X/Y; +/- = zoom; R = reset; Q = quit.
+        Show current angles and zoom factor in status bar.
 
-  P180: Code Diff Tool. Create apps/code-diff/ WASM app.
-        Window x=60, y=30, w=1200, h=720. Capabilities: stdio=true, display=true.
-        Side-by-side diff view of two hard-coded file versions (e.g. Rust function before/after refactor).
-        LCS diff algorithm: green=added, red=removed, gray=unchanged, yellow=changed.
-        Line numbers on both sides. Scrollable (↑↓). Stats panel: +N/-N/~N lines.
-        5 hard-coded diff pairs to browse (Tab to switch pairs).
+  P182: Recipe Generator. Create apps/recipe-gen/ WASM app.
+        Window x=60, y=30, w=960, h=700. Capabilities: stdio=true, display=true.
+        40 hard-coded ingredients in 5 categories (protein, vegetable, grain, dairy, spice).
+        LCG selects 3-5 ingredients randomly to build a recipe.
+        Display: ingredient list panel (left), generated recipe steps panel (right).
+        Recipe steps: 5-7 steps generated from ingredient combination templates.
+        R = generate new recipe; ←→ = browse recipe history (last 10); Q = quit.
+        Show recipe name (auto-generated from main ingredient), prep time, servings.
 
 ## Queue (implement in order after current batch)
-- [ ] P181 — 3D Cube Viewer: apps/cube3d/ rotating wireframe cube; ASCII-style 3D projection; ±rotation
-- [ ] P182 — Recipe Generator: apps/recipe-gen/ ingredient-based; 40 ingredients; LCG combinations; steps
+- [ ] P183 — Habit Streak Calendar: apps/habit-streak/ 10 habits; GitHub-style heat map; 52-week grid; streak count
+- [ ] P184 — Password Generator: apps/pass-gen/ configurable length/charset; entropy bar; history 10; copy
 
 ## Completed (recent — full list in plan README)
+- [x] P179 — Weather Dashboard: apps/weather-dash/ LCG 7-day forecast; hourly bars; animated icons; city selector
+- [x] P180 — Code Diff Tool: apps/code-diff/ LCS diff; side-by-side; green/red/yellow tint; 5 pairs; Tab/scroll
 - [x] P177 — Chess Puzzles: apps/chess-puzzles/ 20 positions; mate-in-1/2; arrow+Enter input; solution checker
 - [x] P178 — Music Theory: apps/music-theory/ 3 tabs (scales/chords/quiz); note wheel; interval quiz; streak
 - [x] P175 — Alarm Clock: apps/alarm/ 7-segment digital clock; 5 alarms; ping-pong tick; flash+notify on fire

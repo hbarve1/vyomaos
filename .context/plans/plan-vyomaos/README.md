@@ -186,6 +186,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 176 — Geo Quiz | `apps/geo-quiz/` 60 questions; 4 MCQ; 15-tick timer; hint system; streak; end screen | **complete** | — |
 | 177 — Chess Puzzles | `apps/chess-puzzles/` 20 positions; mate-in-1/2; arrow+Enter move input; solution checker | **complete** | — |
 | 178 — Music Theory | `apps/music-theory/` 3 tabs: scales, chords, interval quiz; note wheel; ping-pong quiz | **complete** | — |
+| 179 — Weather Dashboard | `apps/weather-dash/` LCG 7-day forecast; hourly bar chart; animated icons; city selector | **complete** | — |
+| 180 — Code Diff Tool | `apps/code-diff/` LCS diff; side-by-side; green/red/yellow; line numbers; 5 pairs; Tab/scroll | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
