@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-22  <!-- P183+P184 complete -->
+last_updated: 2026-05-22  <!-- P185+P186 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,31 +18,30 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P185 — Pixel Clock
-  - P186 — Typing Practice
+  - P187 — Morse Code Trainer
+  - P188 — Binary Clock
 notes: |
-  P185: Pixel Clock. Create apps/pixel-clock/ WASM app.
-        Window x=60, y=30, w=640, h=400. Capabilities: stdio=true, display=true.
-        LED-style large pixel clock: each digit rendered as a 5×7 pixel grid (each pixel = 12×12px cell).
-        Shows HH:MM:SS (6 digits + 2 colons). Ping-pong tick advances sim_secs every tick.
-        5 color themes: Green (C_GREEN), Blue (C_SEL), Orange (C_ORANGE), Red (C_RED), Purple (C_PURPLE).
-        T = next theme; R = reset time to 00:00:00; Q = quit.
-        Show date line (simulated) below the clock.
+  P187: Morse Code Trainer. Create apps/morse/ WASM app.
+        Window w=920, h=640. Capabilities: stdio=true, display=true.
+        26 letters (A-Z) + 10 digits (0-9) with standard Morse code patterns.
+        Two modes: Practice (show letter, type dit/dah with '.' and '-') and Decode (show Morse, type letter).
+        Score tracking: correct/total per session. Tab to switch mode. Q to quit.
+        Show full code table in sidebar. Ping-pong for timing.
 
-  P186: Typing Practice. Create apps/typing-practice/ WASM app.
-        Window x=60, y=30, w=1040, h=640. Capabilities: stdio=true, display=true.
-        20 hard-coded practice passages (mix of pangrams, tech quotes, poetry lines).
-        Ping-pong tick drives elapsed time (1 tick ≈ 1 second).
-        Per-character color feedback: green=correct, red=wrong, gray=untyped.
-        WPM = (correct_chars / 5) / elapsed_minutes. Accuracy = correct / total typed.
-        After completing a passage: show WPM, accuracy, errors; log to PB (personal best) if better.
-        Tab = next passage; Backspace supported; Ctrl+R = restart current.
+  P188: Binary Clock. Create apps/binary-clock/ WASM app.
+        Window w=640, h=480. Capabilities: stdio=true, display=true.
+        Display HH:MM:SS as binary: 6 columns (H1 H2 M1 M2 S1 S2), each column = 4 rows (bit3..bit0).
+        Lit cell = 1, dim cell = 0. Cell = 20×20px with 4px gap. Color themes.
+        Ping-pong advances sim_secs. T=next theme, R=reset, Q=quit.
+        Show decimal time below the binary grid.
 
 ## Queue (implement in order after current batch)
-- [ ] P187 — Morse Code Trainer: apps/morse/ 26 letters + 10 digits; play/decode mode; dit/dah input; score
-- [ ] P188 — Binary Clock: apps/binary-clock/ 6 rows (HH MM SS); each row = 4-bit binary; cell grid; ping-pong
+- [ ] P189 — ASCII Art Generator: apps/ascii-art/ 10 built-in images; 8 charset densities; invert; export to /data
+- [ ] P190 — Fibonacci Visualizer: apps/fib-viz/ spiral/bar/table views; LCG zoom; highlight golden ratio; ping-pong
 
 ## Completed (recent — full list in plan README)
+- [x] P185 — Pixel Clock: apps/pixel-clock/ 5×7 LED font; HH:MM:SS; 5 themes; blink colons; sim date
+- [x] P186 — Typing Practice: apps/typing-practice/ 20 passages; per-char coloring; WPM; PB tracking
 - [x] P183 — Habit Streak Calendar: apps/habit-streak/ 10 habits; GitHub heat map 52×7; streak/rate; Tab list
 - [x] P184 — Password Generator: apps/pass-gen/ LCG; U/L/D/S charset; entropy bar; history 10; copy
 - [x] P181 — 3D Cube Viewer: apps/cube3d/ integer fixed-point; sin/cos table; Bresenham; depth color; ping-pong

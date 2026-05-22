@@ -1,0 +1,12 @@
+[package]
+name    = "pixel-clock"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "pixel-clock"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+strip     = true

@@ -1,0 +1,9 @@
+[app]
+name    = "pixel-clock"
+version = "0.1.0"
+wasm    = "pixel-clock.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true

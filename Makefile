@@ -242,6 +242,8 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/recipe-gen/Cargo.toml         --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/habit-streak/Cargo.toml       --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/pass-gen/Cargo.toml           --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/pixel-clock/Cargo.toml        --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/typing-practice/Cargo.toml    --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────
