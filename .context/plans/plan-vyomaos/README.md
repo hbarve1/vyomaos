@@ -190,6 +190,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 180 — Code Diff Tool | `apps/code-diff/` LCS diff; side-by-side; green/red/yellow; line numbers; 5 pairs; Tab/scroll | **complete** | — |
 | 181 — 3D Cube Viewer | `apps/cube3d/` integer fixed-point 3D; sin/cos table; Bresenham edges; depth color; ping-pong rotate | **complete** | — |
 | 182 — Recipe Generator | `apps/recipe-gen/` 40 ingredients; LCG recipe; 7 steps; history 10; category color tags | **complete** | — |
+| 183 — Habit Streak Calendar | `apps/habit-streak/` 10 habits; GitHub heat map 52×7; streak/rate stats; Tab list view | **complete** | — |
+| 184 — Password Generator | `apps/pass-gen/` LCG gen; U/L/D/S charset; entropy bar; strength; history 10; copy | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

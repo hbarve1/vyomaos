@@ -1,0 +1,14 @@
+[app]
+name    = "habit-streak"
+version = "0.1.0"
+wasm    = "habit-streak.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+x = 60
+y = 30
+w = 960
+h = 700
