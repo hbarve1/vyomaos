@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P215+P216 complete -->
+last_updated: 2026-05-23  <!-- P217+P218 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,33 +18,40 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P217 — Cellular Automaton
-  - P218 — Color Theory Wheel
+  - P219 — Waveform Oscilloscope
+  - P220 — Binary Tree Visualizer
 notes: |
-  P217: Cellular Automaton. Create apps/cellular/ WASM app.
+  P219: Waveform Oscilloscope. Create apps/oscilloscope/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        1D elementary cellular automaton (Wolfram rules 0-255).
-        Rows animate top-to-bottom; each tick adds next row from current row state.
-        When screen fills, shift rows up. Ping-pong advances one row per tick.
-        +/- = change rule number (0-255). R = reset. Space = pause. Q = quit.
-        Cell colors: alive=C_SEL (0x58A6FFFF), dead=C_BG (0x0D1117FF).
-        Show rule number and binary representation in header.
-        Width = 120 cells, CELL_W = 8px each. Each row = 8px tall.
+        Display 4 waveforms: Sin, Square, Sawtooth, Triangle.
+        Two channels shown simultaneously (channel A above, channel B below).
+        Each channel has: waveform type (1-4 keys), amplitude (A/Z), frequency (S/X).
+        Ping-pong advances phase. O = toggle overlay mode (both channels same area).
+        Space = pause. Q = quit. Use fixed-point sin table (FP=1024, 360 entries).
+        Grid overlay: 10 vertical + 8 horizontal lines in C_BORDER color.
+        Channel A: cyan (0x58A6FFFF), Channel B: orange (0xFFA657FF).
+        Amplitude: 1-5 (default 3), Frequency: 1-8 (multiplier, default 1).
 
-  P218: Color Theory Wheel. Create apps/color-wheel/ WASM app.
+  P220: Binary Tree Visualizer. Create apps/bin-tree/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Draw HSV color wheel centered at (480, 380) with radius=200.
-        Fill wheel using fill_rect per pixel: hue=angle, saturation=distance/radius, value=1.
-        Highlight complementary (180°), triadic (120°/240°), and analogous (±30°) color schemes.
-        Ping-pong rotates the base hue 1°/tick.
-        +/- = change segments mode (complementary/triadic/analogous/tetradic).
-        Space = pause. Q = quit. Show current hue, mode, and HSV values in status panel.
+        Show a 31-node complete binary tree (5 levels: root + 4 levels).
+        Nodes numbered 1-31 (BFS order). Root at top center.
+        Layout: level 0 at y=80, each level +100px. Horizontal spacing halves per level.
+        Node circles: radius=22px drawn via horizontal fill_rect strips.
+        Color by depth: level0=C_ORANGE, level1=C_SEL, level2=C_GREEN, level3=C_HINT, level4=C_BORDER.
+        Edges drawn as diagonal fill_rect lines (Bresenham-style).
+        Ping-pong highlights traversal: In-order traversal animates one node per tick.
+        Tab = cycle traversal (In-order, Pre-order, Post-order, BFS).
+        R = reset traversal. Space = pause. Q = quit.
+        Show traversal order in right panel as numbered list.
 
 ## Queue (implement in order after current batch)
-- [ ] P219 — Waveform Oscilloscope: apps/oscilloscope/ 4 waveforms (sin/square/sawtooth/triangle); amplitude+freq knobs; ping-pong; overlay mode
-- [ ] P220 — Binary Tree Visualizer: apps/bin-tree/ 31-node tree; insert/delete; BST order; color by depth; ping-pong balance animation
+- [ ] P221 — Sand Simulation: apps/sand/ falling-sand cellular automaton; 160×120 grid; 5 materials (sand/water/stone/fire/empty); paint with cursor keys; C clear
+- [ ] P222 — Number Puzzle (Kakuro): apps/kakuro/ 8×8 grid; sum clues; digit entry; validate; hint; solve
 
 ## Completed (recent — full list in plan README)
+- [x] P217 — Cellular Automaton: apps/cellular/ 1D Wolfram CA; 120 cells; 83 rows scroll; VecDeque; rule 0-255; +/-/R/Space/Q
+- [x] P218 — Color Theory Wheel: apps/color-wheel/ HSV disc; f32 atan2; complementary/triadic/analogous/tetradic; harmony markers; swatches; +/-/Space/Q
 - [x] P215 — Fourier Series: apps/fourier/ phasor arms + wave panel; Square/Sawtooth/Triangle; 1-20 harmonics; fixed-point sin/cos; Tab/+/-/Space/Q
 - [x] P216 — Typing Stats Dashboard: apps/type-stats/ WPM histogram; letter heatmap QWERTY; error by row; LCG data; Tab/R/Q
 - [x] P213 — Gravity Simulator: apps/gravity/ N-body; 5 planets; MP=256 fixed-point; trails; ping-pong; A/R/Space/Q

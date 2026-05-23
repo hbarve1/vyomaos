@@ -273,6 +273,8 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/circuit/Cargo.toml            --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/fourier/Cargo.toml            --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/type-stats/Cargo.toml         --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/cellular/Cargo.toml           --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/color-wheel/Cargo.toml        --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────

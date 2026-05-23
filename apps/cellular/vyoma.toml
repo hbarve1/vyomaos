@@ -1,0 +1,13 @@
+[app]
+name    = "cellular"
+version = "0.1.0"
+wasm    = "cellular.wasm"
+
+[window]
+title  = "Cellular Automaton"
+width  = 960
+height = 720
+
+[capabilities]
+stdio   = true
+display = true
