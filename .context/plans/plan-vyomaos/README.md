@@ -226,6 +226,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 216 — Typing Stats Dashboard | `apps/type-stats/` WPM histogram; letter heatmap QWERTY; error by row; LCG data; Tab/R/Q | **complete** | — |
 | 217 — Cellular Automaton | `apps/cellular/` 1D Wolfram CA rule 0-255; 120 cells; 83 rows scroll; VecDeque; ping-pong; +/-/R/Space/Q | **complete** | — |
 | 218 — Color Theory Wheel | `apps/color-wheel/` HSV disc CX=420 R=200 CELL=6; harmony markers; complementary/triadic/analogous/tetradic; swatches; +/-/Space/Q | **complete** | — |
+| 219 — Waveform Oscilloscope | `apps/oscilloscope/` 2-channel; Sin/Square/Sawtooth/Triangle; amp 1-5; freq 1-8; overlay mode; Tab/1-4/A/Z/S/X/O/Q | **complete** | — |
+| 220 — Binary Tree Visualizer | `apps/bin-tree/` 31-node; radius=22; traversal strip; In/Pre/Post/BFS; gold active node; Tab/R/Space/Q | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

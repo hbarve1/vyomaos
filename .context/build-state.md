@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P217+P218 complete -->
+last_updated: 2026-05-23  <!-- P219+P220 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,38 +18,42 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P219 — Waveform Oscilloscope
-  - P220 — Binary Tree Visualizer
+  - P221 — Sand Simulation
+  - P222 — Kakuro Puzzle
 notes: |
-  P219: Waveform Oscilloscope. Create apps/oscilloscope/ WASM app.
+  P221: Sand Simulation. Create apps/sand/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Display 4 waveforms: Sin, Square, Sawtooth, Triangle.
-        Two channels shown simultaneously (channel A above, channel B below).
-        Each channel has: waveform type (1-4 keys), amplitude (A/Z), frequency (S/X).
-        Ping-pong advances phase. O = toggle overlay mode (both channels same area).
-        Space = pause. Q = quit. Use fixed-point sin table (FP=1024, 360 entries).
-        Grid overlay: 10 vertical + 8 horizontal lines in C_BORDER color.
-        Channel A: cyan (0x58A6FFFF), Channel B: orange (0xFFA657FF).
-        Amplitude: 1-5 (default 3), Frequency: 1-8 (multiplier, default 1).
+        Falling-sand cellular automaton. Grid: COLS=160, ROWS=112, CELL=6px.
+        Grid occupies: x=0..960, y=32..704 (GY=32, grid height=672, 672/6=112 rows).
+        5 materials: Empty (0x0D1117FF), Sand (0xE2B96FFF), Water (0x2B65ECFF),
+          Stone (0x8B949EFF), Fire (0xFF6B35FF).
+        Physics per tick:
+          Sand: falls down if empty below; slides diag if blocked; stays.
+          Water: falls if empty; spreads left/right randomly; displaces sand upward.
+          Fire: spreads to adjacent empty cells 5% chance; extinguishes after 8 ticks (use age field).
+          Stone: static, never moves.
+        State: grid[row][col] = material + age (u8 each). Tick processes bottom-to-top.
+        Controls: ←→↑↓ = move cursor; 1-5 = select material; Space = paint at cursor;
+          H = hold-to-paint mode toggle; C = clear; Q = quit.
+        Cursor: 3×3 brush. Draw cursor position indicator. Show material name in header.
+        Ping-pong tick = one physics step.
 
-  P220: Binary Tree Visualizer. Create apps/bin-tree/ WASM app.
+  P222: Kakuro Puzzle. Create apps/kakuro/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Show a 31-node complete binary tree (5 levels: root + 4 levels).
-        Nodes numbered 1-31 (BFS order). Root at top center.
-        Layout: level 0 at y=80, each level +100px. Horizontal spacing halves per level.
-        Node circles: radius=22px drawn via horizontal fill_rect strips.
-        Color by depth: level0=C_ORANGE, level1=C_SEL, level2=C_GREEN, level3=C_HINT, level4=C_BORDER.
-        Edges drawn as diagonal fill_rect lines (Bresenham-style).
-        Ping-pong highlights traversal: In-order traversal animates one node per tick.
-        Tab = cycle traversal (In-order, Pre-order, Post-order, BFS).
-        R = reset traversal. Space = pause. Q = quit.
-        Show traversal order in right panel as numbered list.
+        8×8 grid Kakuro puzzle. Each clue cell shows H:sum/V:sum.
+        3 hardcoded puzzles. Cells: black (clue), white (entry), or blocked.
+        Entry cells: digits 1-9, no repeats in run. Arrow nav (↑↓←→) within entry cells.
+        Number keys 1-9 = fill selected cell. Backspace = clear. C = check (highlight errors).
+        N = next puzzle. Q = quit. Cell size 72×72px. Show check result in footer.
+        Use CELL_W=72, CELL_H=72, OX=48, OY=48 (grid origin).
 
 ## Queue (implement in order after current batch)
-- [ ] P221 — Sand Simulation: apps/sand/ falling-sand cellular automaton; 160×120 grid; 5 materials (sand/water/stone/fire/empty); paint with cursor keys; C clear
-- [ ] P222 — Number Puzzle (Kakuro): apps/kakuro/ 8×8 grid; sum clues; digit entry; validate; hint; solve
+- [ ] P223 — Particle Fireworks: apps/fireworks/ launch particles; gravity+fade; colorful trails; ping-pong tick; Space=new burst; Q=quit
+- [ ] P224 — Mandala Builder: apps/mandala/ rotational symmetry 3-16; draw arc/dot/line; ping-pong rotation; ←→ symmetry count; S save pattern
 
 ## Completed (recent — full list in plan README)
+- [x] P219 — Waveform Oscilloscope: apps/oscilloscope/ 2-channel; 4 waveforms; amp/freq controls; overlay mode; Tab/1-4/A/Z/S/X/O/Q
+- [x] P220 — Binary Tree Visualizer: apps/bin-tree/ 31-node; in/pre/post/bfs traversal; gold active highlight; traversal strip; Tab/R/Space/Q
 - [x] P217 — Cellular Automaton: apps/cellular/ 1D Wolfram CA; 120 cells; 83 rows scroll; VecDeque; rule 0-255; +/-/R/Space/Q
 - [x] P218 — Color Theory Wheel: apps/color-wheel/ HSV disc; f32 atan2; complementary/triadic/analogous/tetradic; harmony markers; swatches; +/-/Space/Q
 - [x] P215 — Fourier Series: apps/fourier/ phasor arms + wave panel; Square/Sawtooth/Triangle; 1-20 harmonics; fixed-point sin/cos; Tab/+/-/Space/Q
