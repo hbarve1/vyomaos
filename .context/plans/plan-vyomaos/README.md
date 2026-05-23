@@ -220,6 +220,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 210 — Word Search | `apps/word-search/` 15×15 grid; 10 hidden words; horizontal/vertical/diagonal; Enter select; N new; Q quit | **complete** | — |
 | 211 — Morse Code Decoder Live | `apps/morse-live/` type . and -; real-time decode; chart highlights; Space=commit; Enter=word; N=clear; Q quit | **complete** | — |
 | 212 — Prime Sieve | `apps/prime-sieve/` Sieve of Eratosthenes; 2-200 animated; ping-pong; Space/R/+/-; prime list; Q quit | **complete** | — |
+| 213 — Gravity Simulator | `apps/gravity/` N-body gravity; 5 planets; fixed-point MP=256; trails; ping-pong; A/R/Space/Q | **complete** | — |
+| 214 — Circuit Diagram Viewer | `apps/circuit/` 10 preset circuits; fill_rect schematics; R/C/LED/SW/motor components; ←→/Q | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

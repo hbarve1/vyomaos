@@ -1,0 +1,13 @@
+[app]
+name    = "gravity"
+version = "0.1.0"
+wasm    = "gravity.wasm"
+
+[window]
+title  = "Gravity Simulator"
+width  = 960
+height = 720
+
+[capabilities]
+stdio   = true
+display = true

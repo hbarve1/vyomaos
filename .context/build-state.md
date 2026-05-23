@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P211+P212 complete -->
+last_updated: 2026-05-23  <!-- P213+P214 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,30 +18,32 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P213 — Gravity Simulator
-  - P214 — Circuit Diagram
+  - P215 — Fourier Series
+  - P216 — Typing Stats Dashboard
 notes: |
-  P213: Gravity Simulator. Create apps/gravity/ WASM app.
+  P215: Fourier Series. Create apps/fourier/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        5 planets with different masses; fixed-point gravitational physics.
-        Draw trails (last 40 positions) per planet; ping-pong advances simulation.
-        Each planet: colored circle sized by mass.
-        A = add random planet (up to 8), R = reset to 5, Space = pause/resume, Q = quit.
-        Use LCG for initial positions/velocities. Fixed-point with FP=1<<12.
+        Animate Fourier partial sums of 3 wave types: square, sawtooth, triangle.
+        Show 1-20 harmonics; ping-pong advances phase (0..2π over 180 steps).
+        Draw: rotating phasors on left (circles), resulting wave on right.
+        +/- = add/remove harmonics. Tab = cycle wave type. Space = pause. Q = quit.
+        Use fixed-point sin/cos table (FP=1024, precomputed 360 entries).
 
-  P214: Circuit Diagram Viewer. Create apps/circuit/ WASM app.
+  P216: Typing Stats Dashboard. Create apps/type-stats/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        10 preset circuit diagrams drawn with fill_rect primitives.
-        Components: resistors (zigzag as rect series), capacitors (two parallel lines),
-        LEDs (triangle rect + line), wires (thin rects), labels.
-        ←→ to cycle circuits; show component count and circuit name.
-        Each circuit fits in 800×500 canvas centered in window.
+        Simulated typing stats (LCG-generated sample data).
+        Panel 1: WPM histogram (last 20 sessions, bar chart).
+        Panel 2: Letter frequency heatmap (keyboard layout grid, heat by LCG freq).
+        Panel 3: Error rate by keyboard row (top/home/bottom rows colored).
+        Tab = cycle panel. R = re-randomize. Q = quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P215 — Fourier Series: apps/fourier/ animate partial sums; 1-20 harmonics; ping-pong; square/sawtooth/triangle waves
-- [ ] P216 — Typing Stats Dashboard: apps/type-stats/ show WPM histogram; letter frequency heatmap; error rate by row
+- [ ] P217 — Cellular Automaton: apps/cellular/ rule-based 1D automaton; 256 rules; animate rows top-to-bottom; ping-pong; +/- rule; R reset
+- [ ] P218 — Color Theory Wheel: apps/color-wheel/ HSV wheel; complementary/triadic/analogous highlights; ping-pong rotation; +/- segments
 
 ## Completed (recent — full list in plan README)
+- [x] P213 — Gravity Simulator: apps/gravity/ N-body; 5 planets; MP=256 fixed-point; trails; ping-pong; A/R/Space/Q
+- [x] P214 — Circuit Diagram Viewer: apps/circuit/ 10 circuits; fill_rect schematics; R/C/LED/SW; ←→/Q
 - [x] P211 — Morse Code Decoder Live: apps/morse-live/ . and - input; real-time decode; chart highlights; Space/Enter/N/Q
 - [x] P212 — Prime Sieve: apps/prime-sieve/ Sieve of Eratosthenes; 2-200 animated; ping-pong; Space/R/+/-/Q
 - [x] P209 — RGB Mixer: apps/rgb-mixer/ R/G/B sliders; 200×200 preview; complementary + 2 analogous; C copy; Q quit
