@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P195+P196 complete -->
+last_updated: 2026-05-23  <!-- P197+P198 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,28 +18,32 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P197 — Life Simulator
-  - P198 — Color Picker v2
+  - P199 — Typing Speed Test v2
+  - P200 — Virtual Piano
 notes: |
-  P197: Life Simulator. Create apps/life/ WASM app.
+  P199: Typing Speed Test v2. Create apps/typing-speed2/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Conway's Game of Life on a 80×50 cell grid.
-        Each cell is 10×10 px. Random initial state (LCG).
-        R = new random board. P = pause/play toggle. S = step one generation.
-        Show generation counter and live cell count.
-        Ping-pong tick for animation. Q=quit.
+        30 random sentences from a built-in list; LCG picks sentence each round.
+        Per-char coloring: correct=green, wrong=red, untyped=hint.
+        Shows real-time WPM (chars typed / 5 / elapsed seconds * 60) and accuracy %.
+        Leaderboard: store last 5 scores (WPM + accuracy). Tab=restart. Q=quit.
+        No ping-pong needed (purely input-driven).
 
-  P198: Color Picker v2. Create apps/color-picker2/ WASM app.
-        Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Three panels: HSV gradient (120×120 cells at 4px each), RGB sliders, Hex display.
-        16 saved swatches at bottom. S=save swatch. Tab=focus panel.
-        Arrow keys adjust selected component. Shows #RRGGBB. Q=quit.
+  P200: Virtual Piano. Create apps/piano/ WASM app.
+        Window w=960, h=520. Capabilities: stdio=true, display=true.
+        2-octave keyboard C3–B4 (24 keys: 14 white + 10 black per octave × 2).
+        Layout: white keys 28px wide × 100px tall, black keys 18px × 60px at ±14px.
+        Key mapping: z-m = C3–B3, a-k = C4–B4 (qwerty-piano layout).
+        Pressing a key highlights it (C_SEL) and shows note name.
+        D = toggle demo mode: LCG auto-plays random notes. Q=quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P199 — Typing Speed Test v2: apps/typing-speed2/ 30 random sentences; per-char highlight; WPM+accuracy; leaderboard 5 scores
-- [ ] P200 — Virtual Piano: apps/piano/ 2-octave keyboard (C3–B4); 24 keys; letter keys play; sustain; LCG demo mode
+- [ ] P201 — Fractal Explorer: apps/fractal/ Mandelbrot set; integer escape-time; pan/zoom; 5 color palettes
+- [ ] P202 — Tarot Card Reader: apps/tarot/ 22 major arcana; LCG 3-card spread; meanings panel; N=new reading
 
 ## Completed (recent — full list in plan README)
+- [x] P197 — Life Simulator: apps/life/ Conway's Game of Life; 80×50 grid; age-based color; P/S/R/Q; ping-pong
+- [x] P198 — Color Picker v2: apps/color-picker2/ HSV square + 3 sliders; RGB+Hex; 16 swatches; Tab/S/Q
 - [x] P195 — Crossword: apps/crossword/ 5×5 grid; 10 clues; check/reveal; arrow nav; C/R/Q
 - [x] P196 — Emoji Art: apps/emoji-art/ 20 block-char compositions; multi-color layers; zoom 1×–4×; ←→/Z/Q
 - [x] P193 — Spirograph: apps/spirograph/ 5 presets; hypo/epitrochoid; hue color; ping-pong; ←→/+/-
