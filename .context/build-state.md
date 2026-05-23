@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P203+P204 complete -->
+last_updated: 2026-05-23  <!-- P205+P206 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,30 +18,32 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P205 — Number Base Converter
-  - P206 — Lissajous Curves
+  - P207 — Tic Tac Toe
+  - P208 — ASCII Table
 notes: |
-  P205: Number Base Converter. Create apps/base-conv/ WASM app.
-        Window w=800, h=560. Capabilities: stdio=true, display=true.
-        4 panels showing the same number in binary / octal / decimal / hex simultaneously.
-        User selects active base with keys B/O/D/X (or 1-4).
-        Type digits valid for selected base; all 4 panels update in real-time.
-        Shows bit-width breakdown (8/16/32/64 bit) and overflow indicator.
-        Backspace to delete. C = clear. Q=quit.
+  P207: Tic Tac Toe. Create apps/tictactoe/ WASM app.
+        Window w=640, h=680. Capabilities: stdio=true, display=true.
+        3×3 grid; human (X) vs AI (O).
+        AI uses minimax (perfect play); human goes first.
+        Arrow keys move cursor. Enter = place X. Win/Draw/Loss overlay.
+        Score tracking: W/D/L counts. R = new game. Q=quit.
 
-  P206: Lissajous Curves. Create apps/lissajous/ WASM app.
+  P208: ASCII Table. Create apps/ascii-table/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Animated Lissajous figure: x=A*sin(a*t+δ), y=B*sin(b*t).
-        Canvas 600×600 px centered. Parameters: a (1-8), b (1-8), δ (0-360 deg in 15° steps).
-        Hue-cycle trail: each point colored by angle t modulo 360.
-        Ping-pong tick advances t by 0.02 per tick (360 total steps, then wraps).
-        ←→ change ratio a:b. ↑↓ change δ. R=reset. Q=quit.
+        Show all 128 ASCII characters (0-127) in a scrollable table.
+        Columns: Dec | Hex | Oct | Bin | Char | Name/description.
+        ↑↓ scroll one row. PgUp/PgDn scroll 16 rows (use + / - as PgUp/PgDn).
+        / or F = search: type char or decimal code, jumps to matching row.
+        Highlight control chars (0-31) in orange, printable (32-126) in green, DEL(127) in red.
+        Q=quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P207 — Tic Tac Toe: apps/tictactoe/ 3×3 grid; human vs AI (minimax); win detection; score tracking
-- [ ] P208 — ASCII Table: apps/ascii-table/ 128 chars; hex/dec/oct/bin columns; search by char or code; scrollable
+- [ ] P209 — RGB Mixer: apps/rgb-mixer/ 3 sliders R/G/B; live color preview; complementary + analogous swatches; copy hex
+- [ ] P210 — Word Search: apps/word-search/ 15×15 grid; 10 hidden words; ←→↑↓ cursor; Enter=mark; found list
 
 ## Completed (recent — full list in plan README)
+- [x] P205 — Number Base Converter: apps/base-conv/ bin/oct/dec/hex panels; B/O/D/X select; bit-width; overflow
+- [x] P206 — Lissajous Curves: apps/lissajous/ hue trail; ping-pong; a/b ratio; delta phase
 - [x] P203 — Kanban Board v2: apps/kanban2/ 4 cols; 20 cards; Tab/Enter promote; D demote; priority colors; N new
 - [x] P204 — Geo Puzzle: apps/geo-puzzle/ 30 country rect silhouettes; type guess; H hint; N skip; score
 - [x] P201 — Fractal Explorer: apps/fractal/ Mandelbrot; i64 fixed-point; 5 palettes; arrows pan; +/- zoom

@@ -261,6 +261,8 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/tarot/Cargo.toml              --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/kanban2/Cargo.toml            --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/geo-puzzle/Cargo.toml         --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/base-conv/Cargo.toml          --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/lissajous/Cargo.toml          --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────

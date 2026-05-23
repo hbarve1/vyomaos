@@ -212,6 +212,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 202 — Tarot Card Reader | `apps/tarot/` 22 major arcana; LCG 3-card spread; upright/reversed; detail panel; N/Q | **complete** | — |
 | 203 — Kanban Board v2 | `apps/kanban2/` 4 cols; 20 seeded cards; priority colors; Tab/Enter promote; D demote; N new | **complete** | — |
 | 204 — Geo Puzzle | `apps/geo-puzzle/` 30 country rect silhouettes; type+Enter guess; H hint; N skip; score | **complete** | — |
+| 205 — Number Base Converter | `apps/base-conv/` bin/oct/dec/hex panels; B/O/D/X select; live update; bit-width; overflow | **complete** | — |
+| 206 — Lissajous Curves | `apps/lissajous/` x=sin(a*t+δ) y=sin(b*t); hue trail; ping-pong; ←→ ratio; ↑↓ delta | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
