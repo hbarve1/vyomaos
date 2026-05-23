@@ -1,0 +1,13 @@
+[app]
+name    = "piano"
+version = "0.1.0"
+wasm    = "piano.wasm"
+
+[window]
+title  = "Virtual Piano"
+width  = 960
+height = 520
+
+[capabilities]
+stdio   = true
+display = true

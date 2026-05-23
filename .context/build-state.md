@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P197+P198 complete -->
+last_updated: 2026-05-23  <!-- P199+P200 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,30 +18,33 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P199 — Typing Speed Test v2
-  - P200 — Virtual Piano
+  - P201 — Fractal Explorer
+  - P202 — Tarot Card Reader
 notes: |
-  P199: Typing Speed Test v2. Create apps/typing-speed2/ WASM app.
+  P201: Fractal Explorer. Create apps/fractal/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        30 random sentences from a built-in list; LCG picks sentence each round.
-        Per-char coloring: correct=green, wrong=red, untyped=hint.
-        Shows real-time WPM (chars typed / 5 / elapsed seconds * 60) and accuracy %.
-        Leaderboard: store last 5 scores (WPM + accuracy). Tab=restart. Q=quit.
-        No ping-pong needed (purely input-driven).
+        Mandelbrot set rendered via fixed-point integer escape-time algorithm.
+        Canvas 800×600 px, max 64 iterations. 5 color palettes (fire, ice, mono, rainbow, earth).
+        Arrow keys pan (step 40 units). +/- zoom (scale ×2 / ÷2).
+        R = reset to default view. C = cycle palette. Q=quit.
+        Initial view: center (-0.5, 0.0), scale 3.0 over width.
+        Use i64 fixed-point (shift 28 bits) for iteration math.
 
-  P200: Virtual Piano. Create apps/piano/ WASM app.
-        Window w=960, h=520. Capabilities: stdio=true, display=true.
-        2-octave keyboard C3–B4 (24 keys: 14 white + 10 black per octave × 2).
-        Layout: white keys 28px wide × 100px tall, black keys 18px × 60px at ±14px.
-        Key mapping: z-m = C3–B3, a-k = C4–B4 (qwerty-piano layout).
-        Pressing a key highlights it (C_SEL) and shows note name.
-        D = toggle demo mode: LCG auto-plays random notes. Q=quit.
+  P202: Tarot Card Reader. Create apps/tarot/ WASM app.
+        Window w=960, h=720. Capabilities: stdio=true, display=true.
+        22 major arcana cards with name + meaning + reversed meaning.
+        LCG draws a 3-card spread (past/present/future); each card can be upright or reversed.
+        Display: large card name + position label + meaning text panel.
+        ←→ = select card in spread. N = new reading. Q=quit.
+        Static CARDS array with (name, upright_meaning, reversed_meaning).
 
 ## Queue (implement in order after current batch)
-- [ ] P201 — Fractal Explorer: apps/fractal/ Mandelbrot set; integer escape-time; pan/zoom; 5 color palettes
-- [ ] P202 — Tarot Card Reader: apps/tarot/ 22 major arcana; LCG 3-card spread; meanings panel; N=new reading
+- [ ] P203 — Kanban v2: apps/kanban2/ 4 columns (Backlog/Todo/Doing/Done); 20 cards; drag via Tab+Enter; priority colors
+- [ ] P204 — Geo Puzzle: apps/geo-puzzle/ 30 country outlines drawn with rect approximations; guess country name; 5 hints
 
 ## Completed (recent — full list in plan README)
+- [x] P199 — Typing Speed Test v2: apps/typing-speed2/ 30 sentences; LCG pick; per-char colors; WPM+acc; leaderboard 5
+- [x] P200 — Virtual Piano: apps/piano/ 2-octave C3–B4; 24 keys; qwerty map; highlight; demo mode; D/Q
 - [x] P197 — Life Simulator: apps/life/ Conway's Game of Life; 80×50 grid; age-based color; P/S/R/Q; ping-pong
 - [x] P198 — Color Picker v2: apps/color-picker2/ HSV square + 3 sliders; RGB+Hex; 16 swatches; Tab/S/Q
 - [x] P195 — Crossword: apps/crossword/ 5×5 grid; 10 clues; check/reveal; arrow nav; C/R/Q

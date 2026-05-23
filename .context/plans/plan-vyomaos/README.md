@@ -206,6 +206,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 196 — Emoji Art | `apps/emoji-art/` 20 block-char compositions; multi-color layers; zoom 1×–4×; ←→/Z/Q | **complete** | — |
 | 197 — Life Simulator | `apps/life/` Conway's Game of Life; 80×50 grid; age-based color; P/S/R/Q; ping-pong | **complete** | — |
 | 198 — Color Picker v2 | `apps/color-picker2/` HSV square + 3 sliders; RGB+Hex panels; 16 swatches; Tab/S/Q | **complete** | — |
+| 199 — Typing Speed Test v2 | `apps/typing-speed2/` 30 sentences; LCG pick; per-char colors; WPM+acc; leaderboard 5 | **complete** | — |
+| 200 — Virtual Piano | `apps/piano/` 2-octave C3–B4; 24 keys; qwerty map; highlight; demo mode; D/Q | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

@@ -1,0 +1,13 @@
+[app]
+name    = "typing-speed2"
+version = "0.1.0"
+wasm    = "typing-speed2.wasm"
+
+[window]
+title  = "Typing Speed Test"
+width  = 960
+height = 720
+
+[capabilities]
+stdio   = true
+display = true
