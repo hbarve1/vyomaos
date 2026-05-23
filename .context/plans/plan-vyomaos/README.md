@@ -200,6 +200,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 190 — Fibonacci Visualizer | `apps/fib-viz/` Bar/Table/Spiral views; φ convergence; zoom; ping-pong; Tab/+/-/Q | **complete** | — |
 | 191 — Periodic Table | `apps/periodic-table/` 118 elements; 11 category colors; grid + info panel; ←→↑↓/Q | **complete** | — |
 | 192 — Roman Numerals | `apps/roman/` Converter (arabic↔roman) + Quiz mode; history; score+streak; Tab/N/Q | **complete** | — |
+| 193 — Spirograph | `apps/spirograph/` 5 presets; hypo/epitrochoid; hue cycle; ping-pong animate; ←→/+/-/R/Q | **complete** | — |
+| 194 — Anagram Solver | `apps/anagram/` 200-word dict; Solver+Challenge modes; 15-tick timer; streak; Tab/Ctrl+R/Q | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

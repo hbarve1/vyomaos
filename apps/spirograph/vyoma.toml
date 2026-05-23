@@ -1,0 +1,9 @@
+[app]
+name    = "spirograph"
+version = "0.1.0"
+wasm    = "spirograph.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true

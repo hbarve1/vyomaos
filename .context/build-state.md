@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P191+P192 complete -->
+last_updated: 2026-05-23  <!-- P193+P194 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,29 +18,29 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P193 — Spirograph
-  - P194 — Anagram Solver
+  - P195 — Crossword
+  - P196 — Emoji Art
 notes: |
-  P193: Spirograph. Create apps/spirograph/ WASM app.
-        Window w=800, h=720. Capabilities: stdio=true, display=true, shell=true.
-        Parametric hypotrochoid/epitrochoid curves: R (outer radius), r (inner), d (pen offset).
-        R/r/d presets: 5 built-in designs. ←→ = prev/next preset. +/- = animate speed.
-        Ping-pong advances angle tick. Color cycles through hue (HSV-style via LUT).
+  P195: Crossword. Create apps/crossword/ WASM app.
+        Window w=800, h=720. Capabilities: stdio=true, display=true.
+        5×5 mini crossword grid. 10 clues (5 across + 5 down).
+        ←→↑↓ moves cursor. Letter keys type into selected cell.
+        C = check answers (show green/red). R = reveal one cell. Backspace = clear.
         Q=quit.
 
-  P194: Anagram Solver. Create apps/anagram/ WASM app.
-        Window w=960, h=680. Capabilities: stdio=true, display=true.
-        Built-in dictionary of 200 common 4-7 letter words.
-        Type a word → show all anagrams found.
-        Timed challenge mode: given a scrambled word, type the answer. 15-tick timer.
-        Tab=mode, Enter=submit, Ctrl+R=new challenge, score tracking.
-        Q=quit.
+  P196: Emoji Art. Create apps/emoji-art/ WASM app.
+        Window w=960, h=720. Capabilities: stdio=true, display=true.
+        20 compositions using Unicode block chars (█ ░ ▒ ▓ ▄ ▀ ▌ ▐ etc).
+        Each composition is a 40×20 grid of block chars with a title.
+        ←→ = prev/next. Z = zoom (1× / 2×). Q=quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P195 — Crossword: apps/crossword/ 5×5 grid; 10 clues; cursor nav; check/reveal
-- [ ] P196 — Emoji Art: apps/emoji-art/ 20 compositions using block chars; ←→ nav; zoom
+- [ ] P197 — Life Simulator: apps/life/ Conway's Game of Life; 50×30 grid; R=random; P=pause/play; S=step
+- [ ] P198 — Color Picker: apps/color-picker/ HSV+RGB+Hex panels; 16 saved swatches; copy hex
 
 ## Completed (recent — full list in plan README)
+- [x] P193 — Spirograph: apps/spirograph/ 5 presets; hypo/epitrochoid; hue color; ping-pong; ←→/+/-
+- [x] P194 — Anagram Solver: apps/anagram/ 200-word dict; Solver+Challenge; 15-tick timer; streak
 - [x] P191 — Periodic Table: apps/periodic-table/ 118 elements; 11 categories; grid+info panel; ←→↑↓
 - [x] P192 — Roman Numerals: apps/roman/ Converter+Quiz; arabic↔roman; score+streak; history
 - [x] P189 — ASCII Art Gallery: apps/ascii-art/ 10 images; 8 density charsets; invert; ←→/D/I/Q
