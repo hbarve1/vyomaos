@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P207+P208 complete -->
+last_updated: 2026-05-23  <!-- P209+P210 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,30 +18,31 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P209 — RGB Mixer
-  - P210 — Word Search
+  - P211 — Morse Code Decoder Live
+  - P212 — Prime Sieve
 notes: |
-  P209: RGB Mixer. Create apps/rgb-mixer/ WASM app.
-        Window w=800, h=600. Capabilities: stdio=true, display=true.
-        Three horizontal sliders R/G/B (0-255 each).
-        Large 200×200 color preview square showing current mix.
-        Show complementary color (RGB inverted) + 2 analogous (hue ±30°).
-        Arrow keys adjust selected slider. Tab = next slider.
-        C = copy: outputs "color: #RRGGBBFF" to stdout. Q=quit.
-
-  P210: Word Search. Create apps/word-search/ WASM app.
+  P211: Morse Code Decoder Live. Create apps/morse-live/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        15×15 letter grid with 10 hidden words placed horizontally, vertically, diagonally.
-        Words list shown on right panel. ←→↑↓ = move cursor. Enter = start/extend selection.
-        When a word is found highlight it green and mark it in the list.
-        N = new puzzle (LCG re-seeds). Q=quit.
-        Use a fixed word list of 20 words (pick 10 per puzzle via LCG).
+        Type dots (.) and dashes (-) with space between symbols.
+        Decode each symbol to letter in real-time as typed.
+        Show full morse alphabet chart on right panel.
+        Enter = word break, Backspace = delete last symbol.
+        N = clear current word, Q = quit.
+
+  P212: Prime Sieve. Create apps/prime-sieve/ WASM app.
+        Window w=960, h=720. Capabilities: stdio=true, display=true.
+        Sieve of Eratosthenes animated step by step.
+        Show numbers 2-200 in a grid; cross out composites with each ping-pong tick.
+        Stats panel: current factor, primes found, composites crossed.
+        Space = pause/resume, R = reset, +/- = speed, Q = quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P211 — Morse Code Decoder Live: apps/morse-live/ type dots/dashes; decode in real-time; show alphabet chart
-- [ ] P212 — Prime Sieve: apps/prime-sieve/ Sieve of Eratosthenes; animate step by step; ping-pong; zoom; stats
+- [ ] P213 — Gravity Simulator: apps/gravity/ 5 planets; fixed-point physics; trails; ping-pong; add/reset
+- [ ] P214 — Circuit Diagram: apps/circuit/ 10 preset circuits; component labels; resistors/caps/LEDs drawn as rects
 
 ## Completed (recent — full list in plan README)
+- [x] P209 — RGB Mixer: apps/rgb-mixer/ R/G/B sliders; 200×200 preview; complementary + 2 analogous; C copy; Q quit
+- [x] P210 — Word Search: apps/word-search/ 15×15 grid; 10 hidden words; H/V/diagonal; Enter select; N new; Q quit
 - [x] P207 — Tic Tac Toe: apps/tictactoe/ 3×3 grid; minimax AI; X vs O; W/D/L score; R/Q
 - [x] P208 — ASCII Table: apps/ascii-table/ 128 chars; Dec/Hex/Oct/Bin/Name cols; search; color by type
 - [x] P205 — Number Base Converter: apps/base-conv/ bin/oct/dec/hex panels; B/O/D/X select; bit-width; overflow

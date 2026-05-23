@@ -1,0 +1,13 @@
+[app]
+name    = "rgb-mixer"
+version = "0.1.0"
+wasm    = "rgb-mixer.wasm"
+
+[window]
+title  = "RGB Mixer"
+width  = 800
+height = 600
+
+[capabilities]
+stdio   = true
+display = true
