@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-22  <!-- P185+P186 complete -->
+last_updated: 2026-05-23  <!-- P187+P188 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,28 +18,28 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P187 — Morse Code Trainer
-  - P188 — Binary Clock
+  - P189 — ASCII Art Generator
+  - P190 — Fibonacci Visualizer
 notes: |
-  P187: Morse Code Trainer. Create apps/morse/ WASM app.
-        Window w=920, h=640. Capabilities: stdio=true, display=true.
-        26 letters (A-Z) + 10 digits (0-9) with standard Morse code patterns.
-        Two modes: Practice (show letter, type dit/dah with '.' and '-') and Decode (show Morse, type letter).
-        Score tracking: correct/total per session. Tab to switch mode. Q to quit.
-        Show full code table in sidebar. Ping-pong for timing.
+  P189: ASCII Art Generator. Create apps/ascii-art/ WASM app.
+        Window w=960, h=680. Capabilities: stdio=true, display=true.
+        10 built-in ASCII art images stored as static string arrays.
+        8 density charsets from sparse (" .:-=+*#%@") to single char.
+        Left/Right = prev/next image, D = cycle density, I = invert, Q=quit.
 
-  P188: Binary Clock. Create apps/binary-clock/ WASM app.
-        Window w=640, h=480. Capabilities: stdio=true, display=true.
-        Display HH:MM:SS as binary: 6 columns (H1 H2 M1 M2 S1 S2), each column = 4 rows (bit3..bit0).
-        Lit cell = 1, dim cell = 0. Cell = 20×20px with 4px gap. Color themes.
-        Ping-pong advances sim_secs. T=next theme, R=reset, Q=quit.
-        Show decimal time below the binary grid.
+  P190: Fibonacci Visualizer. Create apps/fib-viz/ WASM app.
+        Window w=960, h=720. Capabilities: stdio=true, display=true, shell=true.
+        3 views: Bar (first 20 Fibonacci as bars), Table (first 30 with value + ratio),
+        Spiral (golden ratio squares drawn as nested rectangles with connecting arcs).
+        Tab = next view. +/- = zoom bars. Ping-pong advances animation. Q=quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P189 — ASCII Art Generator: apps/ascii-art/ 10 built-in images; 8 charset densities; invert; export to /data
-- [ ] P190 — Fibonacci Visualizer: apps/fib-viz/ spiral/bar/table views; LCG zoom; highlight golden ratio; ping-pong
+- [ ] P191 — Periodic Table: apps/periodic-table/ 118 elements; grid layout; select for details; category colors
+- [ ] P192 — Roman Numerals: apps/roman/ converter both ways; quiz mode; history; large display
 
 ## Completed (recent — full list in plan README)
+- [x] P187 — Morse Code Trainer: apps/morse/ Practice+Decode; 36 symbols; score+streak; full table sidebar
+- [x] P188 — Binary Clock: apps/binary-clock/ HH:MM:SS binary grid; 5 themes; bit labels; ping-pong
 - [x] P185 — Pixel Clock: apps/pixel-clock/ 5×7 LED font; HH:MM:SS; 5 themes; blink colons; sim date
 - [x] P186 — Typing Practice: apps/typing-practice/ 20 passages; per-char coloring; WPM; PB tracking
 - [x] P183 — Habit Streak Calendar: apps/habit-streak/ 10 habits; GitHub heat map 52×7; streak/rate; Tab list
