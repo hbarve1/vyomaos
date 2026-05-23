@@ -1,0 +1,15 @@
+[app]
+name    = "tetris"
+version = "0.1.0"
+wasm    = "tetris.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 240
+y = 20
+w = 560
+h = 860

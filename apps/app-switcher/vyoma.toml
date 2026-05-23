@@ -1,0 +1,15 @@
+[app]
+name    = "app-switcher"
+version = "0.1.0"
+wasm    = "app-switcher.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 220
+y = 320
+w = 1000
+h = 200

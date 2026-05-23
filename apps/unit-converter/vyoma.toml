@@ -1,0 +1,15 @@
+[app]
+name    = "unit-converter"
+version = "0.1.0"
+wasm    = "unit-converter.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 300
+y = 150
+w = 760
+h = 560

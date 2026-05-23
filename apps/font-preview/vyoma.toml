@@ -1,0 +1,15 @@
+[app]
+name    = "font-preview"
+version = "0.1.0"
+wasm    = "font-preview.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 200
+y = 100
+w = 1040
+h = 680

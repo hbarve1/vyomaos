@@ -1,0 +1,15 @@
+[app]
+name    = "map-viewer"
+version = "0.1.0"
+wasm    = "map-viewer.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 120
+y = 40
+w = 1200
+h = 800

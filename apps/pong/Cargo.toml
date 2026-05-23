@@ -1,5 +1,5 @@
 [package]
-name = "pong"
+name    = "pong"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,4 +7,6 @@ edition = "2021"
 name = "pong"
 path = "src/main.rs"
 
-[dependencies]
+[profile.release]
+opt-level = "z"
+strip = true

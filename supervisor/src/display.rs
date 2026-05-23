@@ -77,6 +77,7 @@ pub struct Framebuffer {
     bpp: u32,
     buf: *mut u8,
     buf_len: usize,
+    back: Vec<u8>,        // back-buffer; blitted to buf on flush()
 }
 
 // All mutable access is serialised through `Mutex<Framebuffer>`.
@@ -111,6 +112,15 @@ pub fn init() -> bool {
 /// Return the global framebuffer, or `None` if GUI is not available.
 pub fn get() -> Option<&'static Mutex<Framebuffer>> {
     FB.get()
+}
+
+/// Return the actual framebuffer resolution read via FBIOGET_VSCREENINFO.
+/// Returns `None` on headless boots where `/dev/fb0` was not opened.
+pub fn screen_size() -> Option<(u32, u32)> {
+    FB.get().map(|m| {
+        let fb = m.lock().unwrap();
+        (fb.width, fb.height)
+    })
 }
 
 // ── Framebuffer open + mmap ───────────────────────────────────────────────────
@@ -155,7 +165,8 @@ fn open_fb() -> io::Result<Framebuffer> {
         width, height, bpp, stride, buf_len / 1024
     );
 
-    Ok(Framebuffer { _file: file, width, height, stride, bpp, buf: buf as *mut u8, buf_len })
+    let back = vec![0u8; buf_len];
+    Ok(Framebuffer { _file: file, width, height, stride, bpp, buf: buf as *mut u8, buf_len, back })
 }
 
 impl Drop for Framebuffer {
@@ -188,9 +199,7 @@ impl Framebuffer {
                 break;
             }
             for off in (base..end).step_by(4) {
-                unsafe {
-                    std::ptr::copy_nonoverlapping(pixel.as_ptr(), self.buf.add(off), 4);
-                }
+                self.back[off..off + 4].copy_from_slice(&pixel);
             }
         }
     }
@@ -231,9 +240,7 @@ impl Framebuffer {
                                 let px = cx + bit;
                                 let off = (scan_y * self.stride + px * 4) as usize;
                                 if off + 4 <= self.buf_len {
-                                    unsafe {
-                                        std::ptr::copy_nonoverlapping(fg.as_ptr(), self.buf.add(off), 4);
-                                    }
+                                    self.back[off..off + 4].copy_from_slice(&fg);
                                 }
                             }
                         }
@@ -251,9 +258,7 @@ impl Framebuffer {
                                 let px = cx + out_bit;
                                 let off = (scan_y * self.stride + px * 4) as usize;
                                 if off + 4 <= self.buf_len {
-                                    unsafe {
-                                        std::ptr::copy_nonoverlapping(fg.as_ptr(), self.buf.add(off), 4);
-                                    }
+                                    self.back[off..off + 4].copy_from_slice(&fg);
                                 }
                             }
                         }
@@ -272,9 +277,7 @@ impl Framebuffer {
                                         let px = cx + src_bit * 2 + rep_x;
                                         let off = (scan_y * self.stride + px * 4) as usize;
                                         if off + 4 <= self.buf_len {
-                                            unsafe {
-                                                std::ptr::copy_nonoverlapping(fg.as_ptr(), self.buf.add(off), 4);
-                                            }
+                                            self.back[off..off + 4].copy_from_slice(&fg);
                                         }
                                     }
                                 }
@@ -287,7 +290,108 @@ impl Framebuffer {
         }
     }
 
-    /// Flush — virtio-gpu with DRM fbdev emulation propagates writes
-    /// immediately on mmap.  This is a protocol no-op kept for completeness.
-    pub fn flush(&self) {}
+    /// Blit back-buffer to the mmap'd framebuffer (front-buffer).
+    /// All draw ops write to `self.back`; only this call makes them visible,
+    /// eliminating partial-frame tearing.
+    pub fn flush(&self) {
+        unsafe {
+            std::ptr::copy_nonoverlapping(self.back.as_ptr(), self.buf, self.buf_len);
+        }
+    }
+
+    /// Draw a 1-pixel border rectangle (no fill).
+    pub fn rect_border(&mut self, x: u32, y: u32, w: u32, h: u32, rgba: u32) {
+        if w == 0 || h == 0 {
+            return;
+        }
+        self.fill_rect(x, y, w, 1, rgba);              // top
+        self.fill_rect(x, y + h - 1, w, 1, rgba);      // bottom
+        self.fill_rect(x, y, 1, h, rgba);              // left
+        self.fill_rect(x + w - 1, y, 1, h, rgba);      // right
+    }
+
+    /// Fill a region with solid black (clear).
+    pub fn clear_region(&mut self, x: u32, y: u32, w: u32, h: u32) {
+        self.fill_rect(x, y, w, h, 0x000000FF);
+    }
+
+    /// Write the current back-buffer as a raw PPM (P6) file to `path`.
+    /// Pixels are in BGRA order in the back-buffer; output is RGB.
+    pub fn screenshot(&self, path: &str) -> Result<(), String> {
+        use std::io::Write as IoWrite;
+        let mut rgb = Vec::with_capacity(3 * (self.width * self.height) as usize);
+        for row in 0..self.height {
+            for col in 0..self.width {
+                let off = (row * self.stride + col * 4) as usize;
+                if off + 4 <= self.back.len() {
+                    let b = self.back[off];
+                    let g = self.back[off + 1];
+                    let r = self.back[off + 2];
+                    rgb.push(r);
+                    rgb.push(g);
+                    rgb.push(b);
+                }
+            }
+        }
+        let header = format!("P6\n{} {}\n255\n", self.width, self.height);
+        let mut f = std::fs::File::create(path)
+            .map_err(|e| format!("create {path}: {e}"))?;
+        f.write_all(header.as_bytes()).map_err(|e| format!("write: {e}"))?;
+        f.write_all(&rgb).map_err(|e| format!("write: {e}"))?;
+        Ok(())
+    }
+
+    /// Draw word-wrapped text. Each line is `glyph_h` pixels tall.
+    /// `max_w` is the available width in pixels; wraps at character boundaries.
+    pub fn draw_text_wrap(
+        &mut self,
+        x: u32,
+        y: u32,
+        max_w: u32,
+        text: &str,
+        rgba: u32,
+        size: font::FontSize,
+    ) {
+        if self.bpp != 32 {
+            return;
+        }
+        let (glyph_w, glyph_h) = font::glyph_dims(size);
+        let max_chars = if glyph_w > 0 {
+            (max_w / glyph_w) as usize
+        } else {
+            0
+        };
+        for (i, line) in wrap_words(text, max_chars).into_iter().enumerate() {
+            let ly = y + i as u32 * glyph_h;
+            if ly + glyph_h > self.height {
+                break;
+            }
+            self.draw_text(x, ly, &line, rgba, size);
+        }
+    }
+}
+
+/// Word-wrap `text` so each line is at most `max_chars` wide.
+/// Long single words are placed on their own line without truncation.
+/// If `max_chars` is 0, returns the full text as a single line.
+/// SYNC: algorithm duplicated in supervisor/tests/display_test.rs — keep in lockstep.
+pub fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {
+    if max_chars == 0 {
+        return vec![text.to_string()];
+    }
+    let mut lines: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for word in text.split(' ').filter(|w| !w.is_empty()) {
+        if current.is_empty() {
+            current.push_str(word);
+        } else if current.len() + 1 + word.len() <= max_chars {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(std::mem::take(&mut current));
+            current.push_str(word);
+        }
+    }
+    lines.push(current);  // always push, even if empty — ensures empty input returns vec![""]
+    lines
 }

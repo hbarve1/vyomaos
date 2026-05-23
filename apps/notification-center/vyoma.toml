@@ -1,0 +1,15 @@
+[app]
+name    = "notification-center"
+version = "0.1.0"
+wasm    = "notification-center.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 1040
+y = 28
+w = 400
+h = 600

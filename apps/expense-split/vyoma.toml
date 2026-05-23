@@ -1,0 +1,15 @@
+[app]
+name    = "expense-split"
+version = "0.1.0"
+wasm    = "expense-split.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 320
+y = 60
+w = 800
+h = 680

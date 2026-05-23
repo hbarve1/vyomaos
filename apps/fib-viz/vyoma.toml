@@ -1,0 +1,9 @@
+[app]
+name    = "fib-viz"
+version = "0.1.0"
+wasm    = "fib-viz.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true

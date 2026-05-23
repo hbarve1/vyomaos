@@ -1,0 +1,8 @@
+[app]
+name    = "window-manager"
+version = "0.1.0"
+wasm    = "window-manager.wasm"
+
+[capabilities]
+stdio = true
+shell = true

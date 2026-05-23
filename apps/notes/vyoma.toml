@@ -1,0 +1,15 @@
+[app]
+name    = "notes"
+version = "0.1.0"
+wasm    = "notes.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+filesystem = true
+
+[window]
+x = 80
+y = 40
+w = 1100
+h = 760

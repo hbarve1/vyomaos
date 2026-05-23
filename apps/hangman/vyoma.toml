@@ -1,0 +1,15 @@
+[app]
+name    = "hangman"
+version = "0.1.0"
+wasm    = "hangman.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 280
+y = 60
+w = 880
+h = 700

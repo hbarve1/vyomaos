@@ -1,0 +1,15 @@
+[app]
+name    = "draw-pad"
+version = "0.1.0"
+wasm    = "draw-pad.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 100
+y = 60
+w = 960
+h = 760

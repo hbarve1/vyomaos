@@ -26,12 +26,13 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::Path,
     process::{Child, ChildStdin, ChildStdout, Stdio},
-    sync::{mpsc, Arc, Mutex},
+    sync::{mpsc, Arc, Mutex, OnceLock},
     thread,
     time::Instant,
 };
 
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 // ── Boot config structs ───────────────────────────────────────────────────────
 
@@ -75,6 +76,10 @@ struct AppMeta {
     name: String,
     version: String,
     wasm: String,
+    /// P28: optional SHA-256 hex digest of the .wasm binary.
+    /// If present, supervisor verifies before spawning; rejects on mismatch.
+    #[serde(default)]
+    wasm_sha256: Option<String>,
 }
 
 // deny_unknown_fields ensures manifests cannot declare undocumented capabilities.
@@ -95,6 +100,8 @@ struct Capabilities {
     shell: bool,
     #[serde(default)]
     watchdog_secs: u32,  // 0 = disabled; >0 = kill app if silent for this many seconds
+    #[serde(default)]
+    mouse: bool,   // receives VYOMA_INPUT:mouse: events when cursor is in window
 }
 
 // ── P08T01: seccomp BPF denylist ──────────────────────────────────────────────
@@ -217,6 +224,9 @@ struct AppState {
     watchdog_secs:    u32,
     last_output:      Arc<Mutex<Instant>>,
     watchdog_backoff: Arc<Mutex<u64>>,   // seconds until next restart allowed
+    has_mouse:   bool,
+    has_display: bool,
+    win_region:  Option<(u32, u32, u32, u32)>,  // P22: (x,y,w,h) screen coords for mouse dispatch
 }
 
 type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
@@ -225,6 +235,41 @@ type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
 
 type Inbox = Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>;
 type FocusedApp = Arc<Mutex<Option<String>>>;
+
+// ── P33: Global Z-order stack (index 0 = topmost / frontmost window) ─────────
+
+static Z_ORDER: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+
+// ── P47: Raw TCP connection pool ──────────────────────────────────────────────
+
+static TCP_CONNS: OnceLock<Mutex<std::collections::HashMap<u32, std::net::TcpStream>>> =
+    OnceLock::new();
+static TCP_NEXT_ID: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(1);
+
+// ── P50: Clipboard ────────────────────────────────────────────────────────────
+
+static CLIPBOARD: OnceLock<Mutex<String>> = OnceLock::new();
+
+// ── P55: Global font size preference ─────────────────────────────────────────
+
+static FONT_SIZE: OnceLock<Mutex<String>> = OnceLock::new();
+
+fn z_order_push_front(name: &str) {
+    if let Some(m) = Z_ORDER.get() {
+        let mut v = m.lock().unwrap();
+        v.retain(|n| n != name);
+        v.insert(0, name.to_string());
+    }
+}
+
+fn z_order_push_back(name: &str) {
+    if let Some(m) = Z_ORDER.get() {
+        let mut v = m.lock().unwrap();
+        v.retain(|n| n != name);
+        v.push(name.to_string());
+    }
+}
 
 // ── Spawned app descriptor ────────────────────────────────────────────────────
 
@@ -278,6 +323,13 @@ fn main() {
     #[cfg(target_os = "linux")]
     if display::init() {
         eprintln!("vyoma-supervisor: display ready");
+        // P35: paint default desktop background before any app draws
+        if let Some(fb_lock) = display::get() {
+            let mut fb = fb_lock.lock().unwrap();
+            let (w, h) = (fb.width, fb.height);
+            fb.fill_rect(0, 0, w, h, 0x0D1117FF);
+            fb.flush();
+        }
     }
 
     let boot_raw = match fs::read_to_string(BOOT_CONFIG_PATH) {
@@ -325,6 +377,11 @@ fn main() {
         eprintln!("vyoma-supervisor: no apps configured, idling");
         loop { thread::park(); }
     }
+
+    let _ = Z_ORDER.set(Mutex::new(Vec::new()));
+    let _ = TCP_CONNS.set(Mutex::new(std::collections::HashMap::new()));
+    let _ = CLIPBOARD.set(Mutex::new(String::new()));
+    let _ = FONT_SIZE.set(Mutex::new("m".to_string()));
 
     let inbox:        Inbox       = Arc::new(Mutex::new(HashMap::new()));
     let focused:      FocusedApp  = Arc::new(Mutex::new(None));
@@ -437,6 +494,101 @@ fn main() {
                 }
             })
             .expect("spawn input-router");
+    }
+
+    // ── P22: mouse-input thread — /dev/input/eventN → mouse-capable apps ──────
+    // Reads evdev input_event structs (24 bytes each on 64-bit Linux), tracks
+    // global cursor position, dispatches VYOMA_INPUT:mouse:<lx>,<ly>,<btn>
+    // to the first app with mouse=true whose window contains the cursor.
+    // Exits silently if no pointer device is found (headless boot).
+    #[cfg(target_os = "linux")]
+    {
+        let inbox_m    = Arc::clone(&inbox);
+        let registry_m = Arc::clone(&app_registry);
+        let focused_m  = Arc::clone(&focused);
+        thread::Builder::new()
+            .name("mouse-input".into())
+            .spawn(move || {
+                use std::io::Read;
+
+                let Some(mut dev) = open_mouse_device() else {
+                    eprintln!("vyoma-supervisor: mouse-input: no pointer device found, disabling");
+                    return;
+                };
+
+                const EV_SYN: u16   = 0;
+                const EV_KEY: u16   = 1;
+                const EV_REL: u16   = 2;
+                const EV_ABS: u16   = 3;
+                const REL_X: u16    = 0;
+                const REL_Y: u16    = 1;
+                const ABS_X: u16    = 0;
+                const ABS_Y: u16    = 1;
+                const BTN_LEFT: u16 = 0x110;
+
+                const SCREEN_W: i32 = 1440;
+                const SCREEN_H: i32 = 900;
+                // virtio-mouse-pci reports ABS coords in range 0..=32767
+                const ABS_MAX: i64  = 32768;
+
+                let mut cx: i32 = SCREEN_W / 2;
+                let mut cy: i32 = SCREEN_H / 2;
+                let mut btn: u8 = 0;
+                let mut pending_abs_x: Option<i32> = None;
+                let mut pending_abs_y: Option<i32> = None;
+                let mut pending_dx:    i32 = 0;
+                let mut pending_dy:    i32 = 0;
+
+                // Linux input_event on 64-bit:
+                //   i64 tv_sec + i64 tv_usec + u16 type + u16 code + i32 value = 24 bytes
+                let mut buf = [0u8; 24];
+                loop {
+                    if dev.read_exact(&mut buf).is_err() {
+                        eprintln!("vyoma-supervisor: mouse-input: device read error, exiting");
+                        break;
+                    }
+                    let ev_type = u16::from_ne_bytes([buf[16], buf[17]]);
+                    let code    = u16::from_ne_bytes([buf[18], buf[19]]);
+                    let value   = i32::from_ne_bytes([buf[20], buf[21], buf[22], buf[23]]);
+
+                    match ev_type {
+                        EV_REL => match code {
+                            REL_X => pending_dx += value,
+                            REL_Y => pending_dy += value,
+                            _     => {}
+                        },
+                        EV_ABS => match code {
+                            ABS_X => pending_abs_x = Some(value),
+                            ABS_Y => pending_abs_y = Some(value),
+                            _     => {}
+                        },
+                        EV_KEY => {
+                            if code == BTN_LEFT {
+                                btn = if value > 0 { 1 } else { 0 };
+                            }
+                        }
+                        EV_SYN => {
+                            // Apply REL movement (regular mouse)
+                            if pending_dx != 0 || pending_dy != 0 {
+                                cx = (cx + pending_dx).clamp(0, SCREEN_W - 1);
+                                cy = (cy + pending_dy).clamp(0, SCREEN_H - 1);
+                                pending_dx = 0;
+                                pending_dy = 0;
+                            }
+                            // Apply ABS position (virtio-mouse-pci, scaled 0..32767 → screen)
+                            if let Some(ax) = pending_abs_x.take() {
+                                cx = (ax as i64 * SCREEN_W as i64 / ABS_MAX) as i32;
+                            }
+                            if let Some(ay) = pending_abs_y.take() {
+                                cy = (ay as i64 * SCREEN_H as i64 / ABS_MAX) as i32;
+                            }
+                            dispatch_mouse(cx, cy, btn, &inbox_m, &registry_m, &focused_m);
+                        }
+                        _ => {}
+                    }
+                }
+            })
+            .expect("spawn mouse-input thread");
     }
 
     // ── Pass 2: start IO threads for each spawned app ─────────────────────────
@@ -601,6 +753,21 @@ fn launch_app_threads(
 
     spawn_io_threads(&name, child_stdin, child_stdout, msg_rx, has_display, win_region, inbox, focused, app_registry);
 
+    // P29: send actual screen resolution to display apps before their first draw
+    #[cfg(target_os = "linux")]
+    if has_display {
+        if let Some((w, h)) = display::screen_size() {
+            if let Some(tx) = inbox.lock().unwrap().get(&name) {
+                let _ = tx.send(format!("VYOMA_SYSTEM:screen:{w},{h}"));
+            }
+        }
+    }
+
+    // P33: newly launched display apps with windows go to the front of the Z-order
+    if has_display && win_region.is_some() {
+        z_order_push_front(&name);
+    }
+
     let registry_w = Arc::clone(app_registry);
     let inbox_w    = Arc::clone(inbox);
     let focused_w  = Arc::clone(focused);
@@ -635,12 +802,13 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
     let net_port = caps.network_port.unwrap_or(8080);
     eprintln!(
         "vyoma-supervisor: [security] {name} capabilities — \
-         stdio:{} fs:{} net:{} display:{} shell:{} seccomp:denylist",
-        if caps.stdio { "yes" } else { "no" },
+         stdio:{} fs:{} net:{} display:{} shell:{} mouse:{} seccomp:denylist",
+        if caps.stdio      { "yes" } else { "no" },
         if caps.filesystem { "yes" } else { "no" },
-        if caps.network { format!("yes(port={net_port})") } else { "no".to_string() },
-        if caps.display { "yes" } else { "no" },
-        if caps.shell { "yes" } else { "no" },
+        if caps.network    { format!("yes(port={net_port})") } else { "no".to_string() },
+        if caps.display    { "yes" } else { "no" },
+        if caps.shell      { "yes" } else { "no" },
+        if caps.mouse      { "yes" } else { "no" },
     );
 
     let (tx, msg_rx) = mpsc::channel::<String>();
@@ -650,6 +818,26 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         .parent()
         .unwrap_or(Path::new("/apps"))
         .join(&manifest.app.wasm);
+
+    // P28: SHA-256 integrity check — reject binary if hash declared and mismatches
+    if let Some(expected) = &manifest.app.wasm_sha256 {
+        match fs::read(&wasm_path) {
+            Ok(bytes) => {
+                let actual = format!("{:x}", Sha256::digest(&bytes));
+                if actual != expected.to_lowercase() {
+                    eprintln!(
+                        "vyoma-supervisor: SECURITY: {name} rejected — SHA-256 mismatch\n  expected {expected}\n  actual   {actual}"
+                    );
+                    inbox.lock().unwrap().remove(&name);
+                    return None;
+                }
+                eprintln!("vyoma-supervisor: [security] {name} wasm_sha256 verified OK");
+            }
+            Err(e) => {
+                eprintln!("vyoma-supervisor: WARN: {name} cannot read wasm for hash check: {e}");
+            }
+        }
+    }
 
     eprintln!(
         "vyoma-supervisor: spawning {} v{} (restart={})",
@@ -677,7 +865,12 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         use std::os::unix::process::CommandExt;
         let filter = seccomp::build();
         unsafe {
-            cmd.pre_exec(move || seccomp::apply(&filter));
+            cmd.pre_exec(move || {
+                // P27: isolate mount + PID namespaces per app.
+                // Non-fatal: ignored if kernel lacks CONFIG_NAMESPACES/CONFIG_PID_NS/CONFIG_MNT_NS.
+                let _ = libc::unshare(libc::CLONE_NEWNS | libc::CLONE_NEWPID);
+                seccomp::apply(&filter)
+            });
         }
     }
 
@@ -705,6 +898,9 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         watchdog_secs:    caps.watchdog_secs,
         last_output:      Arc::new(Mutex::new(Instant::now())),
         watchdog_backoff: Arc::new(Mutex::new(0u64)),
+        has_mouse:        caps.mouse,
+        has_display:      caps.display,
+        win_region:       manifest.window.map(|wr| (wr.x, wr.y, wr.w, wr.h)),
     }));
     app_registry.lock().unwrap().insert(name.clone(), state);
 
@@ -783,6 +979,47 @@ fn handle_supervisor_command(
             if let Some(name) = parts.get(1).map(|s| s.trim()) {
                 *focused.lock().unwrap() = Some(name.to_string());
                 eprintln!("vyoma-supervisor: focus → {name}");
+            }
+        }
+
+        // P54: win-info <app> — return window region of an app
+        "win-info" => {
+            let app_name = parts.get(1).unwrap_or(&"").trim().to_string();
+            let reg = app_registry.lock().unwrap();
+            if let Some(st) = reg.get(&app_name) {
+                let region = st.lock().unwrap().win_region;
+                let coords = match region {
+                    Some((x, y, w, h)) => format!("{x},{y},{w},{h}"),
+                    None => "none".to_string(),
+                };
+                send_reply(sender, &format!("REPLY:win-info {app_name} {coords}"), inbox);
+            } else {
+                send_reply(sender, &format!("REPLY:win-info {app_name} not-found"), inbox);
+            }
+        }
+
+        // P55: font-size <s|m|l> — store global font size preference
+        "font-size" => {
+            let size = parts.get(1).unwrap_or(&"m").trim().to_string();
+            let valid = matches!(size.as_str(), "s" | "m" | "l");
+            if valid {
+                *FONT_SIZE.get().unwrap().lock().unwrap() = size.clone();
+                eprintln!("vyoma-supervisor: font-size → {size}");
+                send_reply(sender, &format!("REPLY:font-size {size}"), inbox);
+            } else {
+                send_reply(sender, "REPLY:font-size error invalid-size", inbox);
+            }
+        }
+
+        // P52: input <char> — forward a character to the focused app's stdin
+        "input" => {
+            let ch = parts.get(1).map(|s| s.to_string()).unwrap_or_default();
+            let target = focused.lock().unwrap().clone();
+            if let Some(name) = target {
+                let map = inbox.lock().unwrap();
+                if let Some(tx) = map.get(&name) {
+                    let _ = tx.send(ch);
+                }
             }
         }
         "run" => {
@@ -923,6 +1160,104 @@ fn handle_supervisor_command(
                     send_reply(sender, &format!("REPLY:error: could not restart {app_name}"), inbox);
                 }
             }
+        }
+
+        // P30: update <app> <url> — download new wasm, verify sha256, hot-swap, restart
+        "update" => {
+            let rest = parts.get(1).unwrap_or(&"").trim();
+            let (app_name, url) = match rest.split_once(' ') {
+                Some((a, u)) if !a.trim().is_empty() && !u.trim().is_empty() => {
+                    (a.trim().to_string(), u.trim().to_string())
+                }
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: update <app> <url>", inbox);
+                    return;
+                }
+            };
+            let entry = {
+                let reg = app_registry.lock().unwrap();
+                reg.get(&app_name).map(|st| st.lock().unwrap().entry.clone())
+            };
+            let entry = match entry {
+                Some(e) => e,
+                None => {
+                    send_reply(sender, &format!("REPLY:error: unknown app: {app_name}"), inbox);
+                    return;
+                }
+            };
+            send_reply(sender, &format!("REPLY:downloading {url}…"), inbox);
+            eprintln!("vyoma-supervisor: @supervisor: update {app_name} from {url}");
+
+            let sender_name  = sender.to_string();
+            let inbox_bg     = Arc::clone(inbox);
+            let focused_bg   = Arc::clone(focused);
+            let registry_bg  = Arc::clone(app_registry);
+
+            thread::spawn(move || {
+                let bytes = match http_get(&url) {
+                    Ok(b)  => b,
+                    Err(e) => {
+                        eprintln!("vyoma-supervisor: update {app_name}: download failed: {e}");
+                        send_reply(&sender_name, &format!("REPLY:error: download failed: {e}"), &inbox_bg);
+                        return;
+                    }
+                };
+
+                let tmp = format!("/tmp/{app_name}.wasm.new");
+                if let Err(e) = fs::write(&tmp, &bytes) {
+                    send_reply(&sender_name, &format!("REPLY:error: write tmp failed: {e}"), &inbox_bg);
+                    return;
+                }
+
+                // Verify SHA-256 if declared in manifest (reuses P28 Sha256)
+                if let Ok(raw) = fs::read_to_string(&entry.manifest) {
+                    if let Ok(m) = toml::from_str::<AppManifest>(&raw) {
+                        if let Some(expected) = &m.app.wasm_sha256 {
+                            let actual = format!("{:x}", Sha256::digest(&bytes));
+                            if actual != expected.to_lowercase() {
+                                let _ = fs::remove_file(&tmp);
+                                send_reply(&sender_name, "REPLY:error: SHA-256 mismatch — update rejected", &inbox_bg);
+                                return;
+                            }
+                            eprintln!("vyoma-supervisor: update {app_name}: SHA-256 verified OK");
+                        }
+                    }
+                }
+
+                let dest = Path::new(&entry.manifest)
+                    .parent()
+                    .unwrap_or(Path::new("/apps"))
+                    .join(format!("{app_name}.wasm"));
+                if let Err(e) = fs::copy(&tmp, &dest) {
+                    let _ = fs::remove_file(&tmp);
+                    send_reply(&sender_name, &format!("REPLY:error: install failed: {e}"), &inbox_bg);
+                    return;
+                }
+                let _ = fs::remove_file(&tmp);
+                eprintln!("vyoma-supervisor: update {app_name}: installed → {dest:?}");
+                send_reply(&sender_name, &format!("REPLY:installed — restarting {app_name}…"), &inbox_bg);
+
+                // Kill old instance then respawn
+                {
+                    let reg = registry_bg.lock().unwrap();
+                    if let Some(st) = reg.get(&app_name) {
+                        if let Some(pid) = st.lock().unwrap().child_pid {
+                            #[cfg(target_os = "linux")]
+                            unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+                        }
+                    }
+                }
+                match spawn_app(&entry, &inbox_bg, &registry_bg) {
+                    Some(app) => {
+                        launch_app_threads(app, &inbox_bg, &focused_bg, &registry_bg);
+                        eprintln!("vyoma-supervisor: update {app_name}: restarted OK");
+                        send_reply(&sender_name, &format!("REPLY:updated {app_name} OK"), &inbox_bg);
+                    }
+                    None => {
+                        send_reply(&sender_name, "REPLY:error: restart failed after update", &inbox_bg);
+                    }
+                }
+            });
         }
 
         // reload — re-read boot.toml, launch any apps not currently running
@@ -1121,9 +1456,502 @@ fn handle_supervisor_command(
             }
         }
 
+        // P35: wallpaper <rgba_hex> — fill screen with solid color
+        "wallpaper" => {
+            let color_str = parts.get(1).unwrap_or(&"").trim();
+            let rgba = color_str
+                .strip_prefix("0x").or_else(|| color_str.strip_prefix("0X"))
+                .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+                .or_else(|| color_str.parse::<u32>().ok())
+                .unwrap_or(0x0D1117FF);
+            #[cfg(target_os = "linux")]
+            if let Some(fb_lock) = display::get() {
+                let mut fb = fb_lock.lock().unwrap();
+                let (w, h) = (fb.width, fb.height);
+                fb.fill_rect(0, 0, w, h, rgba);
+                fb.flush();
+            }
+            eprintln!("vyoma-supervisor: wallpaper set to {rgba:#010x}");
+            send_reply(sender, &format!("REPLY:wallpaper {rgba:#010x}"), inbox);
+        }
+
+        // P33: raise/lower window in Z-order
+        "raise" => {
+            let app_name = match parts.get(1).map(|s| s.trim()) {
+                Some(n) if !n.is_empty() => n.to_string(),
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: raise <app>", inbox);
+                    return;
+                }
+            };
+            z_order_push_front(&app_name);
+            *focused.lock().unwrap() = Some(app_name.clone());
+            send_reply(sender, &format!("REPLY:raised {app_name}"), inbox);
+        }
+        "lower" => {
+            let app_name = match parts.get(1).map(|s| s.trim()) {
+                Some(n) if !n.is_empty() => n.to_string(),
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: lower <app>", inbox);
+                    return;
+                }
+            };
+            z_order_push_back(&app_name);
+            send_reply(sender, &format!("REPLY:lowered {app_name}"), inbox);
+        }
+
+        // P36: resize <app> <w> <h> — update win_region and notify app
+        "resize" => {
+            let rest = parts.get(1).unwrap_or(&"").trim();
+            let mut args = rest.splitn(3, ' ');
+            let app_name = args.next().unwrap_or("").trim().to_string();
+            let w_str    = args.next().unwrap_or("").trim();
+            let h_str    = args.next().unwrap_or("").trim();
+            if app_name.is_empty() || w_str.is_empty() || h_str.is_empty() {
+                send_reply(sender, "REPLY:error: usage: resize <app> <w> <h>", inbox);
+                return;
+            }
+            let (new_w, new_h) = match (w_str.parse::<u32>(), h_str.parse::<u32>()) {
+                (Ok(w), Ok(h)) if w > 0 && h > 0 => (w, h),
+                _ => {
+                    send_reply(sender, "REPLY:error: w and h must be positive integers", inbox);
+                    return;
+                }
+            };
+            let updated = {
+                let reg = app_registry.lock().unwrap();
+                if let Some(state_arc) = reg.get(&app_name) {
+                    let mut st = state_arc.lock().unwrap();
+                    let (x, y) = st.win_region.map(|(x, y, _, _)| (x, y)).unwrap_or((0, 0));
+                    st.win_region = Some((x, y, new_w, new_h));
+                    true
+                } else {
+                    false
+                }
+            };
+            if !updated {
+                send_reply(sender, &format!("REPLY:error: app {app_name} not found"), inbox);
+                return;
+            }
+            send_reply(&app_name, &format!("VYOMA_SYSTEM:resize:{new_w},{new_h}"), inbox);
+            eprintln!("vyoma-supervisor: resize {app_name} → {new_w}×{new_h}");
+            send_reply(sender, &format!("REPLY:resized {app_name} to {new_w}x{new_h}"), inbox);
+        }
+
+        // P41: shutdown — power off the system
+        "shutdown" => {
+            eprintln!("vyoma-supervisor: shutdown requested by {sender}");
+            send_reply(sender, "REPLY:shutting down...", inbox);
+            thread::spawn(|| {
+                thread::sleep(std::time::Duration::from_millis(500));
+                #[cfg(target_os = "linux")]
+                unsafe {
+                    libc::reboot(libc::LINUX_REBOOT_CMD_POWER_OFF);
+                }
+            });
+        }
+
+        // P41: reboot — restart the system
+        "reboot" => {
+            eprintln!("vyoma-supervisor: reboot requested by {sender}");
+            send_reply(sender, "REPLY:rebooting...", inbox);
+            thread::spawn(|| {
+                thread::sleep(std::time::Duration::from_millis(500));
+                #[cfg(target_os = "linux")]
+                unsafe {
+                    libc::reboot(libc::LINUX_REBOOT_CMD_RESTART);
+                }
+            });
+        }
+
+        // P39: notify <title> <msg> — draw toast overlay, auto-clear after 3s
+        "notify" => {
+            let rest = parts.get(1).unwrap_or(&"").trim().to_string();
+            let (title, msg) = rest
+                .split_once(' ')
+                .map(|(a, b)| (a.to_string(), b.to_string()))
+                .unwrap_or_else(|| (rest.clone(), String::new()));
+            #[cfg(target_os = "linux")]
+            {
+                const NX: u32 = 1020;
+                const NY: u32 = 10;
+                const NW: u32 = 400;
+                const NH: u32 = 60;
+                if let Some(fb_lock) = display::get() {
+                    let mut fb = fb_lock.lock().unwrap();
+                    fb.fill_rect(NX, NY, NW, NH, 0x21262DFF);
+                    fb.rect_border(NX, NY, NW, NH, 0x58A6FFFF);
+                    fb.draw_text(NX + 8, NY + 8, &title, 0xFFFFFFFF, font::FontSize::Medium);
+                    fb.draw_text(NX + 8, NY + 28, &msg, 0x8B949EFF, font::FontSize::Medium);
+                    fb.flush();
+                }
+                thread::spawn(move || {
+                    thread::sleep(std::time::Duration::from_secs(3));
+                    if let Some(fb_lock) = display::get() {
+                        let mut fb = fb_lock.lock().unwrap();
+                        fb.fill_rect(NX, NY, NW, NH, 0x0D1117FF);
+                        fb.flush();
+                    }
+                });
+            }
+            eprintln!("vyoma-supervisor: notify title={title:?} msg={msg:?}");
+            send_reply(sender, "REPLY:notified", inbox);
+        }
+
+        // P42: session-save — persist all window positions to /data/session.toml
+        "session-save" => {
+            let mut toml = String::new();
+            {
+                let reg = app_registry.lock().unwrap();
+                for (name, state_arc) in reg.iter() {
+                    let st = state_arc.lock().unwrap();
+                    if let Some((x, y, w, h)) = st.win_region {
+                        toml.push_str(&format!(
+                            "[[window]]\nname = \"{name}\"\nx = {x}\ny = {y}\nw = {w}\nh = {h}\n\n"
+                        ));
+                    }
+                }
+            }
+            let _ = fs::write("/data/session.toml", &toml);
+            eprintln!("vyoma-supervisor: session saved ({} bytes)", toml.len());
+            send_reply(sender, "REPLY:session saved", inbox);
+        }
+
+        // P42: session-restore — reload window positions from /data/session.toml
+        "session-restore" => {
+            let content = fs::read_to_string("/data/session.toml").unwrap_or_default();
+            let mut windows: Vec<(String, u32, u32, u32, u32)> = Vec::new();
+            let (mut cur_name, mut cx, mut cy, mut cw, mut ch, mut in_win) =
+                (String::new(), 0u32, 0u32, 0u32, 0u32, false);
+            for line in content.lines() {
+                let l = line.trim();
+                if l == "[[window]]" {
+                    if in_win && !cur_name.is_empty() {
+                        windows.push((cur_name.clone(), cx, cy, cw, ch));
+                    }
+                    cur_name.clear();
+                    (cx, cy, cw, ch, in_win) = (0, 0, 0, 0, true);
+                } else if in_win {
+                    if let Some(v) = l.strip_prefix("name = ") {
+                        cur_name = v.trim_matches('"').to_string();
+                    } else if let Some(v) = l.strip_prefix("x = ") { cx = v.parse().unwrap_or(0); }
+                    else if let Some(v) = l.strip_prefix("y = ")  { cy = v.parse().unwrap_or(0); }
+                    else if let Some(v) = l.strip_prefix("w = ")  { cw = v.parse().unwrap_or(0); }
+                    else if let Some(v) = l.strip_prefix("h = ")  { ch = v.parse().unwrap_or(0); }
+                }
+            }
+            if in_win && !cur_name.is_empty() {
+                windows.push((cur_name, cx, cy, cw, ch));
+            }
+            let mut restored = 0usize;
+            for (name, x, y, w, h) in windows {
+                let updated = {
+                    let reg = app_registry.lock().unwrap();
+                    if let Some(state_arc) = reg.get(&name) {
+                        let mut st = state_arc.lock().unwrap();
+                        st.win_region = Some((x, y, w, h));
+                        true
+                    } else { false }
+                };
+                if updated {
+                    send_reply(&name, &format!("VYOMA_SYSTEM:resize:{w},{h}"), inbox);
+                    restored += 1;
+                }
+            }
+            eprintln!("vyoma-supervisor: session restored {restored} windows");
+            send_reply(sender, &format!("REPLY:restored {restored} windows"), inbox);
+        }
+
+        // P43: monitors — count DRM connectors via /sys/class/drm
+        "monitors" => {
+            let count = count_drm_connectors();
+            eprintln!("vyoma-supervisor: monitors = {count}");
+            send_reply(sender, &format!("REPLY:monitors {count}"), inbox);
+        }
+
+        // P44: dns-resolve <hostname> — synchronous DNS A-record lookup via 8.8.8.8:53
+        "dns-resolve" => {
+            let hostname = parts.get(1).unwrap_or(&"").trim().to_string();
+            if hostname.is_empty() {
+                send_reply(sender, "REPLY:dns error: no hostname", inbox);
+                return;
+            }
+            let ip = dns_resolve_a(&hostname).unwrap_or_else(|| "NXDOMAIN".to_string());
+            eprintln!("vyoma-supervisor: dns {hostname} -> {ip}");
+            send_reply(sender, &format!("REPLY:dns {hostname} {ip}"), inbox);
+        }
+
+        // P45: tls-info — check for cert/key in /data
+        "tls-info" => {
+            let cert = Path::new("/data/cert.pem").exists();
+            let key  = Path::new("/data/key.pem").exists();
+            let msg = if cert && key {
+                "TLS: cert.pem and key.pem present in /data — ready for TLS termination proxy"
+            } else {
+                "TLS: no cert/key found — place cert.pem and key.pem in /data/ to enable TLS"
+            };
+            send_reply(sender, &format!("REPLY:{msg}"), inbox);
+        }
+
+        // P46: http-get <url> — fetch URL, return status code + first 4096 chars of body
+        "http-get" => {
+            let url = parts.get(1).unwrap_or(&"").trim().to_string();
+            if url.is_empty() {
+                send_reply(sender, "REPLY:http-get error no-url", inbox);
+                return;
+            }
+            match http_get(&url) {
+                Ok(bytes) => {
+                    let raw = String::from_utf8_lossy(&bytes);
+                    let status_code = raw.lines().next()
+                        .and_then(|l| l.split_whitespace().nth(1))
+                        .unwrap_or("200")
+                        .to_string();
+                    let body = if let Some(p) = raw.find("\r\n\r\n") { &raw[p + 4..] }
+                              else if let Some(p) = raw.find("\n\n") { &raw[p + 2..] }
+                              else { &raw };
+                    let escaped: String = body.chars().take(4096)
+                        .collect::<String>()
+                        .replace('\r', "")
+                        .replace('\n', "\\n");
+                    send_reply(sender, &format!("REPLY:http-get {status_code} {escaped}"), inbox);
+                }
+                Err(e) => {
+                    send_reply(sender, &format!("REPLY:http-get error {e}"), inbox);
+                }
+            }
+        }
+
+        // P47: tcp-connect <host:port> — open raw TCP connection, return ID
+        "tcp-connect" => {
+            let addr = parts.get(1).unwrap_or(&"").trim().to_string();
+            if addr.is_empty() {
+                send_reply(sender, "REPLY:tcp-connect error no-addr", inbox);
+                return;
+            }
+            match std::net::TcpStream::connect(&addr) {
+                Ok(stream) => {
+                    let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(200)));
+                    let id = TCP_NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    TCP_CONNS.get().unwrap().lock().unwrap().insert(id, stream);
+                    eprintln!("vyoma-supervisor: tcp-connect {addr} id={id}");
+                    send_reply(sender, &format!("REPLY:tcp-connect {id}"), inbox);
+                }
+                Err(e) => {
+                    send_reply(sender, &format!("REPLY:tcp-connect error {e}"), inbox);
+                }
+            }
+        }
+
+        // P47: tcp-send <id> <data> — write data to TCP connection
+        "tcp-send" => {
+            let rest = parts.get(1).unwrap_or(&"").trim();
+            let (id_str, data) = rest.split_once(' ').unwrap_or((rest, ""));
+            let id: u32 = id_str.parse().unwrap_or(0);
+            let map = TCP_CONNS.get().unwrap().lock().unwrap();
+            if let Some(stream) = map.get(&id) {
+                use std::io::Write as IoWrite;
+                let payload = format!("{data}\n");
+                let _ = (&*stream as &std::net::TcpStream).write_all(payload.as_bytes());
+                send_reply(sender, &format!("REPLY:tcp-send {id} ok"), inbox);
+            } else {
+                send_reply(sender, &format!("REPLY:tcp-send error not-found"), inbox);
+            }
+        }
+
+        // P47: tcp-recv <id> — read available data from TCP connection (non-blocking)
+        "tcp-recv" => {
+            let id: u32 = parts.get(1).unwrap_or(&"0").trim().parse().unwrap_or(0);
+            let map = TCP_CONNS.get().unwrap().lock().unwrap();
+            if let Some(stream) = map.get(&id) {
+                use std::io::Read as IoRead;
+                let mut buf = vec![0u8; 1024];
+                match (&*stream as &std::net::TcpStream).read(&mut buf) {
+                    Ok(n) if n > 0 => {
+                        let data: String = buf[..n].iter()
+                            .filter(|&&b| b >= 32 || b == b'\n' || b == b'\r')
+                            .map(|&b| b as char)
+                            .collect::<String>()
+                            .replace('\r', "")
+                            .replace('\n', "\\n");
+                        send_reply(sender, &format!("REPLY:tcp-recv {id} {data}"), inbox);
+                    }
+                    _ => send_reply(sender, &format!("REPLY:tcp-recv {id} "), inbox),
+                }
+            } else {
+                send_reply(sender, &format!("REPLY:tcp-recv error not-found"), inbox);
+            }
+        }
+
+        // P47: tcp-close <id> — close TCP connection
+        "tcp-close" => {
+            let id: u32 = parts.get(1).unwrap_or(&"0").trim().parse().unwrap_or(0);
+            TCP_CONNS.get().unwrap().lock().unwrap().remove(&id);
+            send_reply(sender, &format!("REPLY:tcp-close {id} ok"), inbox);
+        }
+
+        // P50: clipboard-set <text> — store text in global clipboard
+        "clipboard-set" => {
+            let text = parts.get(1).unwrap_or(&"").trim().to_string();
+            *CLIPBOARD.get().unwrap().lock().unwrap() = text;
+            send_reply(sender, "REPLY:clipboard-set ok", inbox);
+        }
+
+        // P50: clipboard-get — return current clipboard contents
+        "clipboard-get" => {
+            let text = CLIPBOARD.get().unwrap().lock().unwrap().clone();
+            send_reply(sender, &format!("REPLY:clipboard {text}"), inbox);
+        }
+
+        // P51: screenshot <path> — write back-buffer as PPM to path
+        "screenshot" => {
+            let path = parts.get(1).unwrap_or(&"").trim().to_string();
+            if path.is_empty() {
+                send_reply(sender, "REPLY:screenshot error no-path", inbox);
+                return;
+            }
+            #[cfg(target_os = "linux")]
+            {
+                match display::get() {
+                    Some(fb_lock) => {
+                        let fb = fb_lock.lock().unwrap();
+                        match fb.screenshot(&path) {
+                            Ok(()) => {
+                                eprintln!("vyoma-supervisor: screenshot saved to {path}");
+                                send_reply(sender, &format!("REPLY:screenshot ok {path}"), inbox);
+                            }
+                            Err(e) => send_reply(sender, &format!("REPLY:screenshot error {e}"), inbox),
+                        }
+                    }
+                    None => send_reply(sender, "REPLY:screenshot error no-display", inbox),
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            send_reply(sender, "REPLY:screenshot error linux-only", inbox);
+        }
+
+        // P49: download <url> <dest> — fetch URL, write to dest path in background
+        "download" => {
+            let rest = parts.get(1).unwrap_or(&"").trim().to_string();
+            let (url, dest) = match rest.split_once(' ') {
+                Some((u, d)) => (u.trim().to_string(), d.trim().to_string()),
+                None => {
+                    send_reply(sender, "REPLY:download-error  missing dest", inbox);
+                    return;
+                }
+            };
+            if url.is_empty() || dest.is_empty() {
+                send_reply(sender, "REPLY:download-error  missing url or dest", inbox);
+                return;
+            }
+            let sender_name = sender.to_string();
+            let inbox_clone = Arc::clone(inbox);
+            let dest_clone  = dest.clone();
+            thread::spawn(move || {
+                let dest = dest_clone;
+                send_reply(&sender_name, &format!("REPLY:download-progress {dest} 0"), &inbox_clone);
+                match http_get(&url) {
+                    Ok(bytes) => {
+                        let n = bytes.len();
+                        send_reply(&sender_name, &format!("REPLY:download-progress {dest} {n}"), &inbox_clone);
+                        match fs::write(&dest, &bytes) {
+                            Ok(()) => {
+                                eprintln!("vyoma-supervisor: download done {dest} ({n} bytes)");
+                                send_reply(&sender_name, &format!("REPLY:download-done {dest}"), &inbox_clone);
+                            }
+                            Err(e) => {
+                                send_reply(&sender_name, &format!("REPLY:download-error {dest} {e}"), &inbox_clone);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        send_reply(&sender_name, &format!("REPLY:download-error {dest} {e}"), &inbox_clone);
+                    }
+                }
+            });
+            send_reply(sender, &format!("REPLY:download-progress {dest} 0"), inbox);
+        }
+
         other => {
             eprintln!("vyoma-supervisor: unknown @supervisor command from {sender}: {other}");
         }
+    }
+}
+
+fn count_drm_connectors() -> usize {
+    fs::read_dir("/sys/class/drm")
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_name().to_string_lossy().starts_with("card0-"))
+                .count()
+        })
+        .unwrap_or(1)
+        .max(1)
+}
+
+// P44: synchronous DNS A-record lookup over TCP to 8.8.8.8:53
+fn dns_resolve_a(hostname: &str) -> Option<String> {
+    use std::io::{Read, Write as _};
+    use std::net::TcpStream;
+
+    // Build DNS query packet
+    let mut q: Vec<u8> = Vec::new();
+    q.extend_from_slice(&[0x12, 0x34, 0x01, 0x00]); // ID + flags (RD)
+    q.extend_from_slice(&[0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // counts
+    for label in hostname.trim_end_matches('.').split('.') {
+        let b = label.as_bytes();
+        q.push(b.len() as u8);
+        q.extend_from_slice(b);
+    }
+    q.push(0x00);                                // root label
+    q.extend_from_slice(&[0x00, 0x01, 0x00, 0x01]); // Type A, Class IN
+
+    // TCP DNS: 2-byte big-endian length prefix
+    let mut msg: Vec<u8> = vec![(q.len() >> 8) as u8, (q.len() & 0xFF) as u8];
+    msg.extend_from_slice(&q);
+
+    let mut stream = TcpStream::connect("8.8.8.8:53").ok()?;
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(4))).ok()?;
+    stream.write_all(&msg).ok()?;
+
+    // Read response length then body
+    let mut lbuf = [0u8; 2];
+    stream.read_exact(&mut lbuf).ok()?;
+    let rlen = u16::from_be_bytes(lbuf) as usize;
+    let mut resp = vec![0u8; rlen];
+    stream.read_exact(&mut resp).ok()?;
+
+    if resp.len() < 12 { return None; }
+    let ancount = u16::from_be_bytes([resp[6], resp[7]]) as usize;
+    if ancount == 0 { return None; }
+
+    // Skip question section
+    let mut pos = 12usize;
+    pos = dns_skip_name(&resp, pos)?;
+    pos += 4; // type + class
+
+    // Parse first answer record
+    pos = dns_skip_name(&resp, pos)?;
+    if pos + 10 > resp.len() { return None; }
+    let rtype  = u16::from_be_bytes([resp[pos],   resp[pos+1]]);
+    pos += 8; // type(2) + class(2) + ttl(4)
+    let rdlen  = u16::from_be_bytes([resp[pos], resp[pos+1]]) as usize;
+    pos += 2;
+
+    if rtype == 1 && rdlen == 4 && pos + 4 <= resp.len() {
+        return Some(format!("{}.{}.{}.{}", resp[pos], resp[pos+1], resp[pos+2], resp[pos+3]));
+    }
+    None
+}
+
+fn dns_skip_name(buf: &[u8], mut pos: usize) -> Option<usize> {
+    loop {
+        if pos >= buf.len() { return None; }
+        let b = buf[pos] as usize;
+        if b == 0                 { return Some(pos + 1); }
+        if (b & 0xC0) == 0xC0    { return Some(pos + 2); } // compressed pointer
+        pos += b + 1;
     }
 }
 
@@ -1228,9 +2056,201 @@ fn remove_package(name: &str, app_registry: &AppRegistry) -> Result<(), String> 
     Ok(())
 }
 
+/// P30: minimal HTTP/1.1 GET over plain TCP. Returns the response body.
+/// Only supports `http://` (no TLS). URL format: `http://host[:port]/path`.
+fn http_get(url: &str) -> Result<Vec<u8>, String> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+
+    let rest = url.strip_prefix("http://")
+        .ok_or_else(|| "only http:// URLs are supported".to_string())?;
+
+    let (hostport, path) = if let Some(idx) = rest.find('/') {
+        (&rest[..idx], &rest[idx..])
+    } else {
+        (rest, "/")
+    };
+    let (host, port) = if let Some(c) = hostport.rfind(':') {
+        let p: u16 = hostport[c + 1..]
+            .parse()
+            .map_err(|_| format!("invalid port in '{hostport}'"))?;
+        (&hostport[..c], p)
+    } else {
+        (hostport, 80u16)
+    };
+
+    let mut stream = TcpStream::connect((host, port))
+        .map_err(|e| format!("connect {host}:{port}: {e}"))?;
+
+    let req = format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
+    stream.write_all(req.as_bytes())
+        .map_err(|e| format!("request write: {e}"))?;
+
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw)
+        .map_err(|e| format!("response read: {e}"))?;
+
+    let sep = raw.windows(4).position(|w| w == b"\r\n\r\n")
+        .ok_or_else(|| "no HTTP header boundary in response".to_string())?;
+
+    let status: u16 = std::str::from_utf8(&raw[..sep])
+        .unwrap_or("")
+        .lines()
+        .next()
+        .unwrap_or("")
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    if status != 200 {
+        return Err(format!("HTTP {status}"));
+    }
+
+    Ok(raw[sep + 4..].to_vec())
+}
+
 fn send_reply(target: &str, msg: &str, inbox: &Inbox) {
     if let Some(tx) = inbox.lock().unwrap().get(target) {
         let _ = tx.send(msg.to_string());
+    }
+}
+
+/// Find the first /dev/input/eventN that supports pointer events (EV_REL or EV_ABS).
+/// Uses EVIOCGBIT(0, 1) ioctl — returns 1 byte of event-type capability bitmask.
+/// Bit 2 = EV_REL (relative mouse), bit 3 = EV_ABS (absolute pointer, virtio-mouse-pci).
+/// Returns None on headless boot where no pointer input devices exist.
+#[cfg(target_os = "linux")]
+fn open_mouse_device() -> Option<std::fs::File> {
+    use std::os::unix::io::AsRawFd;
+    // EVIOCGBIT(0, 1) = _IOC(_IOC_READ=2, 'E'=0x45, nr=0x20, size=1)
+    //                 = (2<<30)|(0x45<<8)|0x20|(1<<16) = 0x80014520
+    // libc::Ioctl is i32 on musl/x86-64 and u64 on glibc — use `as _` to coerce.
+    const EVIOCGBIT_TYPE: u32 = 0x80014520u32;
+    for i in 0..8u32 {
+        let path = format!("/dev/input/event{i}");
+        let Ok(f) = std::fs::File::open(&path) else { continue };
+        let mut bits = 0u8;
+        let ret = unsafe {
+            libc::ioctl(
+                f.as_raw_fd(),
+                EVIOCGBIT_TYPE as _,
+                &mut bits as *mut u8 as *mut libc::c_void,
+            )
+        };
+        if ret >= 0 && (bits & (1 << 2) != 0 || bits & (1 << 3) != 0) {
+            eprintln!("vyoma-supervisor: mouse-input: using {path}");
+            return Some(f);
+        }
+    }
+    None
+}
+
+/// Dispatch a mouse event:
+///  P32 — check close-button hit for all display apps; send VYOMA_SYSTEM:window_event:close
+///  P33 — on click, raise topmost window under cursor in Z-order; set keyboard focus
+///         dispatch VYOMA_INPUT:mouse to the topmost mouse-capable app under cursor
+#[cfg(target_os = "linux")]
+fn dispatch_mouse(
+    cx: i32,
+    cy: i32,
+    btn: u8,
+    inbox: &Inbox,
+    app_registry: &AppRegistry,
+    focused: &FocusedApp,
+) {
+    // P32: check close-button clicks (in the chrome region above each windowed app)
+    if btn == 1 {
+        let close_hit = {
+            let reg = app_registry.lock().unwrap();
+            let mut hit: Option<String> = None;
+            for (name, state_arc) in reg.iter() {
+                let st = state_arc.lock().unwrap();
+                if !st.has_display { continue; }
+                let Some((wx, wy, ww, _)) = st.win_region else { continue };
+                if wy < 20 || ww < 20 { continue; }
+                // Close button occupies (wx+ww-16, wy-14, 12, 12)
+                let cbx = (wx + ww) as i32 - 16;
+                let cby = wy as i32 - 14;
+                if cx >= cbx && cx < cbx + 12 && cy >= cby && cy < cby + 12 {
+                    hit = Some(name.clone());
+                    break;
+                }
+            }
+            hit
+        };
+        if let Some(name) = close_hit {
+            send_reply(&name, "VYOMA_SYSTEM:window_event:close", inbox);
+            return;
+        }
+    }
+
+    // Snapshot z-order before locking registry (avoids lock ordering issues)
+    let z_snapshot: Vec<String> = Z_ORDER.get()
+        .map(|m| m.lock().unwrap().clone())
+        .unwrap_or_default();
+
+    // P33: on click, raise topmost window under cursor and set keyboard focus
+    if btn == 1 {
+        let raise_target = {
+            let reg = app_registry.lock().unwrap();
+            // Iterate z-order front-to-back; first window that contains the click wins
+            let mut found: Option<String> = None;
+            for name in &z_snapshot {
+                let Some(state_arc) = reg.get(name) else { continue };
+                let st = state_arc.lock().unwrap();
+                let Some((wx, wy, ww, wh)) = st.win_region else { continue };
+                if cx >= wx as i32 && cy >= wy as i32
+                    && cx < (wx + ww) as i32 && cy < (wy + wh) as i32 {
+                    found = Some(name.clone());
+                    break;
+                }
+            }
+            found
+        };
+        if let Some(ref name) = raise_target {
+            z_order_push_front(name);
+            *focused.lock().unwrap() = Some(name.clone());
+        }
+    }
+
+    // Dispatch mouse event to topmost mouse-capable app under cursor (z-order aware)
+    let target = {
+        let reg = app_registry.lock().unwrap();
+        let mut found: Option<(String, i32, i32)> = None;
+        // Try z-order first (preserves topmost-window semantics when windows overlap)
+        for name in &z_snapshot {
+            let Some(state_arc) = reg.get(name) else { continue };
+            let st = state_arc.lock().unwrap();
+            if !st.has_mouse { continue; }
+            let Some((wx, wy, ww, wh)) = st.win_region else { continue };
+            if cx >= wx as i32 && cy >= wy as i32
+                && cx < (wx + ww) as i32 && cy < (wy + wh) as i32 {
+                let lx = cx - wx as i32;
+                let ly = cy - wy as i32;
+                found = Some((name.clone(), lx, ly));
+                break;
+            }
+        }
+        // Fallback: apps not in z_order (no window region) still get events
+        if found.is_none() {
+            for (name, state_arc) in reg.iter() {
+                let st = state_arc.lock().unwrap();
+                if !st.has_mouse { continue; }
+                let Some((wx, wy, ww, wh)) = st.win_region else { continue };
+                if cx >= wx as i32 && cy >= wy as i32
+                    && cx < (wx + ww) as i32 && cy < (wy + wh) as i32 {
+                    let lx = cx - wx as i32;
+                    let ly = cy - wy as i32;
+                    found = Some((name.clone(), lx, ly));
+                    break;
+                }
+            }
+        }
+        found
+    };
+    if let Some((name, lx, ly)) = target {
+        send_reply(&name, &format!("VYOMA_INPUT:mouse:{lx},{ly},{btn}"), inbox);
     }
 }
 
@@ -1240,8 +2260,20 @@ fn send_reply(target: &str, msg: &str, inbox: &Inbox) {
 fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)>) {
     let Some(fb_lock) = display::get() else { return };
 
-    if cmd == "flush" {
-        fb_lock.lock().unwrap().flush();
+    if cmd == "flush" || cmd == "present" {
+        let mut fb = fb_lock.lock().unwrap();
+        // P32: paint window decoration chrome on top of app content before blit
+        if let Some((wx, wy, ww, _wh)) = win {
+            if wy >= 20 && ww >= 20 {
+                // Title bar background
+                fb.fill_rect(wx, wy - 20, ww, 20, 0x21262DFF);
+                // App name label
+                fb.draw_text(wx + 8, wy - 16, sender, 0xFFFFFFFF, font::FontSize::Medium);
+                // Close button — red square
+                fb.fill_rect(wx + ww - 16, wy - 14, 12, 12, 0xFF5F56FF);
+            }
+        }
+        fb.flush();
         return;
     }
 
@@ -1319,6 +2351,106 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
             fb_lock.lock().unwrap().draw_text(ax, ay, text, rgba, size);
         } else {
             eprintln!("vyoma-display: [{sender}] bad draw_text args: {args}");
+        }
+        return;
+    }
+
+    if let Some(args) = cmd.strip_prefix("rect_border:") {
+        let parts: Vec<&str> = args.splitn(5, ',').collect();
+        if parts.len() == 5 {
+            if let (Ok(lx), Ok(ly), Ok(w), Ok(h), Ok(rgba)) = (
+                parts[0].parse::<u32>(),
+                parts[1].parse::<u32>(),
+                parts[2].parse::<u32>(),
+                parts[3].parse::<u32>(),
+                parts[4].parse::<u32>(),
+            ) {
+                let (ax, ay, aw, ah) = match win {
+                    None => (lx, ly, w, h),
+                    Some((wx, wy, ww, wh)) => {
+                        let ax = wx + lx;
+                        let ay = wy + ly;
+                        let win_right  = wx + ww;
+                        let win_bottom = wy + wh;
+                        if ax >= win_right || ay >= win_bottom { return; }
+                        let aw = w.min(win_right  - ax);
+                        let ah = h.min(win_bottom - ay);
+                        if aw == 0 || ah == 0 { return; }
+                        (ax, ay, aw, ah)
+                    }
+                };
+                fb_lock.lock().unwrap().rect_border(ax, ay, aw, ah, rgba);
+            } else {
+                eprintln!("vyoma-display: [{sender}] bad rect_border args: {args}");
+            }
+        } else {
+            eprintln!("vyoma-display: [{sender}] bad rect_border args: {args}");
+        }
+        return;
+    }
+
+    if let Some(args) = cmd.strip_prefix("clear_region:") {
+        let parts: Vec<&str> = args.splitn(4, ',').collect();
+        if parts.len() == 4 {
+            if let (Ok(lx), Ok(ly), Ok(w), Ok(h)) = (
+                parts[0].parse::<u32>(),
+                parts[1].parse::<u32>(),
+                parts[2].parse::<u32>(),
+                parts[3].parse::<u32>(),
+            ) {
+                let (ax, ay, aw, ah) = match win {
+                    None => (lx, ly, w, h),
+                    Some((wx, wy, ww, wh)) => {
+                        let ax = wx + lx;
+                        let ay = wy + ly;
+                        let win_right  = wx + ww;
+                        let win_bottom = wy + wh;
+                        if ax >= win_right || ay >= win_bottom { return; }
+                        let aw = w.min(win_right  - ax);
+                        let ah = h.min(win_bottom - ay);
+                        if aw == 0 || ah == 0 { return; }
+                        (ax, ay, aw, ah)
+                    }
+                };
+                fb_lock.lock().unwrap().clear_region(ax, ay, aw, ah);
+            } else {
+                eprintln!("vyoma-display: [{sender}] bad clear_region args: {args}");
+            }
+        } else {
+            eprintln!("vyoma-display: [{sender}] bad clear_region args: {args}");
+        }
+        return;
+    }
+
+    if let Some(args) = cmd.strip_prefix("draw_text_wrap:") {
+        // Format: x,y,max_w,rgba,size,text  (splitn 6)
+        let parts: Vec<&str> = args.splitn(6, ',').collect();
+        if parts.len() == 6 {
+            if let (Ok(lx), Ok(ly), Ok(max_w), Ok(rgba), Some(size)) = (
+                parts[0].parse::<u32>(),
+                parts[1].parse::<u32>(),
+                parts[2].parse::<u32>(),
+                parts[3].parse::<u32>(),
+                font::parse_size(parts[4]),
+            ) {
+                let text = parts[5];
+                let (ax, ay, effective_max_w) = match win {
+                    None => (lx, ly, max_w),
+                    Some((wx, wy, ww, wh)) => {
+                        let ax = wx + lx;
+                        let ay = wy + ly;
+                        if ax >= wx + ww || ay >= wy + wh { return; }
+                        let effective_max_w = max_w.min(ww.saturating_sub(lx));
+                        if effective_max_w == 0 { return; }
+                        (ax, ay, effective_max_w)
+                    }
+                };
+                fb_lock.lock().unwrap().draw_text_wrap(ax, ay, effective_max_w, text, rgba, size);
+            } else {
+                eprintln!("vyoma-display: [{sender}] bad draw_text_wrap args: {args}");
+            }
+        } else {
+            eprintln!("vyoma-display: [{sender}] bad draw_text_wrap args: {args}");
         }
         return;
     }

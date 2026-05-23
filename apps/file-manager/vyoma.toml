@@ -1,0 +1,18 @@
+[app]
+name    = "file-manager"
+version = "0.1.0"
+wasm    = "file-manager.wasm"
+
+[capabilities]
+stdio      = true
+filesystem = true
+network    = false
+display    = true
+shell      = true   # receives keyboard focus when launched via `run file-manager`
+mouse      = false
+
+[window]
+x = 0
+y = 0
+w = 1440
+h = 900

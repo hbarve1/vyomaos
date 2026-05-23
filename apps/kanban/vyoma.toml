@@ -1,0 +1,16 @@
+[app]
+name    = "kanban"
+version = "0.1.0"
+wasm    = "kanban.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+filesystem = true
+shell      = true
+
+[window]
+x = 80
+y = 40
+w = 1100
+h = 760

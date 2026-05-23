@@ -4,6 +4,11 @@ version = "0.1.0"
 wasm    = "pong.wasm"
 
 [capabilities]
-stdio      = true
-filesystem = false
-network    = false
+stdio   = true
+display = true
+
+[window]
+x = 180
+y = 60
+w = 800
+h = 700

@@ -1,0 +1,16 @@
+[app]
+name    = "quick-look"
+version = "0.1.0"
+wasm    = "quick-look.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+shell      = true
+filesystem = true
+
+[window]
+x = 200
+y = 100
+w = 1040
+h = 680

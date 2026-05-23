@@ -13,8 +13,8 @@ ENV TZ=UTC
 # musl cross-compilation: musl-tools (provides musl-gcc wrapper and headers)
 # QEMU for smoke tests: qemu-system-x86
 # Build script utilities: cpio gzip rsync
-RUN apt-get update -qq && \
-    apt-get install -y --no-install-recommends \
+RUN apt-get -o Acquire::Retries=3 update -qq && \
+    apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
         build-essential \
         git \
         wget \

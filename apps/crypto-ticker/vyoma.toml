@@ -1,0 +1,15 @@
+[app]
+name    = "crypto-ticker"
+version = "0.1.0"
+wasm    = "crypto-ticker.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 280
+y = 60
+w = 960
+h = 640

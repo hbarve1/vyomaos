@@ -1,0 +1,16 @@
+[app]
+name    = "audio-player"
+version = "0.1.0"
+wasm    = "audio-player.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+shell      = true
+filesystem = true
+
+[window]
+x = 500
+y = 300
+w = 440
+h = 260

@@ -1,0 +1,15 @@
+[app]
+name    = "qr-viewer"
+version = "0.1.0"
+wasm    = "qr-viewer.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 300
+y = 100
+w = 760
+h = 680

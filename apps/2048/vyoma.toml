@@ -1,0 +1,15 @@
+[app]
+name    = "2048"
+version = "0.1.0"
+wasm    = "2048.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 260
+y = 60
+w = 600
+h = 700

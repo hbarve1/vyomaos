@@ -1,0 +1,9 @@
+[app]
+name    = "anagram"
+version = "0.1.0"
+wasm    = "anagram.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true

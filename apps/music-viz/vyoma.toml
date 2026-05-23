@@ -1,0 +1,15 @@
+[app]
+name    = "music-viz"
+version = "0.1.0"
+wasm    = "music-viz.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 240
+y = 60
+w = 800
+h = 560

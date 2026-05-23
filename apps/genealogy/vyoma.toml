@@ -1,0 +1,15 @@
+[app]
+name    = "genealogy"
+version = "0.1.0"
+wasm    = "genealogy.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 60
+y = 40
+w = 1200
+h = 760

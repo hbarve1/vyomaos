@@ -1,0 +1,15 @@
+[app]
+name    = "typing-tutor"
+version = "0.1.0"
+wasm    = "typing-tutor.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 280
+y = 60
+w = 880
+h = 560

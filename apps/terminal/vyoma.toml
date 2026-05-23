@@ -1,0 +1,15 @@
+[app]
+name    = "terminal"
+version = "0.1.0"
+wasm    = "terminal.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 100
+y = 40
+w = 1100
+h = 760

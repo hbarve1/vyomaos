@@ -1,0 +1,15 @@
+[app]
+name    = "quiz"
+version = "0.1.0"
+wasm    = "quiz.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 260
+y = 60
+w = 920
+h = 680

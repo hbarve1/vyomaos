@@ -1,0 +1,12 @@
+[package]
+name    = "music-theory"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "music-theory"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+strip     = true

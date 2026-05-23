@@ -1,0 +1,14 @@
+[app]
+name    = "timeline"
+version = "0.1.0"
+wasm    = "timeline.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+x = 60
+y = 30
+w = 1200
+h = 720

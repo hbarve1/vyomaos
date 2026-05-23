@@ -1,0 +1,15 @@
+[app]
+name    = "world-clock"
+version = "0.1.0"
+wasm    = "world-clock.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 200
+y = 100
+w = 960
+h = 500

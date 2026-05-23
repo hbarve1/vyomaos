@@ -1,0 +1,15 @@
+[app]
+name    = "activity-monitor"
+version = "0.1.0"
+wasm    = "activity-monitor.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 120
+y = 80
+w = 1200
+h = 700

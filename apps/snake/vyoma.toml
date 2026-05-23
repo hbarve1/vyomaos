@@ -1,0 +1,15 @@
+[app]
+name    = "snake"
+version = "0.1.0"
+wasm    = "snake.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 200
+y = 60
+w = 800
+h = 680

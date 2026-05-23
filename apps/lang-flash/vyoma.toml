@@ -1,0 +1,14 @@
+[app]
+name    = "lang-flash"
+version = "0.1.0"
+wasm    = "lang-flash.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+x = 60
+y = 30
+w = 800
+h = 600

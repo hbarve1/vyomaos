@@ -1,0 +1,13 @@
+[app]
+name    = "emoji-art"
+version = "0.1.0"
+wasm    = "emoji-art.wasm"
+
+[window]
+title  = "Emoji Art"
+width  = 960
+height = 720
+
+[capabilities]
+stdio   = true
+display = true

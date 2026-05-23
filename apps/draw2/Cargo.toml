@@ -1,0 +1,12 @@
+[package]
+name    = "draw2"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "draw2"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+strip = true

@@ -1,0 +1,15 @@
+[app]
+name    = "pixel-art"
+version = "0.1.0"
+wasm    = "pixel-art.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 160
+y = 40
+w = 1000
+h = 760

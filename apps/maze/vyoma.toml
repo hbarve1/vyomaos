@@ -1,0 +1,15 @@
+[app]
+name    = "maze"
+version = "0.1.0"
+wasm    = "maze.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 200
+y = 40
+w = 840
+h = 760

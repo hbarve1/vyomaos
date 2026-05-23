@@ -1,0 +1,15 @@
+[app]
+name    = "dock"
+version = "0.1.0"
+wasm    = "dock.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 320
+y = 868
+w = 800
+h = 60

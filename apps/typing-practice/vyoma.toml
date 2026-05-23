@@ -1,0 +1,9 @@
+[app]
+name    = "typing-practice"
+version = "0.1.0"
+wasm    = "typing-practice.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true

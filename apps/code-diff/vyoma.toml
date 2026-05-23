@@ -1,0 +1,14 @@
+[app]
+name    = "code-diff"
+version = "0.1.0"
+wasm    = "code-diff.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+x = 60
+y = 30
+w = 1200
+h = 720

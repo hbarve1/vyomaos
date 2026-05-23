@@ -166,6 +166,24 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  pkg install <n>   — install a package".into());
             push_line(lines, "  pkg remove <n>    — remove a package".into());
             push_line(lines, "  pkg installed     — list installed packages".into());
+            push_line(lines, "  focus <app>        — give keyboard focus to an app".into());
+            push_line(lines, "  raise <app>        — bring window to front (Z-order)".into());
+            push_line(lines, "  lower <app>        — send window to back (Z-order)".into());
+            push_line(lines, "  update <app> <url> — OTA hot-swap wasm binary from url".into());
+            push_line(lines, "  wallpaper <rgba>   — set desktop background color".into());
+            push_line(lines, "  resize <app> <w> <h> — resize app window".into());
+            push_line(lines, "  notify <title> <msg> — show toast notification".into());
+            push_line(lines, "  shutdown           — power off the system".into());
+            push_line(lines, "  reboot             — restart the system".into());
+            push_line(lines, "  session-save       — save window layout to /data/session.toml".into());
+            push_line(lines, "  session-restore    — restore window layout from /data/session.toml".into());
+            push_line(lines, "  monitors           — count connected DRM displays".into());
+            push_line(lines, "  dns <hostname>     — resolve hostname to IP via supervisor".into());
+            push_line(lines, "  tls-info           — check TLS cert/key availability".into());
+            push_line(lines, "  download <url> <dest> — download file from HTTP URL to /data path".into());
+            push_line(lines, "  clip-set <text>    — copy text to supervisor clipboard".into());
+            push_line(lines, "  clip-get           — paste text from supervisor clipboard".into());
+            push_line(lines, "  screenshot [path]  — save framebuffer PPM to /data/screenshot.ppm".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
         "clear" => {
@@ -254,14 +272,136 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
                 }
             }
         }
+        other if other.starts_with("resize ") => {
+            let args = other[7..].trim();
+            if args.split_whitespace().count() < 3 {
+                push_line(lines, "usage: resize <app> <w> <h>".into());
+            } else {
+                println!("@supervisor: resize {args}");
+                push_line(lines, format!("resizing {args}..."));
+            }
+        }
+        other if other.starts_with("wallpaper ") => {
+            let color = other[10..].trim();
+            if color.is_empty() {
+                push_line(lines, "usage: wallpaper <rgba_hex>  e.g. wallpaper 0x1E1E2EFF".into());
+            } else {
+                println!("@supervisor: wallpaper {color}");
+                push_line(lines, format!("setting wallpaper to {color}..."));
+            }
+        }
+        other if other.starts_with("raise ") => {
+            let app = other[6..].trim();
+            if app.is_empty() {
+                push_line(lines, "usage: raise <appname>".into());
+            } else {
+                println!("@supervisor: raise {app}");
+                push_line(lines, format!("raising {app}..."));
+            }
+        }
+        other if other.starts_with("lower ") => {
+            let app = other[6..].trim();
+            if app.is_empty() {
+                push_line(lines, "usage: lower <appname>".into());
+            } else {
+                println!("@supervisor: lower {app}");
+                push_line(lines, format!("lowering {app}..."));
+            }
+        }
+        other if other.starts_with("update ") => {
+            let args = other[7..].trim();
+            if args.is_empty() {
+                push_line(lines, "usage: update <app> <url>".into());
+            } else {
+                println!("@supervisor: update {args}");
+                push_line(lines, format!("updating {args}…"));
+            }
+        }
+        other if other.starts_with("notify ") => {
+            let args = other[7..].trim();
+            if args.is_empty() {
+                push_line(lines, "usage: notify <title> <msg>".into());
+            } else {
+                println!("@supervisor: notify {args}");
+                push_line(lines, format!("notification sent: {args}"));
+            }
+        }
+        other if other.starts_with("focus ") => {
+            let app = other[6..].trim();
+            if app.is_empty() {
+                push_line(lines, "usage: focus <appname>".into());
+            } else {
+                println!("@supervisor: focus {app}");
+            }
+        }
         other if other.starts_with("run ") => {
             let app = other[4..].trim();
             if app.is_empty() {
                 push_line(lines, "usage: run <appname>".into());
             } else {
                 println!("@supervisor: run /apps/{app}/vyoma.toml");
+                println!("@supervisor: focus {app}");
                 push_line(lines, format!("launching {app}..."));
             }
+        }
+        "shutdown" => {
+            push_line(lines, "system shutting down...".into());
+            println!("@supervisor: shutdown");
+        }
+        "reboot" => {
+            push_line(lines, "system rebooting...".into());
+            println!("@supervisor: reboot");
+        }
+        "session-save" => {
+            println!("@supervisor: session-save");
+            push_line(lines, "saving session...".into());
+        }
+        "session-restore" => {
+            println!("@supervisor: session-restore");
+            push_line(lines, "restoring session...".into());
+        }
+        "monitors" => {
+            println!("@supervisor: monitors");
+        }
+        "tls-info" => {
+            println!("@supervisor: tls-info");
+        }
+        other if other.starts_with("dns ") => {
+            let host = other[4..].trim();
+            if host.is_empty() {
+                push_line(lines, "usage: dns <hostname>".into());
+            } else {
+                println!("@supervisor: dns-resolve {host}");
+                push_line(lines, format!("resolving {host}..."));
+            }
+        }
+        other if other.starts_with("download ") => {
+            let args = other[9..].trim();
+            match args.split_once(' ') {
+                Some((url, dest)) if !url.is_empty() && !dest.is_empty() => {
+                    println!("@supervisor: download {url} {dest}");
+                    push_line(lines, format!("downloading {url} → {dest}"));
+                }
+                _ => push_line(lines, "usage: download <url> <dest>".into()),
+            }
+        }
+        other if other.starts_with("clip-set ") => {
+            let text = other[9..].trim();
+            if text.is_empty() {
+                push_line(lines, "usage: clip-set <text>".into());
+            } else {
+                println!("@supervisor: clipboard-set {text}");
+                push_line(lines, format!("clipboard set ({} chars)", text.len()));
+            }
+        }
+        "clip-get" => {
+            println!("@supervisor: clipboard-get");
+        }
+        other if other.starts_with("screenshot") => {
+            let path = other[10..].trim();
+            let dest = if path.is_empty() { "/data/screenshot.ppm" } else { path };
+            println!("@supervisor: screenshot {dest}");
+            push_line(lines, format!("saving screenshot to {dest}..."));
         }
         other => {
             push_line(lines, format!("unknown: {other}"));
@@ -281,7 +421,7 @@ fn push_line(lines: &mut Vec<String>, s: String) {
 // ── Draw the full shell panel ─────────────────────────────────────────────────
 
 fn draw_panel(lines: &[String], input: &str) {
-    // Panel background
+    // Panel background + border
     fill(PX, PY, PW, PH, C_PANEL);
 
     // Title bar
@@ -289,13 +429,17 @@ fn draw_panel(lines: &[String], input: &str) {
     fill(PX, PY + TITLE_H, PW, 2, C_ACCENT); // accent line
     text(PX + 8, PY + 4, C_ACCENT, "shell");
     text(PX + PW - 136, PY + 4, C_DIM, "VyomaOS v0.1");
+    border(PX, PY, PW, PH, C_ACCENT);
 
-    // Output lines
+    // Clear output area
+    clear_region(INNER_X, INNER_Y, PW - 16, PROMPT_Y - INNER_Y);
+
+    // Output lines (word-wrapped)
     for (i, line) in lines.iter().enumerate() {
         let ly = INNER_Y + i as u32 * LINE_H;
         if ly + LINE_H > PROMPT_Y { break; }
         let colour = if line.starts_with("> ") { C_DIM } else { C_WHITE };
-        text(INNER_X, ly, colour, line);
+        text_wrap(INNER_X, ly, PW - 16, colour, line);
     }
 
     // Prompt + cursor
@@ -321,6 +465,21 @@ fn fill(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
 #[inline]
 fn text(x: u32, y: u32, rgba: u32, s: &str) {
     println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},m,{s}");
+}
+
+#[inline]
+fn border(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
+    println!("VYOMA_DRAW:rect_border:{x},{y},{w},{h},{rgba}");
+}
+
+#[inline]
+fn clear_region(x: u32, y: u32, w: u32, h: u32) {
+    println!("VYOMA_DRAW:clear_region:{x},{y},{w},{h}");
+}
+
+#[inline]
+fn text_wrap(x: u32, y: u32, max_w: u32, rgba: u32, s: &str) {
+    println!("VYOMA_DRAW:draw_text_wrap:{x},{y},{max_w},{rgba},m,{s}");
 }
 
 #[inline]

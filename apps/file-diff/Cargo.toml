@@ -1,0 +1,12 @@
+[package]
+name    = "file-diff"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "file-diff"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+strip = true

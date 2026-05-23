@@ -1,0 +1,16 @@
+[app]
+name    = "virtual-keyboard"
+version = "0.1.0"
+wasm    = "virtual-keyboard.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+mouse   = true
+
+[window]
+x = 220
+y = 560
+w = 1000
+h = 320

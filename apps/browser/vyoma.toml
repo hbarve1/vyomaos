@@ -1,0 +1,16 @@
+[app]
+name    = "browser"
+version = "0.1.0"
+wasm    = "browser.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+network = true
+
+[window]
+x = 0
+y = 20
+w = 1440
+h = 880

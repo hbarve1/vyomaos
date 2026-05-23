@@ -1,0 +1,16 @@
+[app]
+name    = "file-diff"
+version = "0.1.0"
+wasm    = "file-diff.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+filesystem = true
+shell      = true
+
+[window]
+x = 80
+y = 40
+w = 1360
+h = 760

@@ -1,0 +1,15 @@
+[app]
+name    = "asteroids"
+version = "0.1.0"
+wasm    = "asteroids.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 100
+y = 40
+w = 900
+h = 800

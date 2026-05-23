@@ -1,0 +1,13 @@
+[app]
+name    = "tarot"
+version = "0.1.0"
+wasm    = "tarot.wasm"
+
+[window]
+title  = "Tarot Card Reader"
+width  = 960
+height = 720
+
+[capabilities]
+stdio   = true
+display = true

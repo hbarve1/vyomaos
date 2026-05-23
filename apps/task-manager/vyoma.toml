@@ -1,0 +1,15 @@
+[app]
+name    = "task-manager"
+version = "0.1.0"
+wasm    = "task-manager.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+filesystem = true
+
+[window]
+x = 200
+y = 80
+w = 640
+h = 560

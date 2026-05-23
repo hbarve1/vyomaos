@@ -1,0 +1,15 @@
+[app]
+name    = "md-editor"
+version = "0.1.0"
+wasm    = "md-editor.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+filesystem = true
+
+[window]
+x = 60
+y = 30
+w = 1360
+h = 800

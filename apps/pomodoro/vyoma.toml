@@ -1,0 +1,14 @@
+[app]
+name    = "pomodoro"
+version = "0.1.0"
+wasm    = "pomodoro.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+x = 300
+y = 160
+w = 440
+h = 380

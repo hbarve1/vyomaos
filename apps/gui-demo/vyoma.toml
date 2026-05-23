@@ -8,6 +8,7 @@ stdio      = true
 filesystem = true
 network    = false
 display    = true
+mouse      = true   # receives VYOMA_INPUT:mouse: events for card highlighting
 
 [window]
 x = 0

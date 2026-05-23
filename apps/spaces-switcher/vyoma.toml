@@ -1,0 +1,15 @@
+[app]
+name    = "spaces-switcher"
+version = "0.1.0"
+wasm    = "spaces-switcher.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 400
+y = 380
+w = 640
+h = 140

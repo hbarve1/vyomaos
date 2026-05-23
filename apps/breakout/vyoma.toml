@@ -1,0 +1,15 @@
+[app]
+name    = "breakout"
+version = "0.1.0"
+wasm    = "breakout.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 120
+y = 40
+w = 800
+h = 800

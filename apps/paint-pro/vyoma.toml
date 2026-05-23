@@ -1,0 +1,16 @@
+[app]
+name    = "paint-pro"
+version = "0.1.0"
+wasm    = "paint-pro.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+shell      = true
+filesystem = true
+
+[window]
+x = 80
+y = 40
+w = 1280
+h = 800

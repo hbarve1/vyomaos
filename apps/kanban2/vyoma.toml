@@ -1,0 +1,13 @@
+[app]
+name    = "kanban2"
+version = "0.1.0"
+wasm    = "kanban2.wasm"
+
+[window]
+title  = "Kanban Board v2"
+width  = 1100
+height = 720
+
+[capabilities]
+stdio   = true
+display = true

@@ -1,0 +1,15 @@
+[app]
+name    = "process-inspector"
+version = "0.1.0"
+wasm    = "process-inspector.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 300
+y = 80
+w = 840
+h = 720

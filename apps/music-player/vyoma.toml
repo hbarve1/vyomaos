@@ -1,0 +1,16 @@
+[app]
+name    = "music-player"
+version = "0.1.0"
+wasm    = "music-player.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+shell      = true
+filesystem = true
+
+[window]
+x = 300
+y = 100
+w = 800
+h = 560

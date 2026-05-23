@@ -1,0 +1,15 @@
+[app]
+name    = "csv-viewer"
+version = "0.1.0"
+wasm    = "csv-viewer.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+filesystem = true
+
+[window]
+x = 80
+y = 60
+w = 1360
+h = 760
