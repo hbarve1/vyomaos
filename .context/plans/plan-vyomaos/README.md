@@ -198,6 +198,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 188 — Binary Clock | `apps/binary-clock/` HH:MM:SS as 6-col binary grid; 5 themes; bit labels; ping-pong; T/R/Q | **complete** | — |
 | 189 — ASCII Art Gallery | `apps/ascii-art/` 10 built-in images; 8 density charsets; invert; ←→ nav; D/I/Q | **complete** | — |
 | 190 — Fibonacci Visualizer | `apps/fib-viz/` Bar/Table/Spiral views; φ convergence; zoom; ping-pong; Tab/+/-/Q | **complete** | — |
+| 191 — Periodic Table | `apps/periodic-table/` 118 elements; 11 category colors; grid + info panel; ←→↑↓/Q | **complete** | — |
+| 192 — Roman Numerals | `apps/roman/` Converter (arabic↔roman) + Quiz mode; history; score+streak; Tab/N/Q | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

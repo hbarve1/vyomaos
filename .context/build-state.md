@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P189+P190 complete -->
+last_updated: 2026-05-23  <!-- P191+P192 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,29 +18,31 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P191 — Periodic Table
-  - P192 — Roman Numerals
+  - P193 — Spirograph
+  - P194 — Anagram Solver
 notes: |
-  P191: Periodic Table. Create apps/periodic-table/ WASM app.
-        Window w=1100, h=720. Capabilities: stdio=true, display=true.
-        118 elements in standard grid layout (18 cols × 7 rows + lanthanides/actinides).
-        Category colors: alkali=red, alkaline=orange, transition=blue, metalloid=yellow,
-        nonmetal=green, noble=purple, lanthanide/actinide=teal.
-        ←→↑↓ to select element; info panel shows atomic number, mass, electron config.
+  P193: Spirograph. Create apps/spirograph/ WASM app.
+        Window w=800, h=720. Capabilities: stdio=true, display=true, shell=true.
+        Parametric hypotrochoid/epitrochoid curves: R (outer radius), r (inner), d (pen offset).
+        R/r/d presets: 5 built-in designs. ←→ = prev/next preset. +/- = animate speed.
+        Ping-pong advances angle tick. Color cycles through hue (HSV-style via LUT).
         Q=quit.
 
-  P192: Roman Numerals. Create apps/roman/ WASM app.
-        Window w=800, h=600. Capabilities: stdio=true, display=true.
-        Two modes: Converter (type arabic → shows roman, type roman → shows arabic)
-        and Quiz (random 1-3999, enter answer, score tracking).
-        Tab=toggle mode, history of last 10 conversions, large font display.
+  P194: Anagram Solver. Create apps/anagram/ WASM app.
+        Window w=960, h=680. Capabilities: stdio=true, display=true.
+        Built-in dictionary of 200 common 4-7 letter words.
+        Type a word → show all anagrams found.
+        Timed challenge mode: given a scrambled word, type the answer. 15-tick timer.
+        Tab=mode, Enter=submit, Ctrl+R=new challenge, score tracking.
         Q=quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P193 — Spirograph: apps/spirograph/ parametric curves; R/r/d sliders; animated draw; color cycle
-- [ ] P194 — Anagram Solver: apps/anagram/ dictionary 1000 words; find all anagrams; timed challenge
+- [ ] P195 — Crossword: apps/crossword/ 5×5 grid; 10 clues; cursor nav; check/reveal
+- [ ] P196 — Emoji Art: apps/emoji-art/ 20 compositions using block chars; ←→ nav; zoom
 
 ## Completed (recent — full list in plan README)
+- [x] P191 — Periodic Table: apps/periodic-table/ 118 elements; 11 categories; grid+info panel; ←→↑↓
+- [x] P192 — Roman Numerals: apps/roman/ Converter+Quiz; arabic↔roman; score+streak; history
 - [x] P189 — ASCII Art Gallery: apps/ascii-art/ 10 images; 8 density charsets; invert; ←→/D/I/Q
 - [x] P190 — Fibonacci Visualizer: apps/fib-viz/ Bar/Table/Spiral; φ convergence; zoom; ping-pong
 - [x] P187 — Morse Code Trainer: apps/morse/ Practice+Decode; 36 symbols; score+streak; full table sidebar

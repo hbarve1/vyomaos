@@ -1,0 +1,8 @@
+[app]
+name    = "periodic-table"
+version = "0.1.0"
+wasm    = "periodic-table.wasm"
+
+[capabilities]
+stdio   = true
+display = true
