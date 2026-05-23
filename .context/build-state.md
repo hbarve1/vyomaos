@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P199+P200 complete -->
+last_updated: 2026-05-23  <!-- P201+P202 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,31 +18,34 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P201 — Fractal Explorer
-  - P202 — Tarot Card Reader
+  - P203 — Kanban v2
+  - P204 — Geo Puzzle
 notes: |
-  P201: Fractal Explorer. Create apps/fractal/ WASM app.
-        Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Mandelbrot set rendered via fixed-point integer escape-time algorithm.
-        Canvas 800×600 px, max 64 iterations. 5 color palettes (fire, ice, mono, rainbow, earth).
-        Arrow keys pan (step 40 units). +/- zoom (scale ×2 / ÷2).
-        R = reset to default view. C = cycle palette. Q=quit.
-        Initial view: center (-0.5, 0.0), scale 3.0 over width.
-        Use i64 fixed-point (shift 28 bits) for iteration math.
+  P203: Kanban v2. Create apps/kanban2/ WASM app.
+        Window w=1100, h=720. Capabilities: stdio=true, display=true.
+        4 columns: Backlog / Todo / Doing / Done.
+        20 pre-seeded cards spread across columns.
+        ↑↓ = navigate within column. Tab = move to next column. Shift+Tab = move to prev column.
+        Enter = promote card (move right one column). D = demote (move left). N = new card (type+Enter).
+        Priority colors: high=red, medium=orange, low=green.
+        Q=quit.
 
-  P202: Tarot Card Reader. Create apps/tarot/ WASM app.
+  P204: Geo Puzzle. Create apps/geo-puzzle/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        22 major arcana cards with name + meaning + reversed meaning.
-        LCG draws a 3-card spread (past/present/future); each card can be upright or reversed.
-        Display: large card name + position label + meaning text panel.
-        ←→ = select card in spread. N = new reading. Q=quit.
-        Static CARDS array with (name, upright_meaning, reversed_meaning).
+        30 country shape approximations drawn as rect outlines on a 500×350 map canvas.
+        Each "country" is a set of fill_rect calls defining a rough silhouette.
+        Player types the country name and presses Enter to guess.
+        H = hint (shows first N letters, up to 5 hints; each hint costs 1 point).
+        N = skip to next country. Score = 30 - hints_used, shown at end.
+        Q=quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P203 — Kanban v2: apps/kanban2/ 4 columns (Backlog/Todo/Doing/Done); 20 cards; drag via Tab+Enter; priority colors
-- [ ] P204 — Geo Puzzle: apps/geo-puzzle/ 30 country outlines drawn with rect approximations; guess country name; 5 hints
+- [ ] P205 — Number Base Converter: apps/base-conv/ Convert between binary/octal/decimal/hex; show 4 bases simultaneously; type to convert
+- [ ] P206 — Lissajous Curves: apps/lissajous/ a/b ratio selector; delta phase; ping-pong animate; hue-cycle trail
 
 ## Completed (recent — full list in plan README)
+- [x] P201 — Fractal Explorer: apps/fractal/ Mandelbrot; i64 fixed-point; 5 palettes; arrows pan; +/- zoom
+- [x] P202 — Tarot Card Reader: apps/tarot/ 22 major arcana; LCG 3-card spread; upright/reversed; N/Q
 - [x] P199 — Typing Speed Test v2: apps/typing-speed2/ 30 sentences; LCG pick; per-char colors; WPM+acc; leaderboard 5
 - [x] P200 — Virtual Piano: apps/piano/ 2-octave C3–B4; 24 keys; qwerty map; highlight; demo mode; D/Q
 - [x] P197 — Life Simulator: apps/life/ Conway's Game of Life; 80×50 grid; age-based color; P/S/R/Q; ping-pong
