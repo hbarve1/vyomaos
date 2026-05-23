@@ -1,0 +1,13 @@
+[app]
+name    = "tictactoe"
+version = "0.1.0"
+wasm    = "tictactoe.wasm"
+
+[window]
+title  = "Tic Tac Toe"
+width  = 640
+height = 680
+
+[capabilities]
+stdio   = true
+display = true

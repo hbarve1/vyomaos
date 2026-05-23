@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P205+P206 complete -->
+last_updated: 2026-05-23  <!-- P207+P208 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,30 +18,32 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P207 — Tic Tac Toe
-  - P208 — ASCII Table
+  - P209 — RGB Mixer
+  - P210 — Word Search
 notes: |
-  P207: Tic Tac Toe. Create apps/tictactoe/ WASM app.
-        Window w=640, h=680. Capabilities: stdio=true, display=true.
-        3×3 grid; human (X) vs AI (O).
-        AI uses minimax (perfect play); human goes first.
-        Arrow keys move cursor. Enter = place X. Win/Draw/Loss overlay.
-        Score tracking: W/D/L counts. R = new game. Q=quit.
+  P209: RGB Mixer. Create apps/rgb-mixer/ WASM app.
+        Window w=800, h=600. Capabilities: stdio=true, display=true.
+        Three horizontal sliders R/G/B (0-255 each).
+        Large 200×200 color preview square showing current mix.
+        Show complementary color (RGB inverted) + 2 analogous (hue ±30°).
+        Arrow keys adjust selected slider. Tab = next slider.
+        C = copy: outputs "color: #RRGGBBFF" to stdout. Q=quit.
 
-  P208: ASCII Table. Create apps/ascii-table/ WASM app.
+  P210: Word Search. Create apps/word-search/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Show all 128 ASCII characters (0-127) in a scrollable table.
-        Columns: Dec | Hex | Oct | Bin | Char | Name/description.
-        ↑↓ scroll one row. PgUp/PgDn scroll 16 rows (use + / - as PgUp/PgDn).
-        / or F = search: type char or decimal code, jumps to matching row.
-        Highlight control chars (0-31) in orange, printable (32-126) in green, DEL(127) in red.
-        Q=quit.
+        15×15 letter grid with 10 hidden words placed horizontally, vertically, diagonally.
+        Words list shown on right panel. ←→↑↓ = move cursor. Enter = start/extend selection.
+        When a word is found highlight it green and mark it in the list.
+        N = new puzzle (LCG re-seeds). Q=quit.
+        Use a fixed word list of 20 words (pick 10 per puzzle via LCG).
 
 ## Queue (implement in order after current batch)
-- [ ] P209 — RGB Mixer: apps/rgb-mixer/ 3 sliders R/G/B; live color preview; complementary + analogous swatches; copy hex
-- [ ] P210 — Word Search: apps/word-search/ 15×15 grid; 10 hidden words; ←→↑↓ cursor; Enter=mark; found list
+- [ ] P211 — Morse Code Decoder Live: apps/morse-live/ type dots/dashes; decode in real-time; show alphabet chart
+- [ ] P212 — Prime Sieve: apps/prime-sieve/ Sieve of Eratosthenes; animate step by step; ping-pong; zoom; stats
 
 ## Completed (recent — full list in plan README)
+- [x] P207 — Tic Tac Toe: apps/tictactoe/ 3×3 grid; minimax AI; X vs O; W/D/L score; R/Q
+- [x] P208 — ASCII Table: apps/ascii-table/ 128 chars; Dec/Hex/Oct/Bin/Name cols; search; color by type
 - [x] P205 — Number Base Converter: apps/base-conv/ bin/oct/dec/hex panels; B/O/D/X select; bit-width; overflow
 - [x] P206 — Lissajous Curves: apps/lissajous/ hue trail; ping-pong; a/b ratio; delta phase
 - [x] P203 — Kanban Board v2: apps/kanban2/ 4 cols; 20 cards; Tab/Enter promote; D demote; priority colors; N new

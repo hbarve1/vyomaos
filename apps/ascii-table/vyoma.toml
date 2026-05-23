@@ -1,0 +1,13 @@
+[app]
+name    = "ascii-table"
+version = "0.1.0"
+wasm    = "ascii-table.wasm"
+
+[window]
+title  = "ASCII Table"
+width  = 960
+height = 720
+
+[capabilities]
+stdio   = true
+display = true

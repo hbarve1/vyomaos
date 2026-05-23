@@ -214,6 +214,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 204 — Geo Puzzle | `apps/geo-puzzle/` 30 country rect silhouettes; type+Enter guess; H hint; N skip; score | **complete** | — |
 | 205 — Number Base Converter | `apps/base-conv/` bin/oct/dec/hex panels; B/O/D/X select; live update; bit-width; overflow | **complete** | — |
 | 206 — Lissajous Curves | `apps/lissajous/` x=sin(a*t+δ) y=sin(b*t); hue trail; ping-pong; ←→ ratio; ↑↓ delta | **complete** | — |
+| 207 — Tic Tac Toe | `apps/tictactoe/` 3×3 grid; minimax AI; X vs O; W/D/L score; R/Q | **complete** | — |
+| 208 — ASCII Table | `apps/ascii-table/` 128 chars; Dec/Hex/Oct/Bin/Name cols; search; color by type | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
