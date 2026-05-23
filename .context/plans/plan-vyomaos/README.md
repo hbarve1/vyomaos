@@ -196,6 +196,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 186 — Typing Practice | `apps/typing-practice/` 20 passages; per-char green/red; WPM; accuracy; PB tracking; Tab/Ctrl+R | **complete** | — |
 | 187 — Morse Code Trainer | `apps/morse/` 36 symbols; Practice+Decode modes; score+streak; full table sidebar; Tab/N/Q | **complete** | — |
 | 188 — Binary Clock | `apps/binary-clock/` HH:MM:SS as 6-col binary grid; 5 themes; bit labels; ping-pong; T/R/Q | **complete** | — |
+| 189 — ASCII Art Gallery | `apps/ascii-art/` 10 built-in images; 8 density charsets; invert; ←→ nav; D/I/Q | **complete** | — |
+| 190 — Fibonacci Visualizer | `apps/fib-viz/` Bar/Table/Spiral views; φ convergence; zoom; ping-pong; Tab/+/-/Q | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

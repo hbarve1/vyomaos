@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P187+P188 complete -->
+last_updated: 2026-05-23  <!-- P189+P190 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,26 +18,31 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P189 — ASCII Art Generator
-  - P190 — Fibonacci Visualizer
+  - P191 — Periodic Table
+  - P192 — Roman Numerals
 notes: |
-  P189: ASCII Art Generator. Create apps/ascii-art/ WASM app.
-        Window w=960, h=680. Capabilities: stdio=true, display=true.
-        10 built-in ASCII art images stored as static string arrays.
-        8 density charsets from sparse (" .:-=+*#%@") to single char.
-        Left/Right = prev/next image, D = cycle density, I = invert, Q=quit.
+  P191: Periodic Table. Create apps/periodic-table/ WASM app.
+        Window w=1100, h=720. Capabilities: stdio=true, display=true.
+        118 elements in standard grid layout (18 cols × 7 rows + lanthanides/actinides).
+        Category colors: alkali=red, alkaline=orange, transition=blue, metalloid=yellow,
+        nonmetal=green, noble=purple, lanthanide/actinide=teal.
+        ←→↑↓ to select element; info panel shows atomic number, mass, electron config.
+        Q=quit.
 
-  P190: Fibonacci Visualizer. Create apps/fib-viz/ WASM app.
-        Window w=960, h=720. Capabilities: stdio=true, display=true, shell=true.
-        3 views: Bar (first 20 Fibonacci as bars), Table (first 30 with value + ratio),
-        Spiral (golden ratio squares drawn as nested rectangles with connecting arcs).
-        Tab = next view. +/- = zoom bars. Ping-pong advances animation. Q=quit.
+  P192: Roman Numerals. Create apps/roman/ WASM app.
+        Window w=800, h=600. Capabilities: stdio=true, display=true.
+        Two modes: Converter (type arabic → shows roman, type roman → shows arabic)
+        and Quiz (random 1-3999, enter answer, score tracking).
+        Tab=toggle mode, history of last 10 conversions, large font display.
+        Q=quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P191 — Periodic Table: apps/periodic-table/ 118 elements; grid layout; select for details; category colors
-- [ ] P192 — Roman Numerals: apps/roman/ converter both ways; quiz mode; history; large display
+- [ ] P193 — Spirograph: apps/spirograph/ parametric curves; R/r/d sliders; animated draw; color cycle
+- [ ] P194 — Anagram Solver: apps/anagram/ dictionary 1000 words; find all anagrams; timed challenge
 
 ## Completed (recent — full list in plan README)
+- [x] P189 — ASCII Art Gallery: apps/ascii-art/ 10 images; 8 density charsets; invert; ←→/D/I/Q
+- [x] P190 — Fibonacci Visualizer: apps/fib-viz/ Bar/Table/Spiral; φ convergence; zoom; ping-pong
 - [x] P187 — Morse Code Trainer: apps/morse/ Practice+Decode; 36 symbols; score+streak; full table sidebar
 - [x] P188 — Binary Clock: apps/binary-clock/ HH:MM:SS binary grid; 5 themes; bit labels; ping-pong
 - [x] P185 — Pixel Clock: apps/pixel-clock/ 5×7 LED font; HH:MM:SS; 5 themes; blink colons; sim date

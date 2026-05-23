@@ -1,8 +1,9 @@
 [app]
-name    = "ascii-art"
+name    = "fib-viz"
 version = "0.1.0"
-wasm    = "ascii-art.wasm"
+wasm    = "fib-viz.wasm"
 
 [capabilities]
 stdio   = true
 display = true
+shell   = true
