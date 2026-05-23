@@ -1,0 +1,13 @@
+[app]
+name    = "crossword"
+version = "0.1.0"
+wasm    = "crossword.wasm"
+
+[window]
+title  = "Crossword"
+width  = 800
+height = 720
+
+[capabilities]
+stdio   = true
+display = true

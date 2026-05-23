@@ -202,6 +202,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 192 — Roman Numerals | `apps/roman/` Converter (arabic↔roman) + Quiz mode; history; score+streak; Tab/N/Q | **complete** | — |
 | 193 — Spirograph | `apps/spirograph/` 5 presets; hypo/epitrochoid; hue cycle; ping-pong animate; ←→/+/-/R/Q | **complete** | — |
 | 194 — Anagram Solver | `apps/anagram/` 200-word dict; Solver+Challenge modes; 15-tick timer; streak; Tab/Ctrl+R/Q | **complete** | — |
+| 195 — Crossword | `apps/crossword/` 5×5 grid; 10 clues (5A+5D); check/reveal; arrow nav; letter input; C/R/Q | **complete** | — |
+| 196 — Emoji Art | `apps/emoji-art/` 20 block-char compositions; multi-color layers; zoom 1×–4×; ←→/Z/Q | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

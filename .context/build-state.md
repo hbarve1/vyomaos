@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P193+P194 complete -->
+last_updated: 2026-05-23  <!-- P195+P196 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,27 +18,30 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P195 — Crossword
-  - P196 — Emoji Art
+  - P197 — Life Simulator
+  - P198 — Color Picker v2
 notes: |
-  P195: Crossword. Create apps/crossword/ WASM app.
-        Window w=800, h=720. Capabilities: stdio=true, display=true.
-        5×5 mini crossword grid. 10 clues (5 across + 5 down).
-        ←→↑↓ moves cursor. Letter keys type into selected cell.
-        C = check answers (show green/red). R = reveal one cell. Backspace = clear.
-        Q=quit.
-
-  P196: Emoji Art. Create apps/emoji-art/ WASM app.
+  P197: Life Simulator. Create apps/life/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        20 compositions using Unicode block chars (█ ░ ▒ ▓ ▄ ▀ ▌ ▐ etc).
-        Each composition is a 40×20 grid of block chars with a title.
-        ←→ = prev/next. Z = zoom (1× / 2×). Q=quit.
+        Conway's Game of Life on a 80×50 cell grid.
+        Each cell is 10×10 px. Random initial state (LCG).
+        R = new random board. P = pause/play toggle. S = step one generation.
+        Show generation counter and live cell count.
+        Ping-pong tick for animation. Q=quit.
+
+  P198: Color Picker v2. Create apps/color-picker2/ WASM app.
+        Window w=960, h=720. Capabilities: stdio=true, display=true.
+        Three panels: HSV gradient (120×120 cells at 4px each), RGB sliders, Hex display.
+        16 saved swatches at bottom. S=save swatch. Tab=focus panel.
+        Arrow keys adjust selected component. Shows #RRGGBB. Q=quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P197 — Life Simulator: apps/life/ Conway's Game of Life; 50×30 grid; R=random; P=pause/play; S=step
-- [ ] P198 — Color Picker: apps/color-picker/ HSV+RGB+Hex panels; 16 saved swatches; copy hex
+- [ ] P199 — Typing Speed Test v2: apps/typing-speed2/ 30 random sentences; per-char highlight; WPM+accuracy; leaderboard 5 scores
+- [ ] P200 — Virtual Piano: apps/piano/ 2-octave keyboard (C3–B4); 24 keys; letter keys play; sustain; LCG demo mode
 
 ## Completed (recent — full list in plan README)
+- [x] P195 — Crossword: apps/crossword/ 5×5 grid; 10 clues; check/reveal; arrow nav; C/R/Q
+- [x] P196 — Emoji Art: apps/emoji-art/ 20 block-char compositions; multi-color layers; zoom 1×–4×; ←→/Z/Q
 - [x] P193 — Spirograph: apps/spirograph/ 5 presets; hypo/epitrochoid; hue color; ping-pong; ←→/+/-
 - [x] P194 — Anagram Solver: apps/anagram/ 200-word dict; Solver+Challenge; 15-tick timer; streak
 - [x] P191 — Periodic Table: apps/periodic-table/ 118 elements; 11 categories; grid+info panel; ←→↑↓
