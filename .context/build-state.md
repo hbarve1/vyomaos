@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P209+P210 complete -->
+last_updated: 2026-05-23  <!-- P211+P212 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,29 +18,32 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P211 — Morse Code Decoder Live
-  - P212 — Prime Sieve
+  - P213 — Gravity Simulator
+  - P214 — Circuit Diagram
 notes: |
-  P211: Morse Code Decoder Live. Create apps/morse-live/ WASM app.
+  P213: Gravity Simulator. Create apps/gravity/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Type dots (.) and dashes (-) with space between symbols.
-        Decode each symbol to letter in real-time as typed.
-        Show full morse alphabet chart on right panel.
-        Enter = word break, Backspace = delete last symbol.
-        N = clear current word, Q = quit.
+        5 planets with different masses; fixed-point gravitational physics.
+        Draw trails (last 40 positions) per planet; ping-pong advances simulation.
+        Each planet: colored circle sized by mass.
+        A = add random planet (up to 8), R = reset to 5, Space = pause/resume, Q = quit.
+        Use LCG for initial positions/velocities. Fixed-point with FP=1<<12.
 
-  P212: Prime Sieve. Create apps/prime-sieve/ WASM app.
+  P214: Circuit Diagram Viewer. Create apps/circuit/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Sieve of Eratosthenes animated step by step.
-        Show numbers 2-200 in a grid; cross out composites with each ping-pong tick.
-        Stats panel: current factor, primes found, composites crossed.
-        Space = pause/resume, R = reset, +/- = speed, Q = quit.
+        10 preset circuit diagrams drawn with fill_rect primitives.
+        Components: resistors (zigzag as rect series), capacitors (two parallel lines),
+        LEDs (triangle rect + line), wires (thin rects), labels.
+        ←→ to cycle circuits; show component count and circuit name.
+        Each circuit fits in 800×500 canvas centered in window.
 
 ## Queue (implement in order after current batch)
-- [ ] P213 — Gravity Simulator: apps/gravity/ 5 planets; fixed-point physics; trails; ping-pong; add/reset
-- [ ] P214 — Circuit Diagram: apps/circuit/ 10 preset circuits; component labels; resistors/caps/LEDs drawn as rects
+- [ ] P215 — Fourier Series: apps/fourier/ animate partial sums; 1-20 harmonics; ping-pong; square/sawtooth/triangle waves
+- [ ] P216 — Typing Stats Dashboard: apps/type-stats/ show WPM histogram; letter frequency heatmap; error rate by row
 
 ## Completed (recent — full list in plan README)
+- [x] P211 — Morse Code Decoder Live: apps/morse-live/ . and - input; real-time decode; chart highlights; Space/Enter/N/Q
+- [x] P212 — Prime Sieve: apps/prime-sieve/ Sieve of Eratosthenes; 2-200 animated; ping-pong; Space/R/+/-/Q
 - [x] P209 — RGB Mixer: apps/rgb-mixer/ R/G/B sliders; 200×200 preview; complementary + 2 analogous; C copy; Q quit
 - [x] P210 — Word Search: apps/word-search/ 15×15 grid; 10 hidden words; H/V/diagonal; Enter select; N new; Q quit
 - [x] P207 — Tic Tac Toe: apps/tictactoe/ 3×3 grid; minimax AI; X vs O; W/D/L score; R/Q

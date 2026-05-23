@@ -1,0 +1,13 @@
+[app]
+name    = "morse-live"
+version = "0.1.0"
+wasm    = "morse-live.wasm"
+
+[window]
+title  = "Morse Live"
+width  = 960
+height = 720
+
+[capabilities]
+stdio   = true
+display = true

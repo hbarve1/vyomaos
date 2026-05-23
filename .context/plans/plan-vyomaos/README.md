@@ -218,6 +218,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 208 — ASCII Table | `apps/ascii-table/` 128 chars; Dec/Hex/Oct/Bin/Name cols; search; color by type | **complete** | — |
 | 209 — RGB Mixer | `apps/rgb-mixer/` R/G/B sliders; 200×200 preview; complementary + 2 analogous swatches; C copy; Q quit | **complete** | — |
 | 210 — Word Search | `apps/word-search/` 15×15 grid; 10 hidden words; horizontal/vertical/diagonal; Enter select; N new; Q quit | **complete** | — |
+| 211 — Morse Code Decoder Live | `apps/morse-live/` type . and -; real-time decode; chart highlights; Space=commit; Enter=word; N=clear; Q quit | **complete** | — |
+| 212 — Prime Sieve | `apps/prime-sieve/` Sieve of Eratosthenes; 2-200 animated; ping-pong; Space/R/+/-; prime list; Q quit | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
