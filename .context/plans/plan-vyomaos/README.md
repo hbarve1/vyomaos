@@ -222,6 +222,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 212 — Prime Sieve | `apps/prime-sieve/` Sieve of Eratosthenes; 2-200 animated; ping-pong; Space/R/+/-; prime list; Q quit | **complete** | — |
 | 213 — Gravity Simulator | `apps/gravity/` N-body gravity; 5 planets; fixed-point MP=256; trails; ping-pong; A/R/Space/Q | **complete** | — |
 | 214 — Circuit Diagram Viewer | `apps/circuit/` 10 preset circuits; fill_rect schematics; R/C/LED/SW/motor components; ←→/Q | **complete** | — |
+| 215 — Fourier Series | `apps/fourier/` phasor arms + wave panel; Square/Sawtooth/Triangle; 1-20 harmonics; fixed-point sin/cos; Tab/+/-/Space/Q | **complete** | — |
+| 216 — Typing Stats Dashboard | `apps/type-stats/` WPM histogram; letter heatmap QWERTY; error by row; LCG data; Tab/R/Q | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

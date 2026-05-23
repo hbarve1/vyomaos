@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P213+P214 complete -->
+last_updated: 2026-05-23  <!-- P215+P216 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,30 +18,35 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P215 — Fourier Series
-  - P216 — Typing Stats Dashboard
+  - P217 — Cellular Automaton
+  - P218 — Color Theory Wheel
 notes: |
-  P215: Fourier Series. Create apps/fourier/ WASM app.
+  P217: Cellular Automaton. Create apps/cellular/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Animate Fourier partial sums of 3 wave types: square, sawtooth, triangle.
-        Show 1-20 harmonics; ping-pong advances phase (0..2π over 180 steps).
-        Draw: rotating phasors on left (circles), resulting wave on right.
-        +/- = add/remove harmonics. Tab = cycle wave type. Space = pause. Q = quit.
-        Use fixed-point sin/cos table (FP=1024, precomputed 360 entries).
+        1D elementary cellular automaton (Wolfram rules 0-255).
+        Rows animate top-to-bottom; each tick adds next row from current row state.
+        When screen fills, shift rows up. Ping-pong advances one row per tick.
+        +/- = change rule number (0-255). R = reset. Space = pause. Q = quit.
+        Cell colors: alive=C_SEL (0x58A6FFFF), dead=C_BG (0x0D1117FF).
+        Show rule number and binary representation in header.
+        Width = 120 cells, CELL_W = 8px each. Each row = 8px tall.
 
-  P216: Typing Stats Dashboard. Create apps/type-stats/ WASM app.
+  P218: Color Theory Wheel. Create apps/color-wheel/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Simulated typing stats (LCG-generated sample data).
-        Panel 1: WPM histogram (last 20 sessions, bar chart).
-        Panel 2: Letter frequency heatmap (keyboard layout grid, heat by LCG freq).
-        Panel 3: Error rate by keyboard row (top/home/bottom rows colored).
-        Tab = cycle panel. R = re-randomize. Q = quit.
+        Draw HSV color wheel centered at (480, 380) with radius=200.
+        Fill wheel using fill_rect per pixel: hue=angle, saturation=distance/radius, value=1.
+        Highlight complementary (180°), triadic (120°/240°), and analogous (±30°) color schemes.
+        Ping-pong rotates the base hue 1°/tick.
+        +/- = change segments mode (complementary/triadic/analogous/tetradic).
+        Space = pause. Q = quit. Show current hue, mode, and HSV values in status panel.
 
 ## Queue (implement in order after current batch)
-- [ ] P217 — Cellular Automaton: apps/cellular/ rule-based 1D automaton; 256 rules; animate rows top-to-bottom; ping-pong; +/- rule; R reset
-- [ ] P218 — Color Theory Wheel: apps/color-wheel/ HSV wheel; complementary/triadic/analogous highlights; ping-pong rotation; +/- segments
+- [ ] P219 — Waveform Oscilloscope: apps/oscilloscope/ 4 waveforms (sin/square/sawtooth/triangle); amplitude+freq knobs; ping-pong; overlay mode
+- [ ] P220 — Binary Tree Visualizer: apps/bin-tree/ 31-node tree; insert/delete; BST order; color by depth; ping-pong balance animation
 
 ## Completed (recent — full list in plan README)
+- [x] P215 — Fourier Series: apps/fourier/ phasor arms + wave panel; Square/Sawtooth/Triangle; 1-20 harmonics; fixed-point sin/cos; Tab/+/-/Space/Q
+- [x] P216 — Typing Stats Dashboard: apps/type-stats/ WPM histogram; letter heatmap QWERTY; error by row; LCG data; Tab/R/Q
 - [x] P213 — Gravity Simulator: apps/gravity/ N-body; 5 planets; MP=256 fixed-point; trails; ping-pong; A/R/Space/Q
 - [x] P214 — Circuit Diagram Viewer: apps/circuit/ 10 circuits; fill_rect schematics; R/C/LED/SW; ←→/Q
 - [x] P211 — Morse Code Decoder Live: apps/morse-live/ . and - input; real-time decode; chart highlights; Space/Enter/N/Q
