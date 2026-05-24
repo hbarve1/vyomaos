@@ -244,3 +244,25 @@ fn titlebar_color_hover_is_lighter_than_inactive() {
     let inact_r = (MAC_TITLE_INACT >> 24) & 0xFF;
     assert!(hover_r > inact_r, "hover R ({hover_r}) should exceed inactive R ({inact_r})");
 }
+
+// ── drag_delta ────────────────────────────────────────────────────────────────
+
+#[test]
+fn drag_delta_zero() {
+    assert_eq!(supervisor::windows::drag_delta(10, 20, 10, 20), (0, 0));
+}
+
+#[test]
+fn drag_delta_positive() {
+    assert_eq!(supervisor::windows::drag_delta(0, 0, 5, 3), (5, 3));
+}
+
+#[test]
+fn drag_delta_negative() {
+    assert_eq!(supervisor::windows::drag_delta(10, 10, 3, 2), (-7, -8));
+}
+
+#[test]
+fn drag_delta_mixed() {
+    assert_eq!(supervisor::windows::drag_delta(5, 0, 2, 7), (-3, 7));
+}

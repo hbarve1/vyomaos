@@ -184,6 +184,14 @@ pub fn compute_snap_layout(
     regions
 }
 
+/// Compute the drag delta between a drag-start position and the current cursor position.
+///
+/// Returns `(dx, dy)` where positive dx means moved right and positive dy means moved down.
+/// This is a pure function — it has no side effects and depends only on its arguments.
+pub fn drag_delta(x1: i32, y1: i32, x2: i32, y2: i32) -> (i32, i32) {
+    (x2 - x1, y2 - y1)
+}
+
 
 /// Integer ceiling of sqrt(n).
 fn ceil_sqrt(n: usize) -> usize {

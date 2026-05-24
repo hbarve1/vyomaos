@@ -297,6 +297,13 @@ static CLIPBOARD: OnceLock<Mutex<String>> = OnceLock::new();
 
 static FONT_SIZE: OnceLock<Mutex<String>> = OnceLock::new();
 
+// Drag-start state: Some((x, y)) while the left button is held, None otherwise.
+// Used by the drag-delta logging stub (P031).
+static MOUSE_DRAG_START: OnceLock<Mutex<Option<(i32, i32)>>> = OnceLock::new();
+fn mouse_drag_start() -> &'static Mutex<Option<(i32, i32)>> {
+    MOUSE_DRAG_START.get_or_init(|| Mutex::new(None))
+}
+
 // Boot timestamp — used to render the elapsed clock in the menu bar.
 static BOOT_INSTANT: OnceLock<std::time::Instant> = OnceLock::new();
 
@@ -1067,7 +1074,9 @@ fn main() {
 
                 let mut cx: i32 = screen_w / 2;
                 let mut cy: i32 = screen_h / 2;
-                let mut pending_click_mask: u8 = 0;
+                let mut pending_click_mask:   u8 = 0;
+                let mut pending_release_mask: u8 = 0;
+                let mut btn_held:             u8 = 0; // bitmask of currently held buttons
                 let mut pending_abs_x: Option<i32> = None;
                 let mut pending_abs_y: Option<i32> = None;
                 let mut pending_dx:    i32 = 0;
@@ -1097,13 +1106,18 @@ fn main() {
                             _     => {}
                         },
                         EV_KEY => {
+                            let bit = match code {
+                                BTN_LEFT  => 1u8,
+                                BTN_RIGHT => 2u8,
+                                BTN_MID   => 4u8,
+                                _         => 0u8,
+                            };
                             if value == 1 {
-                                pending_click_mask |= match code {
-                                    BTN_LEFT  => 1,
-                                    BTN_RIGHT => 2,
-                                    BTN_MID   => 4,
-                                    _         => 0,
-                                };
+                                // Button pressed
+                                pending_click_mask |= bit;
+                            } else if value == 0 && bit != 0 {
+                                // Button released
+                                pending_release_mask |= bit;
                             }
                         }
                         EV_SYN => {
@@ -1127,10 +1141,52 @@ fn main() {
                             }
                             display::set_cursor_pos(cx, cy);
                             if pending_click_mask != 0 {
+                                // Button pressed — store drag-start position
+                                if pending_click_mask & 1 != 0 {
+                                    *mouse_drag_start().lock().unwrap() = Some((cx, cy));
+                                }
+                                btn_held |= pending_click_mask;
                                 dispatch_mouse(cx, cy, pending_click_mask, &inbox_m, &registry_m, &focused_m);
                                 pending_click_mask = 0;
                             } else if pos_changed {
+                                // Mouse moved — if left button held, log drag delta
+                                if btn_held & 1 != 0 {
+                                    let drag_start = *mouse_drag_start().lock().unwrap();
+                                    if let Some((sx, sy)) = drag_start {
+                                        let (dx, dy) = supervisor::windows::drag_delta(sx, sy, cx, cy);
+                                        // Find the topmost mouse-capable app under cursor for logging
+                                        let z_snap: Vec<String> = Z_ORDER.get()
+                                            .map(|m| m.lock().unwrap().clone())
+                                            .unwrap_or_default();
+                                        let app_name: Option<String> = {
+                                            let reg = registry_m.lock().unwrap();
+                                            let mut found: Option<String> = None;
+                                            for name in &z_snap {
+                                                let Some(st_arc) = reg.get(name) else { continue };
+                                                let st = st_arc.lock().unwrap();
+                                                let Some((wx, wy, ww, wh)) = st.win_region else { continue };
+                                                if cx >= wx as i32 && cy >= wy as i32
+                                                    && cx < (wx + ww) as i32 && cy < (wy + wh) as i32
+                                                {
+                                                    found = Some(name.clone());
+                                                    break;
+                                                }
+                                            }
+                                            found
+                                        };
+                                        let name = app_name.as_deref().unwrap_or("none");
+                                        log_info!(Subsystem::Input, None, "drag: app={name} dx={dx} dy={dy}");
+                                    }
+                                }
                                 dispatch_mouse(cx, cy, 0, &inbox_m, &registry_m, &focused_m);
+                            }
+                            // Button released — clear drag-start state
+                            if pending_release_mask != 0 {
+                                if pending_release_mask & 1 != 0 {
+                                    *mouse_drag_start().lock().unwrap() = None;
+                                }
+                                btn_held &= !pending_release_mask;
+                                pending_release_mask = 0;
                             }
                         }
                         _ => {}
