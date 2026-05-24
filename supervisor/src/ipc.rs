@@ -14,3 +14,10 @@ pub fn parse_ipc_target(line: &str) -> Result<(&str, &str), String> {
     let payload = &rest[sep + 2..];
     Ok((target, payload))
 }
+
+/// Return `true` if `target` is the reserved broadcast address.
+/// When an app writes `@broadcast: <message>` the supervisor delivers
+/// `<message>` to every currently running app (including the sender).
+pub fn is_broadcast_target(target: &str) -> bool {
+    target == "broadcast"
+}

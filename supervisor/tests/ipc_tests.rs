@@ -25,3 +25,36 @@ fn test_valid_ipc_format_parses_correctly() {
     assert_eq!(target,  "ping",            "target mismatch");
     assert_eq!(payload, "hello from pong", "payload mismatch");
 }
+
+// ── Broadcast target tests ────────────────────────────────────────────────────
+
+// (4) "broadcast" is recognised as the reserved broadcast address.
+#[test]
+fn test_is_broadcast_target_true() {
+    assert!(supervisor::ipc::is_broadcast_target("broadcast"),
+        "\"broadcast\" must be recognised as the broadcast target");
+}
+
+// (5) A regular app name is NOT treated as broadcast.
+#[test]
+fn test_is_broadcast_target_false_for_named_app() {
+    assert!(!supervisor::ipc::is_broadcast_target("shell"),
+        "\"shell\" must not be treated as a broadcast target");
+}
+
+// (6) @broadcast: hello parses into target="broadcast" and payload="hello".
+#[test]
+fn test_parse_ipc_target_broadcast_message() {
+    let result = supervisor::ipc::parse_ipc_target("@broadcast: hello");
+    assert!(result.is_ok(), "valid broadcast line should parse, got: {:?}", result);
+    let (target, payload) = result.unwrap();
+    assert_eq!(target,  "broadcast", "target should be \"broadcast\"");
+    assert_eq!(payload, "hello",     "payload mismatch");
+}
+
+// (7) A line without the IPC prefix returns an error.
+#[test]
+fn test_parse_ipc_target_non_ipc_line() {
+    let result = supervisor::ipc::parse_ipc_target("not a message");
+    assert!(result.is_err(), "non-IPC line should return Err, got Ok");
+}
