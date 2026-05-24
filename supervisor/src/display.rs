@@ -590,6 +590,7 @@ pub fn titlebar_color(focused: bool) -> u32 {
     if focused { 0x388BFDFF } else { 0x30363DFF }
 }
 
+
 /// Return a deterministic accent color for an app based on its name.
 ///
 /// The color is derived from a djb2 hash of the app name, then mapped to one

@@ -10,6 +10,7 @@ enum InputAction {
     AltShiftTab,
     AltW,
     AltF,
+    AltQuestion,
     PassThrough,
 }
 
@@ -20,6 +21,7 @@ enum InputAction {
 ///   `[0x1B, 0x5B, 0x5A]`  → AltShiftTab   (ESC + [ + Z  i.e. \x1b[Z)
 ///   `[0x1B, 0x77]`        → AltW          (ESC + 'w')
 ///   `[0x1B, 0x66]`        → AltF          (ESC + 'f')
+///   `[0x1B, 0x3F]`        → AltQuestion   (ESC + '?')
 ///   anything else         → PassThrough
 fn classify_input_sequence(bytes: &[u8]) -> InputAction {
     match bytes {
@@ -27,8 +29,14 @@ fn classify_input_sequence(bytes: &[u8]) -> InputAction {
         [0x1B, 0x5B, 0x5A] => InputAction::AltShiftTab,
         [0x1B, 0x77]        => InputAction::AltW,
         [0x1B, 0x66]        => InputAction::AltF,
+        [0x1B, 0x3F]        => InputAction::AltQuestion,
         _                   => InputAction::PassThrough,
     }
+}
+
+/// Return the static help text listing all window-management keyboard shortcuts.
+fn shortcut_help_text() -> &'static str {
+    "Alt+Tab: next window  Alt+W: close  Alt+F: snap  Alt+?: help"
 }
 
 // ── Legacy ESC-pair classifier (kept for backwards-compatible arrow-key tests) ─
@@ -157,4 +165,27 @@ fn test_cycle_single_app() {
     // Single app: forward and backward both stay on the same app
     assert_eq!(cycle_focus_forward(&names, Some("only")), Some("only".to_string()));
     assert_eq!(cycle_focus_backward(&names, Some("only")), Some("only".to_string()));
+}
+
+// ── Alt+? shortcut overlay tests ─────────────────────────────────────────────
+
+#[test]
+fn test_alt_question_classified() {
+    // Alt+? (ESC + '?', bytes 0x1B 0x3F) must decode to AltQuestion.
+    assert_eq!(classify_input_sequence(&[0x1B, 0x3F]), InputAction::AltQuestion);
+}
+
+#[test]
+fn test_alt_tab_still_classified() {
+    // Regression: existing Alt+Tab mapping must remain unchanged.
+    assert_eq!(classify_input_sequence(&[0x1B, 0x09]), InputAction::AltTab);
+}
+
+#[test]
+fn test_shortcut_help_text_content() {
+    let text = shortcut_help_text();
+    assert!(text.contains("Alt+Tab"), "help text must mention Alt+Tab");
+    assert!(text.contains("Alt+W"),   "help text must mention Alt+W");
+    assert!(text.contains("Alt+F"),   "help text must mention Alt+F");
+    assert!(text.contains("Alt+?"),   "help text must mention Alt+?");
 }

@@ -175,6 +175,7 @@ enum InputAction {
     AltShiftTab,  // Alt+Shift+Tab — cycle focus backward
     AltW,         // Alt+W        — close focused window
     AltF,         // Alt+F        — maximize focused window (stub)
+    AltQuestion,  // Alt+?        — show keyboard shortcut overlay toast
     PassThrough,  // Everything else: forward to the focused app as-is
 }
 
@@ -185,14 +186,55 @@ enum InputAction {
 ///   `[0x1B, 0x5B, 0x5A]`  → AltShiftTab   (ESC + [ + Z  i.e. \x1b[Z)
 ///   `[0x1B, 0x77]`        → AltW          (ESC + 'w')
 ///   `[0x1B, 0x66]`        → AltF          (ESC + 'f')
+///   `[0x1B, 0x3F]`        → AltQuestion   (ESC + '?')
 ///   anything else         → PassThrough
 fn classify_input_sequence(bytes: &[u8]) -> InputAction {
     match bytes {
-        [0x1B, 0x09]             => InputAction::AltTab,
-        [0x1B, 0x5B, 0x5A]      => InputAction::AltShiftTab,
-        [0x1B, 0x77]             => InputAction::AltW,
-        [0x1B, 0x66]             => InputAction::AltF,
-        _                        => InputAction::PassThrough,
+        [0x1B, 0x09]        => InputAction::AltTab,
+        [0x1B, 0x5B, 0x5A] => InputAction::AltShiftTab,
+        [0x1B, 0x77]        => InputAction::AltW,
+        [0x1B, 0x66]        => InputAction::AltF,
+        [0x1B, 0x3F]        => InputAction::AltQuestion,
+        _                   => InputAction::PassThrough,
+    }
+}
+
+/// Return the static help text listing all window-management keyboard shortcuts.
+///
+/// Pure function — no side effects, no allocation.
+pub fn shortcut_help_text() -> &'static str {
+    "Alt+Tab: next window  Alt+W: close  Alt+F: snap  Alt+?: help"
+}
+
+/// Draw a 3-second shortcut-help toast in the bottom-right corner of the screen.
+///
+/// Renders a filled panel with a border and the shortcut help text, then spawns
+/// a background thread to clear the region after 3 seconds.
+///
+/// Only compiled on Linux (where `/dev/fb0` is available).
+#[cfg(target_os = "linux")]
+fn show_shortcut_overlay() {
+    const OW: u32 = 500;
+    const OH: u32 = 60;
+    if let Some((screen_w, screen_h)) = display::screen_size() {
+        let ox: u32 = screen_w.saturating_sub(OW + 20);
+        let oy: u32 = screen_h.saturating_sub(OH + 20);
+        if let Some(fb_lock) = display::get() {
+            let mut fb = fb_lock.lock().unwrap();
+            fb.fill_rect(ox, oy, OW, OH, 0x21262DFF);
+            fb.rect_border(ox, oy, OW, OH, 0x58A6FFFF);
+            fb.draw_text(ox + 8, oy + 8,  "Keyboard Shortcuts", 0xFFFFFFFF, font::FontSize::Medium);
+            fb.draw_text(ox + 8, oy + 28, shortcut_help_text(),  0x8B949EFF, font::FontSize::Medium);
+            fb.flush();
+        }
+        thread::spawn(move || {
+            thread::sleep(std::time::Duration::from_secs(3));
+            if let Some(fb_lock) = display::get() {
+                let mut fb = fb_lock.lock().unwrap();
+                fb.fill_rect(ox, oy, OW, OH, 0x0D1117FF);
+                fb.flush();
+            }
+        });
     }
 }
 
@@ -862,8 +904,14 @@ fn main() {
                                                 }
                                             }
                                         }
-                                        // AltShiftTab handled above in the CSI branch.
-                                        // PassThrough: lone Alt+unknown key — discard.
+                                        InputAction::AltQuestion => {
+                                            // Show keyboard shortcut overlay toast for 3 seconds.
+                                            log_info!(Subsystem::Input, None, "alt+?: showing shortcut overlay");
+                                            #[cfg(target_os = "linux")]
+                                            show_shortcut_overlay();
+                                        }
+                                        // AltShiftTab handled in the CSI branch above.
+                                        // PassThrough: unknown Alt+key — discard.
                                         _ => {}
                                     }
                                 }
