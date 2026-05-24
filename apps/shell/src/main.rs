@@ -17,6 +17,7 @@
 //! via VYOMA_DRAW.  Redraws on every keypress to show the live input buffer.
 
 use std::io::{BufRead, Write};
+use std::fs::OpenOptions;
 
 // ── Panel geometry (local window coords; window declared at y=440 in vyoma.toml) ──────
 
@@ -45,9 +46,9 @@ const C_PROMPT:  u32 = 0x58A6FFFF; // prompt colour
 fn main() {
     let mut lines: Vec<String> = Vec::new();
     let mut current_input = String::new();
-    let mut history: Vec<String> = Vec::new(); // up to 50 entries
-    let mut hist_idx: usize = 0;               // 0 = not browsing history
-    let mut saved_input = String::new();       // input saved when ↑ is first pressed
+    let mut history: Vec<String> = load_history(); // populated from /data/shell_history
+    let mut hist_idx: usize = 0;                   // 0 = not browsing history
+    let mut saved_input = String::new();           // input saved when ↑ is first pressed
 
     draw_panel(&lines, &current_input);
 
@@ -91,6 +92,7 @@ fn main() {
                     if history.last().map(|s| s.as_str()) != Some(cmd.as_str()) {
                         if history.len() >= 50 { history.remove(0); }
                         history.push(cmd.clone());
+                        append_history(&cmd);
                     }
                 }
                 if cmd.is_empty() {
@@ -142,6 +144,42 @@ fn main() {
                 }
             }
         }
+    }
+}
+
+// ── Persistent history helpers ────────────────────────────────────────────────
+
+const HISTORY_PATH: &str = "/data/shell_history";
+const HISTORY_CAP: usize = 100;
+
+/// Load up to HISTORY_CAP lines from /data/shell_history.
+/// Returns an empty Vec on any I/O error (silent failure).
+fn load_history() -> Vec<String> {
+    let content = match std::fs::read_to_string(HISTORY_PATH) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let all: Vec<String> = content
+        .lines()
+        .map(|l| l.to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    if all.len() > HISTORY_CAP {
+        all[all.len() - HISTORY_CAP..].to_vec()
+    } else {
+        all
+    }
+}
+
+/// Append a single command to /data/shell_history.
+/// Silently ignores any I/O error.
+fn append_history(cmd: &str) {
+    if let Ok(mut f) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(HISTORY_PATH)
+    {
+        let _ = writeln!(f, "{cmd}");
     }
 }
 
