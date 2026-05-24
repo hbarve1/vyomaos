@@ -142,3 +142,26 @@ fn format_app_list_no_trailing_newline() {
     let r = supervisor::ipc::format_app_list(&["a", "b"]);
     assert!(!r.ends_with('\n'), "should not end with newline");
 }
+
+// validate_kill_target tests
+
+#[test]
+fn validate_kill_target_found() {
+    assert!(supervisor::ipc::validate_kill_target("shell", &["shell", "ticker"]));
+}
+
+#[test]
+fn validate_kill_target_not_found() {
+    assert!(!supervisor::ipc::validate_kill_target("missing", &["shell", "ticker"]));
+}
+
+#[test]
+fn validate_kill_target_empty_list() {
+    assert!(!supervisor::ipc::validate_kill_target("shell", &[]));
+}
+
+#[test]
+fn validate_kill_target_exact_match() {
+    // should not match substrings
+    assert!(!supervisor::ipc::validate_kill_target("she", &["shell"]));
+}

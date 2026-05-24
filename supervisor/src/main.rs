@@ -1604,10 +1604,18 @@ fn handle_supervisor_command(
                     return;
                 }
             };
-            let pid = {
+            let (pid, running_names) = {
                 let reg = app_registry.lock().unwrap();
-                reg.get(&app_name).and_then(|st| st.lock().unwrap().child_pid)
+                let pid = reg.get(&app_name).and_then(|st| st.lock().unwrap().child_pid);
+                let names: Vec<String> = reg.keys().cloned().collect();
+                (pid, names)
             };
+            let running_refs: Vec<&str> = running_names.iter().map(|s| s.as_str()).collect();
+            if !supervisor::ipc::validate_kill_target(&app_name, &running_refs) {
+                log_info!(Subsystem::Ipc, Some(app_name.as_str()), "kill: app={app_name} not found or not running");
+                send_reply(sender, &format!("REPLY:{app_name} not running"), inbox);
+                return;
+            }
             match pid {
                 Some(pid) => {
                     #[cfg(target_os = "linux")]
@@ -1616,6 +1624,7 @@ fn handle_supervisor_command(
                     send_reply(sender, &format!("REPLY:killed {app_name}"), inbox);
                 }
                 None => {
+                    log_info!(Subsystem::Ipc, Some(app_name.as_str()), "kill: app={app_name} not found or not running");
                     send_reply(sender, &format!("REPLY:{app_name} not running"), inbox);
                 }
             }

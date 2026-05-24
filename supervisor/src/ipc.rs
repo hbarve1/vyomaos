@@ -64,3 +64,9 @@ pub fn resolve_reply<'a>(sender: &str, last_senders: &'a HashMap<String, String>
 pub fn format_pong_reply(ms: u64) -> String {
     format!("pong {ms}")
 }
+
+/// Return `true` if `name` exactly matches one of the entries in `running_names`.
+/// Pure function — no I/O, no side effects.
+pub fn validate_kill_target<'a>(name: &str, running_names: &'a [&'a str]) -> bool {
+    running_names.iter().any(|&n| n == name)
+}
