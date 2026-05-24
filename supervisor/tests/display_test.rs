@@ -1,6 +1,6 @@
-// Tests for display module: word-wrap logic, cursor draw/restore, titlebar colors, accent colors, alpha blending, border colors.
+// Tests for display module: word-wrap logic, cursor draw/restore, titlebar colors, accent colors, alpha blending, border colors, FPS helper.
 
-use supervisor::display::{self, app_accent_color, Framebuffer, CURSOR_W, CURSOR_H, titlebar_color};
+use supervisor::display::{self, app_accent_color, format_fps, Framebuffer, CURSOR_W, CURSOR_H, titlebar_color};
 
 // ── titlebar_color ────────────────────────────────────────────────────────────
 
@@ -158,6 +158,28 @@ fn test_cursor_draw_restore() {
     }
 }
 
+// ── format_fps ────────────────────────────────────────────────────────────────
+
+#[test]
+fn format_fps_zero_elapsed() {
+    assert_eq!(format_fps(10, 0), "0fps");
+}
+
+#[test]
+fn format_fps_one_per_sec() {
+    assert_eq!(format_fps(1, 1000), "1fps");
+}
+
+#[test]
+fn format_fps_sixty() {
+    assert_eq!(format_fps(60, 1000), "60fps");
+}
+
+#[test]
+fn format_fps_fractional() {
+    assert_eq!(format_fps(30, 2000), "15fps");
+}
+
 #[test]
 fn test_restore_noop_when_not_drawn() {
     let (mut fb, _) = Framebuffer::new_for_test(50, 50);
@@ -265,4 +287,26 @@ fn border_color_focused_differs_from_unfocused() {
 fn border_color_alpha_is_ff() {
     assert_eq!(display::border_color(true) & 0xFF, 0xFF);
     assert_eq!(display::border_color(false) & 0xFF, 0xFF);
+}
+
+// ── format_fps ────────────────────────────────────────────────────────────────
+
+#[test]
+fn format_fps_zero_elapsed() {
+    assert_eq!(format_fps(10, 0), "0fps");
+}
+
+#[test]
+fn format_fps_one_per_sec() {
+    assert_eq!(format_fps(1, 1000), "1fps");
+}
+
+#[test]
+fn format_fps_sixty() {
+    assert_eq!(format_fps(60, 1000), "60fps");
+}
+
+#[test]
+fn format_fps_fractional() {
+    assert_eq!(format_fps(30, 2000), "15fps");
 }

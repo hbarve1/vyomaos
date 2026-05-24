@@ -318,6 +318,15 @@ fn app_log_levels() -> &'static Mutex<HashMap<String, supervisor::ipc::LogLevel>
     APP_LOG_LEVELS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+// Per-app flush rate tracking: maps app name → (flush_count, window_start).
+// Logged every 5 seconds via `display::format_fps`.
+static FLUSH_COUNTS: OnceLock<Mutex<HashMap<String, (u64, std::time::Instant)>>> =
+    OnceLock::new();
+
+fn flush_counts() -> &'static Mutex<HashMap<String, (u64, std::time::Instant)>> {
+    FLUSH_COUNTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 // ── macOS-inspired chrome ─────────────────────────────────────────────────────
 
 const MENUBAR_H:       u32 = 24;   // global menu bar height
@@ -3090,6 +3099,24 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
         }
 
         fb.flush();
+
+        // ── FPS tracking ─────────────────────────────────────────────────────
+        // Increment the flush counter for this app; log FPS every 5 seconds.
+        {
+            const FPS_WINDOW_MS: u64 = 5_000;
+            let mut map = flush_counts().lock().unwrap();
+            let entry = map
+                .entry(sender.to_string())
+                .or_insert_with(|| (0, std::time::Instant::now()));
+            entry.0 += 1;
+            let elapsed_ms = entry.1.elapsed().as_millis() as u64;
+            if elapsed_ms >= FPS_WINDOW_MS {
+                let fps_str = display::format_fps(entry.0, elapsed_ms);
+                log_info!(Subsystem::Display, Some(sender), "fps: {fps_str}");
+                *entry = (0, std::time::Instant::now());
+            }
+        }
+
         return;
     }
 

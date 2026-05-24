@@ -632,6 +632,22 @@ pub fn app_accent_color(name: &str) -> u32 {
     PALETTE[(hash % 6) as usize]
 }
 
+/// Compute a display string for flush rate from raw counters.
+///
+/// `flushes` is the number of `VYOMA_DRAW:flush` calls recorded in
+/// `elapsed_ms` milliseconds.  Returns `"0fps"` when `elapsed_ms == 0`
+/// to avoid a divide-by-zero.
+///
+/// This function is **pure**: it has no side-effects and does not
+/// touch any global state.
+pub fn format_fps(flushes: u64, elapsed_ms: u64) -> String {
+    if elapsed_ms == 0 {
+        return "0fps".to_string();
+    }
+    let fps = (flushes * 1000) / elapsed_ms;
+    format!("{fps}fps")
+}
+
 
 /// Word-wrap `text` so each line is at most `max_chars` wide.
 /// Long single words are placed on their own line without truncation.
