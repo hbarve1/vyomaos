@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: u32 = 880;
@@ -242,7 +245,7 @@ fn draw(app: &App) {
     text(PREVIEW_X + 8, CONTENT_Y + 4, C_HINT, "Preview");
     fill(PREVIEW_X, CONTENT_Y + LINE_H, PREVIEW_W, 1, C_BORDER);
 
-    if let Some(&ei) = vis.get(vis.iter().position(|&i| i == app.sel.min(app.entries.len().saturating_sub(1))).unwrap_or(0).min(vis.len().saturating_sub(1)).into()) {
+    if let Some(&ei) = vis.get(vis.iter().position(|&i| i == app.sel.min(app.entries.len().saturating_sub(1))).unwrap_or(0).min(vis.len().saturating_sub(1))) {
         // Simple: show the selected entry
         let ei = app.sel.min(app.entries.len().saturating_sub(1));
         if ei < app.entries.len() {

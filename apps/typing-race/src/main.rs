@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: u32 = 1040;
@@ -248,7 +251,7 @@ fn draw(r: &Race) {
 
 fn main() {
     let stdin = io::stdin();
-    let seed: u64 = 0xACE1234567890ABCULL;
+    let seed: u64 = 0xACE1234567890ABC;
     let mut race = Race::new(seed);
 
     println!("@supervisor: raise typing-race");

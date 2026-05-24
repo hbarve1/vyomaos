@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 //! VyomaOS framebuffer display module (Linux only)
 //!
 //! Opened once at supervisor startup.  Reader threads call `fill_rect` /

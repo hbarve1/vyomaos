@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: u32 = 1200;
@@ -16,7 +19,10 @@ const CHART_Y: u32 = HEADER_H;
 const CHART_CONTENT_H: u32 = H - HEADER_H - STATUS_H - VOL_H;
 
 const MAX_CANDLES: usize = 100;
-const CANDLE_W: u32 = (CHART_CONTENT_W / MAX_CANDLES as u32).max(4); // 10px
+const CANDLE_W: u32 = {
+    let w = CHART_CONTENT_W / MAX_CANDLES as u32;
+    if w < 4 { 4 } else { w }
+};
 const VISIBLE_CANDLES: usize = (CHART_CONTENT_W / CANDLE_W) as usize;
 
 const C_BG: u32      = 0x0D1117FF;

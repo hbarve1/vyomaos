@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 use std::time::Instant;
 
@@ -56,7 +59,7 @@ fn elapsed_to_time(secs: u64) -> (u32, u32, u32, u32, u32, u32, u32) {
             2 => if yr % 4 == 0 { 29 } else { 28 },
             _ => 30,
         };
-        if day + d as u32 <= dim {
+        if day + (d as u32) <= dim {
             day += d as u32;
             break;
         }

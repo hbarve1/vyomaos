@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 //! VyomaOS window manager
 //!
 //! Arranges running app windows by Z-order using @supervisor: IPC.

@@ -1,0 +1,15 @@
+[app]
+name    = "type-stats"
+version = "0.1.0"
+wasm    = "type-stats.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+x = 0
+y = 20
+w = 960
+h = 700
+title = "Typing Statistics"

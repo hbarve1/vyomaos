@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: u32 = 760;
@@ -67,7 +70,7 @@ impl App {
             sel_type: 5, // default d20
             count: 1,
             history: Vec::new(),
-            seed: 0xDICE12345678ABCD,
+            seed: 0xD1CE12345678ABCD,
             last: None,
         }
     }

@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: u32 = 1040;
@@ -63,7 +66,7 @@ fn draw(scroll: usize) {
         let rows = (printable.len() as u32 + section.cols - 1) / section.cols;
         for row in 0..rows {
             if y > H as i32 { break; }
-            if y + section.row_h as i32 >= 0 {
+            if y + (section.row_h as i32) >= 0 {
                 let start = (row * section.cols) as usize;
                 let end = ((row + 1) * section.cols as u32) as usize;
                 let end = end.min(printable.len());

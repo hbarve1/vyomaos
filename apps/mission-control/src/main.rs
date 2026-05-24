@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: u32 = 1440;
@@ -147,7 +150,7 @@ fn main() {
                 draw(&apps, cursor);
             }
             "\x1b[B" => {
-                if cursor + COLS as usize < n { cursor += COLS as usize; }
+                if cursor + (COLS as usize) < n { cursor += COLS as usize; }
                 draw(&apps, cursor);
             }
             "\x1b[D" => {

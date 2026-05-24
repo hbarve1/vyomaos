@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: u32 = 840;
@@ -51,7 +54,7 @@ fn draw_ring(cx: u32, cy: u32, r: u32, t: u32, progress: f32, fg: u32, bg: u32) 
     let segs = 72u32;
     for seg in 0..segs {
         let angle = seg as f32 * std::f32::consts::PI * 2.0 / segs as f32 - std::f32::consts::FRAC_PI_2;
-        let filled = seg as f32 / segs as f32 < progress;
+        let filled = seg as f32 / (segs as f32) < progress;
         let col = if filled { fg } else { bg };
 
         // Outer and inner points for this segment

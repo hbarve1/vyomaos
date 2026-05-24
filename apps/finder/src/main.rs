@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: u32 = 1280;
@@ -277,7 +280,7 @@ fn main() {
                     }
                     Focus::Main => {
                         let n = items_for_sidebar(sidebar_cursor, &data_files).len();
-                        if main_cursor + GRID_COLS as usize < n { main_cursor += GRID_COLS as usize; }
+                        if main_cursor + (GRID_COLS as usize) < n { main_cursor += GRID_COLS as usize; }
                     }
                 }
                 let items = items_for_sidebar(sidebar_cursor, &data_files);

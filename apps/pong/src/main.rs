@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: u32 = 800;
@@ -91,7 +94,7 @@ impl Game {
             self.ball_y = HEADER_H as i32;
             self.vel_y = self.vel_y.abs();
         }
-        if self.ball_y + BALL_SZ as i32 > H as i32 {
+        if self.ball_y + (BALL_SZ as i32) > H as i32 {
             self.ball_y = H as i32 - BALL_SZ as i32;
             self.vel_y = -self.vel_y.abs();
         }
@@ -115,7 +118,7 @@ impl Game {
 
         // Right paddle (AI)
         if self.vel_x > 0
-            && self.ball_x + BALL_SZ as i32 >= RIGHT_X as i32
+            && self.ball_x + (BALL_SZ as i32) >= RIGHT_X as i32
             && self.ball_x < (RIGHT_X + PADDLE_W) as i32
             && bbot > self.right_y
             && self.ball_y < self.right_y + PADDLE_H as i32
@@ -131,7 +134,7 @@ impl Game {
         self.update_ai();
 
         // Scoring
-        if self.ball_x + BALL_SZ as i32 < 0 {
+        if self.ball_x + (BALL_SZ as i32) < 0 {
             self.score_r += 1;
             if self.score_r >= WIN_SCORE { self.winner = 2; self.state = State::Over; }
             else { self.reset_ball(1); }

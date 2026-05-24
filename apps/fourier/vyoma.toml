@@ -1,0 +1,15 @@
+[app]
+name    = "fourier"
+version = "0.1.0"
+wasm    = "fourier.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+x = 0
+y = 20
+w = 960
+h = 700
+title = "Fourier Transform Visualizer"

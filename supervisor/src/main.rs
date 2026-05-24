@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 //! VyomaOS supervisor — PID 1
 //!
 //! Responsibilities:
@@ -31,77 +34,25 @@ use std::{
     time::Instant,
 };
 
-use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-// ── Boot config structs ───────────────────────────────────────────────────────
+use supervisor::logging::{format_log, Level, Subsystem};
+use supervisor::manifest::{AppManifest, BootConfig, BootEntry};
 
-#[derive(Debug, Deserialize)]
-struct BootConfig {
-    apps: Vec<BootEntry>,
+macro_rules! log_info {
+    ($sub:expr, $app:expr, $($arg:tt)*) => {
+        eprintln!("{}", format_log(Level::Info,  $sub, $app, &format!($($arg)*)))
+    };
 }
-
-#[derive(Debug, Clone, Deserialize)]
-struct BootEntry {
-    manifest: String,
-    #[serde(default = "default_restart")]
-    restart: String,
+macro_rules! log_warn {
+    ($sub:expr, $app:expr, $($arg:tt)*) => {
+        eprintln!("{}", format_log(Level::Warn,  $sub, $app, &format!($($arg)*)))
+    };
 }
-
-fn default_restart() -> String {
-    "never".to_string()
-}
-
-// ── App manifest structs ──────────────────────────────────────────────────────
-
-#[derive(Debug, Default, Deserialize, Clone, Copy)]
-#[serde(deny_unknown_fields)]
-struct WindowRegion {
-    x: u32,
-    y: u32,
-    w: u32,
-    h: u32,
-}
-
-#[derive(Debug, Deserialize)]
-struct AppManifest {
-    app: AppMeta,
-    capabilities: Capabilities,
-    #[serde(default)]
-    window: Option<WindowRegion>,  // optional [window] section in vyoma.toml
-}
-
-#[derive(Debug, Deserialize)]
-struct AppMeta {
-    name: String,
-    version: String,
-    wasm: String,
-    /// P28: optional SHA-256 hex digest of the .wasm binary.
-    /// If present, supervisor verifies before spawning; rejects on mismatch.
-    #[serde(default)]
-    wasm_sha256: Option<String>,
-}
-
-// deny_unknown_fields ensures manifests cannot declare undocumented capabilities.
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Capabilities {
-    #[serde(default)]
-    stdio: bool,
-    #[serde(default)]
-    filesystem: bool,
-    #[serde(default)]
-    network: bool,
-    #[serde(default)]
-    network_port: Option<u16>,
-    #[serde(default)]
-    display: bool,
-    #[serde(default)]
-    shell: bool,
-    #[serde(default)]
-    watchdog_secs: u32,  // 0 = disabled; >0 = kill app if silent for this many seconds
-    #[serde(default)]
-    mouse: bool,   // receives VYOMA_INPUT:mouse: events when cursor is in window
+macro_rules! log_error {
+    ($sub:expr, $app:expr, $($arg:tt)*) => {
+        eprintln!("{}", format_log(Level::Error, $sub, $app, &format!($($arg)*)))
+    };
 }
 
 // ── P08T01: seccomp BPF denylist ──────────────────────────────────────────────
@@ -315,14 +266,14 @@ fn watchdog_next_backoff(watchdog_secs: u32, restarts: u32) -> u64 {
 }
 
 fn main() {
-    eprintln!("vyoma-supervisor starting");
+    log_info!(Subsystem::Lifecycle, None, "starting");
 
     mount_filesystems();
-    eprintln!("vyoma-supervisor: filesystems mounted");
+    log_info!(Subsystem::Lifecycle, None, "filesystems mounted");
 
     #[cfg(target_os = "linux")]
     if display::init() {
-        eprintln!("vyoma-supervisor: display ready");
+        log_info!(Subsystem::Display, None, "display ready");
         // P35: paint default desktop background before any app draws
         if let Some(fb_lock) = display::get() {
             let mut fb = fb_lock.lock().unwrap();
@@ -335,7 +286,7 @@ fn main() {
     let boot_raw = match fs::read_to_string(BOOT_CONFIG_PATH) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("vyoma-supervisor: FATAL: cannot read {BOOT_CONFIG_PATH}: {e}");
+            log_error!(Subsystem::Manifest, None, "FATAL: cannot read {BOOT_CONFIG_PATH}: {e}");
             std::process::exit(1);
         }
     };
@@ -343,7 +294,7 @@ fn main() {
     let boot: BootConfig = match toml::from_str(&boot_raw) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("vyoma-supervisor: FATAL: malformed {BOOT_CONFIG_PATH}: {e}");
+            log_error!(Subsystem::Manifest, None, "FATAL: malformed {BOOT_CONFIG_PATH}: {e}");
             std::process::exit(1);
         }
     };
@@ -363,18 +314,18 @@ fn main() {
                 all_entries.push(BootEntry { manifest, restart: "never".to_string() });
                 user_count += 1;
             } else if !Path::new(&manifest).exists() {
-                eprintln!("vyoma-supervisor: installed app {name} missing manifest, skipping");
+                log_warn!(Subsystem::Manifest, Some(name), "installed app missing manifest, skipping");
             }
         }
         if user_count > 0 {
-            eprintln!("vyoma-supervisor: {user_count} user-installed app(s) added");
+            log_info!(Subsystem::Lifecycle, None, "{user_count} user-installed app(s) added");
         }
     }
 
-    eprintln!("vyoma-supervisor: {} app(s) total", all_entries.len());
+    log_info!(Subsystem::Lifecycle, None, "{} app(s) total", all_entries.len());
 
     if all_entries.is_empty() {
-        eprintln!("vyoma-supervisor: no apps configured, idling");
+        log_info!(Subsystem::Lifecycle, None, "no apps configured, idling");
         loop { thread::park(); }
     }
 
@@ -389,21 +340,37 @@ fn main() {
 
     // ── Pass 1: spawn all processes and register inbox entries ────────────────
     let mut spawned: Vec<SpawnedApp> = Vec::new();
+    let mut registered_names: Vec<String> = Vec::new();
     for entry in all_entries {
+        // Pre-parse for duplicate-name detection (FR-006 / Clarification Q3).
+        match supervisor::manifest::parse_manifest(std::path::Path::new(&entry.manifest)) {
+            Ok(m) => {
+                let names_slice: Vec<&str> = registered_names.iter().map(|s| s.as_str()).collect();
+                if let Err(e) = supervisor::manifest::validate_manifest(&m, &names_slice) {
+                    log_error!(Subsystem::Manifest, None, "[manifest] {}: {e}", entry.manifest);
+                    continue;
+                }
+                registered_names.push(m.app.name.clone());
+            }
+            Err(e) => {
+                log_error!(Subsystem::Manifest, None, "[manifest] {e}");
+                continue;
+            }
+        }
         match spawn_app(&entry, &inbox, &app_registry) {
             Some(app) => spawned.push(app),
-            None => eprintln!(
-                "vyoma-supervisor: WARN: failed to spawn {}, skipping",
-                entry.manifest
-            ),
+            None => log_warn!(Subsystem::Lifecycle, None, "failed to spawn {}, skipping", entry.manifest),
         }
     }
+
+    // T022 [FR-003]: canonical ready-signal — smoke test greps for this exact substring.
+    log_info!(Subsystem::Lifecycle, None, "all apps spawned");
 
     // ── Set default keyboard focus to the first shell app ────────────────────
     {
         let shell_name = spawned.iter().find(|a| a.is_shell).map(|a| a.name.clone());
         if let Some(ref name) = shell_name {
-            eprintln!("vyoma-supervisor: keyboard focus → {name}");
+            log_info!(Subsystem::Input, Some(name.as_str()), "keyboard focus → {name}");
         }
         *focused.lock().unwrap() = shell_name;
     }
@@ -425,7 +392,7 @@ fn main() {
                 let mut tty = match std::fs::File::open("/dev/tty0") {
                     Ok(f) => f,
                     Err(e) => {
-                        eprintln!("vyoma-supervisor: cannot open /dev/tty0: {e}");
+                        log_error!(Subsystem::Input, None, "cannot open /dev/tty0: {e}");
                         return;
                     }
                 };
@@ -453,9 +420,9 @@ fn main() {
                     }
                 };
                 if raw_ok {
-                    eprintln!("vyoma-supervisor: input-router: raw tty mode active");
+                    log_info!(Subsystem::Input, None, "input-router: raw tty mode active");
                 } else {
-                    eprintln!("vyoma-supervisor: input-router: raw mode unavailable, using line mode");
+                    log_warn!(Subsystem::Input, None, "input-router: raw mode unavailable, using line mode");
                 }
 
                 let mut buf = [0u8; 1];
@@ -512,7 +479,7 @@ fn main() {
                 use std::io::Read;
 
                 let Some(mut dev) = open_mouse_device() else {
-                    eprintln!("vyoma-supervisor: mouse-input: no pointer device found, disabling");
+                    log_warn!(Subsystem::Input, None, "mouse-input: no pointer device found, disabling");
                     return;
                 };
 
@@ -544,7 +511,7 @@ fn main() {
                 let mut buf = [0u8; 24];
                 loop {
                     if dev.read_exact(&mut buf).is_err() {
-                        eprintln!("vyoma-supervisor: mouse-input: device read error, exiting");
+                        log_error!(Subsystem::Input, None, "mouse-input: device read error, exiting");
                         break;
                     }
                     let ev_type = u16::from_ne_bytes([buf[16], buf[17]]);
@@ -627,10 +594,7 @@ fn main() {
                         if elapsed.as_secs() >= wsecs as u64 {
                             // Kill the child process
                             if let Some(pid) = st.child_pid {
-                                eprintln!(
-                                    "[watchdog] {name}: silent for {}s (limit={wsecs}s) — killing pid {pid}",
-                                    elapsed.as_secs()
-                                );
+                                log_warn!(Subsystem::Lifecycle, Some(name.as_str()), "silent for {}s (limit={wsecs}s) — killing pid {pid}", elapsed.as_secs());
                                 #[cfg(target_os = "linux")]
                                 unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
                             }
@@ -655,7 +619,7 @@ fn main() {
         let _ = handle.join();
     }
 
-    eprintln!("vyoma-supervisor: all apps completed, idling");
+    log_info!(Subsystem::Lifecycle, None, "all apps completed, idling");
     loop { thread::park(); }
 }
 
@@ -781,17 +745,10 @@ fn launch_app_threads(
 // ── Spawn one app process and register its state ─────────────────────────────
 
 fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Option<SpawnedApp> {
-    let manifest_raw = match fs::read_to_string(&entry.manifest) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("vyoma-supervisor: WARN: cannot read manifest {}: {e}", entry.manifest);
-            return None;
-        }
-    };
-    let manifest: AppManifest = match toml::from_str(&manifest_raw) {
+    let manifest = match supervisor::manifest::parse_manifest(std::path::Path::new(&entry.manifest)) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("vyoma-supervisor: WARN: rejected manifest {}: {e}", entry.manifest);
+            log_warn!(Subsystem::Manifest, None, "{e}");
             return None;
         }
     };
@@ -800,16 +757,23 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
     let caps = &manifest.capabilities;
 
     let net_port = caps.network_port.unwrap_or(8080);
-    eprintln!(
-        "vyoma-supervisor: [security] {name} capabilities — \
-         stdio:{} fs:{} net:{} display:{} shell:{} mouse:{} seccomp:denylist",
-        if caps.stdio      { "yes" } else { "no" },
-        if caps.filesystem { "yes" } else { "no" },
-        if caps.network    { format!("yes(port={net_port})") } else { "no".to_string() },
-        if caps.display    { "yes" } else { "no" },
-        if caps.shell      { "yes" } else { "no" },
-        if caps.mouse      { "yes" } else { "no" },
-    );
+
+    // T021a [FR-005]: one log line per app at WASM load time listing wired vs skipped capabilities.
+    {
+        let mut wired:   Vec<&str> = Vec::new();
+        let mut skipped: Vec<&str> = Vec::new();
+        if caps.stdio      { wired.push("stdio")      } else { skipped.push("stdio") }
+        if caps.filesystem { wired.push("filesystem")  } else { skipped.push("filesystem") }
+        if caps.network    { wired.push("network")     } else { skipped.push("network") }
+        if caps.display    { wired.push("display")     } else { skipped.push("display") }
+        if caps.shell      { wired.push("shell")       } else { skipped.push("shell") }
+        if caps.mouse      { wired.push("mouse")       } else { skipped.push("mouse") }
+        let net_note = if caps.network { format!(" (port={net_port})") } else { String::new() };
+        log_info!(Subsystem::Capability, Some(name.as_str()),
+            "wired: {}{net_note}; skipped: {}",
+            wired.join(" "), skipped.join(" ")
+        );
+    }
 
     let (tx, msg_rx) = mpsc::channel::<String>();
     inbox.lock().unwrap().insert(name.clone(), tx);
@@ -825,24 +789,19 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
             Ok(bytes) => {
                 let actual = format!("{:x}", Sha256::digest(&bytes));
                 if actual != expected.to_lowercase() {
-                    eprintln!(
-                        "vyoma-supervisor: SECURITY: {name} rejected — SHA-256 mismatch\n  expected {expected}\n  actual   {actual}"
-                    );
+                    log_error!(Subsystem::Capability, Some(name.as_str()), "SECURITY: {name} rejected — SHA-256 mismatch\n  expected {expected}\n  actual   {actual}");
                     inbox.lock().unwrap().remove(&name);
                     return None;
                 }
-                eprintln!("vyoma-supervisor: [security] {name} wasm_sha256 verified OK");
+                log_info!(Subsystem::Capability, Some(name.as_str()), "[security] {name} wasm_sha256 verified OK");
             }
             Err(e) => {
-                eprintln!("vyoma-supervisor: WARN: {name} cannot read wasm for hash check: {e}");
+                log_warn!(Subsystem::Capability, Some(name.as_str()), "cannot read wasm for hash check: {e}");
             }
         }
     }
 
-    eprintln!(
-        "vyoma-supervisor: spawning {} v{} (restart={})",
-        name, manifest.app.version, entry.restart
-    );
+    log_info!(Subsystem::Lifecycle, Some(name.as_str()), "spawning {} v{} (restart={})", name, manifest.app.version, entry.restart);
 
     let mut cmd = std::process::Command::new("/usr/bin/wasmtime");
     cmd.arg("run");
@@ -877,7 +836,7 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("vyoma-supervisor: failed to spawn wasmtime for {name}: {e}");
+            log_error!(Subsystem::Lifecycle, Some(name.as_str()), "failed to spawn wasmtime for {name}: {e}");
             inbox.lock().unwrap().remove(&name);
             return None;
         }
@@ -900,7 +859,7 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         watchdog_backoff: Arc::new(Mutex::new(0u64)),
         has_mouse:        caps.mouse,
         has_display:      caps.display,
-        win_region:       manifest.window.map(|wr| (wr.x, wr.y, wr.w, wr.h)),
+        win_region:       manifest.window.as_ref().map(|wr| (wr.x, wr.y, wr.w, wr.h)),
     }));
     app_registry.lock().unwrap().insert(name.clone(), state);
 
@@ -978,7 +937,7 @@ fn handle_supervisor_command(
         "focus" => {
             if let Some(name) = parts.get(1).map(|s| s.trim()) {
                 *focused.lock().unwrap() = Some(name.to_string());
-                eprintln!("vyoma-supervisor: focus → {name}");
+                log_info!(Subsystem::Input, Some(name), "focus → {name}");
             }
         }
 
@@ -1004,7 +963,7 @@ fn handle_supervisor_command(
             let valid = matches!(size.as_str(), "s" | "m" | "l");
             if valid {
                 *FONT_SIZE.get().unwrap().lock().unwrap() = size.clone();
-                eprintln!("vyoma-supervisor: font-size → {size}");
+                log_info!(Subsystem::Lifecycle, None, "font-size → {size}");
                 send_reply(sender, &format!("REPLY:font-size {size}"), inbox);
             } else {
                 send_reply(sender, "REPLY:font-size error invalid-size", inbox);
@@ -1030,7 +989,7 @@ fn handle_supervisor_command(
                     return;
                 }
             };
-            eprintln!("vyoma-supervisor: @supervisor: run {path}");
+            log_info!(Subsystem::Ipc, None, "@supervisor: run {path}");
             let entry = BootEntry { manifest: path.clone(), restart: "never".to_string() };
             match spawn_app(&entry, inbox, app_registry) {
                 Some(app) => {
@@ -1112,7 +1071,7 @@ fn handle_supervisor_command(
                 Some(pid) => {
                     #[cfg(target_os = "linux")]
                     unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
-                    eprintln!("vyoma-supervisor: killed {app_name} (pid {pid})");
+                    log_info!(Subsystem::Lifecycle, Some(app_name.as_str()), "killed {app_name} (pid {pid})");
                     send_reply(sender, &format!("REPLY:killed {app_name}"), inbox);
                 }
                 None => {
@@ -1147,13 +1106,13 @@ fn handle_supervisor_command(
             if let Some(pid) = pid {
                 #[cfg(target_os = "linux")]
                 unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
-                eprintln!("vyoma-supervisor: restart: killed old {app_name} (pid {pid})");
+                log_info!(Subsystem::Lifecycle, Some(app_name.as_str()), "restart: killed old {app_name} (pid {pid})");
             }
             // Spawn new instance
             match spawn_app(&entry, inbox, app_registry) {
                 Some(app) => {
                     launch_app_threads(app, inbox, focused, app_registry);
-                    eprintln!("vyoma-supervisor: restarted {app_name}");
+                    log_info!(Subsystem::Lifecycle, Some(app_name.as_str()), "restarted {app_name}");
                     send_reply(sender, &format!("REPLY:restarted {app_name}"), inbox);
                 }
                 None => {
@@ -1186,7 +1145,7 @@ fn handle_supervisor_command(
                 }
             };
             send_reply(sender, &format!("REPLY:downloading {url}…"), inbox);
-            eprintln!("vyoma-supervisor: @supervisor: update {app_name} from {url}");
+            log_info!(Subsystem::Ipc, Some(app_name.as_str()), "@supervisor: update {app_name} from {url}");
 
             let sender_name  = sender.to_string();
             let inbox_bg     = Arc::clone(inbox);
@@ -1197,7 +1156,7 @@ fn handle_supervisor_command(
                 let bytes = match http_get(&url) {
                     Ok(b)  => b,
                     Err(e) => {
-                        eprintln!("vyoma-supervisor: update {app_name}: download failed: {e}");
+                        log_error!(Subsystem::Lifecycle, Some(app_name.as_str()), "update {app_name}: download failed: {e}");
                         send_reply(&sender_name, &format!("REPLY:error: download failed: {e}"), &inbox_bg);
                         return;
                     }
@@ -1219,7 +1178,7 @@ fn handle_supervisor_command(
                                 send_reply(&sender_name, "REPLY:error: SHA-256 mismatch — update rejected", &inbox_bg);
                                 return;
                             }
-                            eprintln!("vyoma-supervisor: update {app_name}: SHA-256 verified OK");
+                            log_info!(Subsystem::Capability, Some(app_name.as_str()), "update {app_name}: SHA-256 verified OK");
                         }
                     }
                 }
@@ -1234,7 +1193,7 @@ fn handle_supervisor_command(
                     return;
                 }
                 let _ = fs::remove_file(&tmp);
-                eprintln!("vyoma-supervisor: update {app_name}: installed → {dest:?}");
+                log_info!(Subsystem::Lifecycle, Some(app_name.as_str()), "update {app_name}: installed → {dest:?}");
                 send_reply(&sender_name, &format!("REPLY:installed — restarting {app_name}…"), &inbox_bg);
 
                 // Kill old instance then respawn
@@ -1250,7 +1209,7 @@ fn handle_supervisor_command(
                 match spawn_app(&entry, &inbox_bg, &registry_bg) {
                     Some(app) => {
                         launch_app_threads(app, &inbox_bg, &focused_bg, &registry_bg);
-                        eprintln!("vyoma-supervisor: update {app_name}: restarted OK");
+                        log_info!(Subsystem::Lifecycle, Some(app_name.as_str()), "update {app_name}: restarted OK");
                         send_reply(&sender_name, &format!("REPLY:updated {app_name} OK"), &inbox_bg);
                     }
                     None => {
@@ -1471,7 +1430,7 @@ fn handle_supervisor_command(
                 fb.fill_rect(0, 0, w, h, rgba);
                 fb.flush();
             }
-            eprintln!("vyoma-supervisor: wallpaper set to {rgba:#010x}");
+            log_info!(Subsystem::Display, None, "wallpaper set to {rgba:#010x}");
             send_reply(sender, &format!("REPLY:wallpaper {rgba:#010x}"), inbox);
         }
 
@@ -1534,13 +1493,13 @@ fn handle_supervisor_command(
                 return;
             }
             send_reply(&app_name, &format!("VYOMA_SYSTEM:resize:{new_w},{new_h}"), inbox);
-            eprintln!("vyoma-supervisor: resize {app_name} → {new_w}×{new_h}");
+            log_info!(Subsystem::Display, Some(app_name.as_str()), "resize {app_name} → {new_w}×{new_h}");
             send_reply(sender, &format!("REPLY:resized {app_name} to {new_w}x{new_h}"), inbox);
         }
 
         // P41: shutdown — power off the system
         "shutdown" => {
-            eprintln!("vyoma-supervisor: shutdown requested by {sender}");
+            log_info!(Subsystem::Lifecycle, None, "shutdown requested by {sender}");
             send_reply(sender, "REPLY:shutting down...", inbox);
             thread::spawn(|| {
                 thread::sleep(std::time::Duration::from_millis(500));
@@ -1553,7 +1512,7 @@ fn handle_supervisor_command(
 
         // P41: reboot — restart the system
         "reboot" => {
-            eprintln!("vyoma-supervisor: reboot requested by {sender}");
+            log_info!(Subsystem::Lifecycle, None, "reboot requested by {sender}");
             send_reply(sender, "REPLY:rebooting...", inbox);
             thread::spawn(|| {
                 thread::sleep(std::time::Duration::from_millis(500));
@@ -1594,7 +1553,7 @@ fn handle_supervisor_command(
                     }
                 });
             }
-            eprintln!("vyoma-supervisor: notify title={title:?} msg={msg:?}");
+            log_info!(Subsystem::Display, None, "notify title={title:?} msg={msg:?}");
             send_reply(sender, "REPLY:notified", inbox);
         }
 
@@ -1613,7 +1572,7 @@ fn handle_supervisor_command(
                 }
             }
             let _ = fs::write("/data/session.toml", &toml);
-            eprintln!("vyoma-supervisor: session saved ({} bytes)", toml.len());
+            log_info!(Subsystem::Lifecycle, None, "session saved ({} bytes)", toml.len());
             send_reply(sender, "REPLY:session saved", inbox);
         }
 
@@ -1658,14 +1617,14 @@ fn handle_supervisor_command(
                     restored += 1;
                 }
             }
-            eprintln!("vyoma-supervisor: session restored {restored} windows");
+            log_info!(Subsystem::Lifecycle, None, "session restored {restored} windows");
             send_reply(sender, &format!("REPLY:restored {restored} windows"), inbox);
         }
 
         // P43: monitors — count DRM connectors via /sys/class/drm
         "monitors" => {
             let count = count_drm_connectors();
-            eprintln!("vyoma-supervisor: monitors = {count}");
+            log_info!(Subsystem::Display, None, "monitors = {count}");
             send_reply(sender, &format!("REPLY:monitors {count}"), inbox);
         }
 
@@ -1677,7 +1636,7 @@ fn handle_supervisor_command(
                 return;
             }
             let ip = dns_resolve_a(&hostname).unwrap_or_else(|| "NXDOMAIN".to_string());
-            eprintln!("vyoma-supervisor: dns {hostname} -> {ip}");
+            log_info!(Subsystem::Ipc, None, "dns {hostname} -> {ip}");
             send_reply(sender, &format!("REPLY:dns {hostname} {ip}"), inbox);
         }
 
@@ -1734,7 +1693,7 @@ fn handle_supervisor_command(
                     let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(200)));
                     let id = TCP_NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     TCP_CONNS.get().unwrap().lock().unwrap().insert(id, stream);
-                    eprintln!("vyoma-supervisor: tcp-connect {addr} id={id}");
+                    log_info!(Subsystem::Ipc, None, "tcp-connect {addr} id={id}");
                     send_reply(sender, &format!("REPLY:tcp-connect {id}"), inbox);
                 }
                 Err(e) => {
@@ -1817,7 +1776,7 @@ fn handle_supervisor_command(
                         let fb = fb_lock.lock().unwrap();
                         match fb.screenshot(&path) {
                             Ok(()) => {
-                                eprintln!("vyoma-supervisor: screenshot saved to {path}");
+                                log_info!(Subsystem::Display, None, "screenshot saved to {path}");
                                 send_reply(sender, &format!("REPLY:screenshot ok {path}"), inbox);
                             }
                             Err(e) => send_reply(sender, &format!("REPLY:screenshot error {e}"), inbox),
@@ -1856,7 +1815,7 @@ fn handle_supervisor_command(
                         send_reply(&sender_name, &format!("REPLY:download-progress {dest} {n}"), &inbox_clone);
                         match fs::write(&dest, &bytes) {
                             Ok(()) => {
-                                eprintln!("vyoma-supervisor: download done {dest} ({n} bytes)");
+                                log_info!(Subsystem::Lifecycle, None, "download done {dest} ({n} bytes)");
                                 send_reply(&sender_name, &format!("REPLY:download-done {dest}"), &inbox_clone);
                             }
                             Err(e) => {
@@ -1873,7 +1832,7 @@ fn handle_supervisor_command(
         }
 
         other => {
-            eprintln!("vyoma-supervisor: unknown @supervisor command from {sender}: {other}");
+            log_warn!(Subsystem::Ipc, None, "unknown @supervisor command from {sender}: {other}");
         }
     }
 }
@@ -2015,7 +1974,7 @@ fn install_package(
         launch_app_threads(app, inbox, focused, app_registry);
     }
 
-    eprintln!("vyoma-supervisor: pkg: installed {name}");
+    log_info!(Subsystem::Lifecycle, Some(name), "pkg: installed {name}");
     Ok(())
 }
 
@@ -2029,7 +1988,7 @@ fn remove_package(name: &str, app_registry: &AppRegistry) -> Result<(), String> 
     if let Some(pid) = pid {
         #[cfg(target_os = "linux")]
         unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
-        eprintln!("vyoma-supervisor: pkg: killed {name} (pid {pid})");
+        log_info!(Subsystem::Lifecycle, Some(name), "pkg: killed {name} (pid {pid})");
     }
 
     // Rewrite /data/installed.txt without this entry
@@ -2052,7 +2011,7 @@ fn remove_package(name: &str, app_registry: &AppRegistry) -> Result<(), String> 
             .map_err(|e| format!("remove {dst_dir}: {e}"))?;
     }
 
-    eprintln!("vyoma-supervisor: pkg: removed {name}");
+    log_info!(Subsystem::Lifecycle, Some(name), "pkg: removed {name}");
     Ok(())
 }
 
@@ -2139,7 +2098,7 @@ fn open_mouse_device() -> Option<std::fs::File> {
             )
         };
         if ret >= 0 && (bits & (1 << 2) != 0 || bits & (1 << 3) != 0) {
-            eprintln!("vyoma-supervisor: mouse-input: using {path}");
+            log_info!(Subsystem::Input, None, "mouse-input: using {path}");
             return Some(f);
         }
     }
@@ -2296,7 +2255,7 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
             };
             fb_lock.lock().unwrap().fill_rect(ax, ay, aw, ah, *rgba);
         } else {
-            eprintln!("vyoma-display: [{sender}] bad fill_rect args: {args}");
+            log_error!(Subsystem::Display, Some(sender), "bad fill_rect args: {args}");
         }
         return;
     }
@@ -2350,7 +2309,7 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
             };
             fb_lock.lock().unwrap().draw_text(ax, ay, text, rgba, size);
         } else {
-            eprintln!("vyoma-display: [{sender}] bad draw_text args: {args}");
+            log_error!(Subsystem::Display, Some(sender), "bad draw_text args: {args}");
         }
         return;
     }
@@ -2381,10 +2340,10 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
                 };
                 fb_lock.lock().unwrap().rect_border(ax, ay, aw, ah, rgba);
             } else {
-                eprintln!("vyoma-display: [{sender}] bad rect_border args: {args}");
+                log_error!(Subsystem::Display, Some(sender), "bad rect_border args: {args}");
             }
         } else {
-            eprintln!("vyoma-display: [{sender}] bad rect_border args: {args}");
+            log_error!(Subsystem::Display, Some(sender), "bad rect_border args: {args}");
         }
         return;
     }
@@ -2414,10 +2373,10 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
                 };
                 fb_lock.lock().unwrap().clear_region(ax, ay, aw, ah);
             } else {
-                eprintln!("vyoma-display: [{sender}] bad clear_region args: {args}");
+                log_error!(Subsystem::Display, Some(sender), "bad clear_region args: {args}");
             }
         } else {
-            eprintln!("vyoma-display: [{sender}] bad clear_region args: {args}");
+            log_error!(Subsystem::Display, Some(sender), "bad clear_region args: {args}");
         }
         return;
     }
@@ -2447,15 +2406,15 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
                 };
                 fb_lock.lock().unwrap().draw_text_wrap(ax, ay, effective_max_w, text, rgba, size);
             } else {
-                eprintln!("vyoma-display: [{sender}] bad draw_text_wrap args: {args}");
+                log_error!(Subsystem::Display, Some(sender), "bad draw_text_wrap args: {args}");
             }
         } else {
-            eprintln!("vyoma-display: [{sender}] bad draw_text_wrap args: {args}");
+            log_error!(Subsystem::Display, Some(sender), "bad draw_text_wrap args: {args}");
         }
         return;
     }
 
-    eprintln!("vyoma-display: [{sender}] unknown command: {cmd}");
+    log_warn!(Subsystem::Display, Some(sender), "unknown command: {cmd}");
 }
 
 // ── App waiter — handles exit + automatic restart policy ─────────────────────
@@ -2474,11 +2433,11 @@ fn wait_app(
         let exit_code = match child.wait() {
             Ok(s) => {
                 let code = s.code().unwrap_or(-1);
-                eprintln!("vyoma-supervisor: {name} exited (code {code})");
+                log_info!(Subsystem::Lifecycle, Some(name.as_str()), "{name} exited (code {code})");
                 code
             }
             Err(e) => {
-                eprintln!("vyoma-supervisor: wait failed for {name}: {e}");
+                log_error!(Subsystem::Lifecycle, Some(name.as_str()), "wait failed for {name}: {e}");
                 -1
             }
         };
@@ -2503,10 +2462,7 @@ fn wait_app(
             break;
         }
 
-        eprintln!(
-            "vyoma-supervisor: restarting {name} (policy={}, count={})",
-            entry.restart, restart_count + 1
-        );
+        log_info!(Subsystem::Lifecycle, Some(name.as_str()), "restarting {name} (policy={}, count={})", entry.restart, restart_count + 1);
 
         match spawn_app(&entry, &inbox, &app_registry) {
             Some(app) => {
@@ -2527,7 +2483,7 @@ fn wait_app(
                 child = new_child;
             }
             None => {
-                eprintln!("vyoma-supervisor: failed to restart {name}, giving up");
+                log_error!(Subsystem::Lifecycle, Some(name.as_str()), "failed to restart {name}, giving up");
                 break;
             }
         }
@@ -2545,7 +2501,7 @@ fn mount_filesystems() {
         let opts = c"trans=virtio,version=9p2000.L";
         let ret = mount_fs_with_data("vyoma-data", "/data", "9p", 0, opts.as_ptr());
         if !ret {
-            eprintln!("vyoma-supervisor: 9P share not available — /data will be empty tmpfs");
+            log_warn!(Subsystem::Lifecycle, None, "9P share not available — /data will be empty tmpfs");
             mount_fs("tmpfs", "/data", "tmpfs", 0);
         }
     }
@@ -2573,17 +2529,17 @@ fn mount_fs(_source: &str, target: &str, fstype: &str, _flags: libc::c_ulong) {
             let err = std::io::Error::last_os_error();
             let errno = err.raw_os_error().unwrap_or(0);
             if errno == libc::EBUSY {
-                eprintln!("vyoma-supervisor: {target} already mounted, skipping");
+                log_info!(Subsystem::Lifecycle, None, "{target} already mounted, skipping");
                 return;
             }
             panic!("mount({source} -> {target}, {fstype}) failed: {err}");
         }
 
-        eprintln!("vyoma-supervisor: mounted {target} ({fstype})");
+        log_info!(Subsystem::Lifecycle, None, "mounted {target} ({fstype})");
     }
 
     #[cfg(not(target_os = "linux"))]
-    eprintln!("vyoma-supervisor: [dev build] skipping mount {target} ({fstype})");
+    log_info!(Subsystem::Lifecycle, None, "[dev build] skipping mount {target} ({fstype})");
 }
 
 #[cfg(target_os = "linux")]
@@ -2609,11 +2565,11 @@ fn mount_fs_with_data(
     };
 
     if ret == 0 {
-        eprintln!("vyoma-supervisor: mounted {target} ({fstype})");
+        log_info!(Subsystem::Lifecycle, None, "mounted {target} ({fstype})");
         true
     } else {
         let err = std::io::Error::last_os_error();
-        eprintln!("vyoma-supervisor: mount({source} -> {target}, {fstype}) failed: {err}");
+        log_error!(Subsystem::Lifecycle, None, "mount({source} -> {target}, {fstype}) failed: {err}");
         false
     }
 }

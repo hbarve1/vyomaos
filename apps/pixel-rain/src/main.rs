@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: i32 = 960;
@@ -83,7 +86,7 @@ impl App {
                 col.sub_tick = 0;
                 col.head += 1;
                 col.seed = lcg(col.seed);
-                if col.head - col.len as i32 > ROWS {
+                if col.head - (col.len as i32) > ROWS {
                     rng = lcg(rng);
                     col.head = -((rng % 25) as i32) - 5;
                     rng = lcg(rng);

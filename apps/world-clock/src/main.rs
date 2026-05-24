@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 use std::time::Instant;
 
@@ -142,7 +145,7 @@ fn main() {
             "\x1b[D" => { if cursor > 0 { cursor -= 1; } }
             "\x1b[C" => { if cursor + 1 < n { cursor += 1; } }
             "\x1b[A" => { if cursor >= COLS as usize { cursor -= COLS as usize; } }
-            "\x1b[B" => { if cursor + COLS as usize < n { cursor += COLS as usize; } }
+            "\x1b[B" => { if cursor + (COLS as usize) < n { cursor += COLS as usize; } }
             _ => {}
         }
         let elapsed = start.elapsed().as_secs() as i64;

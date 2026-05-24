@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: u32 = 1280;
@@ -22,6 +25,7 @@ const C_HINT: u32   = 0x6E7681FF;
 const C_ORANGE: u32 = 0xFFA657FF;
 const C_SEL: u32    = 0x58A6FFFF;
 const C_EMPTY: u32  = 0x1A1A1AFF;
+const C_GREEN: u32  = 0x3FB950FF;
 
 const PALETTE: [u32; 10] = [
     0x000000FF, 0xFFFFFFFF, 0xFF3B30FF, 0x3FB950FF,

@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: u32 = 800;
@@ -95,7 +98,7 @@ impl Game {
             self.ball_x = 0;
             self.vel_x = self.vel_x.abs();
         }
-        if self.ball_x + BALL_SZ as i32 > W as i32 {
+        if self.ball_x + (BALL_SZ as i32) > W as i32 {
             self.ball_x = W as i32 - BALL_SZ as i32;
             self.vel_x = -self.vel_x.abs();
         }

@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: u32 = 1360;
@@ -243,8 +246,8 @@ fn handle(ph: Phase, raw: &str) -> Phase {
         Phase::View { path_a, path_b, diff, mut scroll } => {
             let total = diff.len();
             let max_scroll = total.saturating_sub(VISIBLE_LINES);
+            if raw == "\x03" { return Phase::PromptA { input: String::new() }; }
             match raw {
-                "\x03" => Phase::PromptA { input: String::new() },
                 "\x1b[A"  => { scroll = scroll.saturating_sub(1); }
                 "\x1b[B"  => { scroll = (scroll + 1).min(max_scroll); }
                 "\x1b[5~" => { scroll = scroll.saturating_sub(VISIBLE_LINES); }

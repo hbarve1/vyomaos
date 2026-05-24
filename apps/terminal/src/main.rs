@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: u32 = 1100;
@@ -217,7 +220,7 @@ fn draw(t: &Term) {
         let (ref line, color) = t.output[idx];
         let y = CONTENT_Y + i as u32 * LINE_H + 2;
         // Truncate line to fit
-        let display = if line.len() * CHAR_W as usize > (W - 16) as usize {
+        let display = if line.len() * (CHAR_W as usize) > (W - 16) as usize {
             &line[..(W as usize - 16) / CHAR_W as usize]
         } else {
             line.as_str()

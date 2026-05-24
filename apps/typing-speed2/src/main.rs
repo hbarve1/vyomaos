@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 use std::time::Instant;
 
@@ -118,7 +121,7 @@ impl App {
         let total = self.typed.len() + self.errors;
         if total == 0 { return 100; }
         let correct = self.typed.len().saturating_sub(
-            self.typed.iter().zip(self.sentence.bytes()).filter(|(a, b)| a != b).count()
+            self.typed.iter().zip(self.sentence.bytes()).filter(|(a, b)| *a != b).count()
         );
         (correct * 100 / total.max(1)) as u32
     }

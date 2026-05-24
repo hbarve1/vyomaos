@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: i32 = 800;
@@ -228,10 +231,9 @@ impl App {
         // Feedback
         if let Some(ok) = self.feedback {
             let (fb_msg, fb_c) = if ok {
-                ("Correct!  (any key for next)", C_GREEN)
+                ("Correct!  (any key for next)".to_string(), C_GREEN)
             } else {
-                let msg = format!("Wrong!  Answer: {}  (any key for next)", self.wrong_ans);
-                (msg, C_RED)
+                (format!("Wrong!  Answer: {}  (any key for next)", self.wrong_ans), C_RED)
             };
             let fb_str: &str = &fb_msg;
             text(32, 208, fb_c, fb_str);

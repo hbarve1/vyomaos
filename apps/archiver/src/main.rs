@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 use std::io::{self, BufRead, Write};
 
 const W: u32 = 1200;
@@ -371,13 +374,17 @@ fn main() {
             }
             "\x7f" => { // Del — remove selected entry
                 if matches!(app.focus, Focus::Right) {
-                    if let Some(arch) = app.cur_archive_mut() {
-                        if app.entry_sel < arch.entries.len() {
-                            let name = arch.entries[app.entry_sel].name.clone();
-                            arch.entries.remove(app.entry_sel);
-                            if app.entry_sel > 0 && app.entry_sel >= arch.entries.len() { app.entry_sel -= 1; }
-                            app.status = format!("Removed: {}", name);
-                        }
+                    let sel = app.entry_sel;
+                    let removed = if let Some(arch) = app.cur_archive_mut() {
+                        if sel < arch.entries.len() {
+                            let name = arch.entries[sel].name.clone();
+                            arch.entries.remove(sel);
+                            Some((name, arch.entries.len()))
+                        } else { None }
+                    } else { None };
+                    if let Some((name, new_len)) = removed {
+                        if app.entry_sel > 0 && app.entry_sel >= new_len { app.entry_sel -= 1; }
+                        app.status = format!("Removed: {}", name);
                     }
                 }
             }
