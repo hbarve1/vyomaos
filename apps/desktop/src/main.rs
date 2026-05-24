@@ -237,7 +237,7 @@ fn main() {
                 draw(&items, cursor, input_mode, &input_buf);
             }
             "\x1b[B" => {
-                if cursor + COLS as usize < n { cursor += COLS as usize; }
+                if cursor + (COLS as usize) < n { cursor += COLS as usize; }
                 draw(&items, cursor, input_mode, &input_buf);
             }
             "\x1b[D" => {
