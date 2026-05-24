@@ -69,7 +69,7 @@ impl Game {
             aliens:      [[true; ALIEN_COLS]; ALIEN_ROWS],
             alien_count: (ALIEN_ROWS * ALIEN_COLS) as u32,
             off_x: 0, off_y: 0, dir: 1,
-            player_x: (W as i32 - (PLAYER_W as i32) / 2,
+            player_x: (W as i32 - PLAYER_W as i32) / 2,
             pbullet: None,
             abullets: [(0, 0, false); 3],
             score: 0,
@@ -287,7 +287,7 @@ fn main() {
                 game.player_x = (game.player_x - 8).max(0);
             }
             "\x1b[C" => {
-                game.player_x = (game.player_x + 8).min(W as i32 - (PLAYER_W as i32);
+                game.player_x = (game.player_x + 8).min(W as i32 - PLAYER_W as i32);
             }
             " " | "" | "\r" => {
                 match game.state {

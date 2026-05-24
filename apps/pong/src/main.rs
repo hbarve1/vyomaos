@@ -50,7 +50,7 @@ struct Game {
 
 impl Game {
     fn new() -> Self {
-        let mid_y = ((H + HEADER_H) as i32 - (PADDLE_H as i32) / 2;
+        let mid_y = ((H + HEADER_H) as i32 - PADDLE_H as i32) / 2;
         Game {
             left_y:  mid_y,
             right_y: mid_y,
@@ -77,7 +77,7 @@ impl Game {
         let diff = ball_cy - pad_cy;
         let speed = 4i32;
         self.right_y += diff.clamp(-speed, speed);
-        self.right_y = self.right_y.clamp(HEADER_H as i32, H as i32 - (PADDLE_H as i32);
+        self.right_y = self.right_y.clamp(HEADER_H as i32, H as i32 - PADDLE_H as i32);
     }
 
     fn step(&mut self) {
@@ -162,11 +162,11 @@ fn draw(g: &Game) {
     }
 
     // Paddles
-    fill(LEFT_X, g.left_y.max((HEADER_H as i32) as u32, PADDLE_W, PADDLE_H, C_GREEN);
-    fill(RIGHT_X, g.right_y.max((HEADER_H as i32) as u32, PADDLE_W, PADDLE_H, C_RED);
+    fill(LEFT_X, g.left_y.max(HEADER_H as i32) as u32, PADDLE_W, PADDLE_H, C_GREEN);
+    fill(RIGHT_X, g.right_y.max(HEADER_H as i32) as u32, PADDLE_W, PADDLE_H, C_RED);
 
     // Ball
-    fill(g.ball_x.max(0) as u32, g.ball_y.max((HEADER_H as i32) as u32, BALL_SZ, BALL_SZ, C_TEXT);
+    fill(g.ball_x.max(0) as u32, g.ball_y.max(HEADER_H as i32) as u32, BALL_SZ, BALL_SZ, C_TEXT);
 
     // Overlays
     match g.state {
@@ -215,10 +215,10 @@ fn main() {
         match raw.as_str() {
             "\x1b" | "\x03" => { fill(0,0,W,H,C_BG); flush(); std::process::exit(0); }
             "\x1b[A" => {
-                game.left_y = (game.left_y - 8).max((HEADER_H as i32);
+                game.left_y = (game.left_y - 8).max(HEADER_H as i32);
             }
             "\x1b[B" => {
-                game.left_y = (game.left_y + 8).min(H as i32 - (PADDLE_H as i32);
+                game.left_y = (game.left_y + 8).min(H as i32 - PADDLE_H as i32);
             }
             " " | "" | "\r" => {
                 if game.state == State::Waiting {

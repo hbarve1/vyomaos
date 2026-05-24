@@ -65,7 +65,7 @@ struct Game {
 
 impl Game {
     fn new() -> Self {
-        let px = (W as i32 - (PADDLE_W as i32) / 2;
+        let px = (W as i32 - PADDLE_W as i32) / 2;
         Game {
             paddle_x: px,
             ball_x:   px + PADDLE_W as i32 / 2 - BALL_SZ as i32 / 2,
@@ -256,7 +256,7 @@ fn main() {
                 if game.state == State::Waiting { game.park_ball(); }
             }
             "\x1b[C" => {
-                game.paddle_x = (game.paddle_x + 8).min(W as i32 - (PADDLE_W as i32);
+                game.paddle_x = (game.paddle_x + 8).min(W as i32 - PADDLE_W as i32);
                 if game.state == State::Waiting { game.park_ball(); }
             }
             " " | "" | "\r" => {
