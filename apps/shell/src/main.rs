@@ -145,6 +145,12 @@ fn main() {
     }
 }
 
+// ── Pure helpers ──────────────────────────────────────────────────────────────
+
+fn is_pwd_cmd(input: &str) -> bool {
+    input.trim() == "pwd"
+}
+
 // ── Command dispatcher ────────────────────────────────────────────────────────
 
 fn handle_command(cmd: &str, lines: &mut Vec<String>) {
@@ -184,7 +190,11 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  clip-set <text>    — copy text to supervisor clipboard".into());
             push_line(lines, "  clip-get           — paste text from supervisor clipboard".into());
             push_line(lines, "  screenshot [path]  — save framebuffer PPM to /data/screenshot.ppm".into());
+            push_line(lines, "  pwd               — print working directory".into());
             push_line(lines, "  clear             — clear shell output".into());
+        }
+        _ if is_pwd_cmd(cmd) => {
+            push_line(lines, "/data".into());
         }
         "clear" => {
             lines.clear();
@@ -488,4 +498,36 @@ fn flush() {
     // Pipe stdout is block-buffered — must flush explicitly so VYOMA_DRAW
     // commands reach the supervisor without waiting for the buffer to fill.
     let _ = std::io::stdout().flush();
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::is_pwd_cmd;
+
+    #[test]
+    fn is_pwd_cmd_basic() {
+        assert!(is_pwd_cmd("pwd"));
+    }
+
+    #[test]
+    fn is_pwd_cmd_spaces() {
+        assert!(is_pwd_cmd("  pwd  "));
+    }
+
+    #[test]
+    fn is_pwd_cmd_not_pwd() {
+        assert!(!is_pwd_cmd("ls"));
+    }
+
+    #[test]
+    fn is_pwd_cmd_empty() {
+        assert!(!is_pwd_cmd(""));
+    }
+
+    #[test]
+    fn is_pwd_cmd_partial() {
+        assert!(!is_pwd_cmd("pwd /"));
+    }
 }
