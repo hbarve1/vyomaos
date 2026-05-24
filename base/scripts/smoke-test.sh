@@ -22,6 +22,9 @@ cleanup() { rm -f "$LOG_FILE"; }
 trap cleanup EXIT
 
 # Boot headlessly; -nographic already maps serial->stdio, so no -serial flag needed.
+# Disable pipefail for the pipeline: grep -m1 exits after first match, which sends
+# SIGPIPE to tee/qemu; that's expected and must not be treated as a failure.
+set +o pipefail
 timeout "$TIMEOUT_SECS" qemu-system-x86_64 \
     -kernel  "$BZIMAGE" \
     -initrd  "$INITRAMFS" \
@@ -33,8 +36,8 @@ timeout "$TIMEOUT_SECS" qemu-system-x86_64 \
     | tee "$LOG_FILE" \
     | grep -m1 "\[lifecycle\].*all apps spawned" \
     > /dev/null 2>&1
-
 GREP_STATUS=${PIPESTATUS[2]}
+set -o pipefail
 
 # Also check for kernel panic regardless of grep result.
 if grep -q "Kernel panic" "$LOG_FILE" 2>/dev/null; then
