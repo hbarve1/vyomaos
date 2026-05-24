@@ -34,10 +34,12 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T005 Move `BootConfig`, `BootEntry`, `AppManifest`, `AppMeta`, `Capabilities`, `WindowRegion`, and `default_restart()` from `supervisor/src/main.rs` into `supervisor/src/manifest.rs`; add `use crate::manifest::*;` in `main.rs` to restore compilation
-- [ ] T006 Add `pub fn parse_manifest(path: &std::path::Path) -> Result<AppManifest, String>` to `supervisor/src/manifest.rs` — body: read file, `toml::from_str`, return `Ok(manifest)` or `Err(e.to_string())`
-- [ ] T007 Add `pub fn validate_manifest(m: &AppManifest, registered_names: &[&str]) -> Result<(), String>` to `supervisor/src/manifest.rs` — body: check for duplicate name in `registered_names`, return `Err` with message if found, else `Ok(())`
+- [ ] T005 Move `BootConfig`, `BootEntry`, `AppManifest`, `AppMeta`, `Capabilities`, `WindowRegion`, and `default_restart()` from `supervisor/src/main.rs` into `supervisor/src/manifest.rs`; add `use crate::manifest::*;` in `main.rs` to restore compilation. Confirm `cargo check` passes after move.
+- [ ] T005a **[TDD RED]** Write `supervisor/tests/manifest_tests.rs` with 5 failing tests for the functions about to be added: (1) valid TOML parses into `AppManifest` without error, (2) TOML with unknown capability field returns `Err`, (3) TOML missing `app.name` returns `Err`, (4) `validate_manifest` with a duplicate name in `registered_names` returns `Err`, (5) `watchdog_secs = 0` is valid. Confirm all 5 tests fail (compile error or assertion failure). Commit: `test(manifest): add failing manifest unit tests`
+- [ ] T006 **[TDD GREEN]** Add `pub fn parse_manifest(path: &std::path::Path) -> Result<AppManifest, String>` to `supervisor/src/manifest.rs` — body: read file, `toml::from_str`, return `Ok(manifest)` or `Err(e.to_string())`. Include `wasm_sha256 = None` default and correct missing-field error paths. Confirm T005a tests (1)(2)(3)(5) now pass.
+- [ ] T007 **[TDD GREEN]** Add `pub fn validate_manifest(m: &AppManifest, registered_names: &[&str]) -> Result<(), String>` to `supervisor/src/manifest.rs` — body: check for duplicate name in `registered_names`, return `Err("duplicate app name: <name>")` if found, else `Ok(())`. Confirm T005a test (4) now passes and all 5 pass together.
 - [ ] T008 Update all call sites in `supervisor/src/main.rs` that currently inline TOML parsing (the `spawn_app` function, the boot config reader) to use `parse_manifest()` and `validate_manifest()` instead
+- [ ] T008a **[C2 fix]** In the startup loop in `supervisor/src/main.rs` (the section that iterates `all_entries` to call `spawn_app`), add a `let mut registered_names: Vec<String> = Vec::new();` before the loop; after each successful `parse_manifest()` call, pass `registered_names.iter().map(|s| s.as_str()).collect::<Vec<_>>().as_slice()` to `validate_manifest()`; on `Ok`, push `manifest.app.name.clone()` to `registered_names`; on `Err`, log `log_error!(Subsystem::Manifest, Some(&entry.manifest), &err)` and skip. This implements the runtime duplicate-name check (FR-006 / Clarification Q3).
 - [ ] T009 Run `cargo check --manifest-path supervisor/Cargo.toml --target x86_64-unknown-linux-musl` inside Docker and confirm zero new warnings before proceeding
 
 **Checkpoint**: Supervisor still compiles and all existing `supervisor/tests/*.rs` tests pass after extraction (`cargo test --manifest-path supervisor/Cargo.toml`).
@@ -54,13 +56,13 @@
 
 ### Tests (write failing first, commit, then implement)
 
-- [ ] T010 [US1] Write `supervisor/tests/manifest_tests.rs` with 5 failing tests: (1) valid manifest parses OK, (2) unknown capability field returns Err, (3) missing `app.name` returns Err, (4) duplicate name returns Err from `validate_manifest`, (5) `watchdog_secs = 0` is valid. Commit with message `test(manifest): add failing manifest unit tests`
+- [ ] T010 [US1] Extend `supervisor/tests/manifest_tests.rs` (created in T005a) with 2 additional failing tests not yet covered: (6) `watchdog_secs` set to a boolean string `"yes"` instead of a number returns a parse error, (7) entire `[capabilities]` section absent defaults to all-false capabilities (no error). Commit: `test(manifest): extend manifest tests with edge cases`
 - [ ] T011 [US1] Write `supervisor/tests/ipc_tests.rs` with 3 failing tests: (1) message to unknown app returns descriptive error string (not panic), (2) empty target name returns error, (3) message format `@app: msg` is parsed correctly into (target, payload) pair. Commit with message `test(ipc): add failing IPC routing unit tests`
 - [ ] T012 [US1] Write `supervisor/tests/lifecycle_tests.rs` with 2 failing tests: (1) `restart_policy("never")` returns false for "should restart", (2) `restart_policy("always")` returns true. Commit with message `test(lifecycle): add failing lifecycle unit tests`
 
 ### Implementation
 
-- [ ] T013 [US1] Make `manifest_tests.rs` pass: `parse_manifest()` and `validate_manifest()` in `supervisor/src/manifest.rs` already exist from Phase 2 — ensure they handle all 5 test cases; add `wasm_sha256 = None` default and missing-field error paths
+- [ ] T013 [US1] Make the 2 new manifest edge-case tests (T010) pass: handle `watchdog_secs` type-mismatch via serde's built-in type error (should already fail with a clear Err), and confirm that an `AppManifest` without a `[capabilities]` section uses `#[serde(default)]` to produce all-false `Capabilities` (add `#[serde(default)]` to the `capabilities` field in `AppManifest` if not already present)
 - [ ] T014 [US1] Make `ipc_tests.rs` pass: add `pub fn parse_ipc_target(line: &str) -> Result<(&str, &str), String>` to `supervisor/src/main.rs` or a new `supervisor/src/ipc.rs` module; function splits `@<target>: <msg>` and returns Err if target is empty or line does not match format
 - [ ] T015 [US1] Make `lifecycle_tests.rs` pass: add `pub fn should_restart(policy: &str) -> bool` to `supervisor/src/main.rs`; returns `true` only for `"always"`, false for everything else
 - [ ] T016 [US1] Run full test suite inside Docker and confirm all tests in `supervisor/tests/` pass with zero warnings
@@ -87,7 +89,8 @@
 - [ ] T019 [US4] Add `log_info!`, `log_warn!`, `log_error!` macros to `supervisor/src/logging.rs` that call `eprintln!("{}", format_log(...))` — macros accept `(subsystem, app_opt, msg)` where `app_opt` is `Option<&str>`
 - [ ] T020 [US4] Make `logging_tests.rs` pass by running `cargo test` and fixing any format discrepancies
 - [ ] T021 [US4] Replace all `eprintln!("vyoma-supervisor: ...")` calls in `supervisor/src/main.rs` with the appropriate `log_info!` / `log_warn!` / `log_error!` macro calls; assign each call site the correct `Subsystem` variant
-- [ ] T022 [US4] Add the `"all apps spawned"` lifecycle log line (INFO, Subsystem::Lifecycle, app=None) immediately after the last `spawn_app()` call completes in `supervisor/src/main.rs` — this is the smoke test ready signal
+- [ ] T021a [US4] In `spawn_app()` in `supervisor/src/main.rs`, after WASI imports are determined but before `wasmtime::process::Command::new()` is called, add one `log_info!(Subsystem::Capability, Some(&app_name), ...)` line listing which capabilities are wired (e.g., `"wired: stdio display; skipped: filesystem network shell mouse"`) — satisfies FR-005 capability wire/skip requirement
+- [ ] T022 [US4] Add the canonical ready-signal log line immediately after the last `spawn_app()` call completes in `supervisor/src/main.rs`: `log_info!(Subsystem::Lifecycle, None, "all apps spawned")` — the exact output substring `[lifecycle] all apps spawned` is the smoke test grep target (FR-003)
 - [ ] T023 [P] [US4] Run `cargo check` inside Docker and confirm zero new warnings after all replacements
 
 **Checkpoint**: Supervisor builds cleanly. `supervisor/tests/logging_tests.rs` passes. Serial output shows structured log lines on a `make run` boot.
@@ -100,14 +103,14 @@
 
 **Independent Test**: Run `make smoke` on a clean build — exits 0 within 30s. Introduce a broken `vyoma.toml` (unknown field), rebuild, run `make smoke` — exits non-zero.
 
-> **Note**: US4 (T022) must be complete first — the smoke test depends on the "all apps spawned" ready signal.
+> **Note**: US4 (T022) must be complete first — the smoke test depends on the `[lifecycle] all apps spawned` ready signal (canonical string pinned in spec FR-003). US4 is spec priority P2 but is sequenced before this P1 story due to this dependency.
 
 ### Implementation
 
-- [ ] T024 [US2] Update `base/scripts/smoke-test.sh`: implement the full script — run `qemu-system-x86_64` headlessly with `-kernel out/bzImage -initrd out/initramfs.cpio.gz -nographic -serial stdio -append "console=ttyS0 quiet"`, pipe to `grep -m1 "all apps spawned"` via `timeout 30`, exit 0 on match and 1 on timeout/error; also detect "Kernel panic" string and exit 1 if found
+- [ ] T024 [US2] Update `base/scripts/smoke-test.sh`: implement the full script — run `qemu-system-x86_64` headlessly with `-kernel out/bzImage -initrd out/initramfs.cpio.gz -nographic -serial stdio -append "console=ttyS0 quiet"`, pipe output through `tee /tmp/smoke.log`, use `timeout 30 grep -m1 "\[lifecycle\].*all apps spawned" /tmp/smoke.log` as the pass condition (canonical ready-signal from FR-003), exit 0 on match; also grep for `"Kernel panic"` and exit 1 if found; exit 1 on timeout
 - [ ] T025 [US2] Update `docker/Dockerfile` to install `qemu-system-x86_64` (add `qemu-system-x86` to the `apt-get install` line)
 - [ ] T026 [US2] Add `make smoke` target to `Makefile`: `$(DOCKER_RUN) bash base/scripts/smoke-test.sh`; add `smoke` to `.PHONY`
-- [ ] T027 [US2] Add `make unit-test` target to `Makefile`: `$(DOCKER_RUN) cargo test --manifest-path supervisor/Cargo.toml --target x86_64-unknown-linux-musl`; add `unit-test` to `.PHONY`
+- [ ] T027 [US2] Add `make unit-test` target to `Makefile`: `$(DOCKER_RUN) env RUSTFLAGS="-D warnings" cargo test --manifest-path supervisor/Cargo.toml --target x86_64-unknown-linux-musl`; explicitly pass `RUSTFLAGS` to the Docker invocation so warnings are hard failures in tests as well as in builds; add `unit-test` to `.PHONY`
 - [ ] T028 [US2] Add `make test` target to `Makefile` that runs `make unit-test` then `make smoke` sequentially; add `test` to `.PHONY`; add prerequisite dependency on `build` target
 - [ ] T029 [US2] Run `make smoke` on a clean build and confirm it exits 0; then temporarily rename `apps/hello-world/vyoma.toml`, rebuild rootfs, run `make smoke` — confirm it exits non-zero (SC-002 validation)
 

@@ -122,9 +122,9 @@ A developer changing only one app's source code runs `make apps` and sees only t
 
 - **FR-001**: The supervisor crate MUST have a `tests/` module with unit tests covering manifest parsing (valid + invalid), capability validation, IPC routing, and process lifecycle state transitions.
 - **FR-002**: `cargo test -p supervisor` MUST run inside the `vyomaos-builder` Docker container, pass with zero failures, and produce zero new compiler warnings on the `x86_64-unknown-linux-musl` target.
-- **FR-003**: A `make test` target MUST exist that boots VyomaOS headless in QEMU inside the `vyomaos-builder` Docker container, captures serial output, asserts the supervisor ready signal appears, and exits 0/non-zero appropriately. QEMU MUST be installed in the builder image; no host QEMU dependency.
+- **FR-003**: A `make test` target MUST exist that boots VyomaOS headless in QEMU inside the `vyomaos-builder` Docker container, captures serial output, asserts the supervisor ready signal appears, and exits 0/non-zero appropriately. QEMU MUST be installed in the builder image; no host QEMU dependency. The canonical ready signal is the exact log substring `[lifecycle] all apps spawned` — both the supervisor log call (FR-005) and the smoke test grep MUST use this string.
 - **FR-004**: A `make check-manifests` target MUST exist that validates all `apps/*/vyoma.toml` files against the manifest schema and reports errors with app name + field + description.
-- **FR-005**: The supervisor MUST emit structured log lines (ISO timestamp + level + subsystem + event) to stderr for: startup, app spawn, app exit, IPC route decisions, and capability grant/deny events.
+- **FR-005**: The supervisor MUST emit structured log lines (ISO timestamp + level + subsystem + event) to stderr for: startup, app spawn, app exit, IPC route decisions, and capability wire/skip decisions. Capability wire/skip MUST produce one log line per app during WASM loading — listing which capabilities were wired (declared and active) and which were skipped (not declared). Note: the capability model is static; there are no runtime grant/deny decisions, only load-time wiring.
 - **FR-006**: The supervisor MUST validate every `vyoma.toml` at startup and emit a structured ERROR line (not panic) for any schema violation or duplicate app name, then skip the offending app — all other apps MUST continue to start. For duplicate names, the first-registered app wins; the second is rejected.
 - **FR-007**: The file `docs/vyoma-draw-protocol.md` MUST document all `VYOMA_DRAW:` commands, RGBA color format, coordinate semantics, flush behavior, and error handling with at least one working code example per command.
 - **FR-008**: The Makefile MUST use per-app dependency tracking so that `make apps` recompiles only apps with changed source files.
@@ -134,7 +134,7 @@ A developer changing only one app's source code runs `make apps` and sees only t
 ### Key Entities
 
 - **Manifest** (`vyoma.toml`): Per-app configuration declaring name, version, wasm path, capabilities, and restart policy. Validated at build time and at supervisor startup.
-- **Capability Set**: The finite set of permissions an app may declare (`stdio`, `filesystem`, `network`, `display`, `shell`, `mouse`, `watchdog_secs`). Any value outside this set is a validation error.
+- **Capability Set**: The finite set of permissions an app may declare (`stdio`, `filesystem`, `network`, `network_port`, `display`, `shell`, `mouse`, `watchdog_secs`). Any value outside this set is a validation error.
 - **Structured Log Line**: A supervisor stderr emission with fields: timestamp (ISO 8601), level (INFO/WARN/ERROR), subsystem (manifest/ipc/lifecycle/display/capability), app name (if applicable), and event message.
 - **Smoke Test Result**: A pass/fail signal produced by `make test` derived from QEMU serial output pattern matching, with a timeout of 30 seconds.
 
@@ -167,3 +167,9 @@ A developer changing only one app's source code runs `make apps` and sees only t
 - Q: When `make test` runs and QEMU is not available in the current environment, what should happen? → A: Always run inside Docker; QEMU is bundled in the `vyomaos-builder` image — no host QEMU dependency.
 - Q: When two apps declare the same `name` in `vyoma.toml`, what should the supervisor do? → A: First-registered wins; the duplicate is rejected with a structured ERROR — all other apps continue to start.
 - Q: Should new `cargo check` warnings in a modified crate block the build or be non-blocking? → A: Hard failure — new warnings cause `make build` to exit non-zero, enforcing the quality gate.
+
+### Analysis Remediations 2026-05-24
+
+- H1: Canonical smoke test ready-signal string pinned to `[lifecycle] all apps spawned` in FR-003 and FR-005.
+- H2: FR-005 "capability grant/deny" replaced with "capability wire/skip decisions" to match the supervisor's static capability model; one log line per app at WASM load time.
+- M1: `network_port` added to Key Entities Capability Set list to align with data-model.md.
