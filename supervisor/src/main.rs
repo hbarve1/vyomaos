@@ -17,6 +17,8 @@
 #[cfg(target_os = "linux")]
 mod display;
 mod font;
+pub mod manifest;
+pub mod logging;
 
 #[cfg(target_os = "linux")]
 use std::ffi::CString;

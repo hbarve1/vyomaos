@@ -1,0 +1,11 @@
+[package]
+name    = "check-manifests"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "check-manifests"
+path = "src/main.rs"
+
+[dependencies]
+# supervisor path dependency added in T031
