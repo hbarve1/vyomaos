@@ -188,19 +188,24 @@ Every `vyoma.toml` declares capabilities; undeclared capabilities are not access
 
 ## Display Protocol (VYOMA_DRAW)
 
-Apps write commands to stdout in format `VYOMA_DRAW:<cmd>`:
+Full specification: [`docs/vyoma-draw-protocol.md`](docs/vyoma-draw-protocol.md)
+
+Apps write line-oriented commands to stdout. Colors are packed `u32`: `(R<<24)|(G<<16)|(B<<8)|A` printed as decimal.
 
 ```
-VYOMA_DRAW:fill_rect:x:y:w:h:r:g:b
-VYOMA_DRAW:draw_text:x:y:r:g:b:text
+VYOMA_DRAW:fill_rect:<x>,<y>,<w>,<h>,<rgba>
+VYOMA_DRAW:draw_text:<x>,<y>,<rgba>,<size>,<text>   # size: s=4×8  m=8×16  l=16×32
+VYOMA_DRAW:draw_text_wrap:<x>,<y>,<max_w>,<rgba>,<size>,<text>
 VYOMA_DRAW:flush
 ```
 
 Example (Rust):
 ```rust
-println!("VYOMA_DRAW:fill_rect:0:0:100:100:255:0:0");  // Red rect
-println!("VYOMA_DRAW:draw_text:10:10:255:255:255:Hello");  // White text
-println!("VYOMA_DRAW:flush");  // Render to framebuffer
+const WHITE: u32 = 0xFFFFFFFF;
+const BG:    u32 = 0x1E1E2EFF;
+println!("VYOMA_DRAW:fill_rect:0,20,960,700,{BG}");    // clear background
+println!("VYOMA_DRAW:draw_text:8,24,{WHITE},m,Hello");  // medium font text
+println!("VYOMA_DRAW:flush");                            // commit frame
 ```
 
 ## IPC Message Format
@@ -238,12 +243,43 @@ Receiving app reads stdin line-by-line; supervisor strips `@sender:` prefix befo
 
 ## Testing Strategy
 
-No formal test suite yet. Manual testing via `make run` / `make run-gui`.
+### Unit tests (supervisor)
 
-**Smoke test**: Boot and verify supervisor starts all apps without manifest errors:
 ```bash
-make build && make run-gui 2>&1 | tee boot.log
-# Check boot.log for "app started: <name>" messages
+make unit-test            # cargo test inside Docker, RUSTFLAGS=-D warnings
+```
+
+Tests live in `supervisor/tests/` and cover manifest parsing/validation, IPC routing, process lifecycle, structured logging, display commands, font rendering, input handling, mouse events, watchdog, and window management. All tests run against the `x86_64-unknown-linux-musl` target (same as production binary).
+
+### Manifest validation
+
+```bash
+make check-manifests      # validates all apps/*/vyoma.toml against the schema
+```
+
+Prints `OK` or `ERROR <kind>` per manifest; exits non-zero if any error found. Runs automatically before `make apps`.
+
+### Smoke test (headless QEMU boot)
+
+```bash
+make smoke                # headless QEMU boot, 30 s timeout
+```
+
+Boots `out/bzImage` + `out/initramfs.cpio.gz`, waits for `[lifecycle] all apps spawned` on serial output, then exits. Requires `make build` first. Pass/fail printed as `SMOKE: PASS` or `SMOKE: FAIL: <reason>`.
+
+### Full CI test suite
+
+```bash
+make test                 # make build + make unit-test + make smoke
+```
+
+### Incremental builds
+
+Per-app stamp files (`out/.apps/<name>.stamp`) ensure only the app whose source changed recompiles:
+
+```bash
+touch apps/hello-world/src/main.rs
+make apps                 # only hello-world recompiles
 ```
 
 ## Phase Overview
