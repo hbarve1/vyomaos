@@ -1,0 +1,12 @@
+[app]
+name    = "life-evo"
+version = "0.1.0"
+wasm    = "life-evo.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+width  = 960
+height = 720

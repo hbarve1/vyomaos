@@ -1,0 +1,12 @@
+[app]
+name    = "bezier"
+version = "0.1.0"
+wasm    = "bezier.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+width  = 960
+height = 720

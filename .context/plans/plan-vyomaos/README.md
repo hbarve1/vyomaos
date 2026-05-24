@@ -238,6 +238,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 228 — Network Graph | `apps/net-graph/` 12 nodes 18 edges; force-directed layout (spring+repulsion); node colors by degree; ping-pong tick; Q=quit | **complete** | — |
 | 229 — Sine Wave Generator | `apps/sine-gen/` 4 overlaid sine waves; right panel with freq/amp/phase; Tab=select; A/Z=amp; S/X=freq; D/C=phase; ping-pong; Q=quit | **complete** | — |
 | 230 — Pixel Rain | `apps/pixel-rain/` Matrix-style; 40 columns; LCG chars; speed 1-3; green gradient fade; head white; ping-pong; Q=quit | **complete** | — |
+| 231 — Bezier Curve Editor | `apps/bezier/` 4 cubic control points; De Casteljau 200-sample; hue trail; control polygon; T=tangents; Tab=select; arrows=move; R=reset; Q=quit | **complete** | — |
+| 232 — Life Evolution | `apps/life-evo/` 120×80 grid CELL=8; 3 rules (Conway/HighLife/Day&Night); RLE draw; P=rule; S=step; Space=run/pause; R=random; C=clear; Q=quit | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
