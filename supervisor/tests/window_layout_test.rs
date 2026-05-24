@@ -1,7 +1,7 @@
 // Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
-use supervisor::windows::{compute_tiling, compute_tiling_with_hints};
+use supervisor::windows::{clamp_tile_size, compute_tiling, compute_tiling_with_hints, MIN_WIN_H, MIN_WIN_W};
 
 const W: u32 = 1024;
 const H: u32 = 768;
@@ -169,5 +169,58 @@ fn test_hints_all_within_screen_4_apps() {
     for &(x, y, w, h) in &r {
         assert!(x + w <= W, "region right edge {} exceeds screen", x + w);
         assert!(y + h <= H, "region bottom edge {} exceeds screen", y + h);
+    }
+}
+
+// ── clamp_tile_size unit tests ────────────────────────────────────────────────
+
+#[test]
+fn test_clamp_tile_size_already_large_passes_through() {
+    // Dimensions well above the minimums must be returned unchanged.
+    let (w, h) = clamp_tile_size(800, 600, MIN_WIN_W, MIN_WIN_H);
+    assert_eq!(w, 800);
+    assert_eq!(h, 600);
+}
+
+#[test]
+fn test_clamp_tile_size_below_min_width_clamped() {
+    // Width below MIN_WIN_W must be raised; height is already fine.
+    let (w, h) = clamp_tile_size(50, 300, MIN_WIN_W, MIN_WIN_H);
+    assert_eq!(w, MIN_WIN_W);
+    assert_eq!(h, 300);
+}
+
+#[test]
+fn test_clamp_tile_size_below_min_height_clamped() {
+    // Height below MIN_WIN_H must be raised; width is already fine.
+    let (w, h) = clamp_tile_size(400, 20, MIN_WIN_W, MIN_WIN_H);
+    assert_eq!(w, 400);
+    assert_eq!(h, MIN_WIN_H);
+}
+
+#[test]
+fn test_clamp_tile_size_both_below_min_clamped() {
+    // Both dimensions below minimums must both be raised.
+    let (w, h) = clamp_tile_size(10, 5, MIN_WIN_W, MIN_WIN_H);
+    assert_eq!(w, MIN_WIN_W);
+    assert_eq!(h, MIN_WIN_H);
+}
+
+#[test]
+fn test_clamp_tile_size_exactly_at_min_passes_through() {
+    // Dimensions exactly equal to the minimums must be returned unchanged.
+    let (w, h) = clamp_tile_size(MIN_WIN_W, MIN_WIN_H, MIN_WIN_W, MIN_WIN_H);
+    assert_eq!(w, MIN_WIN_W);
+    assert_eq!(h, MIN_WIN_H);
+}
+
+#[test]
+fn test_compute_tiling_respects_min_size_for_many_apps() {
+    // With 9 apps on a tiny screen, every tile must still meet MIN_WIN_W × MIN_WIN_H.
+    let r = compute_tiling(9, W, H);
+    assert_eq!(r.len(), 9);
+    for &(_, _, w, h) in &r {
+        assert!(w >= MIN_WIN_W, "tile width {w} is below MIN_WIN_W={MIN_WIN_W}");
+        assert!(h >= MIN_WIN_H, "tile height {h} is below MIN_WIN_H={MIN_WIN_H}");
     }
 }

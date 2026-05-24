@@ -7,6 +7,19 @@
 //! column-first grid: columns = ceil(sqrt(n)), rows = ceil(n / columns).
 //! Last row's empty slots are absorbed by expanding those tiles to fill the row.
 
+/// Minimum content width enforced on every tiled window (pixels).
+pub const MIN_WIN_W: u32 = 200;
+/// Minimum content height enforced on every tiled window (pixels).
+pub const MIN_WIN_H: u32 = 100;
+
+/// Clamp a tile's `(w, h)` so it is never smaller than `(min_w, min_h)`.
+///
+/// This is intentionally a pure function so it can be unit-tested without any
+/// platform dependencies.
+pub fn clamp_tile_size(w: u32, h: u32, min_w: u32, min_h: u32) -> (u32, u32) {
+    (w.max(min_w), h.max(min_h))
+}
+
 /// Compute tiled window regions for `n` display apps on a `sw × sh` screen.
 ///
 /// Returns one `(x, y, w, h)` tuple per app in left-to-right, top-to-bottom order.
@@ -75,10 +88,54 @@ pub fn compute_tiling_with_hints(
         let y = row * cell_h;
         let h = if row + 1 == rows { sh - y } else { cell_h };
 
+        // Enforce minimum content dimensions so apps always have usable space.
+        let (w, h) = clamp_tile_size(w, h, MIN_WIN_W, MIN_WIN_H);
+
         regions.push((x, y, w, h));
     }
 
     regions
+}
+
+// ── Menu-bar hit detection ────────────────────────────────────────────────────
+
+/// X-coordinate where the first app-name label begins in the menu bar.
+///
+/// Layout: "VyomaOS" starts at x=12, is 8 chars × 8 px/char = 64 px wide,
+/// ending at x=76.  App labels begin at x=88 (12 px gap after the brand name).
+pub const MENUBAR_APPS_START_X: i32 = 88;
+
+/// Width (px) of a single menu-bar app label for a name of `name_len` chars.
+///
+/// Each label has 8 px of padding on the left and 8 px on the right, plus
+/// `name_len * 8` px for the text (medium font = 8 px per character).
+#[inline]
+pub fn menubar_label_width(name_len: usize) -> i32 {
+    name_len as i32 * 8 + 16
+}
+
+/// Return which app name was clicked in the menu bar, or `None`.
+///
+/// * `cx`, `cy` — screen coordinates of the click.
+/// * `menubar_h` — height of the menu bar in pixels (typically 24).
+/// * `apps` — ordered slice of app names as drawn left-to-right in the bar,
+///   starting at [`MENUBAR_APPS_START_X`].
+///
+/// Returns `None` when `cy >= menubar_h as i32` (click is not in the bar) or
+/// when the click does not land on any label.
+pub fn menubar_hit_app<'a>(cx: i32, cy: i32, menubar_h: u32, apps: &'a [&'a str]) -> Option<&'a str> {
+    if cy < 0 || cy >= menubar_h as i32 {
+        return None;
+    }
+    let mut x = MENUBAR_APPS_START_X;
+    for &name in apps {
+        let w = menubar_label_width(name.len());
+        if cx >= x && cx < x + w {
+            return Some(name);
+        }
+        x += w;
+    }
+    None
 }
 
 /// Integer ceiling of sqrt(n).
