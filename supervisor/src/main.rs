@@ -36,6 +36,7 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
+use supervisor::lifecycle::format_ps_line;
 use supervisor::logging::{format_log, Level, Subsystem};
 use supervisor::manifest::{AppManifest, BootConfig, BootEntry};
 
@@ -259,16 +260,21 @@ static LAST_MENUBAR_DRAW: OnceLock<Mutex<(std::time::Instant, Option<String>)>> 
 // last flush.  Avoids repainting the title bar for windows with no new content.
 static APP_DIRTY: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
 
+// Currently hovered app name (title bar hover, no button press).
+// Updated on every mouse-motion event; None when cursor is not over any title bar.
+static HOVERED_APP: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
 // ── macOS-inspired chrome ─────────────────────────────────────────────────────
 
 const MENUBAR_H:       u32 = 24;   // global menu bar height
 const TITLEBAR_H:      u32 = 28;   // per-window title bar height
 const TL_DOT:          u32 = 12;   // traffic-light dot size (px)
 
-const MAC_MENUBAR:     u32 = 0x1C1C1EFF; // system background (menubar)
-const MAC_TITLE_ACT:   u32 = 0x3A3A3CFF; // active window title bar
-const MAC_TITLE_INACT: u32 = 0x2C2C2EFF; // inactive window title bar
-const MAC_SEP:         u32 = 0x48484AFF; // separator line
+const MAC_MENUBAR:        u32 = 0x1C1C1EFF; // system background (menubar)
+const MAC_TITLE_ACT:      u32 = 0x3A3A3CFF; // active window title bar
+const MAC_TITLE_INACT:    u32 = 0x2C2C2EFF; // inactive window title bar
+const MAC_TITLE_HOVER:    u32 = 0x444C56FF; // hovered title bar (midpoint between active and inactive)
+const MAC_SEP:            u32 = 0x48484AFF; // separator line
 const MAC_LABEL:       u32 = 0xFFFFFFFF; // primary label (white)
 const MAC_LABEL2:      u32 = 0x8E8E93FF; // secondary label (gray)
 const TL_CLOSE:        u32 = 0xFF5F57FF; // traffic light red
@@ -337,13 +343,24 @@ fn apply_tiling_layout(registry: &AppRegistry) {
     log_info!(Subsystem::Display, None, "layout reflow: {n} display app(s) tiled");
 }
 
-/// Repaint 2 px inset focus borders for all display apps in the framebuffer back-buffer.
+/// Return the title bar background colour for the given window state.
+///
+/// Priority: hovered > focused > inactive; `hovered` wins regardless of focus.
+///
+/// Pure function — no side-effects, no global state reads.
+pub fn titlebar_color_for_state(focused: bool, hovered: bool) -> u32 {
+    if hovered      { MAC_TITLE_HOVER } // hover — slightly lighter for affordance
+    else if focused { MAC_TITLE_ACT   } // active window
+    else            { MAC_TITLE_INACT } // inactive window
+}
+
 /// Draw a macOS-style title bar at (wx, wy, ww, TITLEBAR_H).
 /// Traffic lights are colored when focused, gray otherwise.
 /// App name is centered in the bar.
+/// `is_hovered` makes the background slightly lighter for mouse-hover affordance.
 #[cfg(target_os = "linux")]
-fn draw_titlebar(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, is_focused: bool, name: &str) {
-    let bg = if is_focused { MAC_TITLE_ACT } else { MAC_TITLE_INACT };
+fn draw_titlebar(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, is_focused: bool, is_hovered: bool, name: &str) {
+    let bg = titlebar_color_for_state(is_focused, is_hovered);
     fb.fill_rect(wx, wy, ww, TITLEBAR_H, bg);
     fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
 
@@ -402,6 +419,11 @@ fn draw_menubar(fb: &mut display::Framebuffer, sw: u32, elapsed_secs: u64, focus
 /// Immediately repaint title bars for all windowed apps (called on focus changes).
 fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     let focused_name = focused.lock().unwrap().clone();
+    let hovered_name = HOVERED_APP
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap()
+        .clone();
     let regions: Vec<(String, (u32, u32, u32, u32))> = {
         let reg = registry.lock().unwrap();
         reg.iter()
@@ -416,8 +438,9 @@ fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     for (name, (wx, wy, ww, _wh)) in &regions {
         if *ww < 60 { continue; }
         let is_focused = focused_name.as_deref() == Some(name.as_str());
+        let is_hovered = hovered_name.as_deref() == Some(name.as_str());
         #[cfg(target_os = "linux")]
-        draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, name);
+        draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, is_hovered, name);
     }
     #[cfg(target_os = "linux")]
     {
@@ -1431,8 +1454,8 @@ fn handle_supervisor_command(
                 let reg = app_registry.lock().unwrap();
                 let mut rows: Vec<(String, String)> = reg.iter().map(|(name, st)| {
                     let st = st.lock().unwrap();
-                    let uptime = st.start_time.elapsed().as_secs();
-                    let status_str = match &st.status {
+                    let pid = st.child_pid.unwrap_or(0);
+                    let state_str = match &st.status {
                         AppStatus::Running    => "running".to_string(),
                         AppStatus::Stopped(c) => format!("stopped({})", c),
                     };
@@ -1441,10 +1464,8 @@ fn handle_supervisor_command(
                     } else {
                         String::new()
                     };
-                    let info = format!(
-                        "{:<16} {:<12} {:>5}s  restarts:{}{}",
-                        name, status_str, uptime, st.restart_count, wd_tag
-                    );
+                    let base = format_ps_line(name, pid, &state_str, st.restart_count);
+                    let info = format!("{}{}", base, wd_tag);
                     (name.clone(), info)
                 }).collect();
                 rows.sort_by(|a, b| a.0.cmp(&b.0));
@@ -2550,6 +2571,87 @@ fn dispatch_mouse(
         .map(|m| m.lock().unwrap().clone())
         .unwrap_or_default();
 
+    // ── Title-bar hover highlight (motion only, no button press) ─────────────
+    // On every motion event (btn == 0), determine which app's title bar (if any)
+    // the cursor is over.  If the hovered window changed, redraw the previous
+    // title bar (un-highlight) and the new one (highlight).  We guard with a
+    // `new_hover != old_hover` check so no extra work is done when the cursor
+    // stays in the same title bar.
+    if btn == 0 {
+        // Determine which app's title bar the cursor is currently over.
+        let new_hover: Option<String> = {
+            let reg = app_registry.lock().unwrap();
+            let mut found: Option<String> = None;
+            // Check z-order first so topmost window wins.
+            for name in &z_snapshot {
+                let Some(state_arc) = reg.get(name) else { continue };
+                let st = state_arc.lock().unwrap();
+                let Some((wx, wy, ww, _wh)) = st.win_region else { continue };
+                // Title bar spans y in [wy, wy + TITLEBAR_H) and x in [wx, wx + ww).
+                if cx >= wx as i32 && cx < (wx + ww) as i32
+                    && cy >= wy as i32 && cy < (wy + TITLEBAR_H) as i32 {
+                    found = Some(name.clone());
+                    break;
+                }
+            }
+            // Fallback: apps not in z_order
+            if found.is_none() {
+                for (name, state_arc) in reg.iter() {
+                    let st = state_arc.lock().unwrap();
+                    let Some((wx, wy, ww, _wh)) = st.win_region else { continue };
+                    if cx >= wx as i32 && cx < (wx + ww) as i32
+                        && cy >= wy as i32 && cy < (wy + TITLEBAR_H) as i32 {
+                        found = Some(name.clone());
+                        break;
+                    }
+                }
+            }
+            found
+        };
+
+        let old_hover = {
+            HOVERED_APP
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .unwrap()
+                .clone()
+        };
+
+        if new_hover != old_hover {
+            // Update hover state.
+            *HOVERED_APP.get_or_init(|| Mutex::new(None)).lock().unwrap() = new_hover.clone();
+
+            // Collect the regions we need to redraw (previous and new hovered window).
+            let focused_name = focused.lock().unwrap().clone();
+            let mut to_redraw: Vec<(String, u32, u32, u32)> = Vec::new();
+            {
+                let reg = app_registry.lock().unwrap();
+                for candidate in old_hover.iter().chain(new_hover.iter()) {
+                    if let Some(state_arc) = reg.get(candidate.as_str()) {
+                        let st = state_arc.lock().unwrap();
+                        if let Some((wx, wy, ww, _wh)) = st.win_region {
+                            if ww >= 60 {
+                                to_redraw.push((candidate.clone(), wx, wy, ww));
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !to_redraw.is_empty() {
+                if let Some(fb_lock) = display::get() {
+                    let mut fb = fb_lock.lock().unwrap();
+                    for (name, wx, wy, ww) in &to_redraw {
+                        let is_focused = focused_name.as_deref() == Some(name.as_str());
+                        let is_hovered = new_hover.as_deref() == Some(name.as_str());
+                        draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, is_hovered, name);
+                    }
+                    fb.flush();
+                }
+            }
+        }
+    }
+
     // Traffic-light hit-test: on any click, check if a dot was hit before
     // falling through to the focus/raise and mouse-event dispatch logic.
     if btn != 0 {
@@ -2710,7 +2812,12 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
         if is_dirty {
             if let Some((wx, wy, ww, _wh)) = win {
                 if ww >= 60 {
-                    draw_titlebar(&mut *fb, wx, wy, ww, is_focused, sender);
+                    let is_hovered = HOVERED_APP
+                        .get_or_init(|| Mutex::new(None))
+                        .lock()
+                        .unwrap()
+                        .as_deref() == Some(sender);
+                    draw_titlebar(&mut *fb, wx, wy, ww, is_focused, is_hovered, sender);
                 }
             }
         }
