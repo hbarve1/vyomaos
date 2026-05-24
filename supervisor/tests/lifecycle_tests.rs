@@ -52,3 +52,26 @@ fn test_focus_unchanged_when_no_focused_app() {
     let new_focus = transfer_focus("gui-demo", None, &["ticker"]);
     assert!(new_focus.is_none(), "no focus to transfer when focused is None");
 }
+
+// ── format_cpu tests ──────────────────────────────────────────────────────────
+
+#[test]
+fn format_cpu_zero_elapsed() {
+    assert_eq!(supervisor::lifecycle::format_cpu(10, 0), "0%");
+}
+
+#[test]
+fn format_cpu_under_one_pct() {
+    // 0 busy ticks in 1000ms → <1%
+    assert_eq!(supervisor::lifecycle::format_cpu(0, 1000), "<1%");
+}
+
+#[test]
+fn format_cpu_fifty_pct() {
+    assert_eq!(supervisor::lifecycle::format_cpu(500, 1000), "50%");
+}
+
+#[test]
+fn format_cpu_hundred_pct() {
+    assert_eq!(supervisor::lifecycle::format_cpu(1000, 1000), "100%");
+}
