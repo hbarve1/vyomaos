@@ -190,3 +190,26 @@ fn test_restarting_clean_exit_does_not_trigger_notification() {
         "restarting app with clean exit must not show a crash notification"
     );
 }
+
+// ── format_cpu tests ──────────────────────────────────────────────────────────
+
+#[test]
+fn format_cpu_zero_elapsed() {
+    assert_eq!(supervisor::lifecycle::format_cpu(10, 0), "0%");
+}
+
+#[test]
+fn format_cpu_under_one_pct() {
+    // 0 busy ticks in 1000ms → <1%
+    assert_eq!(supervisor::lifecycle::format_cpu(0, 1000), "<1%");
+}
+
+#[test]
+fn format_cpu_fifty_pct() {
+    assert_eq!(supervisor::lifecycle::format_cpu(500, 1000), "50%");
+}
+
+#[test]
+fn format_cpu_hundred_pct() {
+    assert_eq!(supervisor::lifecycle::format_cpu(1000, 1000), "100%");
+}

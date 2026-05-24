@@ -221,6 +221,8 @@ struct AppState {
     has_display: bool,
     win_region:  Option<(u32, u32, u32, u32)>,  // supervisor-assigned; updated by apply_tiling_layout
     min_size:    (u32, u32),                     // (min_w, min_h) hint from manifest [window]
+    draw_ticks:      u64,           // incremented each time the app issues a VYOMA_DRAW command
+    last_cpu_reset:  std::time::Instant, // when draw_ticks was last zeroed
 }
 
 type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
@@ -1283,6 +1285,8 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         has_display:      caps.display,
         win_region:       None,
         min_size,
+        draw_ticks:       0,
+        last_cpu_reset:   Instant::now(),
     }));
     app_registry.lock().unwrap().insert(name.clone(), state);
 
@@ -1309,10 +1313,21 @@ fn route_or_print(
     focused:      &FocusedApp,
     app_registry: &AppRegistry,
 ) {
-    #[cfg(target_os = "linux")]
     if has_display {
         if let Some(cmd) = line.strip_prefix("VYOMA_DRAW:") {
-            handle_draw_command(cmd, sender, win_region, focused);
+            // Increment draw_ticks for CPU% tracking
+            {
+                let reg = app_registry.lock().unwrap();
+                if let Some(st) = reg.get(sender) {
+                    st.lock().unwrap().draw_ticks += 1;
+                }
+            }
+            #[cfg(target_os = "linux")]
+            {
+                handle_draw_command(cmd, sender, win_region, focused);
+            }
+            #[cfg(not(target_os = "linux"))]
+            let _ = cmd;
             return;
         }
     }
@@ -1448,7 +1463,7 @@ fn handle_supervisor_command(
             send_reply(sender, &format!("REPLY:{}", entries.join("|")), inbox);
         }
 
-        // ps — list all apps with status, uptime, restart count
+        // ps — list all apps with status, uptime, restart count, cpu%
         "ps" => {
             let entries: Vec<String> = {
                 let reg = app_registry.lock().unwrap();
@@ -1464,8 +1479,12 @@ fn handle_supervisor_command(
                     } else {
                         String::new()
                     };
+                    let cpu = supervisor::lifecycle::format_cpu(
+                        st.draw_ticks,
+                        st.last_cpu_reset.elapsed().as_millis() as u64,
+                    );
                     let base = format_ps_line(name, pid, &state_str, st.restart_count);
-                    let info = format!("{}{}", base, wd_tag);
+                    let info = format!("{}{} cpu:{}", base, wd_tag, cpu);
                     (name.clone(), info)
                 }).collect();
                 rows.sort_by(|a, b| a.0.cmp(&b.0));
