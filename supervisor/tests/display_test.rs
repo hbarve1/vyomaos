@@ -1,6 +1,6 @@
-// Tests for display module: word-wrap logic and cursor draw/restore.
+// Tests for display module: word-wrap logic, cursor draw/restore, and FPS helper.
 
-use supervisor::display::{Framebuffer, CURSOR_W, CURSOR_H};
+use supervisor::display::{format_fps, Framebuffer, CURSOR_W, CURSOR_H};
 
 /// Pure word-wrap helper — duplicated here because supervisor is a binary crate.
 fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {
@@ -136,6 +136,28 @@ fn test_cursor_draw_restore() {
             );
         }
     }
+}
+
+// ── format_fps ────────────────────────────────────────────────────────────────
+
+#[test]
+fn format_fps_zero_elapsed() {
+    assert_eq!(format_fps(10, 0), "0fps");
+}
+
+#[test]
+fn format_fps_one_per_sec() {
+    assert_eq!(format_fps(1, 1000), "1fps");
+}
+
+#[test]
+fn format_fps_sixty() {
+    assert_eq!(format_fps(60, 1000), "60fps");
+}
+
+#[test]
+fn format_fps_fractional() {
+    assert_eq!(format_fps(30, 2000), "15fps");
 }
 
 #[test]
