@@ -118,3 +118,27 @@ fn format_pong_reply_starts_with_pong() {
     let r = supervisor::ipc::format_pong_reply(42);
     assert!(r.starts_with("pong "), "expected 'pong ...' got '{r}'");
 }
+
+// ── format_app_list tests ─────────────────────────────────────────────────────
+
+#[test]
+fn format_app_list_empty() {
+    assert_eq!(supervisor::ipc::format_app_list(&[]), "");
+}
+
+#[test]
+fn format_app_list_one() {
+    assert_eq!(supervisor::ipc::format_app_list(&["shell"]), "shell");
+}
+
+#[test]
+fn format_app_list_multiple() {
+    let r = supervisor::ipc::format_app_list(&["shell", "ticker", "gui-demo"]);
+    assert_eq!(r, "shell\nticker\ngui-demo");
+}
+
+#[test]
+fn format_app_list_no_trailing_newline() {
+    let r = supervisor::ipc::format_app_list(&["a", "b"]);
+    assert!(!r.ends_with('\n'), "should not end with newline");
+}

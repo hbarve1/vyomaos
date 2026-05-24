@@ -20,6 +20,12 @@ pub fn parse_log_level(s: &str) -> Option<LogLevel> {
     }
 }
 
+/// Return a newline-separated list of app names with no trailing newline.
+/// Pure function: no I/O, no side-effects.
+pub fn format_app_list(names: &[&str]) -> String {
+    names.join("\n")
+}
+
 /// Parse an IPC line in the format `@<target>: <message>`.
 /// Returns `Ok((target, payload))` or `Err` if the format is invalid or target is empty.
 pub fn parse_ipc_target(line: &str) -> Result<(&str, &str), String> {
