@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-24  <!-- P225+P226 complete -->
+last_updated: 2026-05-24  <!-- P227+P228 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,33 +18,32 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P227 — Ray Marching
-  - P228 — Network Graph
+  - P229 — Sine Wave Generator
+  - P230 — Pixel Rain
 notes: |
-  P227: Ray Marching. Create apps/ray-march/ WASM app.
+  P229: Sine Wave Generator. Create apps/sine-gen/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        SDF scene: sphere (r=1.2) + box (0.8×0.6×0.8) + ground plane.
-        Render grid: 80×60 cells, each cell 12×12px. GY=32.
-        For each cell: cast ray from eye; march using sphere-tracing; shade with diffuse+ambient.
-        Lighting: one directional light; soft shadow via secondary march.
-        Ping-pong tick: rotate scene 1° per tick around Y axis.
-        Color: SDF surface color; sky gradient for misses.
-        Controls: Space=pause; Q=quit.
+        4 sine waves; each has freq/amp/phase.
+        Overlay all on single axis (GY+40..H-40); zero line in C_BORDER.
+        Tab=select wave; A/Z=amp ±0.05; S/X=freq ±0.1 Hz; D/C=phase ±π/8.
+        Right panel: list of waves with current values.
+        Ping-pong tick: advance time; Q=quit.
 
-  P228: Network Graph. Create apps/net-graph/ WASM app.
+  P230: Pixel Rain. Create apps/pixel-rain/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        12 hardcoded nodes; ~18 edges. Force-directed layout (spring+repulsion).
-        Ping-pong tick: one force iteration (spring F=-k(d-rest); repulsion F=c/d²).
-        Node position: f32 x,y; clamped to canvas (80..880, 60..660).
-        Draw: filled circles r=20 for nodes; lines for edges; node index labels.
-        Node colors by degree (degree 1=C_HINT, 2=C_SEL, 3+=C_ORANGE).
-        Controls: Q=quit.
+        40 columns; each column has a falling segment of chars.
+        LCG random printable chars (ASCII 33-126).
+        Speed varies per column (1-3 cells/tick). Green gradient fade.
+        Head char = bright white; tail fades to dark green.
+        Ping-pong tick: advance columns; Q=quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P229 — Sine Wave Generator: apps/sine-gen/ 4 sine waves; freq/amp/phase controls; overlay on single axis; Tab=select wave; A/Z=amp; S/X=freq; D/C=phase; Q=quit
-- [ ] P230 — Pixel Rain: apps/pixel-rain/ Matrix-style; 40 columns; each column has falling chars; LCG random chars; speed varies; green gradient fade; ping-pong tick; Q=quit
+- [ ] P231 — Bezier Curve Editor: apps/bezier/ 4 control points; drag simulation via arrow keys; De Casteljau; hue trail; T=toggle tangents; R=reset; Q=quit
+- [ ] P232 — Life Evolution: apps/life-evo/ Conway's GoL + rule variants (Day&Night, HighLife); 120×80 grid CELL=8; P=toggle rule; S=step; Space=run/pause; R=random; C=clear; Q=quit
 
 ## Completed (recent — full list in plan README)
+- [x] P227 — Ray Marching: apps/ray-march/ SDF sphere+box+checkerboard; 48-step march; soft shadows; camera orbit; ping-pong; Space=pause; Q=quit
+- [x] P228 — Network Graph: apps/net-graph/ 12 nodes 18 edges; force-directed spring+repulsion; degree-based colors; ping-pong; Q=quit
 - [x] P225 — Fluid Simulation: apps/fluid/ 160×106 CELL=6; density u8; water-like equalize-flow; blue→white color; RLE; C=clear; Q=quit
 - [x] P226 — Logic Gates Simulator: apps/logic-gates/ 5 circuits; AND/OR/NOT/XOR/NAND/NOR; propagate; schematics; ←→=circuit; 1-4=toggle; Q=quit
 - [x] P223 — Particle Fireworks: apps/fireworks/ 60-120 particles/burst; HSV hue; gravity+fade; auto-burst 60ticks; Space=burst; Q=quit
