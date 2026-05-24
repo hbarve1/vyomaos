@@ -95,6 +95,9 @@ fn main() {
                 }
                 if cmd.is_empty() {
                     draw_panel(&lines, &current_input);
+                } else if is_clear_cmd(&cmd) {
+                    lines.clear();
+                    draw_panel(&lines, &current_input);
                 } else {
                     push_line(&mut lines, format!("> {cmd}"));
                     handle_command(&cmd, &mut lines);
@@ -134,6 +137,10 @@ fn main() {
                 let cmd = other.trim().to_string();
                 if cmd.is_empty() {
                     draw_panel(&lines, &current_input);
+                } else if is_clear_cmd(&cmd) {
+                    current_input.clear();
+                    lines.clear();
+                    draw_panel(&lines, &current_input);
                 } else {
                     current_input.clear();
                     push_line(&mut lines, format!("> {cmd}"));
@@ -143,6 +150,13 @@ fn main() {
             }
         }
     }
+}
+
+// ── Clear-command helper ──────────────────────────────────────────────────────
+
+/// Returns `true` if `input` (after trimming) is exactly the word "clear".
+fn is_clear_cmd(input: &str) -> bool {
+    input.trim() == "clear"
 }
 
 // ── Command dispatcher ────────────────────────────────────────────────────────
@@ -185,9 +199,6 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  clip-get           — paste text from supervisor clipboard".into());
             push_line(lines, "  screenshot [path]  — save framebuffer PPM to /data/screenshot.ppm".into());
             push_line(lines, "  clear             — clear shell output".into());
-        }
-        "clear" => {
-            lines.clear();
         }
         "ps" => {
             println!("@supervisor: ps");
@@ -488,4 +499,36 @@ fn flush() {
     // Pipe stdout is block-buffered — must flush explicitly so VYOMA_DRAW
     // commands reach the supervisor without waiting for the buffer to fill.
     let _ = std::io::stdout().flush();
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::is_clear_cmd;
+
+    #[test]
+    fn is_clear_cmd_basic() {
+        assert!(is_clear_cmd("clear"));
+    }
+
+    #[test]
+    fn is_clear_cmd_with_space() {
+        assert!(is_clear_cmd("  clear  "));
+    }
+
+    #[test]
+    fn is_clear_cmd_not_clear() {
+        assert!(!is_clear_cmd("cls"));
+    }
+
+    #[test]
+    fn is_clear_cmd_empty() {
+        assert!(!is_clear_cmd(""));
+    }
+
+    #[test]
+    fn is_clear_cmd_partial() {
+        assert!(!is_clear_cmd("clear all"));
+    }
 }
