@@ -100,29 +100,13 @@ pub fn compute_tiling_with_hints(
 // ── Menu-bar hit detection ────────────────────────────────────────────────────
 
 /// X-coordinate where the first app-name label begins in the menu bar.
-///
-/// Layout: "VyomaOS" starts at x=12, is 8 chars × 8 px/char = 64 px wide,
-/// ending at x=76.  App labels begin at x=88 (12 px gap after the brand name).
 pub const MENUBAR_APPS_START_X: i32 = 88;
 
-/// Width (px) of a single menu-bar app label for a name of `name_len` chars.
-///
-/// Each label has 8 px of padding on the left and 8 px on the right, plus
-/// `name_len * 8` px for the text (medium font = 8 px per character).
 #[inline]
 pub fn menubar_label_width(name_len: usize) -> i32 {
     name_len as i32 * 8 + 16
 }
 
-/// Return which app name was clicked in the menu bar, or `None`.
-///
-/// * `cx`, `cy` — screen coordinates of the click.
-/// * `menubar_h` — height of the menu bar in pixels (typically 24).
-/// * `apps` — ordered slice of app names as drawn left-to-right in the bar,
-///   starting at [`MENUBAR_APPS_START_X`].
-///
-/// Returns `None` when `cy >= menubar_h as i32` (click is not in the bar) or
-/// when the click does not land on any label.
 pub fn menubar_hit_app<'a>(cx: i32, cy: i32, menubar_h: u32, apps: &'a [&'a str]) -> Option<&'a str> {
     if cy < 0 || cy >= menubar_h as i32 {
         return None;
@@ -136,6 +120,52 @@ pub fn menubar_hit_app<'a>(cx: i32, cy: i32, menubar_h: u32, apps: &'a [&'a str]
         x += w;
     }
     None
+}
+
+// ── Snap layout ───────────────────────────────────────────────────────────────
+
+pub fn compute_snap_layout(
+    screen_w: u32,
+    screen_h: u32,
+    menubar_h: u32,
+    focused_idx: usize,
+    n_apps: usize,
+) -> Vec<(u32, u32, u32, u32)> {
+    if n_apps == 0 {
+        return vec![];
+    }
+
+    let usable_h = screen_h.saturating_sub(menubar_h);
+
+    if n_apps == 1 {
+        return vec![(0, menubar_h, screen_w, usable_h)];
+    }
+
+    let left_w  = screen_w * 2 / 3;
+    let right_x = left_w;
+    let right_w = screen_w - left_w;
+    let n_others = n_apps - 1;
+    let slot_h  = usable_h / n_others as u32;
+
+    let mut regions = Vec::with_capacity(n_apps);
+    let mut other_idx = 0usize;
+
+    for i in 0..n_apps {
+        if i == focused_idx {
+            regions.push((0, menubar_h, left_w, usable_h));
+        } else {
+            let y = menubar_h + other_idx as u32 * slot_h;
+            let h = if other_idx + 1 == n_others {
+                usable_h - other_idx as u32 * slot_h
+            } else {
+                slot_h
+            };
+            regions.push((right_x, y, right_w, h));
+            other_idx += 1;
+        }
+    }
+
+    regions
 }
 
 /// Integer ceiling of sqrt(n).
