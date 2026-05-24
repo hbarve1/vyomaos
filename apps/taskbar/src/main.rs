@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 //! VyomaOS taskbar
 //!
 //! Full-width dock at the bottom of the screen (y=860, h=40).
