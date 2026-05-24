@@ -320,7 +320,23 @@ fn main() {
 
     // ── Pass 1: spawn all processes and register inbox entries ────────────────
     let mut spawned: Vec<SpawnedApp> = Vec::new();
+    let mut registered_names: Vec<String> = Vec::new();
     for entry in all_entries {
+        // Pre-parse for duplicate-name detection (FR-006 / Clarification Q3).
+        match supervisor::manifest::parse_manifest(std::path::Path::new(&entry.manifest)) {
+            Ok(m) => {
+                let names_slice: Vec<&str> = registered_names.iter().map(|s| s.as_str()).collect();
+                if let Err(e) = supervisor::manifest::validate_manifest(&m, &names_slice) {
+                    eprintln!("vyoma-supervisor: ERROR: [manifest] {}: {e}", entry.manifest);
+                    continue;
+                }
+                registered_names.push(m.app.name.clone());
+            }
+            Err(e) => {
+                eprintln!("vyoma-supervisor: ERROR: [manifest] {e}");
+                continue;
+            }
+        }
         match spawn_app(&entry, &inbox, &app_registry) {
             Some(app) => spawned.push(app),
             None => eprintln!(
@@ -712,17 +728,10 @@ fn launch_app_threads(
 // ── Spawn one app process and register its state ─────────────────────────────
 
 fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Option<SpawnedApp> {
-    let manifest_raw = match fs::read_to_string(&entry.manifest) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("vyoma-supervisor: WARN: cannot read manifest {}: {e}", entry.manifest);
-            return None;
-        }
-    };
-    let manifest: AppManifest = match toml::from_str(&manifest_raw) {
+    let manifest = match supervisor::manifest::parse_manifest(std::path::Path::new(&entry.manifest)) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("vyoma-supervisor: WARN: rejected manifest {}: {e}", entry.manifest);
+            eprintln!("vyoma-supervisor: WARN: {e}");
             return None;
         }
     };

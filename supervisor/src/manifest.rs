@@ -72,4 +72,22 @@ pub struct Capabilities {
     pub mouse: bool,
 }
 
-// ── Parse + validate functions (added in T006/T007) ──────────────────────────
+// ── Parse + validate functions ────────────────────────────────────────────────
+
+/// Read and deserialize a `vyoma.toml` manifest file.
+/// Returns `Err` for I/O failures, TOML parse errors, or unknown capability fields.
+pub fn parse_manifest(path: &std::path::Path) -> Result<AppManifest, String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    toml::from_str::<AppManifest>(&raw)
+        .map_err(|e| format!("invalid manifest {}: {e}", path.display()))
+}
+
+/// Validate a parsed manifest against already-registered app names.
+/// Returns `Err` if the app name is already in `registered_names`.
+pub fn validate_manifest(m: &AppManifest, registered_names: &[&str]) -> Result<(), String> {
+    if registered_names.contains(&m.app.name.as_str()) {
+        return Err(format!("duplicate app name: {}", m.app.name));
+    }
+    Ok(())
+}
