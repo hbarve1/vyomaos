@@ -180,8 +180,10 @@ pub fn set_cursor_pos(cx: i32, cy: i32) {
 /// Enable cursor visibility (called once a mouse device is found).
 pub fn enable_cursor() {
     if let Some(m) = FB.get() {
-        m.lock().unwrap().cursor.visible = true;
-        eprintln!("vyoma-display: cursor enabled");
+        let mut fb = m.lock().unwrap();
+        fb.cursor.visible = true;
+        let (cx, cy) = (fb.cursor.cx, fb.cursor.cy);
+        eprintln!("cursor: sprite enabled at ({cx},{cy})");
     }
 }
 

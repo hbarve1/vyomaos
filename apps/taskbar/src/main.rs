@@ -49,14 +49,18 @@ fn main() {
             println!("@supervisor: ps-raw");
             let _ = std::io::stdout().flush();
 
-        } else if let Some(data) = raw.strip_prefix("VYOMA_INPUT:mouse:") {
-            // data: lx,ly,btn
-            let mut parts = data.split(',');
-            let lx: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-            let _ly: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-            let btn: u8  = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        } else if let Some(rest) = raw.strip_prefix("VYOMA_INPUT:mouse:") {
+            // Only react to left clicks: click:{lx},{ly}:left
+            let (lx, is_click) = if let Some(coords) = rest.strip_prefix("click:") {
+                let mut parts = coords.splitn(2, ',');
+                let x: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                let btn_left = parts.next().map_or(false, |s| s.ends_with(":left"));
+                (x, btn_left)
+            } else {
+                (0, false)
+            };
 
-            if btn == 1 && lx >= BTN_START {
+            if is_click && lx >= BTN_START {
                 let idx = ((lx - BTN_START) / BTN_PITCH) as usize;
                 if idx < apps.len() {
                     let name = &apps[idx];

@@ -176,12 +176,18 @@ fn read_boot_count() -> u64 {
         .unwrap_or(0)
 }
 
-/// Parse `VYOMA_INPUT:mouse:<x>,<y>,<btn>` → local window coords `(x, y)`.
+/// Parse `VYOMA_INPUT:mouse:move:<x>,<y>` or `VYOMA_INPUT:mouse:click:<x>,<y>:<btn>`
+/// → local window coords `(x, y)`.
 fn parse_mouse_event(line: &str) -> Option<(u32, u32)> {
-    let data = line.strip_prefix("VYOMA_INPUT:mouse:")?;
-    let mut parts = data.splitn(3, ',');
+    let rest = line.strip_prefix("VYOMA_INPUT:mouse:")?;
+    let coords = rest.strip_prefix("move:")
+        .or_else(|| rest.strip_prefix("click:"))?;
+    let mut parts = coords.splitn(2, ',');
     let x: u32 = parts.next()?.parse().ok()?;
-    let y: u32 = parts.next()?.parse().ok()?;
+    // y field may have ":button" suffix (click format) — strip it
+    let y_raw = parts.next()?;
+    let y_str = y_raw.split(':').next()?;
+    let y: u32 = y_str.parse().ok()?;
     Some((x, y))
 }
 
@@ -225,14 +231,15 @@ mod tests {
 
     #[test]
     fn parse_mouse_valid() {
-        assert_eq!(parse_mouse_event("VYOMA_INPUT:mouse:100,200,0"), Some((100, 200)));
-        assert_eq!(parse_mouse_event("VYOMA_INPUT:mouse:0,0,1"), Some((0, 0)));
+        assert_eq!(parse_mouse_event("VYOMA_INPUT:mouse:move:100,200"), Some((100, 200)));
+        assert_eq!(parse_mouse_event("VYOMA_INPUT:mouse:click:0,0:left"), Some((0, 0)));
+        assert_eq!(parse_mouse_event("VYOMA_INPUT:mouse:click:50,75:right"), Some((50, 75)));
     }
 
     #[test]
     fn parse_mouse_invalid() {
         assert_eq!(parse_mouse_event("REPLY:something"), None);
-        assert_eq!(parse_mouse_event("VYOMA_INPUT:mouse:abc,200,0"), None);
+        assert_eq!(parse_mouse_event("VYOMA_INPUT:mouse:move:abc,200"), None);
     }
 
     #[test]
