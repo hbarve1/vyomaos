@@ -2421,6 +2421,13 @@ fn handle_supervisor_command(
             send_reply(sender, &format!("REPLY:{reply}"), inbox);
         }
 
+        // version — reply with the VyomaOS version string
+        "version" => {
+            let v = supervisor::ipc::format_version(0, 19, 0);
+            send_reply(sender, &format!("REPLY:{v}"), inbox);
+            log_info!(Subsystem::Ipc, None, "version query from {sender}: {v}");
+        }
+
         other => {
             log_warn!(Subsystem::Ipc, None, "unknown @supervisor command from {sender}: {other}");
         }
