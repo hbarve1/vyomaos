@@ -52,3 +52,20 @@ fn test_focus_unchanged_when_no_focused_app() {
     let new_focus = transfer_focus("gui-demo", None, &["ticker"]);
     assert!(new_focus.is_none(), "no focus to transfer when focused is None");
 }
+
+// test_focus_transfers_on_exit: verifies that when the focused app exits and
+// multiple display apps remain, focus transfers to the alphabetically-first
+// available app (consistent with Alt+Tab order).
+#[test]
+fn test_focus_transfers_on_exit() {
+    // "calculator" exits while focused; "gui-demo", "shell", "ticker" remain.
+    // Sorted alphabetically: ["gui-demo", "shell", "ticker"] → pick "gui-demo".
+    let mut remaining = vec!["ticker", "shell", "gui-demo"];
+    remaining.sort();
+    let new_focus = transfer_focus("calculator", Some("calculator"), &remaining);
+    assert_eq!(
+        new_focus.as_deref(),
+        Some("gui-demo"),
+        "focus should transfer to alphabetically-first remaining display app"
+    );
+}

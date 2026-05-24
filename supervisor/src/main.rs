@@ -162,6 +162,36 @@ mod seccomp {
     }
 }
 
+// ── Window-management keyboard shortcuts ──────────────────────────────────────
+
+/// Decoded action for a raw TTY input byte sequence.
+#[derive(Debug, PartialEq)]
+enum InputAction {
+    AltTab,       // Alt+Tab      — cycle focus forward
+    AltShiftTab,  // Alt+Shift+Tab — cycle focus backward
+    AltW,         // Alt+W        — close focused window
+    AltF,         // Alt+F        — maximize focused window (stub)
+    PassThrough,  // Everything else: forward to the focused app as-is
+}
+
+/// Classify a raw input byte sequence (starting from the first byte, including ESC).
+///
+/// Recognised sequences:
+///   `[0x1B, 0x09]`        → AltTab        (ESC + TAB)
+///   `[0x1B, 0x5B, 0x5A]`  → AltShiftTab   (ESC + [ + Z  i.e. \x1b[Z)
+///   `[0x1B, 0x77]`        → AltW          (ESC + 'w')
+///   `[0x1B, 0x66]`        → AltF          (ESC + 'f')
+///   anything else         → PassThrough
+fn classify_input_sequence(bytes: &[u8]) -> InputAction {
+    match bytes {
+        [0x1B, 0x09]             => InputAction::AltTab,
+        [0x1B, 0x5B, 0x5A]      => InputAction::AltShiftTab,
+        [0x1B, 0x77]             => InputAction::AltW,
+        [0x1B, 0x66]             => InputAction::AltF,
+        _                        => InputAction::PassThrough,
+    }
+}
+
 // ── P13T01: per-app runtime state ─────────────────────────────────────────────
 
 const LOG_BUF_SIZE: usize = 20;
@@ -410,6 +440,44 @@ fn z_order_push_back(name: &str) {
     }
 }
 
+// ── Window-management focus helpers ──────────────────────────────────────────
+
+/// Return all windowed app names (those with `win_region = Some(_)`) sorted alphabetically.
+fn windowed_apps_sorted(registry: &AppRegistry) -> Vec<String> {
+    let reg = registry.lock().unwrap();
+    let mut v: Vec<String> = reg.iter()
+        .filter(|(_, st)| st.lock().unwrap().win_region.is_some())
+        .map(|(n, _)| n.clone())
+        .collect();
+    v.sort();
+    v
+}
+
+/// Advance focus to the next app in `names` (wrapping).  If `current` is None or
+/// not in `names`, return the first element.
+fn cycle_focus_forward(names: &[String], current: Option<&str>) -> Option<String> {
+    if names.is_empty() {
+        return None;
+    }
+    match current.and_then(|c| names.iter().position(|n| n == c)) {
+        Some(idx) => Some(names[(idx + 1) % names.len()].clone()),
+        None      => Some(names[0].clone()),
+    }
+}
+
+/// Move focus to the previous app in `names` (wrapping).  If `current` is None or
+/// not in `names`, return the last element.
+fn cycle_focus_backward(names: &[String], current: Option<&str>) -> Option<String> {
+    if names.is_empty() {
+        return None;
+    }
+    match current.and_then(|c| names.iter().position(|n| n == c)) {
+        Some(0)   => Some(names[names.len() - 1].clone()),
+        Some(idx) => Some(names[idx - 1].clone()),
+        None      => Some(names[names.len() - 1].clone()),
+    }
+}
+
 // ── Spawned app descriptor ────────────────────────────────────────────────────
 
 struct SpawnedApp {
@@ -571,8 +639,9 @@ fn main() {
     // a live input buffer and redraws on every keystroke.
     #[cfg(target_os = "linux")]
     {
-        let inbox_input   = Arc::clone(&inbox);
-        let focused_input = Arc::clone(&focused);
+        let inbox_input    = Arc::clone(&inbox);
+        let focused_input  = Arc::clone(&focused);
+        let registry_input = Arc::clone(&app_registry);
         thread::Builder::new()
             .name("input-router".into())
             .spawn(move || {
@@ -620,29 +689,121 @@ fn main() {
                     match tty.read(&mut buf) {
                         Ok(0) | Err(_) => break,
                         Ok(_) => {
-                            let msg: Option<String> = match buf[0] {
-                                0x0D | 0x0A => Some(String::new()),              // Enter → execute
-                                0x7F | 0x08 => Some("\x7f".to_string()),         // Backspace / DEL
-                                0x03        => Some("\x03".to_string()),          // Ctrl+C
-                                0x1B        => {
-                                    // ANSI escape sequence — read next 2 bytes, forward arrows, discard rest.
-                                    let mut esc = [0u8; 2];
-                                    let _ = tty.read(&mut esc);
-                                    match esc {
-                                        [0x5B, 0x41] => Some("\x1b[A".to_string()), // ↑ up arrow
-                                        [0x5B, 0x42] => Some("\x1b[B".to_string()), // ↓ down arrow
-                                        _            => None,
+                            if buf[0] == 0x1B {
+                                // ESC — read next byte to determine sequence type.
+                                let mut b1 = [0u8; 1];
+                                if tty.read(&mut b1).unwrap_or(0) == 0 {
+                                    // Lone ESC: discard.
+                                    continue;
+                                }
+
+                                if b1[0] == 0x5B {
+                                    // CSI sequence (\x1b[…): read the final byte.
+                                    let mut b2 = [0u8; 1];
+                                    if tty.read(&mut b2).unwrap_or(0) == 0 {
+                                        continue; // incomplete, discard
+                                    }
+                                    let fwd: Option<&str> = match b2[0] {
+                                        0x41 => Some("\x1b[A"), // ↑ up arrow
+                                        0x42 => Some("\x1b[B"), // ↓ down arrow
+                                        _    => None,           // check for window-mgmt below
+                                    };
+                                    if let Some(msg) = fwd {
+                                        let target = focused_input.lock().unwrap().clone();
+                                        if let Some(name) = target {
+                                            let map = inbox_input.lock().unwrap();
+                                            if let Some(tx) = map.get(&name) {
+                                                let _ = tx.send(msg.to_string());
+                                            }
+                                        }
+                                    } else if let InputAction::AltShiftTab =
+                                        classify_input_sequence(&[0x1B, 0x5B, b2[0]])
+                                    {
+                                        // Alt+Shift+Tab (\x1b[Z) — cycle focus backward.
+                                        let names = windowed_apps_sorted(&registry_input);
+                                        if !names.is_empty() {
+                                            let cur = focused_input.lock().unwrap().clone();
+                                            let prev = cycle_focus_backward(&names, cur.as_deref());
+                                            if let Some(ref name) = prev {
+                                                log_info!(Subsystem::Input, Some(name.as_str()), "alt+shift+tab: focus → {name}");
+                                                *focused_input.lock().unwrap() = Some(name.clone());
+                                                repaint_all_borders(&registry_input, &focused_input);
+                                            }
+                                        }
+                                    }
+                                    // All other CSI sequences: discard.
+                                } else {
+                                    // Alt+key sequences (\x1bX where X is not '[').
+                                    match classify_input_sequence(&[0x1B, b1[0]]) {
+                                        InputAction::AltTab => {
+                                            // Cycle keyboard focus forward (sorted-by-name, wrapping).
+                                            let names = windowed_apps_sorted(&registry_input);
+                                            if !names.is_empty() {
+                                                let cur = focused_input.lock().unwrap().clone();
+                                                let next = cycle_focus_forward(&names, cur.as_deref());
+                                                if let Some(ref name) = next {
+                                                    log_info!(Subsystem::Input, Some(name.as_str()), "alt+tab: focus → {name}");
+                                                    *focused_input.lock().unwrap() = Some(name.clone());
+                                                    repaint_all_borders(&registry_input, &focused_input);
+                                                }
+                                            }
+                                        }
+                                        InputAction::AltW => {
+                                            // Close the focused display app.
+                                            let focused_name = focused_input.lock().unwrap().clone();
+                                            if let Some(ref name) = focused_name {
+                                                let pid = {
+                                                    let reg = registry_input.lock().unwrap();
+                                                    reg.get(name).and_then(|st| st.lock().unwrap().child_pid)
+                                                };
+                                                if let Some(pid) = pid {
+                                                    log_info!(Subsystem::Input, Some(name.as_str()), "alt+w: closing {name}");
+                                                    unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+                                                }
+                                                // Transfer focus to the next available display app.
+                                                let names: Vec<String> = {
+                                                    let reg = registry_input.lock().unwrap();
+                                                    let mut v: Vec<String> = reg.iter()
+                                                        .filter(|(n, st)| {
+                                                            n.as_str() != name.as_str()
+                                                                && st.lock().unwrap().win_region.is_some()
+                                                        })
+                                                        .map(|(n, _)| n.clone())
+                                                        .collect();
+                                                    v.sort();
+                                                    v
+                                                };
+                                                let next = names.into_iter().next();
+                                                *focused_input.lock().unwrap() = next;
+                                            }
+                                        }
+                                        InputAction::AltF => {
+                                            // Maximize focused app (stub).
+                                            let focused_name = focused_input.lock().unwrap().clone();
+                                            if let Some(ref name) = focused_name {
+                                                log_info!(Subsystem::Input, Some(name.as_str()), "alt+f: maximize {name} (stub)");
+                                            }
+                                        }
+                                        // AltShiftTab handled above in the CSI branch.
+                                        // PassThrough: lone Alt+unknown key — discard.
+                                        _ => {}
                                     }
                                 }
-                                0x20..=0x7E => Some(String::from(buf[0] as char)), // printable ASCII
-                                _           => None,
-                            };
-                            if let Some(msg) = msg {
-                                let target = focused_input.lock().unwrap().clone();
-                                if let Some(name) = target {
-                                    let map = inbox_input.lock().unwrap();
-                                    if let Some(tx) = map.get(&name) {
-                                        let _ = tx.send(msg);
+                            } else {
+                                let msg: Option<String> = match buf[0] {
+                                    0x0D | 0x0A => Some(String::new()),              // Enter → execute
+                                    0x7F | 0x08 => Some("\x7f".to_string()),         // Backspace / DEL
+                                    0x03        => Some("\x03".to_string()),          // Ctrl+C
+                                    0x20..=0x7E => Some(String::from(buf[0] as char)), // printable ASCII
+                                    _           => None,
+                                };
+                                if let Some(msg) = msg {
+                                    let target = focused_input.lock().unwrap().clone();
+                                    if let Some(name) = target {
+                                        let map = inbox_input.lock().unwrap();
+                                        if let Some(tx) = map.get(&name) {
+                                            let _ = tx.send(msg);
+                                        }
                                     }
                                 }
                             }
@@ -2824,25 +2985,36 @@ fn wait_app(
             }
         };
 
-        // Update status in registry
-        let had_display = {
+        // Update status in registry; capture win_region before layout reflow
+        let (had_display, old_win_region) = {
             let reg = app_registry.lock().unwrap();
             if let Some(st) = reg.get(&name) {
                 let mut st = st.lock().unwrap();
                 st.status = AppStatus::Stopped(exit_code);
                 st.child_pid = None;
-                st.has_display
+                (st.has_display, st.win_region)
             } else {
-                false
+                (false, None)
             }
         };
 
-        // Transfer keyboard focus if exiting app held it
+        // Gap 1: clear the vacated region immediately so ghost chrome does not linger
+        #[cfg(target_os = "linux")]
+        if let (true, Some((wx, wy, ww, wh))) = (had_display, old_win_region) {
+            if let Some(fb_lock) = display::get() {
+                let mut fb = fb_lock.lock().unwrap();
+                fb.fill_rect(wx, wy, ww, wh, 0x0D1117FF);
+                fb.flush();
+            }
+        }
+
+        // Gap 2: transfer keyboard focus if exiting app held it
         auto_transfer_focus(&name, &app_registry, &focused);
 
         // T015: recompute tiled layout when a display app exits
         if had_display {
             apply_tiling_layout(&app_registry);
+            // Gap 3: repaint all borders at their new positions after reflow
             #[cfg(target_os = "linux")]
             repaint_all_borders(&app_registry, &focused);
         }
