@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P219+P220 complete -->
+last_updated: 2026-05-24  <!-- P221+P222 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,40 +18,36 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P221 — Sand Simulation
-  - P222 — Kakuro Puzzle
+  - P223 — Particle Fireworks
+  - P224 — Mandala Builder
 notes: |
-  P221: Sand Simulation. Create apps/sand/ WASM app.
+  P223: Particle Fireworks. Create apps/fireworks/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Falling-sand cellular automaton. Grid: COLS=160, ROWS=112, CELL=6px.
-        Grid occupies: x=0..960, y=32..704 (GY=32, grid height=672, 672/6=112 rows).
-        5 materials: Empty (0x0D1117FF), Sand (0xE2B96FFF), Water (0x2B65ECFF),
-          Stone (0x8B949EFF), Fire (0xFF6B35FF).
-        Physics per tick:
-          Sand: falls down if empty below; slides diag if blocked; stays.
-          Water: falls if empty; spreads left/right randomly; displaces sand upward.
-          Fire: spreads to adjacent empty cells 5% chance; extinguishes after 8 ticks (use age field).
-          Stone: static, never moves.
-        State: grid[row][col] = material + age (u8 each). Tick processes bottom-to-top.
-        Controls: ←→↑↓ = move cursor; 1-5 = select material; Space = paint at cursor;
-          H = hold-to-paint mode toggle; C = clear; Q = quit.
-        Cursor: 3×3 brush. Draw cursor position indicator. Show material name in header.
-        Ping-pong tick = one physics step.
+        Launch particle bursts; gravity+fade; colorful trails; ping-pong tick.
+        Each burst: 60-120 particles from a random screen position.
+        Particle has: x,y (f32 fixed-point FP=256), vx,vy, color (HSV-cycled), age, max_age.
+        Physics: vy += gravity each tick; x += vx; y += vy; age += 1.
+        Trail: draw particles with decreasing alpha as age increases.
+        Color: cycle hue each burst (LCG). Particle sizes 2×2 px.
+        Controls: Space = new burst at random position; Q = quit.
+        Auto-launch burst every 60 ticks if no burst in last 60 ticks.
 
-  P222: Kakuro Puzzle. Create apps/kakuro/ WASM app.
+  P224: Mandala Builder. Create apps/mandala/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        8×8 grid Kakuro puzzle. Each clue cell shows H:sum/V:sum.
-        3 hardcoded puzzles. Cells: black (clue), white (entry), or blocked.
-        Entry cells: digits 1-9, no repeats in run. Arrow nav (↑↓←→) within entry cells.
-        Number keys 1-9 = fill selected cell. Backspace = clear. C = check (highlight errors).
-        N = next puzzle. Q = quit. Cell size 72×72px. Show check result in footer.
-        Use CELL_W=72, CELL_H=72, OX=48, OY=48 (grid origin).
+        Rotational symmetry: N=3..16 fold. Draw with cursor on 480×480 canvas (center 480,400).
+        Pattern types: dot (filled circle r=4); line (from center); arc (radius ring).
+        Ping-pong tick = rotate base_angle by 1 degree.
+        All drawn marks replicated N times rotated. Marks stored as Vec<Mark>.
+        Controls: ←→ = symmetry count (3-16); ↑↓ = pattern type; Space = add mark at cursor angle;
+          C = clear marks; Q = quit. Show current symmetry count in header.
 
 ## Queue (implement in order after current batch)
-- [ ] P223 — Particle Fireworks: apps/fireworks/ launch particles; gravity+fade; colorful trails; ping-pong tick; Space=new burst; Q=quit
-- [ ] P224 — Mandala Builder: apps/mandala/ rotational symmetry 3-16; draw arc/dot/line; ping-pong rotation; ←→ symmetry count; S save pattern
+- [ ] P225 — Fluid Simulation: apps/fluid/ SPH particles; pressure+viscosity; color by speed; ping-pong tick; Space=add fluid; Q=quit
+- [ ] P226 — Logic Gates Simulator: apps/logic-gates/ AND/OR/NOT/XOR/NAND/NOR; wire connections; toggle inputs; propagate; 5 circuit examples
 
 ## Completed (recent — full list in plan README)
+- [x] P221 — Sand Simulation: apps/sand/ COLS=160 ROWS=112 CELL=6; 5 materials; RLE draw; 3×3 brush; hold-paint; H/C/1-5/arrows/Q
+- [x] P222 — Kakuro Puzzle: apps/kakuro/ 8×8; 3 puzzles; clue/entry/blocked; run check (dupe+sum); C/N/arrows/1-9/Bksp/Q
 - [x] P219 — Waveform Oscilloscope: apps/oscilloscope/ 2-channel; 4 waveforms; amp/freq controls; overlay mode; Tab/1-4/A/Z/S/X/O/Q
 - [x] P220 — Binary Tree Visualizer: apps/bin-tree/ 31-node; in/pre/post/bfs traversal; gold active highlight; traversal strip; Tab/R/Space/Q
 - [x] P217 — Cellular Automaton: apps/cellular/ 1D Wolfram CA; 120 cells; 83 rows scroll; VecDeque; rule 0-255; +/-/R/Space/Q

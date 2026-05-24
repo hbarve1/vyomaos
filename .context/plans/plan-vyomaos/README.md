@@ -228,6 +228,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 218 — Color Theory Wheel | `apps/color-wheel/` HSV disc CX=420 R=200 CELL=6; harmony markers; complementary/triadic/analogous/tetradic; swatches; +/-/Space/Q | **complete** | — |
 | 219 — Waveform Oscilloscope | `apps/oscilloscope/` 2-channel; Sin/Square/Sawtooth/Triangle; amp 1-5; freq 1-8; overlay mode; Tab/1-4/A/Z/S/X/O/Q | **complete** | — |
 | 220 — Binary Tree Visualizer | `apps/bin-tree/` 31-node; radius=22; traversal strip; In/Pre/Post/BFS; gold active node; Tab/R/Space/Q | **complete** | — |
+| 221 — Sand Simulation | `apps/sand/` falling-sand CA; COLS=160 ROWS=112 CELL=6; 5 materials (Empty/Sand/Water/Stone/Fire); RLE draw; 3×3 brush; H=hold; C=clear; Q=quit | **complete** | — |
+| 222 — Kakuro Puzzle | `apps/kakuro/` 8×8 grid; 3 hardcoded puzzles; clue/entry/blocked cells; run-check logic; C=check; N=next; Q=quit | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
