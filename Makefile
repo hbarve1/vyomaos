@@ -85,7 +85,7 @@ $(SUPERVISOR_STAMP): supervisor/Cargo.toml supervisor/.cargo/config.toml $(SUPER
 	@touch $(SUPERVISOR_STAMP)
 
 # ── apps (WASM) ───────────────────────────────────────────────────────────────
-apps: $(APPS_STAMP)
+apps: check-manifests $(APPS_STAMP)
 
 $(APPS_STAMP): $(APPS_SRC) | image
 	@mkdir -p $(OUT)

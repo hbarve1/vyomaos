@@ -856,7 +856,7 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         watchdog_backoff: Arc::new(Mutex::new(0u64)),
         has_mouse:        caps.mouse,
         has_display:      caps.display,
-        win_region:       manifest.window.map(|wr| (wr.x, wr.y, wr.w, wr.h)),
+        win_region:       manifest.window.as_ref().map(|wr| (wr.x, wr.y, wr.w, wr.h)),
     }));
     app_registry.lock().unwrap().insert(name.clone(), state);
 

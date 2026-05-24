@@ -22,13 +22,24 @@ pub fn default_restart() -> String {
 
 // ── App manifest structs ──────────────────────────────────────────────────────
 
-#[derive(Debug, Default, Deserialize, Clone, Copy)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Default, Deserialize, Clone)]
 pub struct WindowRegion {
+    // Screen coordinates used by supervisor for hit-testing and z-ordering.
+    #[serde(default)]
     pub x: u32,
+    #[serde(default)]
     pub y: u32,
+    #[serde(default)]
     pub w: u32,
+    #[serde(default)]
     pub h: u32,
+    // App-declared display metadata (optional; ignored by supervisor layout engine).
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub width: Option<u32>,
+    #[serde(default)]
+    pub height: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
