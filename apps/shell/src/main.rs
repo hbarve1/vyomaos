@@ -145,13 +145,35 @@ fn main() {
     }
 }
 
+// ── Pure echo helper ─────────────────────────────────────────────────────────
+
+/// Returns `Some(text)` when `input` is an `echo` command, `None` otherwise.
+/// `echo` (no args) returns `Some("")`; `echo <text>` returns `Some("<text>")`.
+fn parse_echo_cmd(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    if trimmed == "echo" {
+        Some(String::new())
+    } else if let Some(rest) = trimmed.strip_prefix("echo ") {
+        Some(rest.to_string())
+    } else {
+        None
+    }
+}
+
 // ── Command dispatcher ────────────────────────────────────────────────────────
 
 fn handle_command(cmd: &str, lines: &mut Vec<String>) {
+    // echo is handled locally — no IPC needed
+    if let Some(text) = parse_echo_cmd(cmd) {
+        push_line(lines, text);
+        return;
+    }
+
     match cmd {
         "help" => {
             push_line(lines, "commands:".into());
             push_line(lines, "  help              — this text".into());
+            push_line(lines, "  echo [text]       — print text to output".into());
             push_line(lines, "  ps                — list all apps + status".into());
             push_line(lines, "  status            — running app count".into());
             push_line(lines, "  list              — list app names".into());
@@ -488,4 +510,39 @@ fn flush() {
     // Pipe stdout is block-buffered — must flush explicitly so VYOMA_DRAW
     // commands reach the supervisor without waiting for the buffer to fill.
     let _ = std::io::stdout().flush();
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::parse_echo_cmd;
+
+    #[test]
+    fn parse_echo_cmd_basic() {
+        assert_eq!(parse_echo_cmd("echo hello"), Some("hello".to_string()));
+    }
+
+    #[test]
+    fn parse_echo_cmd_no_args() {
+        assert_eq!(parse_echo_cmd("echo"), Some(String::new()));
+    }
+
+    #[test]
+    fn parse_echo_cmd_not_echo() {
+        assert_eq!(parse_echo_cmd("ls"), None);
+    }
+
+    #[test]
+    fn parse_echo_cmd_empty() {
+        assert_eq!(parse_echo_cmd(""), None);
+    }
+
+    #[test]
+    fn parse_echo_cmd_with_spaces() {
+        assert_eq!(
+            parse_echo_cmd("echo  hello world"),
+            Some(" hello world".to_string())
+        );
+    }
 }
