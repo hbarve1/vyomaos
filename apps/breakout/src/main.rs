@@ -95,7 +95,7 @@ impl Game {
             self.ball_x = 0;
             self.vel_x = self.vel_x.abs();
         }
-        if self.ball_x + BALL_SZ as i32 > W as i32 {
+        if self.ball_x + (BALL_SZ as i32) > W as i32 {
             self.ball_x = W as i32 - BALL_SZ as i32;
             self.vel_x = -self.vel_x.abs();
         }

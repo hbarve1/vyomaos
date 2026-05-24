@@ -147,7 +147,7 @@ fn main() {
                 draw(&apps, cursor);
             }
             "\x1b[B" => {
-                if cursor + COLS as usize < n { cursor += COLS as usize; }
+                if cursor + (COLS as usize) < n { cursor += COLS as usize; }
                 draw(&apps, cursor);
             }
             "\x1b[D" => {

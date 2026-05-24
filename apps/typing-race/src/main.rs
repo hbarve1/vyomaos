@@ -248,7 +248,7 @@ fn draw(r: &Race) {
 
 fn main() {
     let stdin = io::stdin();
-    let seed: u64 = 0xACE1234567890ABCULL;
+    let seed: u64 = 0xACE1234567890ABC;
     let mut race = Race::new(seed);
 
     println!("@supervisor: raise typing-race");

@@ -120,7 +120,7 @@ impl Game {
         // Move player bullet up
         if let Some((bx, by)) = self.pbullet {
             let ny = by - 12;
-            if ny + BULLET_H as i32 < HEADER_H as i32 {
+            if ny + (BULLET_H as i32) < HEADER_H as i32 {
                 self.pbullet = None;
             } else {
                 // Check alien hits
@@ -130,8 +130,8 @@ impl Game {
                         if !self.aliens[row][col] { continue; }
                         let ax = ALIEN_X0 + self.off_x + col as i32 * ALIEN_COL_STEP;
                         let ay = ALIEN_Y0 + self.off_y + row as i32 * ALIEN_ROW_STEP;
-                        if bx + BULLET_W as i32 > ax && bx < ax + ALIEN_W as i32
-                            && ny + BULLET_H as i32 > ay && ny < ay + ALIEN_H as i32 {
+                        if bx + (BULLET_W as i32) > ax && bx < ax + ALIEN_W as i32
+                            && ny + (BULLET_H as i32) > ay && ny < ay + ALIEN_H as i32 {
                             self.aliens[row][col] = false;
                             self.alien_count -= 1;
                             self.score += 10 + (ALIEN_ROWS - 1 - row) as u32 * 5;
@@ -153,8 +153,8 @@ impl Game {
             // Check player hit
             let bx = slot.0; let by = slot.1;
             let px = self.player_x;
-            if bx + BULLET_W as i32 > px && bx < px + PLAYER_W as i32
-                && by + BULLET_H as i32 > PLAYER_Y as i32 && by < (PLAYER_Y + PLAYER_H) as i32 {
+            if bx + (BULLET_W as i32) > px && bx < px + PLAYER_W as i32
+                && by + (BULLET_H as i32) > PLAYER_Y as i32 && by < (PLAYER_Y + PLAYER_H) as i32 {
                 self.state = State::Lost;
                 return;
             }

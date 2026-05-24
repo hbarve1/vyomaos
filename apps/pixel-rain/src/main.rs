@@ -83,7 +83,7 @@ impl App {
                 col.sub_tick = 0;
                 col.head += 1;
                 col.seed = lcg(col.seed);
-                if col.head - col.len as i32 > ROWS {
+                if col.head - (col.len as i32) > ROWS {
                     rng = lcg(rng);
                     col.head = -((rng % 25) as i32) - 5;
                     rng = lcg(rng);

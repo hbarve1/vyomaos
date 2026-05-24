@@ -1,0 +1,12 @@
+[package]
+name    = "type-stats"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "type-stats"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+strip = true

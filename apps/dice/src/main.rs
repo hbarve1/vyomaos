@@ -67,7 +67,7 @@ impl App {
             sel_type: 5, // default d20
             count: 1,
             history: Vec::new(),
-            seed: 0xDICE12345678ABCD,
+            seed: 0xD1CE12345678ABCD,
             last: None,
         }
     }
