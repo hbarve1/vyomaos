@@ -1,5 +1,42 @@
 // Lifecycle unit tests — TDD RED until should_restart is implemented.
 
+// ── is_watchdog_kill ──────────────────────────────────────────────────────────
+
+#[test]
+fn test_watchdog_sentinel_minus_one_is_kill() {
+    assert!(
+        supervisor::lifecycle::is_watchdog_kill(-1),
+        "exit code -1 is the watchdog-kill sentinel"
+    );
+}
+
+#[test]
+fn test_zero_exit_code_is_not_watchdog_kill() {
+    assert!(
+        !supervisor::lifecycle::is_watchdog_kill(0),
+        "exit code 0 (clean exit) must not be treated as a watchdog kill"
+    );
+}
+
+#[test]
+fn test_positive_exit_code_is_not_watchdog_kill() {
+    assert!(
+        !supervisor::lifecycle::is_watchdog_kill(1),
+        "non-zero positive exit code must not be treated as a watchdog kill"
+    );
+}
+
+#[test]
+fn test_negative_non_sentinel_is_not_watchdog_kill() {
+    // Only -1 is the sentinel; other negative values are not watchdog kills.
+    assert!(
+        !supervisor::lifecycle::is_watchdog_kill(-2),
+        "exit code -2 must not match the watchdog sentinel"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 // (1) restart_policy "never" → should not restart
 #[test]
 fn test_never_policy_does_not_restart() {

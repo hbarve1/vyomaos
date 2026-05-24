@@ -967,6 +967,7 @@ fn main() {
                             // Kill the child process
                             if let Some(pid) = st.child_pid {
                                 log_warn!(Subsystem::Lifecycle, Some(name.as_str()), "silent for {}s (limit={wsecs}s) — killing pid {pid}", elapsed.as_secs());
+                                show_crash_toast(name, -1);
                                 #[cfg(target_os = "linux")]
                                 unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
                             }
@@ -2933,6 +2934,41 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
     }
 
     log_warn!(Subsystem::Display, Some(sender), "unknown command: {cmd}");
+}
+
+// ── Crash / watchdog toast ────────────────────────────────────────────────────
+
+fn show_crash_toast(name: &str, code: i32) {
+    let title = format!("{name} crashed");
+    let msg = if supervisor::lifecycle::is_watchdog_kill(code) {
+        "killed by watchdog (no output)".to_string()
+    } else {
+        format!("exited with code {code}")
+    };
+    #[cfg(target_os = "linux")]
+    {
+        const NX: u32 = 1020;
+        const NY: u32 = 10;
+        const NW: u32 = 400;
+        const NH: u32 = 60;
+        if let Some(fb_lock) = display::get() {
+            let mut fb = fb_lock.lock().unwrap();
+            fb.fill_rect(NX, NY, NW, NH, 0x21262DFF);
+            fb.rect_border(NX, NY, NW, NH, 0x58A6FFFF);
+            fb.draw_text(NX + 8, NY + 8, &title, 0xFFFFFFFF, font::FontSize::Medium);
+            fb.draw_text(NX + 8, NY + 28, &msg, 0x8B949EFF, font::FontSize::Medium);
+            fb.flush();
+        }
+        thread::spawn(move || {
+            thread::sleep(std::time::Duration::from_secs(3));
+            if let Some(fb_lock) = display::get() {
+                let mut fb = fb_lock.lock().unwrap();
+                fb.fill_rect(NX, NY, NW, NH, 0x0D1117FF);
+                fb.flush();
+            }
+        });
+    }
+    log_info!(Subsystem::Display, None, "crash toast: {title:?} — {msg:?}");
 }
 
 // ── Focus transfer on app exit ────────────────────────────────────────────────
