@@ -25,3 +25,26 @@ fn test_valid_ipc_format_parses_correctly() {
     assert_eq!(target,  "ping",            "target mismatch");
     assert_eq!(payload, "hello from pong", "payload mismatch");
 }
+
+// validate_kill_target tests
+
+#[test]
+fn validate_kill_target_found() {
+    assert!(supervisor::ipc::validate_kill_target("shell", &["shell", "ticker"]));
+}
+
+#[test]
+fn validate_kill_target_not_found() {
+    assert!(!supervisor::ipc::validate_kill_target("missing", &["shell", "ticker"]));
+}
+
+#[test]
+fn validate_kill_target_empty_list() {
+    assert!(!supervisor::ipc::validate_kill_target("shell", &[]));
+}
+
+#[test]
+fn validate_kill_target_exact_match() {
+    // should not match substrings
+    assert!(!supervisor::ipc::validate_kill_target("she", &["shell"]));
+}

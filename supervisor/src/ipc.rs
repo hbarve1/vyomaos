@@ -14,3 +14,9 @@ pub fn parse_ipc_target(line: &str) -> Result<(&str, &str), String> {
     let payload = &rest[sep + 2..];
     Ok((target, payload))
 }
+
+/// Return `true` if `name` exactly matches one of the entries in `running_names`.
+/// Pure function — no I/O, no side effects.
+pub fn validate_kill_target<'a>(name: &str, running_names: &'a [&'a str]) -> bool {
+    running_names.iter().any(|&n| n == name)
+}
