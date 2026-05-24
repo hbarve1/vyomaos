@@ -34,7 +34,7 @@ use std::{
 use sha2::{Digest, Sha256};
 
 use supervisor::logging::{format_log, Level, Subsystem};
-use supervisor::manifest::{AppManifest, AppMeta, BootConfig, BootEntry, Capabilities, WindowRegion};
+use supervisor::manifest::{AppManifest, BootConfig, BootEntry};
 
 macro_rules! log_info {
     ($sub:expr, $app:expr, $($arg:tt)*) => {
