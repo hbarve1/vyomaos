@@ -1,6 +1,6 @@
-// Tests for display module: word-wrap logic, cursor draw/restore, titlebar colors, accent colors.
+// Tests for display module: word-wrap logic, cursor draw/restore, titlebar colors, accent colors, alpha blending.
 
-use supervisor::display::{app_accent_color, Framebuffer, CURSOR_W, CURSOR_H, titlebar_color};
+use supervisor::display::{self, app_accent_color, Framebuffer, CURSOR_W, CURSOR_H, titlebar_color};
 
 // ── titlebar_color ────────────────────────────────────────────────────────────
 
@@ -213,4 +213,33 @@ fn accent_color_empty_name_does_not_panic() {
         PALETTE.contains(&color),
         "app_accent_color(\"\") returned 0x{color:08X} which is not in the palette"
     );
+}
+
+// -- blend_alpha unit tests ---------------------------------------------------
+
+#[test]
+fn blend_alpha_fully_opaque_returns_fg() {
+    // a=255 -> result equals fg (alpha ignored on output byte)
+    let result = display::blend_alpha(0xFF0000FF, 0x00FF00FF, 255);
+    assert_eq!(result & 0xFFFFFF00, 0xFF000000); // red channel dominant
+}
+
+#[test]
+fn blend_alpha_fully_transparent_returns_bg() {
+    let result = display::blend_alpha(0xFF0000FF, 0x00FF00FF, 0);
+    assert_eq!(result & 0xFFFFFF00, 0x00FF0000); // green channel dominant
+}
+
+#[test]
+fn blend_alpha_midpoint_is_between() {
+    // 50% blend of white fg (0xFFFFFF) over black bg (0x000000) -> ~0x7F7F7F
+    let result = display::blend_alpha(0xFFFFFFFF, 0x000000FF, 128);
+    let r = (result >> 24) & 0xFF;
+    assert!(r >= 0x7E && r <= 0x81, "r={r} not near 0x80");
+}
+
+#[test]
+fn blend_alpha_always_sets_alpha_ff() {
+    let result = display::blend_alpha(0x12345678, 0xAABBCCFF, 100);
+    assert_eq!(result & 0xFF, 0xFF);
 }
