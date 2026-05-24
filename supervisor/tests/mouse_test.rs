@@ -66,3 +66,44 @@ fn local_coords_shell_window_offset() {
 fn local_coords_mid_window() {
     assert_eq!(to_local(250, 350, 200, 300), (50, 50));
 }
+
+// ── dispatch event format ─────────────────────────────────────────────────────
+
+fn format_mouse_event(lx: i32, ly: i32, btn: u8) -> String {
+    if btn == 0 {
+        format!("VYOMA_INPUT:mouse:move:{lx},{ly}")
+    } else {
+        let bname = match btn { 1 => "left", 2 => "right", 4 => "middle", _ => "left" };
+        format!("VYOMA_INPUT:mouse:click:{lx},{ly}:{bname}")
+    }
+}
+
+#[test]
+fn move_event_format() {
+    assert_eq!(format_mouse_event(120, 80, 0), "VYOMA_INPUT:mouse:move:120,80");
+}
+
+#[test]
+fn left_click_format() {
+    assert_eq!(format_mouse_event(10, 20, 1), "VYOMA_INPUT:mouse:click:10,20:left");
+}
+
+#[test]
+fn right_click_format() {
+    assert_eq!(format_mouse_event(0, 0, 2), "VYOMA_INPUT:mouse:click:0,0:right");
+}
+
+#[test]
+fn middle_click_format() {
+    assert_eq!(format_mouse_event(5, 5, 4), "VYOMA_INPUT:mouse:click:5,5:middle");
+}
+
+#[test]
+fn unknown_btn_falls_back_to_left() {
+    assert_eq!(format_mouse_event(1, 1, 7), "VYOMA_INPUT:mouse:click:1,1:left");
+}
+
+#[test]
+fn move_event_zero_coords() {
+    assert_eq!(format_mouse_event(0, 0, 0), "VYOMA_INPUT:mouse:move:0,0");
+}

@@ -1,7 +1,7 @@
 // Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
-use supervisor::windows::compute_tiling;
+use supervisor::windows::{compute_tiling, compute_tiling_with_hints};
 
 const W: u32 = 1024;
 const H: u32 = 768;
@@ -128,5 +128,46 @@ fn test_all_regions_within_screen() {
             assert!(x + w <= W, "n={n}: region right edge {}", x + w);
             assert!(y + h <= H, "n={n}: region bottom edge {}", y + h);
         }
+    }
+}
+
+// ── compute_tiling_with_hints ─────────────────────────────────────────────────
+
+#[test]
+fn test_hints_4_apps_produces_4_regions() {
+    let hints = vec![(0u32, 0u32); 4];
+    let r = compute_tiling_with_hints(4, W, H, &hints);
+    assert_eq!(r.len(), 4);
+}
+
+#[test]
+fn test_hints_zero_min_matches_no_hint() {
+    // All-zero hints should give the same result as plain compute_tiling
+    for n in 1..=9 {
+        let hints = vec![(0u32, 0u32); n];
+        let with_hints = compute_tiling_with_hints(n, W, H, &hints);
+        let plain      = compute_tiling(n, W, H);
+        assert_eq!(with_hints, plain, "n={n}: zero hints should match plain tiling");
+    }
+}
+
+#[test]
+fn test_hints_no_overlap_4_apps() {
+    let hints = vec![(100u32, 80u32); 4];
+    let r = compute_tiling_with_hints(4, W, H, &hints);
+    for i in 0..r.len() {
+        for j in (i + 1)..r.len() {
+            assert!(!regions_overlap(r[i], r[j]), "regions {i} and {j} overlap");
+        }
+    }
+}
+
+#[test]
+fn test_hints_all_within_screen_4_apps() {
+    let hints = vec![(200u32, 150u32); 4];
+    let r = compute_tiling_with_hints(4, W, H, &hints);
+    for &(x, y, w, h) in &r {
+        assert!(x + w <= W, "region right edge {} exceeds screen", x + w);
+        assert!(y + h <= H, "region bottom edge {} exceeds screen", y + h);
     }
 }

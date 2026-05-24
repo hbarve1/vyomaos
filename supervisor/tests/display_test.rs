@@ -1,5 +1,6 @@
-// Tests for word-wrap logic.
-// We extract the wrapper into a pure function so it's testable without rendering.
+// Tests for display module: word-wrap logic and cursor draw/restore.
+
+use supervisor::display::{Framebuffer, CURSOR_W, CURSOR_H};
 
 /// Pure word-wrap helper — duplicated here because supervisor is a binary crate.
 fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {
@@ -75,4 +76,74 @@ fn exactly_max_chars_stays_on_one_line() {
 #[test]
 fn trailing_space_does_not_produce_empty_line() {
     assert_eq!(wrap_words("hello ", 10), vec!["hello"]);
+}
+
+// ── Cursor draw / restore ─────────────────────────────────────────────────────
+
+#[test]
+fn test_cursor_draw_restore() {
+    let (mut fb, _) = Framebuffer::new_for_test(100, 80);
+    // Position cursor at (10, 10) and fill back-buffer with a known pattern.
+    fb.cursor.cx = 10;
+    fb.cursor.cy = 10;
+    // Write a distinctive pattern under the cursor region.
+    let cw = CURSOR_W as usize;
+    let ch = CURSOR_H as usize;
+    let stride = 100usize * 4;
+    for row in 0..ch {
+        for col in 0..cw {
+            let py = 10 + row;
+            let px = 10 + col;
+            let off = py * stride + px * 4;
+            fb.back[off]     = (row  * 13) as u8;
+            fb.back[off + 1] = (col  * 7)  as u8;
+            fb.back[off + 2] = 0xAB;
+            fb.back[off + 3] = 0xFF;
+        }
+    }
+    // Snapshot original back-buffer pixels under the cursor region.
+    let mut original = vec![0u8; cw * ch * 4];
+    for row in 0..ch {
+        for col in 0..cw {
+            let py = 10 + row;
+            let px = 10 + col;
+            let off = py * stride + px * 4;
+            let dst = (row * cw + col) * 4;
+            original[dst..dst + 4].copy_from_slice(&fb.back[off..off + 4]);
+        }
+    }
+
+    // Draw cursor — saved_under must match original pixels.
+    fb.draw_cursor();
+    assert!(fb.cursor.drawn, "drawn flag must be set after draw_cursor");
+    for (i, (&saved, &orig)) in fb.cursor.saved_under.iter().zip(original.iter()).enumerate() {
+        assert_eq!(saved, orig, "saved_under mismatch at byte {i}");
+    }
+
+    // Restore — back-buffer must match original again.
+    fb.restore_under_cursor();
+    assert!(!fb.cursor.drawn, "drawn flag must be cleared after restore");
+    for row in 0..ch {
+        for col in 0..cw {
+            let py = 10 + row;
+            let px = 10 + col;
+            let off = py * stride + px * 4;
+            let dst = (row * cw + col) * 4;
+            assert_eq!(
+                fb.back[off..off + 4],
+                original[dst..dst + 4],
+                "pixel ({px},{py}) not restored"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_restore_noop_when_not_drawn() {
+    let (mut fb, _) = Framebuffer::new_for_test(50, 50);
+    // Fill back with known bytes.
+    fb.back.iter_mut().enumerate().for_each(|(i, b)| *b = (i % 251) as u8);
+    let snapshot = fb.back.clone();
+    fb.restore_under_cursor(); // drawn=false → must be a no-op
+    assert_eq!(fb.back, snapshot, "restore_under_cursor must not modify back-buffer when not drawn");
 }
