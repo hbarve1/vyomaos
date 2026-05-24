@@ -1,0 +1,204 @@
+VyomaOS Community License
+Version 1.0, 2025
+
+Copyright (c) 2025–2026 Himank Barve. All rights reserved.
+
+PREAMBLE
+
+This license governs use of the accompanying software ("VyomaOS"). By using
+VyomaOS you accept this license. If you do not accept it, do not use VyomaOS.
+
+VyomaOS is made available under the terms of the Apache License 2.0 (the
+"Base License"), with the additional condition set out in Section 1 below
+(the "Commons Clause Condition"). Together they form the VyomaOS Community
+License. Where the Base License and this document conflict, this document
+controls.
+
+A copy of the Apache License 2.0 is included at the end of this file.
+
+────────────────────────────────────────────────────────────────────────────
+SECTION 1 — COMMONS CLAUSE CONDITION (Commercial Restriction)
+────────────────────────────────────────────────────────────────────────────
+
+Without a separate written Commercial License Agreement signed by Himank
+Barve, you may not:
+
+  (a) Sell VyomaOS or a Substantially Similar Product — meaning any product
+      or service whose value derives, in whole or in material part, from the
+      functionality of VyomaOS (including hosting, licensing, or distributing
+      VyomaOS or a derivative as part of a paid offering);
+
+  (b) Embed or bundle VyomaOS (or a derivative) in a commercial product,
+      appliance, or cloud service for which end-users pay a fee;
+
+  (c) Offer VyomaOS (or a derivative) as a managed service, platform, or
+      infrastructure product to third parties for remuneration.
+
+"Sell" means providing the software or a Substantially Similar Product to
+third parties, for a fee or other consideration (including revenue share,
+advertising, or data monetization), regardless of whether the source code is
+made available.
+
+This condition does NOT restrict:
+
+  * Personal use, research, education, or hobby projects;
+  * Use within a company solely for that company's own internal operations
+    (not offered to customers or the public);
+  * Open-source projects released under an OSI-approved license, provided
+    the project itself does not charge for the use of VyomaOS functionality;
+  * Academic publications and conference demonstrations.
+
+────────────────────────────────────────────────────────────────────────────
+SECTION 2 — PATENT RESERVATION
+────────────────────────────────────────────────────────────────────────────
+
+Himank Barve retains all patent rights in VyomaOS. This license does NOT
+grant any patent license for commercial use. The patent license included in
+the Apache License 2.0 (Section 3) applies only to the extent that such use
+is not restricted by Section 1 above. No patent license is granted, express
+or implied, for any commercial use described in Section 1 without a separate
+Commercial License Agreement.
+
+────────────────────────────────────────────────────────────────────────────
+SECTION 3 — TRADEMARKS
+────────────────────────────────────────────────────────────────────────────
+
+"VyomaOS", the VyomaOS logo, and associated marks are trademarks of
+Himank Barve. This license does not grant permission to use these marks
+except to accurately describe the origin of the software (e.g., "based on
+VyomaOS").
+
+────────────────────────────────────────────────────────────────────────────
+SECTION 4 — DISCLAIMER
+────────────────────────────────────────────────────────────────────────────
+
+VYOMAOS IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+HIMANK BARVE BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+CONNECTION WITH VYOMAOS OR THE USE OR OTHER DEALINGS IN VYOMAOS.
+
+────────────────────────────────────────────────────────────────────────────
+SECTION 5 — COMMERCIAL LICENSE
+────────────────────────────────────────────────────────────────────────────
+
+To obtain a commercial license for VyomaOS, contact:
+
+  Himank Barve
+  Email: honey.barve@gruve.ai
+  Subject: "VyomaOS Commercial License Inquiry"
+
+Commercial licenses are available for:
+  * Product embedding (one-time or per-unit)
+  * SaaS / hosted deployments (annual subscription)
+  * OEM / white-label distribution
+  * Government and enterprise site licenses
+
+────────────────────────────────────────────────────────────────────────────
+APACHE LICENSE 2.0 (Base License)
+────────────────────────────────────────────────────────────────────────────
+
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship made available under
+      the License, as indicated by a copyright notice that is included in
+      or attached to the work.
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other transformations
+      represent, as a whole, an original work of authorship.
+
+      "Contribution" shall mean any work of authorship submitted to the
+      Licensor for inclusion in the Work.
+
+      "Contributor" shall mean Licensor and any Legal Entity on behalf of
+      whom a Contribution has been received by the Licensor and included
+      within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License (including the Commons Clause Condition in Section 1
+      above), each Contributor hereby grants to You a perpetual, worldwide,
+      non-exclusive, no-charge, royalty-free, irrevocable copyright license
+      to reproduce, prepare Derivative Works of, publicly display, publicly
+      perform, sublicense, and distribute the Work and such Derivative Works
+      in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License (including the Commons Clause Condition and Patent
+      Reservation in Sections 1–2 above), each Contributor hereby grants
+      to You a perpetual, worldwide, non-exclusive, no-charge, royalty-free,
+      irrevocable patent license to make, have made, use, offer to sell,
+      sell, import, and otherwise transfer the Work.
+
+   4. Redistribution. You may reproduce and distribute copies of the Work
+      or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You meet
+      the following conditions:
+
+      (a) You must give any other recipients of the Work or Derivative Works
+          a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works that
+          You distribute, all copyright, patent, trademark, and attribution
+          notices from the Source form of the Work; and
+
+      (d) If the Work includes a "NOTICE" text file, You must include a
+          readable copy of the attribution notices contained within such
+          NOTICE file.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution submitted for inclusion in the Work shall be under
+      the terms and conditions of this License.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for describing the origin of the Work.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or agreed
+      to in writing, Licensor provides the Work on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND.
+
+   8. Limitation of Liability. In no event and under no legal theory shall
+      any Contributor be liable for damages arising from this License or
+      use of the Work.
+
+   9. Accepting Warranty or Additional Liability. While redistributing the
+      Work, You may offer acceptance of support, warranty, indemnity, or
+      other liability obligations consistent with this License. However,
+      in accepting such obligations, You may offer such obligations only
+      on Your own behalf and sole responsibility.
+
+   END OF TERMS AND CONDITIONS
