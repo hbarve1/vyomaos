@@ -55,7 +55,8 @@ DOCKER_RUN := docker run --rm \
 KVM ?=
 
 # ── phony declarations ────────────────────────────────────────────────────────
-.PHONY: image kernel supervisor apps rootfs disk build run run-gui run-net run-gui-net shell clean clean-image data
+.PHONY: image kernel supervisor apps rootfs disk build run run-gui run-net run-gui-net shell clean clean-image data \
+        unit-test smoke test check-manifests
 
 # ── Docker image ──────────────────────────────────────────────────────────────
 image: $(DOCKERFILE)
@@ -325,6 +326,23 @@ $(DISK): | image
 data:
 	@mkdir -p $(DATA_DIR)
 	@echo "ℹ️  Host data directory ready: $(DATA_DIR)/"
+
+# ── unit-test (T027): supervisor cargo test inside Docker, RUSTFLAGS enforced ─
+unit-test: | image
+	$(DOCKER_RUN) env RUSTFLAGS="-D warnings" \
+	  cargo test --manifest-path supervisor/Cargo.toml \
+	  --target x86_64-unknown-linux-musl
+
+# ── smoke (T026): headless QEMU boot test — requires make build first ────────
+smoke: | image
+	$(DOCKER_RUN) bash base/scripts/smoke-test.sh
+
+# ── test (T028): unit-test + smoke — full test suite ─────────────────────────
+test: build unit-test smoke
+
+# ── check-manifests (T034): validate all apps/*/vyoma.toml files ─────────────
+check-manifests: | image
+	$(DOCKER_RUN) cargo run --manifest-path tools/check-manifests/Cargo.toml
 
 # ── build (all) ───────────────────────────────────────────────────────────────
 build: kernel supervisor apps rootfs disk data
