@@ -201,7 +201,7 @@ fn main() {
                 copied = None;
             }
             "\x1b[A" => { if cursor >= COLS as usize { cursor -= COLS as usize; } }
-            "\x1b[B" => { if cursor + COLS as usize < n { cursor += COLS as usize; } }
+            "\x1b[B" => { if cursor + (COLS as usize) < n { cursor += COLS as usize; } }
             "\x1b[D" => { if cursor > 0 { cursor -= 1; } }
             "\x1b[C" => { if cursor + 1 < n { cursor += 1; } }
             "" => {

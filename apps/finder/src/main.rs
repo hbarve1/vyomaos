@@ -277,7 +277,7 @@ fn main() {
                     }
                     Focus::Main => {
                         let n = items_for_sidebar(sidebar_cursor, &data_files).len();
-                        if main_cursor + GRID_COLS as usize < n { main_cursor += GRID_COLS as usize; }
+                        if main_cursor + (GRID_COLS as usize) < n { main_cursor += GRID_COLS as usize; }
                     }
                 }
                 let items = items_for_sidebar(sidebar_cursor, &data_files);
