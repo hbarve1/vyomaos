@@ -98,10 +98,10 @@ Clicking on any app's window transfers keyboard focus to that app. Only the focu
 - **FR-004**: Apps MUST be able to declare a preferred minimum width and height in their manifest's `[window]` section; the supervisor MUST honor these minimums when screen space permits.
 - **FR-005**: The supervisor MUST render a mouse cursor sprite at the current pointer position, composited above all app windows, whenever a mouse device is present.
 - **FR-006**: The supervisor MUST update the on-screen cursor position within 50 ms of receiving a mouse movement event from the input device.
-- **FR-007**: The supervisor MUST route mouse move and click events to the app whose window region contains the cursor, translated to that app's local coordinate space (origin at top-left of the window).
+- **FR-007**: The supervisor MUST route mouse move and click events to the app whose window region contains the cursor, translated to that app's local coordinate space (origin at top-left of the window), delivered as lines on the app's stdin using the format: `VYOMA_INPUT:mouse:move:<x>,<y>` for movement and `VYOMA_INPUT:mouse:click:<x>,<y>:<button>` for clicks (where `<button>` is `left`, `right`, or `middle`).
 - **FR-008**: Mouse events MUST only be delivered to apps that declare `mouse = true` in their manifest; apps without this capability MUST receive no mouse events.
 - **FR-009**: A mouse click on any app's window MUST transfer keyboard focus to that app; all subsequent keyboard input MUST be routed exclusively to the focused app.
-- **FR-010**: The currently focused app's window MUST be visually distinguished from unfocused windows via a distinct border color or highlight.
+- **FR-010**: The currently focused app's window MUST be visually distinguished from unfocused windows via a 2 px inset border (focused: accent color; unfocused: dim color). No title bar is rendered; the app owns 100% of its assigned window region pixels.
 - **FR-011**: When the focused app exits, the supervisor MUST automatically transfer focus to another running app.
 - **FR-012**: The tiling layout MUST support 1 through 9 simultaneously visible display apps without manual configuration.
 - **FR-013**: All existing display apps that do not declare `mouse = true` MUST continue to function correctly without any source code modifications.
@@ -129,9 +129,17 @@ Clicking on any app's window transfers keyboard focus to that app. Only the focu
 
 - The physical screen resolution is fixed at boot time; runtime resize is out of scope for this phase.
 - Mouse hardware delivers events via a standard Linux input device file already accessible to the supervisor.
-- The tiled layout uses an automatic grid algorithm (rows × columns chosen to minimize wasted space); manual window positioning by users is out of scope for this phase.
+- The tiled layout uses a column-first grid algorithm: columns = `ceil(sqrt(n))`, rows = `ceil(n / columns)`, windows filled left-to-right top-to-bottom; the last row's empty slots are absorbed by expanding those windows to fill the row. Manual window positioning is out of scope for this phase.
 - Floating (overlapping) windows are out of scope; all windows are tiled.
-- Window decorations are minimal — a colored border is sufficient to indicate focus state; title bars and close buttons are out of scope.
+- Window decoration is a 2 px inset border only (no title bar, no close button). The app owns 100% of its assigned region; focus state is indicated solely by border color (accent color when focused, dim color when unfocused).
 - Apps that do not declare `display = true` are entirely unaffected by this feature.
 - The supervisor runs on a single CPU core; compositing does not require multi-threaded rendering.
 - Maximum simultaneously visible display apps is 9 (3×3 grid); apps beyond this are queued without a visible region.
+
+## Clarifications
+
+### Session 2026-05-24
+
+- Q: What line format should the supervisor write to an app's stdin for mouse events? → A: `VYOMA_INPUT:mouse:move:<x>,<y>` for movement; `VYOMA_INPUT:mouse:click:<x>,<y>:<button>` for clicks (`button` = `left`, `right`, or `middle`). Mirrors the existing VYOMA_INPUT protocol prefix for consistency.
+- Q: How should the supervisor compute the tiling grid for non-square app counts? → A: Column-first grid: `columns = ceil(sqrt(n))`, `rows = ceil(n / columns)`, filled left-to-right; last row's empty slots are absorbed by expanding those windows to fill the row width.
+- Q: Does the supervisor render a title bar above each app's content area, or only a border? → A: Border only — a 2 px inset border on all sides; no title bar. App owns 100% of its assigned region. Focus shown by accent border color (focused) vs dim border color (unfocused).
