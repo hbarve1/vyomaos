@@ -218,6 +218,14 @@ static FONT_SIZE: OnceLock<Mutex<String>> = OnceLock::new();
 // Boot timestamp — used to render the elapsed clock in the menu bar.
 static BOOT_INSTANT: OnceLock<std::time::Instant> = OnceLock::new();
 
+// Rate-limit: tracks (last_draw_instant, last_focused_name) for the menu bar.
+// Menu bar is only repainted when ≥1 second has elapsed OR focused app changes.
+static LAST_MENUBAR_DRAW: OnceLock<Mutex<(std::time::Instant, Option<String>)>> = OnceLock::new();
+
+// Dirty-flag map: true if the app has issued at least one draw command since its
+// last flush.  Avoids repainting the title bar for windows with no new content.
+static APP_DIRTY: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
+
 // ── macOS-inspired chrome ─────────────────────────────────────────────────────
 
 const MENUBAR_H:       u32 = 24;   // global menu bar height
@@ -2331,6 +2339,34 @@ fn open_mouse_device() -> Option<std::fs::File> {
     None
 }
 
+/// Which traffic-light button was hit.
+#[derive(Debug, PartialEq)]
+pub enum TrafficLight {
+    Close,
+    Minimize,
+    Maximize,
+}
+
+/// Return the traffic-light button hit by screen point `(cx, cy)` for a window
+/// whose top-left corner is at `(wx, wy)`, or `None` if no button was hit.
+///
+/// Layout (matches `draw_titlebar`):
+///   close    at wx+ 8, tl_y  (12×12 px)
+///   minimize at wx+24, tl_y  (12×12 px)
+///   maximize at wx+40, tl_y  (12×12 px)
+/// where tl_y = wy + (TITLEBAR_H − TL_DOT) / 2 = wy + 8.
+pub fn traffic_light_hit(cx: i32, cy: i32, wx: u32, wy: u32) -> Option<TrafficLight> {
+    let tl_y = wy as i32 + 8; // (TITLEBAR_H=28 - TL_DOT=12) / 2 = 8
+    if cy < tl_y || cy >= tl_y + 12 {
+        return None;
+    }
+    let wx = wx as i32;
+    if cx >= wx + 8  && cx < wx + 20  { return Some(TrafficLight::Close);    }
+    if cx >= wx + 24 && cx < wx + 36  { return Some(TrafficLight::Minimize); }
+    if cx >= wx + 40 && cx < wx + 52  { return Some(TrafficLight::Maximize); }
+    None
+}
+
 /// Dispatch a mouse event:
 ///  P32 — check close-button hit for all display apps; send VYOMA_SYSTEM:window_event:close
 ///  P33 — on click, raise topmost window under cursor in Z-order; set keyboard focus
@@ -2348,6 +2384,46 @@ fn dispatch_mouse(
     let z_snapshot: Vec<String> = Z_ORDER.get()
         .map(|m| m.lock().unwrap().clone())
         .unwrap_or_default();
+
+    // Traffic-light hit-test: on any click, check if a dot was hit before
+    // falling through to the focus/raise and mouse-event dispatch logic.
+    if btn != 0 {
+        let tl_hit = {
+            let reg = app_registry.lock().unwrap();
+            let mut result: Option<(String, TrafficLight)> = None;
+            for name in &z_snapshot {
+                let Some(state_arc) = reg.get(name) else { continue };
+                let st = state_arc.lock().unwrap();
+                let Some((wx, wy, _ww, _wh)) = st.win_region else { continue };
+                if let Some(dot) = traffic_light_hit(cx, cy, wx, wy) {
+                    result = Some((name.clone(), dot));
+                    break;
+                }
+            }
+            result
+        };
+        if let Some((name, dot)) = tl_hit {
+            match dot {
+                TrafficLight::Close => {
+                    let pid = {
+                        let reg = app_registry.lock().unwrap();
+                        reg.get(&name).and_then(|st| st.lock().unwrap().child_pid)
+                    };
+                    if let Some(pid) = pid {
+                        unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+                        log_info!(Subsystem::Lifecycle, Some(name.as_str()), "traffic-light close: killed {name} (pid {pid})");
+                    }
+                }
+                TrafficLight::Minimize => {
+                    log_info!(Subsystem::Display, Some(name.as_str()), "minimize requested (stub)");
+                }
+                TrafficLight::Maximize => {
+                    log_info!(Subsystem::Display, Some(name.as_str()), "maximize requested (stub)");
+                }
+            }
+            return;
+        }
+    }
 
     // On click, raise topmost window under cursor and set keyboard focus
     if btn != 0 {
@@ -2437,23 +2513,69 @@ fn parse_color(s: &str) -> Option<u32> {
 fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)>, focused: &FocusedApp) {
     let Some(fb_lock) = display::get() else { return };
 
+    // Mark this app dirty for any draw command other than flush/present.
+    // The flush handler checks and clears this flag before repainting the title bar.
+    if cmd != "flush" && cmd != "present" {
+        APP_DIRTY
+            .get_or_init(|| Mutex::new(HashMap::new()))
+            .lock()
+            .unwrap()
+            .insert(sender.to_string(), true);
+    }
+
     if cmd == "flush" || cmd == "present" {
         let focused_name = focused.lock().unwrap().clone();
         let is_focused = focused_name.as_deref() == Some(sender);
         let mut fb = fb_lock.lock().unwrap();
 
-        // Per-window macOS-style title bar
-        if let Some((wx, wy, ww, _wh)) = win {
-            if ww >= 60 {
-                draw_titlebar(&mut *fb, wx, wy, ww, is_focused, sender);
+        // Per-window macOS-style title bar — only repaint if this app has
+        // issued draw commands since its last flush (dirty flag).
+        let is_dirty = {
+            let mut dirty_map = APP_DIRTY
+                .get_or_init(|| Mutex::new(HashMap::new()))
+                .lock()
+                .unwrap();
+            let dirty = dirty_map.get(sender).copied().unwrap_or(false);
+            if dirty {
+                dirty_map.insert(sender.to_string(), false);
+            }
+            dirty
+        };
+
+        if is_dirty {
+            if let Some((wx, wy, ww, _wh)) = win {
+                if ww >= 60 {
+                    draw_titlebar(&mut *fb, wx, wy, ww, is_focused, sender);
+                }
             }
         }
 
-        // Global menu bar — read sw directly from held lock (avoids deadlock
-        // that would occur if we called display::screen_size() while holding fb).
+        // Global menu bar — only repaint when ≥1 second has elapsed since the
+        // last draw OR the focused app name has changed.
         let sw = fb.width;
         let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
-        draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref());
+        let should_draw_menubar = {
+            let mut last = LAST_MENUBAR_DRAW
+                .get_or_init(|| {
+                    Mutex::new((std::time::Instant::now() - std::time::Duration::from_secs(2), None))
+                })
+                .lock()
+                .unwrap();
+            let (ref mut last_instant, ref mut last_focused) = *last;
+            let time_elapsed = last_instant.elapsed() >= std::time::Duration::from_secs(1);
+            let focus_changed = last_focused.as_deref() != focused_name.as_deref();
+            if time_elapsed || focus_changed {
+                *last_instant = std::time::Instant::now();
+                *last_focused = focused_name.clone();
+                true
+            } else {
+                false
+            }
+        };
+
+        if should_draw_menubar {
+            draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref());
+        }
 
         fb.flush();
         return;
