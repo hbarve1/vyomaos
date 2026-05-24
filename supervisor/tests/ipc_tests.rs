@@ -58,3 +58,41 @@ fn test_parse_ipc_target_non_ipc_line() {
     let result = supervisor::ipc::parse_ipc_target("not a message");
     assert!(result.is_err(), "non-IPC line should return Err, got Ok");
 }
+
+// ── @reply: routing helpers ───────────────────────────────────────────────────
+
+// is_reply_target("reply") returns true
+#[test]
+fn test_is_reply_target_reply() {
+    assert!(supervisor::ipc::is_reply_target("reply"),
+        "\"reply\" should be recognised as the reply pseudo-target");
+}
+
+// is_reply_target("shell") returns false
+#[test]
+fn test_is_reply_target_other_app() {
+    assert!(!supervisor::ipc::is_reply_target("shell"),
+        "\"shell\" should not be recognised as the reply pseudo-target");
+}
+
+// resolve_reply with a known sender returns the correct original sender
+#[test]
+fn test_resolve_reply_known_sender() {
+    use std::collections::HashMap;
+    let mut last_senders: HashMap<String, String> = HashMap::new();
+    // app_b received a message from app_a, so LAST_SENDER["app_b"] = "app_a"
+    last_senders.insert("app_b".to_string(), "app_a".to_string());
+    let result = supervisor::ipc::resolve_reply("app_b", &last_senders);
+    assert_eq!(result, Some("app_a"),
+        "resolve_reply should return \"app_a\" as the last sender to app_b");
+}
+
+// resolve_reply with an unknown sender returns None
+#[test]
+fn test_resolve_reply_unknown_sender() {
+    use std::collections::HashMap;
+    let last_senders: HashMap<String, String> = HashMap::new();
+    let result = supervisor::ipc::resolve_reply("unknown_app", &last_senders);
+    assert_eq!(result, None,
+        "resolve_reply should return None when no prior IPC message exists");
+}

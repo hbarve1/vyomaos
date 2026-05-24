@@ -236,6 +236,10 @@ type FocusedApp = Arc<Mutex<Option<String>>>;
 
 static Z_ORDER: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 
+// ── IPC reply routing: maps recipient_app → last sender_app ──────────────────
+
+static LAST_SENDER: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
 // ── P47: Raw TCP connection pool ──────────────────────────────────────────────
 
 static TCP_CONNS: OnceLock<Mutex<std::collections::HashMap<u32, std::net::TcpStream>>> =
@@ -619,6 +623,7 @@ fn main() {
     let _ = TCP_CONNS.set(Mutex::new(std::collections::HashMap::new()));
     let _ = CLIPBOARD.set(Mutex::new(String::new()));
     let _ = FONT_SIZE.set(Mutex::new("m".to_string()));
+    let _ = LAST_SENDER.set(Mutex::new(HashMap::new()));
 
     let inbox:        Inbox       = Arc::new(Mutex::new(HashMap::new()));
     let focused:      FocusedApp  = Arc::new(Mutex::new(None));
@@ -806,10 +811,45 @@ fn main() {
                                             }
                                         }
                                         InputAction::AltF => {
-                                            // Maximize focused app (stub).
+                                            // Snap focused app to left 2/3; others share right 1/3.
+                                            use supervisor::windows::compute_snap_layout;
                                             let focused_name = focused_input.lock().unwrap().clone();
                                             if let Some(ref name) = focused_name {
-                                                log_info!(Subsystem::Input, Some(name.as_str()), "alt+f: maximize {name} (stub)");
+                                                log_info!(Subsystem::Input, Some(name.as_str()), "alt+f: snap {name}");
+
+                                                // Collect sorted display-app names (same order as tiling).
+                                                let apps: Vec<String> = {
+                                                    let reg = registry_input.lock().unwrap();
+                                                    let mut v: Vec<String> = reg.iter()
+                                                        .filter(|(_, st)| st.lock().unwrap().win_region.is_some())
+                                                        .map(|(n, _)| n.clone())
+                                                        .collect();
+                                                    v.sort();
+                                                    v
+                                                };
+
+                                                let focused_idx = apps.iter().position(|n| n == name);
+                                                if let Some(idx) = focused_idx {
+                                                    #[cfg(target_os = "linux")]
+                                                    let (sw, sh) = display::screen_size().unwrap_or((1440, 900));
+                                                    #[cfg(not(target_os = "linux"))]
+                                                    let (sw, sh) = (1440u32, 900u32);
+
+                                                    let snap = compute_snap_layout(sw, sh, MENUBAR_H, idx, apps.len());
+                                                    {
+                                                        let reg = registry_input.lock().unwrap();
+                                                        for (i, app_name) in apps.iter().enumerate() {
+                                                            if let Some(st) = reg.get(app_name) {
+                                                                if let Some(&region) = snap.get(i) {
+                                                                    st.lock().unwrap().win_region = Some(region);
+                                                                    log_info!(Subsystem::Display, Some(app_name.as_str()),
+                                                                        "snap: assigned ({},{},{},{})", region.0, region.1, region.2, region.3);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    repaint_all_borders(&registry_input, &focused_input);
+                                                }
                                             }
                                         }
                                         // AltShiftTab handled above in the CSI branch.
@@ -1348,6 +1388,33 @@ fn route_or_print(
                 }
                 log_info!(Subsystem::Ipc, Some(sender), "broadcast: \"{}\" → {} app(s)", msg, map.len());
                 return;
+            }
+            // @reply: routes message back to whichever app last sent an IPC message
+            // to the current sender (i.e. LAST_SENDER[sender]).
+            if supervisor::ipc::is_reply_target(target) {
+                let reply_target = LAST_SENDER
+                    .get()
+                    .and_then(|m| m.lock().ok())
+                    .and_then(|map| map.get(sender).cloned());
+                match reply_target {
+                    Some(orig) => {
+                        let map = inbox.lock().unwrap();
+                        if let Some(tx) = map.get(&orig) {
+                            let _ = tx.send(msg.to_string());
+                        }
+                    }
+                    None => {
+                        log_warn!(Subsystem::Ipc, Some(sender),
+                            "@reply: no last sender recorded for {sender}, message dropped");
+                    }
+                }
+                return;
+            }
+            // Record that `sender` sent a message to `target` so `target` can @reply:.
+            if let Some(ls) = LAST_SENDER.get() {
+                if let Ok(mut map) = ls.lock() {
+                    map.insert(target.to_string(), sender.to_string());
+                }
             }
             let map = inbox.lock().unwrap();
             if let Some(tx) = map.get(target) {
