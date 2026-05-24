@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-24  <!-- P231+P232 complete -->
+last_updated: 2026-05-24  <!-- P233+P234 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,31 +18,35 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P233 — Terrain Generator
-  - P234 — Sorting Visualizer
+  - P235 — Clock Tower
+  - P236 — Markov Text
 notes: |
-  P233: Terrain Generator. Create apps/terrain/ WASM app.
+  P235: Clock Tower. Create apps/clock-tower/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        120×80 heightmap (f32 0..1). Diamond-square fractal generation.
-        Color by height: 0.0-0.25=deep blue, 0.25-0.4=blue, 0.4-0.6=green,
-        0.6-0.75=tan/yellow, 0.75-1.0=white.
-        Each cell 8×8px. R=regenerate with new LCG seed; Q=quit.
-        No ping-pong needed (static display, just R to regen).
+        Analog clock face centered at (480, 380), radius=300px.
+        Hour hand: length 150, width 6; Minute hand: length 220, width 4; Second hand: length 260, width 2.
+        60 tick marks around face: major (every 5) length 20, width 3; minor length 10, width 1.
+        12 hour numbers positioned around face.
+        Date display below center: "Sat 24 May 2026" style.
+        Ping-pong tick: advance simulated time 1 second per tick. Q=quit.
+        Use integer trig: precompute sin/cos tables for 0..60.
 
-  P234: Sorting Visualizer. Create apps/sort-viz/ WASM app.
+  P236: Markov Text. Create apps/markov-text/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        80 bars, height proportional to value (shuffled 1-80).
-        5 algorithms: Bubble, Insertion, Selection, Merge, Quick.
-        Ping-pong tick: one comparison/swap step per tick.
-        Color: default=C_SEL, comparing pair=C_ORANGE, sorted=C_GREEN.
-        Tab=next algorithm (resets); Space=restart with new shuffle; Q=quit.
-        Status bar: algorithm name, step count, comparisons.
+        200-word corpus (hardcoded tech/nature sentences).
+        Build bigram chain at startup. Generate 3 random sentences per generation.
+        Display sentences as wrapped text in a card.
+        Space=generate new sentences; Tab=cycle corpus (3 different corpora); Q=quit.
+        LCG for random word selection. Show corpus name in header.
+        No ping-pong needed (static display, regenerate on Space).
 
 ## Queue (implement in order after current batch)
-- [ ] P235 — Clock Tower: apps/clock-tower/ analog clock face; hour/min/sec hands; tick marks; date display; ping-pong 1s update; Q=quit
-- [ ] P236 — Markov Text: apps/markov-text/ bigram Markov chain over 200-word corpus; generate 3 sentences per tick; Space=generate; Tab=switch corpus; Q=quit
+- [ ] P237 — DNA Visualizer: apps/dna-viz/ double helix animation; 20 base pairs; ATCG color coding; ping-pong rotate; Q=quit
+- [ ] P238 — Gravity Wells: apps/gravity-wells/ 3 gravity wells + particles; Euler integration; trail; ping-pong; Q=quit
 
 ## Completed (recent — full list in plan README)
+- [x] P233 — Terrain Generator: apps/terrain/ 120×80; diamond-square 129×129; 5-biome lerp colors; RLE; R=regen; Q=quit
+- [x] P234 — Sorting Visualizer: apps/sort-viz/ 80 bars; 5 algorithms; precomputed ops; orange/green highlight; Tab/Space/Q
 - [x] P231 — Bezier Curve Editor: apps/bezier/ De Casteljau; hue trail; control polygon; tangent handles; Tab/arrows/T/R/Q
 - [x] P232 — Life Evolution: apps/life-evo/ 120×80 CELL=8; Conway/HighLife/Day&Night; RLE draw; P/S/Space/R/C/Q
 - [x] P229 — Sine Wave Generator: apps/sine-gen/ 4 overlaid waves; Tab/A/Z/S/X/D/C controls; right panel; ping-pong; Q=quit
