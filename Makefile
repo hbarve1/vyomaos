@@ -33,7 +33,7 @@ SUPERVISOR_SRC   := $(shell find supervisor/src -name '*.rs' 2>/dev/null)
 SUPERVISOR_BIN   := supervisor/target/x86_64-unknown-linux-musl/release/supervisor
 SUPERVISOR_STAMP := $(OUT)/.supervisor.stamp
 
-APP_NAMES        := $(shell ls apps/)
+APP_NAMES        := $(shell find apps -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
 APPS_STAMP       := $(OUT)/.apps.stamp
 
 RUSTFLAGS        := -D warnings
