@@ -1,6 +1,6 @@
-// Tests for display module: word-wrap logic and cursor draw/restore.
+// Tests for display module: word-wrap logic, cursor draw/restore, and border colors.
 
-use supervisor::display::{Framebuffer, CURSOR_W, CURSOR_H};
+use supervisor::display::{self, Framebuffer, CURSOR_W, CURSOR_H};
 
 /// Pure word-wrap helper — duplicated here because supervisor is a binary crate.
 fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {
@@ -146,4 +146,27 @@ fn test_restore_noop_when_not_drawn() {
     let snapshot = fb.back.clone();
     fb.restore_under_cursor(); // drawn=false → must be a no-op
     assert_eq!(fb.back, snapshot, "restore_under_cursor must not modify back-buffer when not drawn");
+}
+
+// ── border_color ──────────────────────────────────────────────────────────────
+
+#[test]
+fn border_color_focused_is_blue() {
+    assert_eq!(display::border_color(true), 0x388BFDFF);
+}
+
+#[test]
+fn border_color_unfocused_is_dim() {
+    assert_eq!(display::border_color(false), 0x30363DFF);
+}
+
+#[test]
+fn border_color_focused_differs_from_unfocused() {
+    assert_ne!(display::border_color(true), display::border_color(false));
+}
+
+#[test]
+fn border_color_alpha_is_ff() {
+    assert_eq!(display::border_color(true) & 0xFF, 0xFF);
+    assert_eq!(display::border_color(false) & 0xFF, 0xFF);
 }
