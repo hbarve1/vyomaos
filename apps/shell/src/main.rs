@@ -9,6 +9,9 @@
 //!   ""       — Enter key   → execute current_input as a command
 //!   "\x7f"   — Backspace   → remove last character from current_input
 //!   "\x03"   — Ctrl+C      → clear current_input
+//!   "\x01"   — Ctrl+A      → move cursor to start of line
+//!   "\x05"   — Ctrl+E      → move cursor to end of line
+//!   "\x0C"   — Ctrl+L      → clear screen output and redraw prompt
 //!   one char — printable   → append to current_input
 //!   multi-ch — legacy line mode (headless / non-raw fallback)
 //!
@@ -48,11 +51,12 @@ const C_PROMPT:  u32 = 0x58A6FFFF; // prompt colour
 fn main() {
     let mut lines: Vec<String> = Vec::new();
     let mut current_input = String::new();
+    let mut cursor_pos: usize = 0;            // byte position within current_input
     let mut history: Vec<String> = Vec::new(); // up to 50 entries
     let mut hist_idx: usize = 0;               // 0 = not browsing history
     let mut saved_input = String::new();       // input saved when ↑ is first pressed
 
-    draw_panel(&lines, &current_input);
+    draw_panel(&lines, &current_input, cursor_pos);
 
     let stdin = std::io::stdin();
     for raw in stdin.lock().lines() {
@@ -66,7 +70,7 @@ fn main() {
                     push_line(&mut lines, item.to_string());
                 }
             }
-            draw_panel(&lines, &current_input);
+            draw_panel(&lines, &current_input, cursor_pos);
             continue;
         }
 
@@ -75,19 +79,37 @@ fn main() {
             "\x03" => {
                 // Ctrl+C — clear the input line and reset history navigation
                 current_input.clear();
+                cursor_pos = 0;
                 hist_idx = 0;
                 saved_input.clear();
-                draw_panel(&lines, &current_input);
+                draw_panel(&lines, &current_input, cursor_pos);
+            }
+            "\x01" => {
+                // Ctrl+A — move cursor to start of line
+                cursor_pos = 0;
+                draw_panel(&lines, &current_input, cursor_pos);
+            }
+            "\x05" => {
+                // Ctrl+E — move cursor to end of line
+                cursor_pos = current_input.len();
+                draw_panel(&lines, &current_input, cursor_pos);
+            }
+            "\x0C" => {
+                // Ctrl+L — clear screen and redraw prompt with current input
+                lines.clear();
+                draw_panel(&lines, &current_input, cursor_pos);
             }
             "\x7f" => {
                 // Backspace — remove last character
                 current_input.pop();
-                draw_panel(&lines, &current_input);
+                cursor_pos = current_input.len();
+                draw_panel(&lines, &current_input, cursor_pos);
             }
             "" => {
                 // Enter — execute whatever is in the input buffer
                 let cmd = current_input.trim().to_string();
                 current_input.clear();
+                cursor_pos = 0;
                 hist_idx = 0; // reset history navigation
                 // Push non-empty, non-consecutive-duplicate commands to history
                 if !cmd.is_empty() {
@@ -97,11 +119,11 @@ fn main() {
                     }
                 }
                 if cmd.is_empty() {
-                    draw_panel(&lines, &current_input);
+                    draw_panel(&lines, &current_input, cursor_pos);
                 } else {
                     push_line(&mut lines, format!("> {cmd}"));
                     handle_command(&cmd, &mut lines);
-                    draw_panel(&lines, &current_input);
+                    draw_panel(&lines, &current_input, cursor_pos);
                 }
             }
             "\x1b[A" => {
@@ -110,7 +132,8 @@ fn main() {
                     if hist_idx == 0 { saved_input = current_input.clone(); }
                     hist_idx = (hist_idx + 1).min(history.len());
                     current_input = history[history.len() - hist_idx].clone();
-                    draw_panel(&lines, &current_input);
+                    cursor_pos = current_input.len();
+                    draw_panel(&lines, &current_input, cursor_pos);
                 }
             }
             "\x1b[B" => {
@@ -122,7 +145,8 @@ fn main() {
                     } else {
                         history[history.len() - hist_idx].clone()
                     };
-                    draw_panel(&lines, &current_input);
+                    cursor_pos = current_input.len();
+                    draw_panel(&lines, &current_input, cursor_pos);
                 }
             }
             s if s.len() == 1
@@ -130,18 +154,20 @@ fn main() {
             {
                 // Single printable ASCII char — append to input buffer
                 current_input.push_str(s);
-                draw_panel(&lines, &current_input);
+                cursor_pos = current_input.len();
+                draw_panel(&lines, &current_input, cursor_pos);
             }
             // ── Legacy / line mode: complete command string (non-raw fallback) ─
             other => {
                 let cmd = other.trim().to_string();
                 if cmd.is_empty() {
-                    draw_panel(&lines, &current_input);
+                    draw_panel(&lines, &current_input, cursor_pos);
                 } else {
                     current_input.clear();
+                    cursor_pos = 0;
                     push_line(&mut lines, format!("> {cmd}"));
                     handle_command(&cmd, &mut lines);
-                    draw_panel(&lines, &current_input);
+                    draw_panel(&lines, &current_input, cursor_pos);
                 }
             }
         }
@@ -155,6 +181,9 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
         "help" => {
             push_line(lines, "commands:".into());
             push_line(lines, "  help              — this text".into());
+            push_line(lines, "  Ctrl+L            — clear screen".into());
+            push_line(lines, "  Ctrl+A            — move cursor to line start".into());
+            push_line(lines, "  Ctrl+E            — move cursor to line end".into());
             push_line(lines, "  ps                — list all apps + status".into());
             push_line(lines, "  status            — running app count".into());
             push_line(lines, "  list              — list app names".into());
@@ -423,7 +452,7 @@ fn push_line(lines: &mut Vec<String>, s: String) {
 
 // ── Draw the full shell panel ─────────────────────────────────────────────────
 
-fn draw_panel(lines: &[String], input: &str) {
+fn draw_panel(lines: &[String], input: &str, cursor_pos: usize) {
     // Panel background + border
     fill(PX, PY, PW, PH, C_PANEL);
 
@@ -451,8 +480,8 @@ fn draw_panel(lines: &[String], input: &str) {
     if !input.is_empty() {
         text(INNER_X + 16, PROMPT_Y, C_WHITE, input);
     }
-    // Blinking cursor block (toggled on each redraw — always shown here)
-    let cursor_x = INNER_X + 16 + input.len() as u32 * 8;
+    // Cursor block positioned at cursor_pos (chars * 8px per glyph)
+    let cursor_x = INNER_X + 16 + cursor_pos as u32 * 8;
     fill(cursor_x, PROMPT_Y, 8, 14, C_GREEN);
 
     flush();
