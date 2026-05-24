@@ -367,9 +367,22 @@ fn draw_titlebar(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, is_fo
 }
 
 /// Draw the global menu bar at y=0 across the full screen width.
-/// Shows "VyomaOS" on the left, focused app in the center, clock on the right.
+/// Shows "VyomaOS" on the left, app-switcher labels after it, focused app in
+/// the center, and clock on the right.
+///
+/// `apps` is an ordered slice of display-app names drawn as clickable labels
+/// immediately after the brand name.  The same ordering is used by
+/// [`supervisor::windows::menubar_hit_app`] for click-to-focus hit detection.
 #[cfg(target_os = "linux")]
-fn draw_menubar(fb: &mut display::Framebuffer, sw: u32, elapsed_secs: u64, focused: Option<&str>) {
+fn draw_menubar(
+    fb: &mut display::Framebuffer,
+    sw: u32,
+    elapsed_secs: u64,
+    focused: Option<&str>,
+    apps: &[String],
+) {
+    use supervisor::windows::{MENUBAR_APPS_START_X, menubar_label_width};
+
     fb.fill_rect(0, 0, sw, MENUBAR_H, MAC_MENUBAR);
     fb.fill_rect(0, MENUBAR_H - 1, sw, 1, MAC_SEP);
 
@@ -377,6 +390,16 @@ fn draw_menubar(fb: &mut display::Framebuffer, sw: u32, elapsed_secs: u64, focus
 
     // Left: brand
     fb.draw_text(12, ty, "VyomaOS", MAC_LABEL, font::FontSize::Medium);
+
+    // App-switcher labels: drawn immediately after the brand name.
+    // Highlighted (white) when focused, dimmed otherwise.
+    let mut lx = MENUBAR_APPS_START_X as u32;
+    for app in apps {
+        let is_focused = focused.map_or(false, |f| f == app.as_str());
+        let color = if is_focused { MAC_LABEL } else { MAC_LABEL2 };
+        fb.draw_text(lx + 8, ty, app, color, font::FontSize::Medium);
+        lx += menubar_label_width(app.len()) as u32;
+    }
 
     // Center: focused app name
     if let Some(name) = focused {
@@ -399,14 +422,27 @@ fn draw_menubar(fb: &mut display::Framebuffer, sw: u32, elapsed_secs: u64, focus
 /// Immediately repaint title bars for all windowed apps (called on focus changes).
 fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     let focused_name = focused.lock().unwrap().clone();
-    let regions: Vec<(String, (u32, u32, u32, u32))> = {
+    let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
         let reg = registry.lock().unwrap();
-        reg.iter()
+        let mut regions = Vec::new();
+        let mut display_apps: Vec<String> = reg.iter()
             .filter_map(|(name, st)| {
                 let st = st.lock().unwrap();
-                st.win_region.map(|r| (name.clone(), r))
+                if st.has_display && matches!(st.status, AppStatus::Running) {
+                    Some(name.clone())
+                } else {
+                    None
+                }
             })
-            .collect()
+            .collect();
+        display_apps.sort();
+        for (name, st) in reg.iter() {
+            let st = st.lock().unwrap();
+            if let Some(r) = st.win_region {
+                regions.push((name.clone(), r));
+            }
+        }
+        (regions, display_apps)
     };
     let Some(fb_lock) = display::get() else { return };
     let mut fb = fb_lock.lock().unwrap();
@@ -420,7 +456,7 @@ fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     {
         let sw = fb.width;
         let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
-        draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref());
+        draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref(), &display_apps);
     }
 }
 
@@ -535,8 +571,8 @@ fn main() {
             let mut fb = fb_lock.lock().unwrap();
             let (w, h) = (fb.width, fb.height);
             fb.fill_rect(0, 0, w, h, 0x0D1117FF);
-            // Draw initial menu bar (no focused app yet)
-            draw_menubar(&mut *fb, w, 0, None);
+            // Draw initial menu bar (no focused app yet, no apps yet)
+            draw_menubar(&mut *fb, w, 0, None, &[]);
             fb.flush();
         }
     }
@@ -1284,7 +1320,7 @@ fn route_or_print(
     #[cfg(target_os = "linux")]
     if has_display {
         if let Some(cmd) = line.strip_prefix("VYOMA_DRAW:") {
-            handle_draw_command(cmd, sender, win_region, focused);
+            handle_draw_command(cmd, sender, win_region, focused, app_registry);
             return;
         }
     }
@@ -2545,6 +2581,37 @@ fn dispatch_mouse(
         .map(|m| m.lock().unwrap().clone())
         .unwrap_or_default();
 
+    // Menu-bar click: if the user clicks inside the MENUBAR_H-pixel band at the
+    // top of the screen on an app-name label, raise and focus that app without
+    // also triggering window hit-test or mouse-event dispatch.
+    if btn != 0 && cy >= 0 && cy < MENUBAR_H as i32 {
+        use supervisor::windows::menubar_hit_app;
+        let display_apps: Vec<String> = {
+            let reg = app_registry.lock().unwrap();
+            let mut v: Vec<String> = reg.iter()
+                .filter_map(|(name, st)| {
+                    let st = st.lock().unwrap();
+                    if st.has_display && matches!(st.status, AppStatus::Running) {
+                        Some(name.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            v.sort();
+            v
+        };
+        let app_refs: Vec<&str> = display_apps.iter().map(String::as_str).collect();
+        if let Some(name) = menubar_hit_app(cx, cy, MENUBAR_H, &app_refs) {
+            let name = name.to_string();
+            z_order_push_front(&name);
+            *focused.lock().unwrap() = Some(name.clone());
+            log_info!(Subsystem::Input, Some(name.as_str()), "menubar click: focus → {name}");
+            repaint_all_borders(app_registry, focused);
+            return;
+        }
+    }
+
     // Traffic-light hit-test: on any click, check if a dot was hit before
     // falling through to the focus/raise and mouse-event dispatch logic.
     if btn != 0 {
@@ -2670,7 +2737,13 @@ fn parse_color(s: &str) -> Option<u32> {
 }
 
 #[cfg(target_os = "linux")]
-fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)>, focused: &FocusedApp) {
+fn handle_draw_command(
+    cmd: &str,
+    sender: &str,
+    win: Option<(u32, u32, u32, u32)>,
+    focused: &FocusedApp,
+    app_registry: &AppRegistry,
+) {
     let Some(fb_lock) = display::get() else { return };
 
     // Mark this app dirty for any draw command other than flush/present.
@@ -2734,7 +2807,22 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
         };
 
         if should_draw_menubar {
-            draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref());
+            let display_apps: Vec<String> = {
+                let reg = app_registry.lock().unwrap();
+                let mut v: Vec<String> = reg.iter()
+                    .filter_map(|(name, st)| {
+                        let st = st.lock().unwrap();
+                        if st.has_display && matches!(st.status, AppStatus::Running) {
+                            Some(name.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                v.sort();
+                v
+            };
+            draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref(), &display_apps);
         }
 
         fb.flush();
