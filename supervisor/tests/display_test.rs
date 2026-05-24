@@ -1,6 +1,6 @@
-// Tests for display module: word-wrap logic and cursor draw/restore.
+// Tests for display module: word-wrap logic, cursor draw/restore, and alpha blending.
 
-use supervisor::display::{Framebuffer, CURSOR_W, CURSOR_H};
+use supervisor::display::{self, Framebuffer, CURSOR_W, CURSOR_H};
 
 /// Pure word-wrap helper — duplicated here because supervisor is a binary crate.
 fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {
@@ -146,4 +146,33 @@ fn test_restore_noop_when_not_drawn() {
     let snapshot = fb.back.clone();
     fb.restore_under_cursor(); // drawn=false → must be a no-op
     assert_eq!(fb.back, snapshot, "restore_under_cursor must not modify back-buffer when not drawn");
+}
+
+// -- blend_alpha unit tests ---------------------------------------------------
+
+#[test]
+fn blend_alpha_fully_opaque_returns_fg() {
+    // a=255 -> result equals fg (alpha ignored on output byte)
+    let result = display::blend_alpha(0xFF0000FF, 0x00FF00FF, 255);
+    assert_eq!(result & 0xFFFFFF00, 0xFF000000); // red channel dominant
+}
+
+#[test]
+fn blend_alpha_fully_transparent_returns_bg() {
+    let result = display::blend_alpha(0xFF0000FF, 0x00FF00FF, 0);
+    assert_eq!(result & 0xFFFFFF00, 0x00FF0000); // green channel dominant
+}
+
+#[test]
+fn blend_alpha_midpoint_is_between() {
+    // 50% blend of white fg (0xFFFFFF) over black bg (0x000000) -> ~0x7F7F7F
+    let result = display::blend_alpha(0xFFFFFFFF, 0x000000FF, 128);
+    let r = (result >> 24) & 0xFF;
+    assert!(r >= 0x7E && r <= 0x81, "r={r} not near 0x80");
+}
+
+#[test]
+fn blend_alpha_always_sets_alpha_ff() {
+    let result = display::blend_alpha(0x12345678, 0xAABBCCFF, 100);
+    assert_eq!(result & 0xFF, 0xFF);
 }

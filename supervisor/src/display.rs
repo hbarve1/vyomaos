@@ -577,6 +577,31 @@ impl Framebuffer {
     }
 }
 
+/// Alpha-blend `fg` over `bg` using the given alpha value `a` (0 = fully transparent, 255 = fully opaque).
+///
+/// Both `fg` and `bg` are packed RGBA `u32` values (`0xRRGGBBAA`).  The output
+/// alpha byte is always `0xFF` (the result is fully opaque).  This is a pure
+/// function with no global state.
+pub fn blend_alpha(fg: u32, bg: u32, a: u8) -> u32 {
+    let af = a as u32;
+    let blend = |f: u32, b: u32| ((f * af + b * (255 - af)) / 255) & 0xFF;
+    let r = blend((fg >> 24) & 0xFF, (bg >> 24) & 0xFF);
+    let g = blend((fg >> 16) & 0xFF, (bg >> 16) & 0xFF);
+    let b = blend((fg >>  8) & 0xFF, (bg >>  8) & 0xFF);
+    (r << 24) | (g << 16) | (b << 8) | 0xFF
+}
+
+/// Return the titlebar background colour for a focused (`true`) or unfocused (`false`) window.
+///
+/// These are the same dark-tinted values used by the macOS-style chrome renderer.
+pub fn titlebar_color(focused: bool) -> u32 {
+    if focused {
+        0x3A3A3CFF // active window title bar (MAC_TITLE_ACT)
+    } else {
+        0x2C2C2EFF // inactive window title bar (MAC_TITLE_INACT)
+    }
+}
+
 /// Word-wrap `text` so each line is at most `max_chars` wide.
 /// Long single words are placed on their own line without truncation.
 /// If `max_chars` is 0, returns the full text as a single line.
