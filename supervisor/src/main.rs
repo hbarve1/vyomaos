@@ -331,6 +331,7 @@ fn flush_counts() -> &'static Mutex<HashMap<String, (u64, std::time::Instant)>> 
 
 const MENUBAR_H:       u32 = 24;   // global menu bar height
 const TITLEBAR_H:      u32 = 28;   // per-window title bar height
+const STATUS_H:        u32 = 16;   // per-window status strip height (bottom of window)
 const TL_DOT:          u32 = 12;   // traffic-light dot size (px)
 
 const MAC_MENUBAR:        u32 = 0x1C1C1EFF; // system background (menubar)
@@ -515,6 +516,32 @@ fn draw_menubar(
     if sw > cw + 20 {
         fb.draw_text(sw - cw - 12, ty, &clock, MAC_LABEL2, font::FontSize::Medium);
     }
+}
+
+/// Draw a 16px status strip at the very bottom of a window's chrome.
+/// Background: `0x161B22FF` (dark).  Text: `0x8B949EFF` (grey).
+/// Shows `[name]  up <uptime_secs>s` in small font, left-aligned with 4px inset.
+#[cfg(target_os = "linux")]
+fn draw_statusbar(
+    fb:           &mut display::Framebuffer,
+    name:         &str,
+    uptime_secs:  u64,
+    wx:           u32,
+    wy:           u32,
+    ww:           u32,
+    wh:           u32,
+) {
+    const STATUS_BG:   u32 = 0x161B22FF; // very dark navy background
+    const STATUS_FG:   u32 = 0x8B949EFF; // muted grey text
+
+    // Fill the status strip
+    let sy = wy + wh - STATUS_H;
+    fb.fill_rect(wx, sy, ww, STATUS_H, STATUS_BG);
+
+    // Build and draw the label using the public helper
+    let label = supervisor::statusbar::format_status_text(name, uptime_secs);
+    // Vertically center 8px small font in the 16px strip: (16 - 8) / 2 = 4
+    fb.draw_text(wx + 4, sy + 4, &label, STATUS_FG, font::FontSize::Small);
 }
 
 /// Immediately repaint title bars for all windowed apps (called on focus changes).
@@ -3141,6 +3168,16 @@ fn handle_draw_command(
                         .as_deref() == Some(sender);
                     draw_titlebar(&mut *fb, wx, wy, ww, is_focused, is_hovered, sender);
                 }
+                // Per-window status strip — redrawn on every flush so uptime advances.
+                if ww > 0 && wh > STATUS_H {
+                    let uptime_secs: u64 = {
+                        let reg = app_registry.lock().unwrap();
+                        reg.get(sender)
+                            .map(|st| st.lock().unwrap().start_time.elapsed().as_secs())
+                            .unwrap_or(0)
+                    };
+                    draw_statusbar(&mut *fb, sender, uptime_secs, wx, wy, ww, wh);
+                }
             }
         }
 
@@ -3223,7 +3260,8 @@ fn handle_draw_command(
                         let ax = wx + lx;
                         let ay = content_wy + ly;
                         let win_right  = wx + ww;
-                        let win_bottom = wy + wh;
+                        // Clip content bottom to exclude the status strip.
+                        let win_bottom = (wy + wh).saturating_sub(STATUS_H);
                         if ax >= win_right || ay >= win_bottom { return; }
                         let aw = w.min(win_right  - ax);
                         let ah = h.min(win_bottom - ay);
@@ -3285,7 +3323,9 @@ fn handle_draw_command(
                     let content_wy = wy + TITLEBAR_H;
                     let ax = wx + lx;
                     let ay = content_wy + ly;
-                    if ax >= wx + ww || ay >= wy + wh { return; }
+                    // Clip content bottom to exclude the status strip.
+                    let content_bottom = (wy + wh).saturating_sub(STATUS_H);
+                    if ax >= wx + ww || ay >= content_bottom { return; }
                     (ax, ay)
                 }
             };
@@ -3313,7 +3353,8 @@ fn handle_draw_command(
                         let ax = wx + lx;
                         let ay = content_wy + ly;
                         let win_right  = wx + ww;
-                        let win_bottom = wy + wh;
+                        // Clip content bottom to exclude the status strip.
+                        let win_bottom = (wy + wh).saturating_sub(STATUS_H);
                         if ax >= win_right || ay >= win_bottom { return; }
                         let aw = w.min(win_right  - ax);
                         let ah = h.min(win_bottom - ay);
@@ -3347,7 +3388,8 @@ fn handle_draw_command(
                         let ax = wx + lx;
                         let ay = content_wy + ly;
                         let win_right  = wx + ww;
-                        let win_bottom = wy + wh;
+                        // Clip content bottom to exclude the status strip.
+                        let win_bottom = (wy + wh).saturating_sub(STATUS_H);
                         if ax >= win_right || ay >= win_bottom { return; }
                         let aw = w.min(win_right  - ax);
                         let ah = h.min(win_bottom - ay);
@@ -3383,7 +3425,9 @@ fn handle_draw_command(
                         let content_wy = wy + TITLEBAR_H;
                         let ax = wx + lx;
                         let ay = content_wy + ly;
-                        if ax >= wx + ww || ay >= wy + wh { return; }
+                        // Clip content bottom to exclude the status strip.
+                        let content_bottom = (wy + wh).saturating_sub(STATUS_H);
+                        if ax >= wx + ww || ay >= content_bottom { return; }
                         let effective_max_w = max_w.min(ww.saturating_sub(lx));
                         if effective_max_w == 0 { return; }
                         (ax, ay, effective_max_w)
