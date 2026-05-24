@@ -37,6 +37,7 @@ APP_NAMES        := $(shell ls apps/)
 APPS_STAMP       := $(OUT)/.apps.stamp
 
 RUSTFLAGS        := -D warnings
+WASM_FLAGS       :=
 
 # ── kernel source tracking ────────────────────────────────────────────────────
 KERNEL_PATCHES := $(wildcard base/patches/kernel/*.patch)
@@ -96,7 +97,7 @@ $(SUPERVISOR_STAMP): supervisor/Cargo.toml supervisor/.cargo/config.toml $(SUPER
 define APP_RULE
 $(OUT)/.apps/$(1).stamp: $$(wildcard apps/$(1)/src/*.rs) apps/$(1)/Cargo.toml | image
 	@mkdir -p $(OUT)/.apps
-	$$(DOCKER_RUN) env RUSTFLAGS="$$(RUSTFLAGS)" cargo build \
+	$$(DOCKER_RUN) env RUSTFLAGS="$$(WASM_FLAGS)" cargo build \
 	  --manifest-path apps/$(1)/Cargo.toml \
 	  --target wasm32-wasip2 --release
 	@touch $$@
