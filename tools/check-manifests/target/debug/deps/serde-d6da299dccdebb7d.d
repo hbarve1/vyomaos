@@ -1,0 +1,14 @@
+/Users/hbarve1/codes/hbarve1/vyomaos/tools/check-manifests/target/debug/deps/serde-d6da299dccdebb7d.d: /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/hbarve1/codes/hbarve1/vyomaos/tools/check-manifests/target/debug/build/serde-1d84d94038952bdb/out/private.rs
+
+/Users/hbarve1/codes/hbarve1/vyomaos/tools/check-manifests/target/debug/deps/libserde-d6da299dccdebb7d.rlib: /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/hbarve1/codes/hbarve1/vyomaos/tools/check-manifests/target/debug/build/serde-1d84d94038952bdb/out/private.rs
+
+/Users/hbarve1/codes/hbarve1/vyomaos/tools/check-manifests/target/debug/deps/libserde-d6da299dccdebb7d.rmeta: /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/hbarve1/codes/hbarve1/vyomaos/tools/check-manifests/target/debug/build/serde-1d84d94038952bdb/out/private.rs
+
+/Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/Users/hbarve1/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/Users/hbarve1/codes/hbarve1/vyomaos/tools/check-manifests/target/debug/build/serde-1d84d94038952bdb/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/hbarve1/codes/hbarve1/vyomaos/tools/check-manifests/target/debug/build/serde-1d84d94038952bdb/out
