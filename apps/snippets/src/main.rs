@@ -313,7 +313,7 @@ const SNIPPETS: &[Snippet] = &[
 ];
 
 // Very basic syntax highlighting — single-pass token scan
-fn highlight_line(line: &str, lang: &str) -> Vec<(u32, &str)> {
+fn highlight_line<'a>(line: &'a str, lang: &str) -> Vec<(u32, &'a str)> {
     // Returns spans: (color, text_segment)
     // Simplified: just colour whole line based on first token
     let trimmed = line.trim_start();
