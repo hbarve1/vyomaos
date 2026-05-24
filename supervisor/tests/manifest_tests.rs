@@ -1,4 +1,4 @@
-// TDD RED: These tests fail until parse_manifest + validate_manifest are implemented.
+// Manifest unit tests (T005a + T010 edge cases).
 
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -92,4 +92,41 @@ watchdog_secs = 0
     assert!(result.is_ok(), "watchdog_secs=0 should be valid: {:?}", result);
     let m = result.unwrap();
     assert_eq!(m.capabilities.watchdog_secs, 0);
+}
+
+// (6) T010: watchdog_secs set to a boolean string "yes" returns a parse error
+#[test]
+fn test_watchdog_secs_wrong_type_returns_err() {
+    let f = write_toml(r#"
+[app]
+name    = "type-error-app"
+version = "0.1.0"
+wasm    = "app.wasm"
+
+[capabilities]
+watchdog_secs = "yes"
+"#);
+    let result = supervisor::manifest::parse_manifest(f.path());
+    assert!(result.is_err(), "watchdog_secs='yes' should fail type check, got Ok");
+}
+
+// (7) T010: entire [capabilities] section absent defaults to all-false (no error)
+#[test]
+fn test_missing_capabilities_section_defaults_to_all_false() {
+    let f = write_toml(r#"
+[app]
+name    = "no-caps-app"
+version = "0.1.0"
+wasm    = "app.wasm"
+"#);
+    let result = supervisor::manifest::parse_manifest(f.path());
+    assert!(result.is_ok(), "missing [capabilities] should be valid: {:?}", result);
+    let m = result.unwrap();
+    assert!(!m.capabilities.stdio,      "stdio should default false");
+    assert!(!m.capabilities.filesystem, "filesystem should default false");
+    assert!(!m.capabilities.network,    "network should default false");
+    assert!(!m.capabilities.display,    "display should default false");
+    assert!(!m.capabilities.shell,      "shell should default false");
+    assert!(!m.capabilities.mouse,      "mouse should default false");
+    assert_eq!(m.capabilities.watchdog_secs, 0, "watchdog_secs should default 0");
 }
