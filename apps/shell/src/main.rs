@@ -25,6 +25,27 @@
 use std::io::{BufRead, Write};
 use std::fs::OpenOptions;
 
+// ── Tab-completion command list ───────────────────────────────────────────────
+
+const COMPLETIONS: &[&str] = &[
+    "ls", "ps", "kill", "log", "logf", "restart", "clear", "help", "exit",
+    "status", "list", "reload", "logs", "run", "focus", "raise", "lower",
+    "update", "notify", "resize", "wallpaper", "shutdown", "reboot",
+    "session-save", "session-restore", "monitors", "dns", "tls-info",
+    "download", "clip-set", "clip-get", "screenshot", "pkg",
+];
+
+/// Returns the unique completion for `input` if exactly one command starts with
+/// it, or `None` when there are zero or multiple matches.
+fn tab_complete(input: &str) -> Option<&'static str> {
+    let matches: Vec<&str> = COMPLETIONS
+        .iter()
+        .copied()
+        .filter(|c| c.starts_with(input))
+        .collect();
+    if matches.len() == 1 { Some(matches[0]) } else { None }
+}
+
 // ── Panel geometry (local window coords; window declared at y=440 in vyoma.toml) ──────
 
 const PX: u32 = 24;       // panel left edge (horizontal margin within window)
@@ -150,6 +171,14 @@ fn main() {
                     cursor_pos = current_input.len();
                     draw_panel(&lines, &current_input, cursor_pos);
                 }
+            }
+            "\x09" => {
+                // Tab — attempt unique-prefix completion (cursor must be at end)
+                if let Some(completed) = tab_complete(&current_input) {
+                    current_input = completed.to_string();
+                    draw_panel(&lines, &current_input);
+                }
+                // If no unique match, do nothing
             }
             s if s.len() == 1
                 && s.bytes().next().map(|b| (0x20..=0x7E).contains(&b)).unwrap_or(false) =>
