@@ -184,6 +184,7 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  clip-set <text>    — copy text to supervisor clipboard".into());
             push_line(lines, "  clip-get           — paste text from supervisor clipboard".into());
             push_line(lines, "  screenshot [path]  — save framebuffer PPM to /data/screenshot.ppm".into());
+            push_line(lines, "  date              — print current Unix timestamp".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
         "clear" => {
@@ -403,9 +404,52 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             println!("@supervisor: screenshot {dest}");
             push_line(lines, format!("saving screenshot to {dest}..."));
         }
+        "date" => {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            push_line(lines, format_date_output(secs));
+        }
         other => {
             push_line(lines, format!("unknown: {other}"));
         }
+    }
+}
+
+// ── Pure formatting helper ────────────────────────────────────────────────────
+
+fn format_date_output(secs: u64) -> String {
+    format!("Unix time: {secs}s")
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::format_date_output;
+
+    #[test]
+    fn format_date_output_zero() {
+        assert_eq!(format_date_output(0), "Unix time: 0s");
+    }
+
+    #[test]
+    fn format_date_output_nonzero() {
+        assert_eq!(format_date_output(1000), "Unix time: 1000s");
+    }
+
+    #[test]
+    fn format_date_output_large() {
+        assert_eq!(format_date_output(1_700_000_000), "Unix time: 1700000000s");
+    }
+
+    #[test]
+    fn format_date_output_prefix() {
+        assert!(
+            format_date_output(42).starts_with("Unix time:"),
+            "should start with 'Unix time:'"
+        );
     }
 }
 
