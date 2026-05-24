@@ -82,11 +82,18 @@ mod seccomp {
 
     const SECCOMP_RET_KILL_PROCESS: u32 = 0x8000_0000;
     const SECCOMP_RET_ALLOW: u32 = 0x7fff_0000;
+    // Return ENOSYS (38) so glibc falls back from clone3 → clone when threading.
+    const SECCOMP_RET_ERRNO_ENOSYS: u32 = 0x0005_0000 | 38;
 
     const OFF_NR: u32 = 0;
     const OFF_ARCH: u32 = 4;
 
     const AUDIT_ARCH_X86_64: u32 = 0xc000_003e;
+
+    // Syscalls that return ENOSYS so libc falls back gracefully.
+    const ENOSYS_FALLBACK: &[u32] = &[
+        435, // clone3 — glibc falls back to clone(2) when clone3 returns ENOSYS
+    ];
 
     const DENIED: &[u32] = &[
         101, // ptrace
@@ -117,6 +124,10 @@ mod seccomp {
             stmt!(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
             stmt!(BPF_LD | BPF_W | BPF_ABS, OFF_NR),
         ];
+        for &nr in ENOSYS_FALLBACK {
+            f.push(jump!(BPF_JMP | BPF_JEQ | BPF_K, nr, 0, 1));
+            f.push(stmt!(BPF_RET | BPF_K, SECCOMP_RET_ERRNO_ENOSYS));
+        }
         for &nr in DENIED {
             f.push(jump!(BPF_JMP | BPF_JEQ | BPF_K, nr, 0, 1));
             f.push(stmt!(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
@@ -177,7 +188,8 @@ struct AppState {
     watchdog_backoff: Arc<Mutex<u64>>,   // seconds until next restart allowed
     has_mouse:   bool,
     has_display: bool,
-    win_region:  Option<(u32, u32, u32, u32)>,  // P22: (x,y,w,h) screen coords for mouse dispatch
+    win_region:  Option<(u32, u32, u32, u32)>,  // supervisor-assigned; updated by apply_tiling_layout
+    min_size:    (u32, u32),                     // (min_w, min_h) hint from manifest [window]
 }
 
 type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
@@ -206,6 +218,177 @@ static CLIPBOARD: OnceLock<Mutex<String>> = OnceLock::new();
 
 static FONT_SIZE: OnceLock<Mutex<String>> = OnceLock::new();
 
+// Boot timestamp — used to render the elapsed clock in the menu bar.
+static BOOT_INSTANT: OnceLock<std::time::Instant> = OnceLock::new();
+
+// ── macOS-inspired chrome ─────────────────────────────────────────────────────
+
+const MENUBAR_H:       u32 = 24;   // global menu bar height
+const TITLEBAR_H:      u32 = 28;   // per-window title bar height
+const TL_DOT:          u32 = 12;   // traffic-light dot size (px)
+
+const MAC_MENUBAR:     u32 = 0x1C1C1EFF; // system background (menubar)
+const MAC_TITLE_ACT:   u32 = 0x3A3A3CFF; // active window title bar
+const MAC_TITLE_INACT: u32 = 0x2C2C2EFF; // inactive window title bar
+const MAC_SEP:         u32 = 0x48484AFF; // separator line
+const MAC_LABEL:       u32 = 0xFFFFFFFF; // primary label (white)
+const MAC_LABEL2:      u32 = 0x8E8E93FF; // secondary label (gray)
+const TL_CLOSE:        u32 = 0xFF5F57FF; // traffic light red
+const TL_MINIMIZE:     u32 = 0xFEBC2EFF; // traffic light yellow
+const TL_MAXIMIZE:     u32 = 0x28C840FF; // traffic light green
+const TL_GRAY:         u32 = 0x4D4D4DFF; // inactive traffic lights
+
+// Kept for repaint compat; unused after chrome redesign.
+#[allow(dead_code)] const BORDER_FOCUSED:   u32 = 0x89B4FAFF;
+#[allow(dead_code)] const BORDER_UNFOCUSED: u32 = 0x45475AFF;
+
+// ── US1: tiled window layout helpers ─────────────────────────────────────────
+
+/// Return names of all Running display-capable apps, sorted for deterministic layout.
+/// Recompute tiled regions for all running display apps and write them into
+/// the registry.  Called on every display-app spawn or exit.
+fn apply_tiling_layout(registry: &AppRegistry) {
+    use supervisor::windows::compute_tiling_with_hints;
+
+    let apps: Vec<(String, u32, u32)> = {
+        let reg = registry.lock().unwrap();
+        let mut v: Vec<(String, u32, u32)> = reg.iter()
+            .filter_map(|(name, st)| {
+                let st = st.lock().unwrap();
+                if st.has_display && matches!(st.status, AppStatus::Running) {
+                    Some((name.clone(), st.min_size.0, st.min_size.1))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        v.sort_by(|a, b| a.0.cmp(&b.0));
+        v
+    };
+
+    if apps.is_empty() { return; }
+
+    #[cfg(target_os = "linux")]
+    let (sw, sh) = display::screen_size().unwrap_or((1440, 900));
+    #[cfg(not(target_os = "linux"))]
+    let (sw, sh) = (1440u32, 900u32);
+
+    let min_sizes: Vec<(u32, u32)> = apps.iter().map(|(_, mw, mh)| (*mw, *mh)).collect();
+    // Reserve MENUBAR_H pixels at the top; shift all regions down accordingly.
+    let usable_h = sh.saturating_sub(MENUBAR_H);
+    let regions: Vec<(u32, u32, u32, u32)> = compute_tiling_with_hints(apps.len(), sw, usable_h, &min_sizes)
+        .into_iter()
+        .map(|(x, y, w, h)| (x, y + MENUBAR_H, w, h))
+        .collect();
+
+    {
+        let reg = registry.lock().unwrap();
+        for (i, (name, _, _)) in apps.iter().enumerate() {
+            if let Some(st) = reg.get(name) {
+                if let Some(&region) = regions.get(i) {
+                    let mut st = st.lock().unwrap();
+                    st.win_region = Some(region);
+                    log_info!(Subsystem::Display, Some(name.as_str()),
+                        "tiling: assigned ({},{},{},{})", region.0, region.1, region.2, region.3);
+                }
+            }
+        }
+    }
+
+    let n = apps.len();
+    log_info!(Subsystem::Display, None, "layout reflow: {n} display app(s) tiled");
+}
+
+/// Repaint 2 px inset focus borders for all display apps in the framebuffer back-buffer.
+/// Draw a macOS-style title bar at (wx, wy, ww, TITLEBAR_H).
+/// Traffic lights are colored when focused, gray otherwise.
+/// App name is centered in the bar.
+#[cfg(target_os = "linux")]
+fn draw_titlebar(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, is_focused: bool, name: &str) {
+    let bg = if is_focused { MAC_TITLE_ACT } else { MAC_TITLE_INACT };
+    fb.fill_rect(wx, wy, ww, TITLEBAR_H, bg);
+    fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
+
+    // Traffic lights — 12×12, left-aligned, vertically centered
+    let tl_y = wy + (TITLEBAR_H - TL_DOT) / 2;
+    let (c1, c2, c3) = if is_focused {
+        (TL_CLOSE, TL_MINIMIZE, TL_MAXIMIZE)
+    } else {
+        (TL_GRAY, TL_GRAY, TL_GRAY)
+    };
+    fb.fill_rect(wx + 8,  tl_y, TL_DOT, TL_DOT, c1);
+    fb.fill_rect(wx + 24, tl_y, TL_DOT, TL_DOT, c2);
+    fb.fill_rect(wx + 40, tl_y, TL_DOT, TL_DOT, c3);
+
+    // App name centered (medium font = 8 px/char, 16 px tall)
+    let nlen = name.len().min(20) as u32;  // cap to avoid overflow
+    let name_w = nlen * 8;
+    if ww > name_w + 60 {
+        let nx = wx + (ww - name_w) / 2;
+        let ny = wy + (TITLEBAR_H - 16) / 2;
+        let col = if is_focused { MAC_LABEL } else { MAC_LABEL2 };
+        fb.draw_text(nx, ny, &name[..name.len().min(20)], col, font::FontSize::Medium);
+    }
+}
+
+/// Draw the global menu bar at y=0 across the full screen width.
+/// Shows "VyomaOS" on the left, focused app in the center, clock on the right.
+#[cfg(target_os = "linux")]
+fn draw_menubar(fb: &mut display::Framebuffer, sw: u32, elapsed_secs: u64, focused: Option<&str>) {
+    fb.fill_rect(0, 0, sw, MENUBAR_H, MAC_MENUBAR);
+    fb.fill_rect(0, MENUBAR_H - 1, sw, 1, MAC_SEP);
+
+    let ty = (MENUBAR_H - 16) / 2; // vertical center of 16-px font in 24-px bar
+
+    // Left: brand
+    fb.draw_text(12, ty, "VyomaOS", MAC_LABEL, font::FontSize::Medium);
+
+    // Center: focused app name
+    if let Some(name) = focused {
+        let nlen = name.len().min(20) as u32;
+        let nx = sw.saturating_sub(nlen * 8) / 2;
+        fb.draw_text(nx, ty, &name[..name.len().min(20)], MAC_LABEL, font::FontSize::Medium);
+    }
+
+    // Right: elapsed clock HH:MM:SS
+    let h = elapsed_secs / 3600;
+    let m = (elapsed_secs % 3600) / 60;
+    let s = elapsed_secs % 60;
+    let clock = format!("{h:02}:{m:02}:{s:02}");
+    let cw = clock.len() as u32 * 8;
+    if sw > cw + 20 {
+        fb.draw_text(sw - cw - 12, ty, &clock, MAC_LABEL2, font::FontSize::Medium);
+    }
+}
+
+/// Immediately repaint title bars for all windowed apps (called on focus changes).
+fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
+    let focused_name = focused.lock().unwrap().clone();
+    let regions: Vec<(String, (u32, u32, u32, u32))> = {
+        let reg = registry.lock().unwrap();
+        reg.iter()
+            .filter_map(|(name, st)| {
+                let st = st.lock().unwrap();
+                st.win_region.map(|r| (name.clone(), r))
+            })
+            .collect()
+    };
+    let Some(fb_lock) = display::get() else { return };
+    let mut fb = fb_lock.lock().unwrap();
+    for (name, (wx, wy, ww, _wh)) in &regions {
+        if *ww < 60 { continue; }
+        let is_focused = focused_name.as_deref() == Some(name.as_str());
+        #[cfg(target_os = "linux")]
+        draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, name);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let sw = fb.width;
+        let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
+        draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref());
+    }
+}
+
 fn z_order_push_front(name: &str) {
     if let Some(m) = Z_ORDER.get() {
         let mut v = m.lock().unwrap();
@@ -233,7 +416,6 @@ struct SpawnedApp {
     child_stdout: ChildStdout,
     has_display:  bool,
     is_shell:     bool,
-    win_region:   Option<(u32, u32, u32, u32)>,  // P21: (x, y, w, h) in screen coords
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -266,6 +448,7 @@ fn watchdog_next_backoff(watchdog_secs: u32, restarts: u32) -> u64 {
 }
 
 fn main() {
+    BOOT_INSTANT.get_or_init(std::time::Instant::now);
     log_info!(Subsystem::Lifecycle, None, "starting");
 
     mount_filesystems();
@@ -279,6 +462,8 @@ fn main() {
             let mut fb = fb_lock.lock().unwrap();
             let (w, h) = (fb.width, fb.height);
             fb.fill_rect(0, 0, w, h, 0x0D1117FF);
+            // Draw initial menu bar (no focused app yet)
+            draw_menubar(&mut *fb, w, 0, None);
             fb.flush();
         }
     }
@@ -483,24 +668,31 @@ fn main() {
                     return;
                 };
 
-                const EV_SYN: u16   = 0;
-                const EV_KEY: u16   = 1;
-                const EV_REL: u16   = 2;
-                const EV_ABS: u16   = 3;
-                const REL_X: u16    = 0;
-                const REL_Y: u16    = 1;
-                const ABS_X: u16    = 0;
-                const ABS_Y: u16    = 1;
-                const BTN_LEFT: u16 = 0x110;
+                // Enable cursor sprite now that we have a mouse device.
+                display::enable_cursor();
 
-                const SCREEN_W: i32 = 1440;
-                const SCREEN_H: i32 = 900;
+                const EV_SYN: u16    = 0;
+                const EV_KEY: u16    = 1;
+                const EV_REL: u16    = 2;
+                const EV_ABS: u16    = 3;
+                const REL_X: u16     = 0;
+                const REL_Y: u16     = 1;
+                const ABS_X: u16     = 0;
+                const ABS_Y: u16     = 1;
+                const BTN_LEFT: u16  = 0x110;
+                const BTN_RIGHT: u16 = 0x111;
+                const BTN_MID: u16   = 0x112;
+
+                // Use actual screen resolution; fall back to 1440×900
+                let (sw, sh) = display::screen_size().unwrap_or((1440, 900));
+                let screen_w: i32 = sw as i32;
+                let screen_h: i32 = sh as i32;
                 // virtio-mouse-pci reports ABS coords in range 0..=32767
                 const ABS_MAX: i64  = 32768;
 
-                let mut cx: i32 = SCREEN_W / 2;
-                let mut cy: i32 = SCREEN_H / 2;
-                let mut btn: u8 = 0;
+                let mut cx: i32 = screen_w / 2;
+                let mut cy: i32 = screen_h / 2;
+                let mut pending_click_mask: u8 = 0;
                 let mut pending_abs_x: Option<i32> = None;
                 let mut pending_abs_y: Option<i32> = None;
                 let mut pending_dx:    i32 = 0;
@@ -530,26 +722,41 @@ fn main() {
                             _     => {}
                         },
                         EV_KEY => {
-                            if code == BTN_LEFT {
-                                btn = if value > 0 { 1 } else { 0 };
+                            if value == 1 {
+                                pending_click_mask |= match code {
+                                    BTN_LEFT  => 1,
+                                    BTN_RIGHT => 2,
+                                    BTN_MID   => 4,
+                                    _         => 0,
+                                };
                             }
                         }
                         EV_SYN => {
+                            let mut pos_changed = false;
                             // Apply REL movement (regular mouse)
                             if pending_dx != 0 || pending_dy != 0 {
-                                cx = (cx + pending_dx).clamp(0, SCREEN_W - 1);
-                                cy = (cy + pending_dy).clamp(0, SCREEN_H - 1);
-                                pending_dx = 0;
-                                pending_dy = 0;
+                                let new_cx = (cx + pending_dx).clamp(0, screen_w - 1);
+                                let new_cy = (cy + pending_dy).clamp(0, screen_h - 1);
+                                pos_changed = new_cx != cx || new_cy != cy;
+                                cx = new_cx; cy = new_cy;
+                                pending_dx = 0; pending_dy = 0;
                             }
                             // Apply ABS position (virtio-mouse-pci, scaled 0..32767 → screen)
                             if let Some(ax) = pending_abs_x.take() {
-                                cx = (ax as i64 * SCREEN_W as i64 / ABS_MAX) as i32;
+                                let new_cx = (ax as i64 * screen_w as i64 / ABS_MAX) as i32;
+                                if new_cx != cx { pos_changed = true; cx = new_cx; }
                             }
                             if let Some(ay) = pending_abs_y.take() {
-                                cy = (ay as i64 * SCREEN_H as i64 / ABS_MAX) as i32;
+                                let new_cy = (ay as i64 * screen_h as i64 / ABS_MAX) as i32;
+                                if new_cy != cy { pos_changed = true; cy = new_cy; }
                             }
-                            dispatch_mouse(cx, cy, btn, &inbox_m, &registry_m, &focused_m);
+                            display::set_cursor_pos(cx, cy);
+                            if pending_click_mask != 0 {
+                                dispatch_mouse(cx, cy, pending_click_mask, &inbox_m, &registry_m, &focused_m);
+                                pending_click_mask = 0;
+                            } else if pos_changed {
+                                dispatch_mouse(cx, cy, 0, &inbox_m, &registry_m, &focused_m);
+                            }
                         }
                         _ => {}
                     }
@@ -631,7 +838,6 @@ fn spawn_io_threads(
     child_stdout: ChildStdout,
     msg_rx:       mpsc::Receiver<String>,
     has_display:  bool,
-    win_region:   Option<(u32, u32, u32, u32)>,  // P21
     inbox:        &Inbox,
     focused:      &FocusedApp,
     app_registry: &AppRegistry,
@@ -699,6 +905,14 @@ fn spawn_io_threads(
                         }
                     }
                 }
+                // Look up win_region dynamically so tiling layout updates are reflected.
+                let win_region = if has_display {
+                    registry_r.lock().unwrap()
+                        .get(&name_r)
+                        .and_then(|st| st.lock().unwrap().win_region)
+                } else {
+                    None
+                };
                 route_or_print(&line, &name_r, &inbox_r, has_display, win_region, &focused_r, &registry_r);
             }
         })
@@ -713,11 +927,18 @@ fn launch_app_threads(
     focused:      &FocusedApp,
     app_registry: &AppRegistry,
 ) -> thread::JoinHandle<()> {
-    let SpawnedApp { entry, name, child, msg_rx, child_stdin, child_stdout, has_display, is_shell: _, win_region } = app;
+    let SpawnedApp { entry, name, child, msg_rx, child_stdin, child_stdout, has_display, is_shell: _ } = app;
 
-    spawn_io_threads(&name, child_stdin, child_stdout, msg_rx, has_display, win_region, inbox, focused, app_registry);
+    // T014: recompute tiled layout when a new display app is added
+    if has_display {
+        apply_tiling_layout(app_registry);
+        #[cfg(target_os = "linux")]
+        repaint_all_borders(app_registry, focused);
+    }
 
-    // P29: send actual screen resolution to display apps before their first draw
+    spawn_io_threads(&name, child_stdin, child_stdout, msg_rx, has_display, inbox, focused, app_registry);
+
+    // Send actual screen resolution to display apps before their first draw
     #[cfg(target_os = "linux")]
     if has_display {
         if let Some((w, h)) = display::screen_size() {
@@ -727,8 +948,8 @@ fn launch_app_threads(
         }
     }
 
-    // P33: newly launched display apps with windows go to the front of the Z-order
-    if has_display && win_region.is_some() {
+    // Newly launched display apps go to the front of the Z-order (after tiling assigns region)
+    if has_display {
         z_order_push_front(&name);
     }
 
@@ -819,17 +1040,20 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
 
+    // Limit tokio's multi-thread pool to 1 worker; prevents the OS-thread
+    // cap from causing EINVAL on clone() inside the VM's constrained kernel.
+    cmd.env("TOKIO_WORKER_THREADS", "1");
+
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::process::CommandExt;
         let filter = seccomp::build();
         unsafe {
-            cmd.pre_exec(move || {
-                // P27: isolate mount + PID namespaces per app.
-                // Non-fatal: ignored if kernel lacks CONFIG_NAMESPACES/CONFIG_PID_NS/CONFIG_MNT_NS.
-                let _ = libc::unshare(libc::CLONE_NEWNS | libc::CLONE_NEWPID);
-                seccomp::apply(&filter)
-            });
+            // P08T01: apply seccomp denylist. clone3 returns ENOSYS so glibc
+            // falls back to clone(2) — fixes EINVAL on Linux 5.10 + BASE_SMALL.
+            // CLONE_NEWPID unshare removed: it persists across exec and confuses
+            // tokio thread spawning on this kernel config.
+            cmd.pre_exec(move || seccomp::apply(&filter));
         }
     }
 
@@ -846,7 +1070,12 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
     let child_stdin  = child.stdin.take().expect("stdin pipe");
     let child_stdout = child.stdout.take().expect("stdout pipe");
 
-    // Register per-app runtime state
+    // Read preferred min dimensions from manifest [window] section (optional hints).
+    let min_size = manifest.window.as_ref()
+        .map(|wr| (wr.width.unwrap_or(0), wr.height.unwrap_or(0)))
+        .unwrap_or((0, 0));
+
+    // Register per-app runtime state (win_region starts None; assigned by apply_tiling_layout)
     let state = Arc::new(Mutex::new(AppState {
         entry:            entry.clone(),
         status:           AppStatus::Running,
@@ -859,7 +1088,8 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         watchdog_backoff: Arc::new(Mutex::new(0u64)),
         has_mouse:        caps.mouse,
         has_display:      caps.display,
-        win_region:       manifest.window.as_ref().map(|wr| (wr.x, wr.y, wr.w, wr.h)),
+        win_region:       None,
+        min_size,
     }));
     app_registry.lock().unwrap().insert(name.clone(), state);
 
@@ -872,7 +1102,6 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         child_stdout,
         has_display: caps.display,
         is_shell: caps.shell,
-        win_region: manifest.window.map(|wr| (wr.x, wr.y, wr.w, wr.h)),
     })
 }
 
@@ -890,7 +1119,7 @@ fn route_or_print(
     #[cfg(target_os = "linux")]
     if has_display {
         if let Some(cmd) = line.strip_prefix("VYOMA_DRAW:") {
-            handle_draw_command(cmd, sender, win_region);
+            handle_draw_command(cmd, sender, win_region, focused);
             return;
         }
     }
@@ -2118,42 +2347,15 @@ fn dispatch_mouse(
     app_registry: &AppRegistry,
     focused: &FocusedApp,
 ) {
-    // P32: check close-button clicks (in the chrome region above each windowed app)
-    if btn == 1 {
-        let close_hit = {
-            let reg = app_registry.lock().unwrap();
-            let mut hit: Option<String> = None;
-            for (name, state_arc) in reg.iter() {
-                let st = state_arc.lock().unwrap();
-                if !st.has_display { continue; }
-                let Some((wx, wy, ww, _)) = st.win_region else { continue };
-                if wy < 20 || ww < 20 { continue; }
-                // Close button occupies (wx+ww-16, wy-14, 12, 12)
-                let cbx = (wx + ww) as i32 - 16;
-                let cby = wy as i32 - 14;
-                if cx >= cbx && cx < cbx + 12 && cy >= cby && cy < cby + 12 {
-                    hit = Some(name.clone());
-                    break;
-                }
-            }
-            hit
-        };
-        if let Some(name) = close_hit {
-            send_reply(&name, "VYOMA_SYSTEM:window_event:close", inbox);
-            return;
-        }
-    }
-
     // Snapshot z-order before locking registry (avoids lock ordering issues)
     let z_snapshot: Vec<String> = Z_ORDER.get()
         .map(|m| m.lock().unwrap().clone())
         .unwrap_or_default();
 
-    // P33: on click, raise topmost window under cursor and set keyboard focus
-    if btn == 1 {
+    // On click, raise topmost window under cursor and set keyboard focus
+    if btn != 0 {
         let raise_target = {
             let reg = app_registry.lock().unwrap();
-            // Iterate z-order front-to-back; first window that contains the click wins
             let mut found: Option<String> = None;
             for name in &z_snapshot {
                 let Some(state_arc) = reg.get(name) else { continue };
@@ -2170,6 +2372,7 @@ fn dispatch_mouse(
         if let Some(ref name) = raise_target {
             z_order_push_front(name);
             *focused.lock().unwrap() = Some(name.clone());
+            repaint_all_borders(app_registry, focused);
         }
     }
 
@@ -2209,51 +2412,83 @@ fn dispatch_mouse(
         found
     };
     if let Some((name, lx, ly)) = target {
-        send_reply(&name, &format!("VYOMA_INPUT:mouse:{lx},{ly},{btn}"), inbox);
+        let msg = if btn == 0 {
+            format!("VYOMA_INPUT:mouse:move:{lx},{ly}")
+        } else {
+            let bname = match btn { 1 => "left", 2 => "right", 4 => "middle", _ => "left" };
+            format!("VYOMA_INPUT:mouse:click:{lx},{ly}:{bname}")
+        };
+        send_reply(&name, &msg, inbox);
     }
 }
 
 // ── VYOMA_DRAW command dispatcher ─────────────────────────────────────────────
 
+/// Parse a u32 that may be decimal ("218169855") or hex ("0x0d1117ff" / "0X0D1117FF").
 #[cfg(target_os = "linux")]
-fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)>) {
+#[inline]
+fn parse_color(s: &str) -> Option<u32> {
+    let s = s.trim();
+    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u32::from_str_radix(hex, 16).ok()
+    } else {
+        s.parse().ok()
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)>, focused: &FocusedApp) {
     let Some(fb_lock) = display::get() else { return };
 
     if cmd == "flush" || cmd == "present" {
+        let focused_name = focused.lock().unwrap().clone();
+        let is_focused = focused_name.as_deref() == Some(sender);
         let mut fb = fb_lock.lock().unwrap();
-        // P32: paint window decoration chrome on top of app content before blit
+
+        // Per-window macOS-style title bar
         if let Some((wx, wy, ww, _wh)) = win {
-            if wy >= 20 && ww >= 20 {
-                // Title bar background
-                fb.fill_rect(wx, wy - 20, ww, 20, 0x21262DFF);
-                // App name label
-                fb.draw_text(wx + 8, wy - 16, sender, 0xFFFFFFFF, font::FontSize::Medium);
-                // Close button — red square
-                fb.fill_rect(wx + ww - 16, wy - 14, 12, 12, 0xFF5F56FF);
+            if ww >= 60 {
+                draw_titlebar(&mut *fb, wx, wy, ww, is_focused, sender);
             }
         }
+
+        // Global menu bar — read sw directly from held lock (avoids deadlock
+        // that would occur if we called display::screen_size() while holding fb).
+        let sw = fb.width;
+        let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
+        draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref());
+
         fb.flush();
         return;
     }
 
     if let Some(args) = cmd.strip_prefix("fill_rect:") {
-        let v: Vec<u32> = args.split(',').filter_map(|s| s.parse().ok()).collect();
-        if let [lx, ly, w, h, rgba] = v.as_slice() {
-            let (ax, ay, aw, ah) = match win {
-                None => (*lx, *ly, *w, *h),
-                Some((wx, wy, ww, wh)) => {
-                    let ax = wx + *lx;
-                    let ay = wy + *ly;
-                    let win_right  = wx + ww;
-                    let win_bottom = wy + wh;
-                    if ax >= win_right || ay >= win_bottom { return; }
-                    let aw = (*w).min(win_right  - ax);
-                    let ah = (*h).min(win_bottom - ay);
-                    if aw == 0 || ah == 0 { return; }
-                    (ax, ay, aw, ah)
-                }
-            };
-            fb_lock.lock().unwrap().fill_rect(ax, ay, aw, ah, *rgba);
+        let p: Vec<&str> = args.splitn(5, ',').collect();
+        if let [lx_s, ly_s, w_s, h_s, rgba_s] = p.as_slice() {
+            if let (Ok(lx), Ok(ly), Ok(w), Ok(h), Some(rgba)) = (
+                lx_s.parse::<u32>(), ly_s.parse::<u32>(),
+                w_s.parse::<u32>(),  h_s.parse::<u32>(),
+                parse_color(rgba_s),
+            ) {
+                let (ax, ay, aw, ah) = match win {
+                    None => (lx, ly, w, h),
+                    Some((wx, wy, ww, wh)) => {
+                        let content_wy = wy + TITLEBAR_H;
+                        let ax = wx + lx;
+                        let ay = content_wy + ly;
+                        let win_right  = wx + ww;
+                        let win_bottom = wy + wh;
+                        if ax >= win_right || ay >= win_bottom { return; }
+                        let aw = w.min(win_right  - ax);
+                        let ah = h.min(win_bottom - ay);
+                        if aw == 0 || ah == 0 { return; }
+                        (ax, ay, aw, ah)
+                    }
+                };
+                fb_lock.lock().unwrap().fill_rect(ax, ay, aw, ah, rgba);
+            } else {
+                log_error!(Subsystem::Display, Some(sender), "bad fill_rect args: {args}");
+            }
         } else {
             log_error!(Subsystem::Display, Some(sender), "bad fill_rect args: {args}");
         }
@@ -2267,10 +2502,10 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
         let parts4: Vec<&str> = args.splitn(4, ',').collect();
 
         let parsed = if parts5.len() == 5 {
-            if let (Ok(lx), Ok(ly), Ok(rgba), Some(sz)) = (
+            if let (Ok(lx), Ok(ly), Some(rgba), Some(sz)) = (
                 parts5[0].parse::<u32>(),
                 parts5[1].parse::<u32>(),
-                parts5[2].parse::<u32>(),
+                parse_color(parts5[2]),
                 font::parse_size(parts5[3]),
             ) {
                 Some((lx, ly, rgba, sz, parts5[4]))
@@ -2283,10 +2518,10 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
 
         let parsed = parsed.or_else(|| {
             if parts4.len() == 4 {
-                if let (Ok(lx), Ok(ly), Ok(rgba)) = (
+                if let (Ok(lx), Ok(ly), Some(rgba)) = (
                     parts4[0].parse::<u32>(),
                     parts4[1].parse::<u32>(),
-                    parts4[2].parse::<u32>(),
+                    parse_color(parts4[2]),
                 ) {
                     Some((lx, ly, rgba, font::FontSize::Medium, parts4[3]))
                 } else {
@@ -2301,8 +2536,9 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
             let (ax, ay) = match win {
                 None => (lx, ly),
                 Some((wx, wy, ww, wh)) => {
+                    let content_wy = wy + TITLEBAR_H;
                     let ax = wx + lx;
-                    let ay = wy + ly;
+                    let ay = content_wy + ly;
                     if ax >= wx + ww || ay >= wy + wh { return; }
                     (ax, ay)
                 }
@@ -2317,18 +2553,19 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
     if let Some(args) = cmd.strip_prefix("rect_border:") {
         let parts: Vec<&str> = args.splitn(5, ',').collect();
         if parts.len() == 5 {
-            if let (Ok(lx), Ok(ly), Ok(w), Ok(h), Ok(rgba)) = (
+            if let (Ok(lx), Ok(ly), Ok(w), Ok(h), Some(rgba)) = (
                 parts[0].parse::<u32>(),
                 parts[1].parse::<u32>(),
                 parts[2].parse::<u32>(),
                 parts[3].parse::<u32>(),
-                parts[4].parse::<u32>(),
+                parse_color(parts[4]),
             ) {
                 let (ax, ay, aw, ah) = match win {
                     None => (lx, ly, w, h),
                     Some((wx, wy, ww, wh)) => {
+                        let content_wy = wy + TITLEBAR_H;
                         let ax = wx + lx;
-                        let ay = wy + ly;
+                        let ay = content_wy + ly;
                         let win_right  = wx + ww;
                         let win_bottom = wy + wh;
                         if ax >= win_right || ay >= win_bottom { return; }
@@ -2360,8 +2597,9 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
                 let (ax, ay, aw, ah) = match win {
                     None => (lx, ly, w, h),
                     Some((wx, wy, ww, wh)) => {
+                        let content_wy = wy + TITLEBAR_H;
                         let ax = wx + lx;
-                        let ay = wy + ly;
+                        let ay = content_wy + ly;
                         let win_right  = wx + ww;
                         let win_bottom = wy + wh;
                         if ax >= win_right || ay >= win_bottom { return; }
@@ -2385,19 +2623,20 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
         // Format: x,y,max_w,rgba,size,text  (splitn 6)
         let parts: Vec<&str> = args.splitn(6, ',').collect();
         if parts.len() == 6 {
-            if let (Ok(lx), Ok(ly), Ok(max_w), Ok(rgba), Some(size)) = (
+            if let (Ok(lx), Ok(ly), Ok(max_w), Some(rgba), Some(size)) = (
                 parts[0].parse::<u32>(),
                 parts[1].parse::<u32>(),
                 parts[2].parse::<u32>(),
-                parts[3].parse::<u32>(),
+                parse_color(parts[3]),
                 font::parse_size(parts[4]),
             ) {
                 let text = parts[5];
                 let (ax, ay, effective_max_w) = match win {
                     None => (lx, ly, max_w),
                     Some((wx, wy, ww, wh)) => {
+                        let content_wy = wy + TITLEBAR_H;
                         let ax = wx + lx;
-                        let ay = wy + ly;
+                        let ay = content_wy + ly;
                         if ax >= wx + ww || ay >= wy + wh { return; }
                         let effective_max_w = max_w.min(ww.saturating_sub(lx));
                         if effective_max_w == 0 { return; }
@@ -2415,6 +2654,30 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
     }
 
     log_warn!(Subsystem::Display, Some(sender), "unknown command: {cmd}");
+}
+
+// ── Focus transfer on app exit ────────────────────────────────────────────────
+
+fn auto_transfer_focus(exiting: &str, app_registry: &AppRegistry, focused: &FocusedApp) {
+    let is_focused = focused.lock().unwrap().as_deref() == Some(exiting);
+    if !is_focused { return; }
+
+    // Find first other Running display-or-shell app (sorted for determinism)
+    let next = {
+        let reg = app_registry.lock().unwrap();
+        let mut names: Vec<String> = reg.iter()
+            .filter(|(name, state_arc)| {
+                if name.as_str() == exiting { return false; }
+                let st = state_arc.lock().unwrap();
+                matches!(st.status, AppStatus::Running) && st.has_display
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+        names.sort();
+        names.into_iter().next()
+    };
+
+    *focused.lock().unwrap() = next;
 }
 
 // ── App waiter — handles exit + automatic restart policy ─────────────────────
@@ -2443,13 +2706,26 @@ fn wait_app(
         };
 
         // Update status in registry
-        {
+        let had_display = {
             let reg = app_registry.lock().unwrap();
             if let Some(st) = reg.get(&name) {
                 let mut st = st.lock().unwrap();
                 st.status = AppStatus::Stopped(exit_code);
                 st.child_pid = None;
+                st.has_display
+            } else {
+                false
             }
+        };
+
+        // Transfer keyboard focus if exiting app held it
+        auto_transfer_focus(&name, &app_registry, &focused);
+
+        // T015: recompute tiled layout when a display app exits
+        if had_display {
+            apply_tiling_layout(&app_registry);
+            #[cfg(target_os = "linux")]
+            repaint_all_borders(&app_registry, &focused);
         }
 
         let should_restart = match entry.restart.as_str() {
@@ -2474,11 +2750,17 @@ fn wait_app(
                         st.lock().unwrap().restart_count = restart_count;
                     }
                 }
+                // Recompute layout now that this app is running again
+                if app.has_display {
+                    apply_tiling_layout(&app_registry);
+                    #[cfg(target_os = "linux")]
+                    repaint_all_borders(&app_registry, &focused);
+                }
                 // Spawn new IO threads; continue this loop as the new waiter
-                let SpawnedApp { child: new_child, child_stdin, child_stdout, msg_rx, has_display, win_region, .. } = app;
+                let SpawnedApp { child: new_child, child_stdin, child_stdout, msg_rx, has_display, .. } = app;
                 spawn_io_threads(
                     &name, child_stdin, child_stdout, msg_rx,
-                    has_display, win_region, &inbox, &focused, &app_registry,
+                    has_display, &inbox, &focused, &app_registry,
                 );
                 child = new_child;
             }

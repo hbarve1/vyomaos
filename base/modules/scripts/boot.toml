@@ -46,3 +46,8 @@ restart  = "always"
 [[apps]]
 manifest = "/apps/shell/vyoma.toml"
 restart  = "never"
+
+# Mouse demo: displays live mouse move/click events for testing input routing
+[[apps]]
+manifest = "/apps/mouse-demo/vyoma.toml"
+restart  = "always"
