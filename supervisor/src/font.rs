@@ -1,3 +1,6 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
 //! 8×16 bitmap font for printable ASCII (0x20 ' ' through 0x7E '~').
 //! Each character occupies 16 bytes: one byte per scanline, MSB = leftmost pixel.
 //! Index: FONT[(codepoint - 0x20) * 16 ..][..16]

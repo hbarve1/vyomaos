@@ -1,0 +1,111 @@
+VyomaOS Commercial License
+Version 1.0, 2025
+
+Copyright (c) 2025–2026 Himank Barve. All rights reserved.
+
+────────────────────────────────────────────────────────────────────────────
+WHO NEEDS A COMMERCIAL LICENSE
+────────────────────────────────────────────────────────────────────────────
+
+You need a commercial license if you intend to:
+
+  1. Embed VyomaOS (or a derivative) in a product or appliance that you
+     sell or distribute to customers.
+
+  2. Offer VyomaOS as a hosted, managed, or cloud service for which
+     end-users or customers pay a fee.
+
+  3. Include VyomaOS in a commercial software product distributed under
+     a proprietary (non-OSI-approved) license.
+
+  4. White-label or rebrand VyomaOS for distribution as your own product.
+
+  5. Use VyomaOS in a government, defense, or regulated-industry deployment
+     that requires a warranty or indemnification agreement.
+
+You do NOT need a commercial license for:
+
+  - Personal, educational, or research use.
+  - Internal use within your organization (not distributed to customers).
+  - Open-source projects released under an OSI-approved license.
+
+────────────────────────────────────────────────────────────────────────────
+LICENSE TIERS (indicative — final terms negotiated per agreement)
+────────────────────────────────────────────────────────────────────────────
+
+  STARTER — Indie / Small Business
+    For companies with annual revenue under USD $500 000.
+    Single product, single deployment environment.
+    Includes: 1 year of email support, bug-fix releases.
+    Contact for pricing.
+
+  PROFESSIONAL — Growth / Scale-up
+    For companies with annual revenue USD $500 000 – $5 000 000.
+    Up to 3 products / deployment environments.
+    Includes: priority support, patch releases, roadmap input.
+    Contact for pricing.
+
+  ENTERPRISE — Large / OEM
+    Unlimited products and deployments.
+    White-label rights, custom SLA, patent indemnification.
+    Dedicated support channel.
+    Contact for pricing.
+
+  GOVERNMENT / REGULATED
+    Custom terms including FIPS, air-gap, and export compliance.
+    Contact for pricing.
+
+────────────────────────────────────────────────────────────────────────────
+WHAT A COMMERCIAL LICENSE GRANTS
+────────────────────────────────────────────────────────────────────────────
+
+A signed Commercial License Agreement grants you:
+
+  * A non-exclusive, worldwide license to use, modify, and distribute
+    VyomaOS in your commercial product or service.
+
+  * A patent license covering claims necessarily infringed by your use
+    of VyomaOS as permitted under the agreement.
+
+  * The right to keep modifications private (no copyleft obligation).
+
+  * Rights to use the "Powered by VyomaOS" badge (optional).
+
+────────────────────────────────────────────────────────────────────────────
+HOW TO OBTAIN A COMMERCIAL LICENSE
+────────────────────────────────────────────────────────────────────────────
+
+Contact Himank Barve with the following information:
+
+  Email  : honey.barve@gruve.ai
+  Subject: "VyomaOS Commercial License Inquiry"
+
+Please include:
+
+  1. Company / organization name and website.
+  2. Intended use case (product embedding, SaaS, OEM, etc.).
+  3. Estimated deployment scale (number of units, users, or instances).
+  4. Approximate annual revenue of the entity.
+  5. Desired support level and timeline.
+
+You will receive a draft Commercial License Agreement within 5 business days.
+
+────────────────────────────────────────────────────────────────────────────
+CONTRIBUTOR AGREEMENTS
+────────────────────────────────────────────────────────────────────────────
+
+Contributors to VyomaOS are required to sign a Contributor License Agreement
+(CLA) before their pull requests are merged. The CLA grants Himank Barve the
+right to include contributions under both the Community License and any
+Commercial License Agreement, while contributors retain copyright in their
+own contributions.
+
+────────────────────────────────────────────────────────────────────────────
+DISCLAIMER
+────────────────────────────────────────────────────────────────────────────
+
+This document is informational and does not constitute a binding license.
+A binding commercial license requires a separately executed written agreement
+signed by Himank Barve.
+
+────────────────────────────────────────────────────────────────────────────

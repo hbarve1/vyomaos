@@ -1,0 +1,36 @@
+VyomaOS
+Copyright (c) 2025–2026 Himank Barve. All rights reserved.
+
+This product is licensed under the VyomaOS Community License (Apache 2.0
+with Commons Clause). See LICENSE for community use terms and
+LICENSE-COMMERCIAL for commercial licensing information.
+
+────────────────────────────────────────────────────────────────────────────
+THIRD-PARTY COMPONENTS
+────────────────────────────────────────────────────────────────────────────
+
+VyomaOS bundles or depends on the following third-party software:
+
+Linux Kernel
+  License : GNU General Public License v2.0
+  Source  : https://kernel.org
+
+Wasmtime
+  Copyright (c) 2019, The Wasmtime Project
+  License : Apache License 2.0
+  Source  : https://github.com/bytecodealliance/wasmtime
+
+BusyBox
+  Copyright (c) 1999–2023, Erik Andersen and contributors
+  License : GNU General Public License v2.0
+  Source  : https://busybox.net
+
+Rust standard library and crates.io dependencies
+  Various authors; see individual Cargo.lock entries for details.
+  Most crates are licensed under MIT and/or Apache 2.0.
+  Source  : https://crates.io
+
+────────────────────────────────────────────────────────────────────────────
+
+For the complete text of each third-party license, see the respective
+project's source repository or the licenses/ directory (if bundled).
