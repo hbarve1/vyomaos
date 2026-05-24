@@ -196,3 +196,25 @@ fn unknown_btn_falls_back_to_left() {
 fn move_event_zero_coords() {
     assert_eq!(format_mouse_event(0, 0, 0), "VYOMA_INPUT:mouse:move:0,0");
 }
+
+// ── drag_delta ────────────────────────────────────────────────────────────────
+
+#[test]
+fn drag_delta_zero() {
+    assert_eq!(supervisor::windows::drag_delta(10, 20, 10, 20), (0, 0));
+}
+
+#[test]
+fn drag_delta_positive() {
+    assert_eq!(supervisor::windows::drag_delta(0, 0, 5, 3), (5, 3));
+}
+
+#[test]
+fn drag_delta_negative() {
+    assert_eq!(supervisor::windows::drag_delta(10, 10, 3, 2), (-7, -8));
+}
+
+#[test]
+fn drag_delta_mixed() {
+    assert_eq!(supervisor::windows::drag_delta(5, 0, 2, 7), (-3, 7));
+}
