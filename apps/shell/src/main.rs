@@ -122,6 +122,22 @@ fn main() {
                     draw_panel(&lines, &current_input);
                 }
             }
+            "\t" => {
+                // Tab — complete a /data/ path if the input starts with that prefix
+                const DATA_PREFIX: &str = "/data/";
+                if let Some(suffix) = current_input.strip_prefix(DATA_PREFIX) {
+                    let matches = path_completions(suffix, DATA_ENTRIES);
+                    if matches.len() == 1 {
+                        current_input = format!("{}{}", DATA_PREFIX, matches[0]);
+                    } else if matches.is_empty() {
+                        push_line(&mut lines, format!("no /data/ match for '{suffix}'"));
+                    } else {
+                        let hint = matches.join("  ");
+                        push_line(&mut lines, format!("candidates: {hint}"));
+                    }
+                }
+                draw_panel(&lines, &current_input);
+            }
             s if s.len() == 1
                 && s.bytes().next().map(|b| (0x20..=0x7E).contains(&b)).unwrap_or(false) =>
             {
@@ -409,6 +425,15 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
     }
 }
 
+// ── /data/ path completion ────────────────────────────────────────────────────
+
+const DATA_ENTRIES: &[&str] = &["shell_history", "boot_count.txt", "boot_log.txt"];
+
+/// Return every entry whose name starts with `prefix`.  Pure: no I/O, no global state.
+fn path_completions<'a>(prefix: &str, entries: &'a [&'a str]) -> Vec<&'a str> {
+    entries.iter().copied().filter(|e| e.starts_with(prefix)).collect()
+}
+
 // ── Keep lines buffer bounded ─────────────────────────────────────────────────
 
 fn push_line(lines: &mut Vec<String>, s: String) {
@@ -488,4 +513,35 @@ fn flush() {
     // Pipe stdout is block-buffered — must flush explicitly so VYOMA_DRAW
     // commands reach the supervisor without waiting for the buffer to fill.
     let _ = std::io::stdout().flush();
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::path_completions;
+
+    #[test]
+    fn path_completions_exact_match() {
+        let entries = &["shell_history", "boot_count.txt", "boot_log.txt"];
+        assert_eq!(path_completions("shell", entries), vec!["shell_history"]);
+    }
+
+    #[test]
+    fn path_completions_prefix_match_multiple() {
+        let entries = &["boot_count.txt", "boot_log.txt", "shell_history"];
+        assert_eq!(path_completions("boot", entries).len(), 2);
+    }
+
+    #[test]
+    fn path_completions_no_match() {
+        let entries = &["shell_history", "boot_count.txt"];
+        assert!(path_completions("xyz", entries).is_empty());
+    }
+
+    #[test]
+    fn path_completions_empty_prefix_returns_all() {
+        let entries = &["a", "b", "c"];
+        assert_eq!(path_completions("", entries).len(), 3);
+    }
 }
