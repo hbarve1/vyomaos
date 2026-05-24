@@ -2335,6 +2335,18 @@ fn dispatch_mouse(
 
 // ── VYOMA_DRAW command dispatcher ─────────────────────────────────────────────
 
+/// Parse a u32 that may be decimal ("218169855") or hex ("0x0d1117ff" / "0X0D1117FF").
+#[cfg(target_os = "linux")]
+#[inline]
+fn parse_color(s: &str) -> Option<u32> {
+    let s = s.trim();
+    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u32::from_str_radix(hex, 16).ok()
+    } else {
+        s.parse().ok()
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)>, focused: &FocusedApp) {
     let Some(fb_lock) = display::get() else { return };
@@ -2361,23 +2373,31 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
     }
 
     if let Some(args) = cmd.strip_prefix("fill_rect:") {
-        let v: Vec<u32> = args.split(',').filter_map(|s| s.parse().ok()).collect();
-        if let [lx, ly, w, h, rgba] = v.as_slice() {
-            let (ax, ay, aw, ah) = match win {
-                None => (*lx, *ly, *w, *h),
-                Some((wx, wy, ww, wh)) => {
-                    let ax = wx + *lx;
-                    let ay = wy + *ly;
-                    let win_right  = wx + ww;
-                    let win_bottom = wy + wh;
-                    if ax >= win_right || ay >= win_bottom { return; }
-                    let aw = (*w).min(win_right  - ax);
-                    let ah = (*h).min(win_bottom - ay);
-                    if aw == 0 || ah == 0 { return; }
-                    (ax, ay, aw, ah)
-                }
-            };
-            fb_lock.lock().unwrap().fill_rect(ax, ay, aw, ah, *rgba);
+        let p: Vec<&str> = args.splitn(5, ',').collect();
+        if let [lx_s, ly_s, w_s, h_s, rgba_s] = p.as_slice() {
+            if let (Ok(lx), Ok(ly), Ok(w), Ok(h), Some(rgba)) = (
+                lx_s.parse::<u32>(), ly_s.parse::<u32>(),
+                w_s.parse::<u32>(),  h_s.parse::<u32>(),
+                parse_color(rgba_s),
+            ) {
+                let (ax, ay, aw, ah) = match win {
+                    None => (lx, ly, w, h),
+                    Some((wx, wy, ww, wh)) => {
+                        let ax = wx + lx;
+                        let ay = wy + ly;
+                        let win_right  = wx + ww;
+                        let win_bottom = wy + wh;
+                        if ax >= win_right || ay >= win_bottom { return; }
+                        let aw = w.min(win_right  - ax);
+                        let ah = h.min(win_bottom - ay);
+                        if aw == 0 || ah == 0 { return; }
+                        (ax, ay, aw, ah)
+                    }
+                };
+                fb_lock.lock().unwrap().fill_rect(ax, ay, aw, ah, rgba);
+            } else {
+                log_error!(Subsystem::Display, Some(sender), "bad fill_rect args: {args}");
+            }
         } else {
             log_error!(Subsystem::Display, Some(sender), "bad fill_rect args: {args}");
         }
@@ -2391,10 +2411,10 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
         let parts4: Vec<&str> = args.splitn(4, ',').collect();
 
         let parsed = if parts5.len() == 5 {
-            if let (Ok(lx), Ok(ly), Ok(rgba), Some(sz)) = (
+            if let (Ok(lx), Ok(ly), Some(rgba), Some(sz)) = (
                 parts5[0].parse::<u32>(),
                 parts5[1].parse::<u32>(),
-                parts5[2].parse::<u32>(),
+                parse_color(parts5[2]),
                 font::parse_size(parts5[3]),
             ) {
                 Some((lx, ly, rgba, sz, parts5[4]))
@@ -2407,10 +2427,10 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
 
         let parsed = parsed.or_else(|| {
             if parts4.len() == 4 {
-                if let (Ok(lx), Ok(ly), Ok(rgba)) = (
+                if let (Ok(lx), Ok(ly), Some(rgba)) = (
                     parts4[0].parse::<u32>(),
                     parts4[1].parse::<u32>(),
-                    parts4[2].parse::<u32>(),
+                    parse_color(parts4[2]),
                 ) {
                     Some((lx, ly, rgba, font::FontSize::Medium, parts4[3]))
                 } else {
@@ -2441,12 +2461,12 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
     if let Some(args) = cmd.strip_prefix("rect_border:") {
         let parts: Vec<&str> = args.splitn(5, ',').collect();
         if parts.len() == 5 {
-            if let (Ok(lx), Ok(ly), Ok(w), Ok(h), Ok(rgba)) = (
+            if let (Ok(lx), Ok(ly), Ok(w), Ok(h), Some(rgba)) = (
                 parts[0].parse::<u32>(),
                 parts[1].parse::<u32>(),
                 parts[2].parse::<u32>(),
                 parts[3].parse::<u32>(),
-                parts[4].parse::<u32>(),
+                parse_color(parts[4]),
             ) {
                 let (ax, ay, aw, ah) = match win {
                     None => (lx, ly, w, h),
@@ -2509,11 +2529,11 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
         // Format: x,y,max_w,rgba,size,text  (splitn 6)
         let parts: Vec<&str> = args.splitn(6, ',').collect();
         if parts.len() == 6 {
-            if let (Ok(lx), Ok(ly), Ok(max_w), Ok(rgba), Some(size)) = (
+            if let (Ok(lx), Ok(ly), Ok(max_w), Some(rgba), Some(size)) = (
                 parts[0].parse::<u32>(),
                 parts[1].parse::<u32>(),
                 parts[2].parse::<u32>(),
-                parts[3].parse::<u32>(),
+                parse_color(parts[3]),
                 font::parse_size(parts[4]),
             ) {
                 let text = parts[5];
