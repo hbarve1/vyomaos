@@ -1426,7 +1426,8 @@ fn handle_supervisor_command(
                 let reg = app_registry.lock().unwrap();
                 let mut rows: Vec<(String, String)> = reg.iter().map(|(name, st)| {
                     let st = st.lock().unwrap();
-                    let uptime = st.start_time.elapsed().as_secs();
+                    let uptime_secs = st.start_time.elapsed().as_secs();
+                    let uptime_str = supervisor::lifecycle::format_uptime(uptime_secs);
                     let status_str = match &st.status {
                         AppStatus::Running    => "running".to_string(),
                         AppStatus::Stopped(c) => format!("stopped({})", c),
@@ -1437,8 +1438,8 @@ fn handle_supervisor_command(
                         String::new()
                     };
                     let info = format!(
-                        "{:<16} {:<12} {:>5}s  restarts:{}{}",
-                        name, status_str, uptime, st.restart_count, wd_tag
+                        "{:<16} {:<12} up:{}  restarts:{}{}",
+                        name, status_str, uptime_str, st.restart_count, wd_tag
                     );
                     (name.clone(), info)
                 }).collect();
