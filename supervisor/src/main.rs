@@ -418,6 +418,17 @@ fn draw_titlebar(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, is_fo
     fb.fill_rect(wx, wy, ww, TITLEBAR_H, bg);
     fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
 
+    // 2px focus border — drawn around the full window frame (titlebar + content)
+    let bc = display::border_color(is_focused);
+    // top edge
+    fb.fill_rect(wx, wy, ww, 2, bc);
+    // bottom edge
+    if wh >= 2 { fb.fill_rect(wx, wy + wh - 2, ww, 2, bc); }
+    // left edge
+    fb.fill_rect(wx, wy, 2, wh, bc);
+    // right edge
+    if ww >= 2 { fb.fill_rect(wx + ww - 2, wy, 2, wh, bc); }
+
     // Traffic lights — 12×12, left-aligned, vertically centered
     let tl_y = wy + (TITLEBAR_H - TL_DOT) / 2;
     let (c1, c2, c3) = if is_focused {
@@ -493,7 +504,7 @@ fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     };
     let Some(fb_lock) = display::get() else { return };
     let mut fb = fb_lock.lock().unwrap();
-    for (name, (wx, wy, ww, _wh)) in &regions {
+    for (name, (wx, wy, ww, wh)) in &regions {
         if *ww < 60 { continue; }
         let is_focused = focused_name.as_deref() == Some(name.as_str());
         let is_hovered = hovered_name.as_deref() == Some(name.as_str());
@@ -3039,7 +3050,7 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
         };
 
         if is_dirty {
-            if let Some((wx, wy, ww, _wh)) = win {
+            if let Some((wx, wy, ww, wh)) = win {
                 if ww >= 60 {
                     let is_hovered = HOVERED_APP
                         .get_or_init(|| Mutex::new(None))

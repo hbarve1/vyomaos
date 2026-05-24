@@ -604,6 +604,15 @@ pub fn titlebar_color(focused: bool) -> u32 {
     if focused { 0x388BFDFF } else { 0x30363DFF }
 }
 
+/// Return the 2px focus-border color for a window.
+///
+/// Focused windows get a bright blue accent (`0x388BFDFF`).
+/// Unfocused windows get a dim gray (`0x30363DFF`).
+/// This is a pure function — no I/O, no side effects.
+pub fn border_color(focused: bool) -> u32 {
+    if focused { 0x388BFDFF } else { 0x30363DFF }
+}
+
 /// Return a deterministic accent color for an app based on its name.
 ///
 /// The color is derived from a djb2 hash of the app name, then mapped to one
@@ -622,6 +631,7 @@ pub fn app_accent_color(name: &str) -> u32 {
         .fold(5381u32, |h, b| h.wrapping_mul(33).wrapping_add(b as u32));
     PALETTE[(hash % 6) as usize]
 }
+
 
 /// Word-wrap `text` so each line is at most `max_chars` wide.
 /// Long single words are placed on their own line without truncation.

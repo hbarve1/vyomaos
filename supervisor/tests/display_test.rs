@@ -1,4 +1,4 @@
-// Tests for display module: word-wrap logic, cursor draw/restore, titlebar colors, accent colors, alpha blending.
+// Tests for display module: word-wrap logic, cursor draw/restore, titlebar colors, accent colors, alpha blending, border colors.
 
 use supervisor::display::{self, app_accent_color, Framebuffer, CURSOR_W, CURSOR_H, titlebar_color};
 
@@ -242,4 +242,27 @@ fn blend_alpha_midpoint_is_between() {
 fn blend_alpha_always_sets_alpha_ff() {
     let result = display::blend_alpha(0x12345678, 0xAABBCCFF, 100);
     assert_eq!(result & 0xFF, 0xFF);
+}
+
+// ── border_color ──────────────────────────────────────────────────────────────
+
+#[test]
+fn border_color_focused_is_blue() {
+    assert_eq!(display::border_color(true), 0x388BFDFF);
+}
+
+#[test]
+fn border_color_unfocused_is_dim() {
+    assert_eq!(display::border_color(false), 0x30363DFF);
+}
+
+#[test]
+fn border_color_focused_differs_from_unfocused() {
+    assert_ne!(display::border_color(true), display::border_color(false));
+}
+
+#[test]
+fn border_color_alpha_is_ff() {
+    assert_eq!(display::border_color(true) & 0xFF, 0xFF);
+    assert_eq!(display::border_color(false) & 0xFF, 0xFF);
 }
