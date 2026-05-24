@@ -355,6 +355,10 @@ fn draw_titlebar(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, is_fo
     fb.fill_rect(wx + 24, tl_y, TL_DOT, TL_DOT, c2);
     fb.fill_rect(wx + 40, tl_y, TL_DOT, TL_DOT, c3);
 
+    // Accent color dot — deterministic per-app identity marker (12×12 at x+60)
+    let accent = display::app_accent_color(name);
+    fb.fill_rect(wx + 60, tl_y, TL_DOT, TL_DOT, accent);
+
     // App name centered (medium font = 8 px/char, 16 px tall)
     let nlen = name.len().min(20) as u32;  // cap to avoid overflow
     let name_w = nlen * 8;
