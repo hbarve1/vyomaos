@@ -184,6 +184,7 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  clip-set <text>    — copy text to supervisor clipboard".into());
             push_line(lines, "  clip-get           — paste text from supervisor clipboard".into());
             push_line(lines, "  screenshot [path]  — save framebuffer PPM to /data/screenshot.ppm".into());
+            push_line(lines, "  whoami            — print current user name".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
         "clear" => {
@@ -403,10 +404,19 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             println!("@supervisor: screenshot {dest}");
             push_line(lines, format!("saving screenshot to {dest}..."));
         }
+        _ if is_whoami_cmd(cmd) => {
+            push_line(lines, "vyoma".to_string());
+        }
         other => {
             push_line(lines, format!("unknown: {other}"));
         }
     }
+}
+
+// ── Pure helpers ──────────────────────────────────────────────────────────────
+
+fn is_whoami_cmd(input: &str) -> bool {
+    input.trim() == "whoami"
 }
 
 // ── Keep lines buffer bounded ─────────────────────────────────────────────────
@@ -488,4 +498,31 @@ fn flush() {
     // Pipe stdout is block-buffered — must flush explicitly so VYOMA_DRAW
     // commands reach the supervisor without waiting for the buffer to fill.
     let _ = std::io::stdout().flush();
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::is_whoami_cmd;
+
+    #[test]
+    fn is_whoami_cmd_basic() {
+        assert!(is_whoami_cmd("whoami"));
+    }
+
+    #[test]
+    fn is_whoami_cmd_spaces() {
+        assert!(is_whoami_cmd("  whoami  "));
+    }
+
+    #[test]
+    fn is_whoami_cmd_not_who() {
+        assert!(!is_whoami_cmd("who"));
+    }
+
+    #[test]
+    fn is_whoami_cmd_empty() {
+        assert!(!is_whoami_cmd(""));
+    }
 }
