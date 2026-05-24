@@ -158,6 +158,9 @@ fn main() {
                 }
                 if cmd.is_empty() {
                     draw_panel(&lines, &current_input, cursor_pos);
+                } else if is_clear_cmd(&cmd) {
+                    lines.clear();
+                    draw_panel(&lines, &current_input, cursor_pos);
                 } else {
                     push_line(&mut lines, format!("> {cmd}"));
                     handle_command(&cmd, &mut lines);
@@ -224,6 +227,11 @@ fn main() {
                 let cmd = other.trim().to_string();
                 if cmd.is_empty() {
                     draw_panel(&lines, &current_input, cursor_pos);
+                } else if is_clear_cmd(&cmd) {
+                    current_input.clear();
+                    cursor_pos = 0;
+                    lines.clear();
+                    draw_panel(&lines, &current_input, cursor_pos);
                 } else {
                     current_input.clear();
                     cursor_pos = 0;
@@ -272,6 +280,13 @@ fn append_history(cmd: &str) {
     }
 }
 
+// ── Clear-command helper ──────────────────────────────────────────────────────
+
+/// Returns `true` if `input` (after trimming) is exactly the word "clear".
+fn is_clear_cmd(input: &str) -> bool {
+    input.trim() == "clear"
+}
+
 // ── Command dispatcher ────────────────────────────────────────────────────────
 
 fn handle_command(cmd: &str, lines: &mut Vec<String>) {
@@ -315,9 +330,6 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  clip-get           — paste text from supervisor clipboard".into());
             push_line(lines, "  screenshot [path]  — save framebuffer PPM to /data/screenshot.ppm".into());
             push_line(lines, "  clear             — clear shell output".into());
-        }
-        "clear" => {
-            lines.clear();
         }
         "ps" => {
             println!("@supervisor: ps");
@@ -631,7 +643,7 @@ fn flush() {
 
 #[cfg(test)]
 mod tests {
-    use super::{wrap_line, path_completions};
+    use super::{wrap_line, path_completions, is_clear_cmd};
 
     #[test]
     fn wrap_line_short_fits_one_chunk() {
@@ -686,5 +698,30 @@ mod tests {
     fn path_completions_empty_prefix_returns_all() {
         let entries = &["a", "b", "c"];
         assert_eq!(path_completions("", entries).len(), 3);
+    }
+
+    #[test]
+    fn is_clear_cmd_basic() {
+        assert!(is_clear_cmd("clear"));
+    }
+
+    #[test]
+    fn is_clear_cmd_with_space() {
+        assert!(is_clear_cmd("  clear  "));
+    }
+
+    #[test]
+    fn is_clear_cmd_not_clear() {
+        assert!(!is_clear_cmd("cls"));
+    }
+
+    #[test]
+    fn is_clear_cmd_empty() {
+        assert!(!is_clear_cmd(""));
+    }
+
+    #[test]
+    fn is_clear_cmd_partial() {
+        assert!(!is_clear_cmd("clear all"));
     }
 }
