@@ -81,6 +81,66 @@ pub fn compute_tiling_with_hints(
     regions
 }
 
+/// Compute window regions for the "Alt+F snap" layout.
+///
+/// The focused app expands to fill the left 2/3 of the usable area; all other
+/// display apps share a right column (1/3 width) stacked vertically.  If there
+/// is only one app it receives the full screen (minus the menu bar).
+///
+/// # Parameters
+/// - `screen_w`, `screen_h`: total framebuffer dimensions in pixels.
+/// - `menubar_h`: height of the global menu bar (pixels to reserve at the top).
+/// - `focused_idx`: index of the focused app within the sorted app list.
+/// - `n_apps`: total number of display apps.
+///
+/// # Returns
+/// One `(wx, wy, ww, wh)` tuple per app in the same order as the input list.
+/// Returns an empty `Vec` when `n_apps == 0`.
+pub fn compute_snap_layout(
+    screen_w: u32,
+    screen_h: u32,
+    menubar_h: u32,
+    focused_idx: usize,
+    n_apps: usize,
+) -> Vec<(u32, u32, u32, u32)> {
+    if n_apps == 0 {
+        return vec![];
+    }
+
+    let usable_h = screen_h.saturating_sub(menubar_h);
+
+    if n_apps == 1 {
+        return vec![(0, menubar_h, screen_w, usable_h)];
+    }
+
+    let left_w  = screen_w * 2 / 3;
+    let right_x = left_w;
+    let right_w = screen_w - left_w;
+    let n_others = n_apps - 1;
+    let slot_h  = usable_h / n_others as u32;
+
+    let mut regions = Vec::with_capacity(n_apps);
+    let mut other_idx = 0usize; // counter for non-focused apps
+
+    for i in 0..n_apps {
+        if i == focused_idx {
+            regions.push((0, menubar_h, left_w, usable_h));
+        } else {
+            let y = menubar_h + other_idx as u32 * slot_h;
+            // Last slot absorbs any remainder pixels.
+            let h = if other_idx + 1 == n_others {
+                usable_h - other_idx as u32 * slot_h
+            } else {
+                slot_h
+            };
+            regions.push((right_x, y, right_w, h));
+            other_idx += 1;
+        }
+    }
+
+    regions
+}
+
 /// Integer ceiling of sqrt(n).
 fn ceil_sqrt(n: usize) -> usize {
     if n == 0 {
