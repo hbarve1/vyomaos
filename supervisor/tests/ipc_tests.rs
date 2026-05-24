@@ -25,3 +25,27 @@ fn test_valid_ipc_format_parses_correctly() {
     assert_eq!(target,  "ping",            "target mismatch");
     assert_eq!(payload, "hello from pong", "payload mismatch");
 }
+
+// ── format_app_list tests ─────────────────────────────────────────────────────
+
+#[test]
+fn format_app_list_empty() {
+    assert_eq!(supervisor::ipc::format_app_list(&[]), "");
+}
+
+#[test]
+fn format_app_list_one() {
+    assert_eq!(supervisor::ipc::format_app_list(&["shell"]), "shell");
+}
+
+#[test]
+fn format_app_list_multiple() {
+    let r = supervisor::ipc::format_app_list(&["shell", "ticker", "gui-demo"]);
+    assert_eq!(r, "shell\nticker\ngui-demo");
+}
+
+#[test]
+fn format_app_list_no_trailing_newline() {
+    let r = supervisor::ipc::format_app_list(&["a", "b"]);
+    assert!(!r.ends_with('\n'), "should not end with newline");
+}

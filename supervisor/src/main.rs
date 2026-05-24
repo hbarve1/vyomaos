@@ -1328,6 +1328,24 @@ fn handle_supervisor_command(
             let count = inbox.lock().unwrap().len();
             send_reply(sender, &format!("REPLY:{{\"running\":{count}}}"), inbox);
         }
+
+        // 030-ipc-list-apps: return newline-separated list of running app names
+        "apps" => {
+            let names: Vec<String> = {
+                let reg = app_registry.lock().unwrap();
+                let mut v: Vec<String> = reg.iter()
+                    .filter(|(_, st)| matches!(st.lock().unwrap().status, AppStatus::Running))
+                    .map(|(name, _)| name.clone())
+                    .collect();
+                v.sort();
+                v
+            };
+            let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+            let reply = supervisor::ipc::format_app_list(&name_refs);
+            send_reply(sender, &format!("REPLY:{reply}"), inbox);
+            log_info!(Subsystem::Ipc, None, "apps list sent to {sender}: {} apps", names.len());
+        }
+
         "focus" => {
             if let Some(name) = parts.get(1).map(|s| s.trim()) {
                 *focused.lock().unwrap() = Some(name.to_string());
