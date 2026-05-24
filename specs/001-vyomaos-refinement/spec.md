@@ -112,7 +112,7 @@ A developer changing only one app's source code runs `make apps` and sees only t
 
 - What happens when a `vyoma.toml` is syntactically valid TOML but semantically invalid (e.g., `display = "yes"` instead of `display = true`)?
 - How does the smoke test behave if QEMU is not installed on the host?
-- What if two apps declare the same `name` field in their `vyoma.toml`?
+- When two apps declare the same `name` field, the first-registered app starts normally; the duplicate is rejected with a structured ERROR log line identifying the conflicting app and path — all other apps continue to start.
 - What if a WASM binary exceeds the 50 KB size limit — is it a build error or a warning?
 - What happens when `cargo test` is run inside the Docker container vs. on the host directly?
 
@@ -121,14 +121,14 @@ A developer changing only one app's source code runs `make apps` and sees only t
 ### Functional Requirements
 
 - **FR-001**: The supervisor crate MUST have a `tests/` module with unit tests covering manifest parsing (valid + invalid), capability validation, IPC routing, and process lifecycle state transitions.
-- **FR-002**: `cargo test -p supervisor` MUST pass with zero failures and zero new compiler warnings on the `x86_64-unknown-linux-musl` target.
-- **FR-003**: A `make test` target MUST exist that boots VyomaOS headless in QEMU, captures serial output, asserts the supervisor ready signal appears, and exits 0/non-zero appropriately.
+- **FR-002**: `cargo test -p supervisor` MUST run inside the `vyomaos-builder` Docker container, pass with zero failures, and produce zero new compiler warnings on the `x86_64-unknown-linux-musl` target.
+- **FR-003**: A `make test` target MUST exist that boots VyomaOS headless in QEMU inside the `vyomaos-builder` Docker container, captures serial output, asserts the supervisor ready signal appears, and exits 0/non-zero appropriately. QEMU MUST be installed in the builder image; no host QEMU dependency.
 - **FR-004**: A `make check-manifests` target MUST exist that validates all `apps/*/vyoma.toml` files against the manifest schema and reports errors with app name + field + description.
 - **FR-005**: The supervisor MUST emit structured log lines (ISO timestamp + level + subsystem + event) to stderr for: startup, app spawn, app exit, IPC route decisions, and capability grant/deny events.
-- **FR-006**: The supervisor MUST validate every `vyoma.toml` at startup and emit a structured ERROR line (not panic) for any schema violation, then skip that app — other apps MUST continue to start.
+- **FR-006**: The supervisor MUST validate every `vyoma.toml` at startup and emit a structured ERROR line (not panic) for any schema violation or duplicate app name, then skip the offending app — all other apps MUST continue to start. For duplicate names, the first-registered app wins; the second is rejected.
 - **FR-007**: The file `docs/vyoma-draw-protocol.md` MUST document all `VYOMA_DRAW:` commands, RGBA color format, coordinate semantics, flush behavior, and error handling with at least one working code example per command.
 - **FR-008**: The Makefile MUST use per-app dependency tracking so that `make apps` recompiles only apps with changed source files.
-- **FR-009**: When `cargo check` produces new warnings for any modified crate, the build MUST surface them prominently — compilation warnings MUST NOT be silently swallowed.
+- **FR-009**: New `cargo check` warnings in any modified crate MUST cause `make build` to exit non-zero (hard failure). Warnings are never silently swallowed and never non-blocking — zero new warnings is a mandatory quality gate enforced at build time.
 - **FR-010**: All new non-trivial logic MUST follow Red → Green → Refactor: each unit test MUST be written before its implementation, with the failing state captured in a commit.
 
 ### Key Entities
@@ -153,8 +153,17 @@ A developer changing only one app's source code runs `make apps` and sees only t
 ## Assumptions
 
 - The `x86_64-unknown-linux-musl` target for the supervisor and `wasm32-wasip2` for apps remain unchanged; test infrastructure targets these same platforms.
-- QEMU is available in the Docker builder container for integration smoke tests; host-only QEMU availability is not assumed.
+- `make test` MUST run entirely inside the `vyomaos-builder` Docker container; QEMU is bundled in the builder image. Host QEMU availability is not required.
 - Incremental build improvement uses standard Makefile dependency rules (file timestamps) without introducing a new build tool (Bazel, Buck, etc.).
 - The VYOMA_DRAW protocol specification matches current supervisor source behavior exactly; any discrepancy found during documentation is a supervisor bug to be fixed, not documented as "intended."
-- `cargo test` for the supervisor runs on the host (not inside QEMU) against a native or musl-cross-compiled test binary; WASM app tests are out of scope for this feature.
+- `cargo test` for the supervisor MUST run inside the Docker builder container (`vyomaos-builder`) against the `x86_64-unknown-linux-musl` target, matching the release build environment exactly. WASM app tests are out of scope for this feature.
 - Binary size limits (supervisor ≤ 1 MB, apps ≤ 50 KB) are enforced as CI warnings, not hard errors, in this iteration.
+
+## Clarifications
+
+### Session 2026-05-24
+
+- Q: Where should `cargo test -p supervisor` run — host machine or inside Docker builder container? → A: Inside Docker builder container (`vyomaos-builder`), using the `x86_64-unknown-linux-musl` target, matching the release build environment exactly.
+- Q: When `make test` runs and QEMU is not available in the current environment, what should happen? → A: Always run inside Docker; QEMU is bundled in the `vyomaos-builder` image — no host QEMU dependency.
+- Q: When two apps declare the same `name` in `vyoma.toml`, what should the supervisor do? → A: First-registered wins; the duplicate is rejected with a structured ERROR — all other apps continue to start.
+- Q: Should new `cargo check` warnings in a modified crate block the build or be non-blocking? → A: Hard failure — new warnings cause `make build` to exit non-zero, enforcing the quality gate.
