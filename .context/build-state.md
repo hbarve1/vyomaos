@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-24  <!-- P223+P224 complete -->
+last_updated: 2026-05-24  <!-- P225+P226 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,34 +18,35 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P225 — Fluid Simulation
-  - P226 — Logic Gates Simulator
+  - P227 — Ray Marching
+  - P228 — Network Graph
 notes: |
-  P225: Fluid Simulation. Create apps/fluid/ WASM app.
+  P227: Ray Marching. Create apps/ray-march/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Simplified grid-based fluid: 160×106 grid, CELL=6px, GY=32.
-        Each cell stores velocity (vx,vy as i16 fixed-point FP=64) + density (u8).
-        Physics per tick: advect density along velocity; diffuse velocity (simple smoothing).
-        Gravity: add +2 to vy each tick for cells with density>0.
-        Color: density mapped to blue→cyan→white (0 = C_BG, 255 = white).
-        Controls: ←→↑↓ = move cursor; Space = pour fluid at cursor (3×3 brush, density=255);
-          C = clear; Q = quit. Ping-pong tick = one physics step.
+        SDF scene: sphere (r=1.2) + box (0.8×0.6×0.8) + ground plane.
+        Render grid: 80×60 cells, each cell 12×12px. GY=32.
+        For each cell: cast ray from eye; march using sphere-tracing; shade with diffuse+ambient.
+        Lighting: one directional light; soft shadow via secondary march.
+        Ping-pong tick: rotate scene 1° per tick around Y axis.
+        Color: SDF surface color; sky gradient for misses.
+        Controls: Space=pause; Q=quit.
 
-  P226: Logic Gates Simulator. Create apps/logic-gates/ WASM app.
+  P228: Network Graph. Create apps/net-graph/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        5 hardcoded circuits (no wiring editor). Each circuit: name, list of gates+wires.
-        Gate types: AND, OR, NOT, XOR, NAND, NOR. Inputs: 2-4 toggle-able boolean inputs.
-        Propagate: topological order, compute each gate output.
-        Display: schematic view with fill_rect boxes for gates, lines for wires.
-        Gate box: 80×40px; input bubbles on left, output on right; label inside.
-        Input values shown as 0/1 colored squares. Output value shown at gate right.
-        Controls: ←→ = prev/next circuit; 1-4 = toggle input; Q = quit.
+        12 hardcoded nodes; ~18 edges. Force-directed layout (spring+repulsion).
+        Ping-pong tick: one force iteration (spring F=-k(d-rest); repulsion F=c/d²).
+        Node position: f32 x,y; clamped to canvas (80..880, 60..660).
+        Draw: filled circles r=20 for nodes; lines for edges; node index labels.
+        Node colors by degree (degree 1=C_HINT, 2=C_SEL, 3+=C_ORANGE).
+        Controls: Q=quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P227 — Ray Marching: apps/ray-march/ SDF sphere+box+plane; 80×60 grid CELL=12; soft shadows; ping-pong rotation; Q=quit
-- [ ] P228 — Network Graph: apps/net-graph/ 12 nodes; force-directed layout; ping-pong tick; node labels; click to pin; Q=quit
+- [ ] P229 — Sine Wave Generator: apps/sine-gen/ 4 sine waves; freq/amp/phase controls; overlay on single axis; Tab=select wave; A/Z=amp; S/X=freq; D/C=phase; Q=quit
+- [ ] P230 — Pixel Rain: apps/pixel-rain/ Matrix-style; 40 columns; each column has falling chars; LCG random chars; speed varies; green gradient fade; ping-pong tick; Q=quit
 
 ## Completed (recent — full list in plan README)
+- [x] P225 — Fluid Simulation: apps/fluid/ 160×106 CELL=6; density u8; water-like equalize-flow; blue→white color; RLE; C=clear; Q=quit
+- [x] P226 — Logic Gates Simulator: apps/logic-gates/ 5 circuits; AND/OR/NOT/XOR/NAND/NOR; propagate; schematics; ←→=circuit; 1-4=toggle; Q=quit
 - [x] P223 — Particle Fireworks: apps/fireworks/ 60-120 particles/burst; HSV hue; gravity+fade; auto-burst 60ticks; Space=burst; Q=quit
 - [x] P224 — Mandala Builder: apps/mandala/ 1°/tick rotation; 3-16 fold; Dot/Line/Arc; max 20 marks; ←→sym; ↑↓type; Space=add; C=clear; Q=quit
 - [x] P221 — Sand Simulation: apps/sand/ COLS=160 ROWS=112 CELL=6; 5 materials; RLE draw; 3×3 brush; hold-paint; H/C/1-5/arrows/Q

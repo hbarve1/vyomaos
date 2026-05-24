@@ -232,6 +232,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 222 — Kakuro Puzzle | `apps/kakuro/` 8×8 grid; 3 hardcoded puzzles; clue/entry/blocked cells; run-check logic; C=check; N=next; Q=quit | **complete** | — |
 | 223 — Particle Fireworks | `apps/fireworks/` ping-pong tick; 60-120 particles/burst; HSV hue cycle; gravity+fade; auto-burst every 60 ticks; Space=burst; Q=quit | **complete** | — |
 | 224 — Mandala Builder | `apps/mandala/` ping-pong rotation 1°/tick; 3-16 fold symmetry; Dot/Line/Arc marks; HSV colors; cursor at CURSOR_R=180; ←→=sym; ↑↓=type; Space=add; C=clear; Q=quit | **complete** | — |
+| 225 — Fluid Simulation | `apps/fluid/` 160×106 grid CELL=6 GY=32; density u8; water-like flow bottom-to-top; blue→cyan→white color; RLE draw; 3×3 brush; C=clear; Q=quit | **complete** | — |
+| 226 — Logic Gates Simulator | `apps/logic-gates/` 5 circuits (half-adder/majority/mux/xor-nand/decoder); AND/OR/NOT/XOR/NAND/NOR; propagate; fill_rect schematics; wire lines; ←→=circuit; 1-4=toggle; Q=quit | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 
