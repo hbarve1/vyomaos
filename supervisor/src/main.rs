@@ -1340,6 +1340,15 @@ fn route_or_print(
                 handle_supervisor_command(msg, sender, inbox, focused, app_registry);
                 return;
             }
+            if supervisor::ipc::is_broadcast_target(target) {
+                // Deliver message to every running app (including the sender).
+                let map = inbox.lock().unwrap();
+                for tx in map.values() {
+                    let _ = tx.send(msg.to_string());
+                }
+                log_info!(Subsystem::Ipc, Some(sender), "broadcast: \"{}\" → {} app(s)", msg, map.len());
+                return;
+            }
             let map = inbox.lock().unwrap();
             if let Some(tx) = map.get(target) {
                 if tx.send(msg.to_string()).is_ok() {
