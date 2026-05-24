@@ -215,10 +215,29 @@ static CLIPBOARD: OnceLock<Mutex<String>> = OnceLock::new();
 
 static FONT_SIZE: OnceLock<Mutex<String>> = OnceLock::new();
 
-// ── US4 border colors ─────────────────────────────────────────────────────────
+// Boot timestamp — used to render the elapsed clock in the menu bar.
+static BOOT_INSTANT: OnceLock<std::time::Instant> = OnceLock::new();
 
-const BORDER_FOCUSED:   u32 = 0x89B4FAFF; // blue accent
-const BORDER_UNFOCUSED: u32 = 0x45475AFF; // dim grey
+// ── macOS-inspired chrome ─────────────────────────────────────────────────────
+
+const MENUBAR_H:       u32 = 24;   // global menu bar height
+const TITLEBAR_H:      u32 = 28;   // per-window title bar height
+const TL_DOT:          u32 = 12;   // traffic-light dot size (px)
+
+const MAC_MENUBAR:     u32 = 0x1C1C1EFF; // system background (menubar)
+const MAC_TITLE_ACT:   u32 = 0x3A3A3CFF; // active window title bar
+const MAC_TITLE_INACT: u32 = 0x2C2C2EFF; // inactive window title bar
+const MAC_SEP:         u32 = 0x48484AFF; // separator line
+const MAC_LABEL:       u32 = 0xFFFFFFFF; // primary label (white)
+const MAC_LABEL2:      u32 = 0x8E8E93FF; // secondary label (gray)
+const TL_CLOSE:        u32 = 0xFF5F57FF; // traffic light red
+const TL_MINIMIZE:     u32 = 0xFEBC2EFF; // traffic light yellow
+const TL_MAXIMIZE:     u32 = 0x28C840FF; // traffic light green
+const TL_GRAY:         u32 = 0x4D4D4DFF; // inactive traffic lights
+
+// Kept for repaint compat; unused after chrome redesign.
+#[allow(dead_code)] const BORDER_FOCUSED:   u32 = 0x89B4FAFF;
+#[allow(dead_code)] const BORDER_UNFOCUSED: u32 = 0x45475AFF;
 
 // ── US1: tiled window layout helpers ─────────────────────────────────────────
 
@@ -252,7 +271,12 @@ fn apply_tiling_layout(registry: &AppRegistry) {
     let (sw, sh) = (1440u32, 900u32);
 
     let min_sizes: Vec<(u32, u32)> = apps.iter().map(|(_, mw, mh)| (*mw, *mh)).collect();
-    let regions = compute_tiling_with_hints(apps.len(), sw, sh, &min_sizes);
+    // Reserve MENUBAR_H pixels at the top; shift all regions down accordingly.
+    let usable_h = sh.saturating_sub(MENUBAR_H);
+    let regions: Vec<(u32, u32, u32, u32)> = compute_tiling_with_hints(apps.len(), sw, usable_h, &min_sizes)
+        .into_iter()
+        .map(|(x, y, w, h)| (x, y + MENUBAR_H, w, h))
+        .collect();
 
     {
         let reg = registry.lock().unwrap();
@@ -273,7 +297,68 @@ fn apply_tiling_layout(registry: &AppRegistry) {
 }
 
 /// Repaint 2 px inset focus borders for all display apps in the framebuffer back-buffer.
+/// Draw a macOS-style title bar at (wx, wy, ww, TITLEBAR_H).
+/// Traffic lights are colored when focused, gray otherwise.
+/// App name is centered in the bar.
 #[cfg(target_os = "linux")]
+fn draw_titlebar(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, is_focused: bool, name: &str) {
+    let bg = if is_focused { MAC_TITLE_ACT } else { MAC_TITLE_INACT };
+    fb.fill_rect(wx, wy, ww, TITLEBAR_H, bg);
+    fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
+
+    // Traffic lights — 12×12, left-aligned, vertically centered
+    let tl_y = wy + (TITLEBAR_H - TL_DOT) / 2;
+    let (c1, c2, c3) = if is_focused {
+        (TL_CLOSE, TL_MINIMIZE, TL_MAXIMIZE)
+    } else {
+        (TL_GRAY, TL_GRAY, TL_GRAY)
+    };
+    fb.fill_rect(wx + 8,  tl_y, TL_DOT, TL_DOT, c1);
+    fb.fill_rect(wx + 24, tl_y, TL_DOT, TL_DOT, c2);
+    fb.fill_rect(wx + 40, tl_y, TL_DOT, TL_DOT, c3);
+
+    // App name centered (medium font = 8 px/char, 16 px tall)
+    let nlen = name.len().min(20) as u32;  // cap to avoid overflow
+    let name_w = nlen * 8;
+    if ww > name_w + 60 {
+        let nx = wx + (ww - name_w) / 2;
+        let ny = wy + (TITLEBAR_H - 16) / 2;
+        let col = if is_focused { MAC_LABEL } else { MAC_LABEL2 };
+        fb.draw_text(nx, ny, &name[..name.len().min(20)], col, font::FontSize::Medium);
+    }
+}
+
+/// Draw the global menu bar at y=0 across the full screen width.
+/// Shows "VyomaOS" on the left, focused app in the center, clock on the right.
+#[cfg(target_os = "linux")]
+fn draw_menubar(fb: &mut display::Framebuffer, sw: u32, elapsed_secs: u64, focused: Option<&str>) {
+    fb.fill_rect(0, 0, sw, MENUBAR_H, MAC_MENUBAR);
+    fb.fill_rect(0, MENUBAR_H - 1, sw, 1, MAC_SEP);
+
+    let ty = (MENUBAR_H - 16) / 2; // vertical center of 16-px font in 24-px bar
+
+    // Left: brand
+    fb.draw_text(12, ty, "VyomaOS", MAC_LABEL, font::FontSize::Medium);
+
+    // Center: focused app name
+    if let Some(name) = focused {
+        let nlen = name.len().min(20) as u32;
+        let nx = sw.saturating_sub(nlen * 8) / 2;
+        fb.draw_text(nx, ty, &name[..name.len().min(20)], MAC_LABEL, font::FontSize::Medium);
+    }
+
+    // Right: elapsed clock HH:MM:SS
+    let h = elapsed_secs / 3600;
+    let m = (elapsed_secs % 3600) / 60;
+    let s = elapsed_secs % 60;
+    let clock = format!("{h:02}:{m:02}:{s:02}");
+    let cw = clock.len() as u32 * 8;
+    if sw > cw + 20 {
+        fb.draw_text(sw - cw - 12, ty, &clock, MAC_LABEL2, font::FontSize::Medium);
+    }
+}
+
+/// Immediately repaint title bars for all windowed apps (called on focus changes).
 fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     let focused_name = focused.lock().unwrap().clone();
     let regions: Vec<(String, (u32, u32, u32, u32))> = {
@@ -285,21 +370,18 @@ fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
             })
             .collect()
     };
-    if let Some(fb_lock) = display::get() {
-        let mut fb = fb_lock.lock().unwrap();
-        for (name, (wx, wy, ww, wh)) in regions {
-            if ww < 4 || wh < 4 { continue; }
-            let color = if focused_name.as_deref() == Some(&name) {
-                BORDER_FOCUSED
-            } else {
-                BORDER_UNFOCUSED
-            };
-            // 2 px inset border: top, bottom, left, right strips
-            fb.fill_rect(wx,          wy,          ww, 2,      color);
-            fb.fill_rect(wx,          wy + wh - 2, ww, 2,      color);
-            fb.fill_rect(wx,          wy,          2,  wh,     color);
-            fb.fill_rect(wx + ww - 2, wy,          2,  wh,     color);
-        }
+    let Some(fb_lock) = display::get() else { return };
+    let mut fb = fb_lock.lock().unwrap();
+    for (name, (wx, wy, ww, _wh)) in &regions {
+        if *ww < 60 { continue; }
+        let is_focused = focused_name.as_deref() == Some(name.as_str());
+        #[cfg(target_os = "linux")]
+        draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, name);
+    }
+    #[cfg(target_os = "linux")]
+    if let Some((sw, _)) = display::screen_size() {
+        let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
+        draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref());
     }
 }
 
@@ -362,6 +444,7 @@ fn watchdog_next_backoff(watchdog_secs: u32, restarts: u32) -> u64 {
 }
 
 fn main() {
+    BOOT_INSTANT.get_or_init(std::time::Instant::now);
     log_info!(Subsystem::Lifecycle, None, "starting");
 
     mount_filesystems();
@@ -375,6 +458,8 @@ fn main() {
             let mut fb = fb_lock.lock().unwrap();
             let (w, h) = (fb.width, fb.height);
             fb.fill_rect(0, 0, w, h, 0x0D1117FF);
+            // Draw initial menu bar (no focused app yet)
+            draw_menubar(&mut *fb, w, 0, None);
             fb.flush();
         }
     }
@@ -2352,22 +2437,23 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
     let Some(fb_lock) = display::get() else { return };
 
     if cmd == "flush" || cmd == "present" {
+        let focused_name = focused.lock().unwrap().clone();
+        let is_focused = focused_name.as_deref() == Some(sender);
         let mut fb = fb_lock.lock().unwrap();
-        // Paint 2px inset focus border — color determined by current focused app
-        if let Some((wx, wy, ww, wh)) = win {
-            if ww >= 4 && wh >= 4 {
-                let focused_name = focused.lock().unwrap().clone();
-                let color = if focused_name.as_deref() == Some(sender) {
-                    BORDER_FOCUSED
-                } else {
-                    BORDER_UNFOCUSED
-                };
-                fb.fill_rect(wx,          wy,          ww, 2,      color);
-                fb.fill_rect(wx,          wy + wh - 2, ww, 2,      color);
-                fb.fill_rect(wx,          wy,          2,  wh,     color);
-                fb.fill_rect(wx + ww - 2, wy,          2,  wh,     color);
+
+        // Per-window macOS-style title bar
+        if let Some((wx, wy, ww, _wh)) = win {
+            if ww >= 60 {
+                draw_titlebar(&mut *fb, wx, wy, ww, is_focused, sender);
             }
         }
+
+        // Global menu bar (refreshed on every frame to keep clock live)
+        if let Some((sw, _)) = display::screen_size() {
+            let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
+            draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref());
+        }
+
         fb.flush();
         return;
     }
@@ -2383,8 +2469,9 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
                 let (ax, ay, aw, ah) = match win {
                     None => (lx, ly, w, h),
                     Some((wx, wy, ww, wh)) => {
+                        let content_wy = wy + TITLEBAR_H;
                         let ax = wx + lx;
-                        let ay = wy + ly;
+                        let ay = content_wy + ly;
                         let win_right  = wx + ww;
                         let win_bottom = wy + wh;
                         if ax >= win_right || ay >= win_bottom { return; }
@@ -2445,8 +2532,9 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
             let (ax, ay) = match win {
                 None => (lx, ly),
                 Some((wx, wy, ww, wh)) => {
+                    let content_wy = wy + TITLEBAR_H;
                     let ax = wx + lx;
-                    let ay = wy + ly;
+                    let ay = content_wy + ly;
                     if ax >= wx + ww || ay >= wy + wh { return; }
                     (ax, ay)
                 }
@@ -2471,8 +2559,9 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
                 let (ax, ay, aw, ah) = match win {
                     None => (lx, ly, w, h),
                     Some((wx, wy, ww, wh)) => {
+                        let content_wy = wy + TITLEBAR_H;
                         let ax = wx + lx;
-                        let ay = wy + ly;
+                        let ay = content_wy + ly;
                         let win_right  = wx + ww;
                         let win_bottom = wy + wh;
                         if ax >= win_right || ay >= win_bottom { return; }
@@ -2504,8 +2593,9 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
                 let (ax, ay, aw, ah) = match win {
                     None => (lx, ly, w, h),
                     Some((wx, wy, ww, wh)) => {
+                        let content_wy = wy + TITLEBAR_H;
                         let ax = wx + lx;
-                        let ay = wy + ly;
+                        let ay = content_wy + ly;
                         let win_right  = wx + ww;
                         let win_bottom = wy + wh;
                         if ax >= win_right || ay >= win_bottom { return; }
@@ -2540,8 +2630,9 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
                 let (ax, ay, effective_max_w) = match win {
                     None => (lx, ly, max_w),
                     Some((wx, wy, ww, wh)) => {
+                        let content_wy = wy + TITLEBAR_H;
                         let ax = wx + lx;
-                        let ay = wy + ly;
+                        let ay = content_wy + ly;
                         if ax >= wx + ww || ay >= wy + wh { return; }
                         let effective_max_w = max_w.min(ww.saturating_sub(lx));
                         if effective_max_w == 0 { return; }
