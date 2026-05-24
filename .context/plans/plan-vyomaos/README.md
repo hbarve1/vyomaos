@@ -230,6 +230,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 220 — Binary Tree Visualizer | `apps/bin-tree/` 31-node; radius=22; traversal strip; In/Pre/Post/BFS; gold active node; Tab/R/Space/Q | **complete** | — |
 | 221 — Sand Simulation | `apps/sand/` falling-sand CA; COLS=160 ROWS=112 CELL=6; 5 materials (Empty/Sand/Water/Stone/Fire); RLE draw; 3×3 brush; H=hold; C=clear; Q=quit | **complete** | — |
 | 222 — Kakuro Puzzle | `apps/kakuro/` 8×8 grid; 3 hardcoded puzzles; clue/entry/blocked cells; run-check logic; C=check; N=next; Q=quit | **complete** | — |
+| 223 — Particle Fireworks | `apps/fireworks/` ping-pong tick; 60-120 particles/burst; HSV hue cycle; gravity+fade; auto-burst every 60 ticks; Space=burst; Q=quit | **complete** | — |
+| 224 — Mandala Builder | `apps/mandala/` ping-pong rotation 1°/tick; 3-16 fold symmetry; Dot/Line/Arc marks; HSV colors; cursor at CURSOR_R=180; ←→=sym; ↑↓=type; Space=add; C=clear; Q=quit | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

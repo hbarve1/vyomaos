@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-24  <!-- P221+P222 complete -->
+last_updated: 2026-05-24  <!-- P223+P224 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,34 +18,36 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P223 — Particle Fireworks
-  - P224 — Mandala Builder
+  - P225 — Fluid Simulation
+  - P226 — Logic Gates Simulator
 notes: |
-  P223: Particle Fireworks. Create apps/fireworks/ WASM app.
+  P225: Fluid Simulation. Create apps/fluid/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Launch particle bursts; gravity+fade; colorful trails; ping-pong tick.
-        Each burst: 60-120 particles from a random screen position.
-        Particle has: x,y (f32 fixed-point FP=256), vx,vy, color (HSV-cycled), age, max_age.
-        Physics: vy += gravity each tick; x += vx; y += vy; age += 1.
-        Trail: draw particles with decreasing alpha as age increases.
-        Color: cycle hue each burst (LCG). Particle sizes 2×2 px.
-        Controls: Space = new burst at random position; Q = quit.
-        Auto-launch burst every 60 ticks if no burst in last 60 ticks.
+        Simplified grid-based fluid: 160×106 grid, CELL=6px, GY=32.
+        Each cell stores velocity (vx,vy as i16 fixed-point FP=64) + density (u8).
+        Physics per tick: advect density along velocity; diffuse velocity (simple smoothing).
+        Gravity: add +2 to vy each tick for cells with density>0.
+        Color: density mapped to blue→cyan→white (0 = C_BG, 255 = white).
+        Controls: ←→↑↓ = move cursor; Space = pour fluid at cursor (3×3 brush, density=255);
+          C = clear; Q = quit. Ping-pong tick = one physics step.
 
-  P224: Mandala Builder. Create apps/mandala/ WASM app.
+  P226: Logic Gates Simulator. Create apps/logic-gates/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Rotational symmetry: N=3..16 fold. Draw with cursor on 480×480 canvas (center 480,400).
-        Pattern types: dot (filled circle r=4); line (from center); arc (radius ring).
-        Ping-pong tick = rotate base_angle by 1 degree.
-        All drawn marks replicated N times rotated. Marks stored as Vec<Mark>.
-        Controls: ←→ = symmetry count (3-16); ↑↓ = pattern type; Space = add mark at cursor angle;
-          C = clear marks; Q = quit. Show current symmetry count in header.
+        5 hardcoded circuits (no wiring editor). Each circuit: name, list of gates+wires.
+        Gate types: AND, OR, NOT, XOR, NAND, NOR. Inputs: 2-4 toggle-able boolean inputs.
+        Propagate: topological order, compute each gate output.
+        Display: schematic view with fill_rect boxes for gates, lines for wires.
+        Gate box: 80×40px; input bubbles on left, output on right; label inside.
+        Input values shown as 0/1 colored squares. Output value shown at gate right.
+        Controls: ←→ = prev/next circuit; 1-4 = toggle input; Q = quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P225 — Fluid Simulation: apps/fluid/ SPH particles; pressure+viscosity; color by speed; ping-pong tick; Space=add fluid; Q=quit
-- [ ] P226 — Logic Gates Simulator: apps/logic-gates/ AND/OR/NOT/XOR/NAND/NOR; wire connections; toggle inputs; propagate; 5 circuit examples
+- [ ] P227 — Ray Marching: apps/ray-march/ SDF sphere+box+plane; 80×60 grid CELL=12; soft shadows; ping-pong rotation; Q=quit
+- [ ] P228 — Network Graph: apps/net-graph/ 12 nodes; force-directed layout; ping-pong tick; node labels; click to pin; Q=quit
 
 ## Completed (recent — full list in plan README)
+- [x] P223 — Particle Fireworks: apps/fireworks/ 60-120 particles/burst; HSV hue; gravity+fade; auto-burst 60ticks; Space=burst; Q=quit
+- [x] P224 — Mandala Builder: apps/mandala/ 1°/tick rotation; 3-16 fold; Dot/Line/Arc; max 20 marks; ←→sym; ↑↓type; Space=add; C=clear; Q=quit
 - [x] P221 — Sand Simulation: apps/sand/ COLS=160 ROWS=112 CELL=6; 5 materials; RLE draw; 3×3 brush; hold-paint; H/C/1-5/arrows/Q
 - [x] P222 — Kakuro Puzzle: apps/kakuro/ 8×8; 3 puzzles; clue/entry/blocked; run check (dupe+sum); C/N/arrows/1-9/Bksp/Q
 - [x] P219 — Waveform Oscilloscope: apps/oscilloscope/ 2-channel; 4 waveforms; amp/freq controls; overlay mode; Tab/1-4/A/Z/S/X/O/Q
