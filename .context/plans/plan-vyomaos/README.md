@@ -236,6 +236,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 226 — Logic Gates Simulator | `apps/logic-gates/` 5 circuits (half-adder/majority/mux/xor-nand/decoder); AND/OR/NOT/XOR/NAND/NOR; propagate; fill_rect schematics; wire lines; ←→=circuit; 1-4=toggle; Q=quit | **complete** | — |
 | 227 — Ray Marching | `apps/ray-march/` SDF sphere+box+checkerboard; 48-step march; soft shadows; camera orbit; ping-pong; Space=pause; Q=quit | **complete** | — |
 | 228 — Network Graph | `apps/net-graph/` 12 nodes 18 edges; force-directed layout (spring+repulsion); node colors by degree; ping-pong tick; Q=quit | **complete** | — |
+| 229 — Sine Wave Generator | `apps/sine-gen/` 4 overlaid sine waves; right panel with freq/amp/phase; Tab=select; A/Z=amp; S/X=freq; D/C=phase; ping-pong; Q=quit | **complete** | — |
+| 230 — Pixel Rain | `apps/pixel-rain/` Matrix-style; 40 columns; LCG chars; speed 1-3; green gradient fade; head white; ping-pong; Q=quit | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

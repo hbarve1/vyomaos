@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-24  <!-- P227+P228 complete -->
+last_updated: 2026-05-24  <!-- P229+P230 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,30 +18,33 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P229 — Sine Wave Generator
-  - P230 — Pixel Rain
+  - P231 — Bezier Curve Editor
+  - P232 — Life Evolution
 notes: |
-  P229: Sine Wave Generator. Create apps/sine-gen/ WASM app.
+  P231: Bezier Curve Editor. Create apps/bezier/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        4 sine waves; each has freq/amp/phase.
-        Overlay all on single axis (GY+40..H-40); zero line in C_BORDER.
-        Tab=select wave; A/Z=amp ±0.05; S/X=freq ±0.1 Hz; D/C=phase ±π/8.
-        Right panel: list of waves with current values.
-        Ping-pong tick: advance time; Q=quit.
+        4 cubic Bezier control points (P0-P3).
+        De Casteljau algorithm; sample 200 steps for curve.
+        Arrow keys move selected point (±5px); Tab=cycle selected; T=toggle tangent lines; R=reset; Q=quit.
+        Hue trail: draw curve with hue shifting along t parameter.
+        Show control polygon dashed; tangent handles when T enabled.
+        Right panel: coordinates of each point.
 
-  P230: Pixel Rain. Create apps/pixel-rain/ WASM app.
+  P232: Life Evolution. Create apps/life-evo/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        40 columns; each column has a falling segment of chars.
-        LCG random printable chars (ASCII 33-126).
-        Speed varies per column (1-3 cells/tick). Green gradient fade.
-        Head char = bright white; tail fades to dark green.
-        Ping-pong tick: advance columns; Q=quit.
+        120×80 grid, CELL=8; double-buffer (cur/next Vec<bool>).
+        3 rule sets: Conway (B3/S23), Day&Night (B3678/S34678), HighLife (B36/S23).
+        P=cycle rule; S=single step; Space=run/pause (auto-advance ping-pong); R=random fill; C=clear; Q=quit.
+        Status bar shows: rule name, generation count, live cell count.
+        Cell colors: alive=C_GREEN (Conway), C_SEL (Day&Night), C_ORANGE (HighLife).
 
 ## Queue (implement in order after current batch)
-- [ ] P231 — Bezier Curve Editor: apps/bezier/ 4 control points; drag simulation via arrow keys; De Casteljau; hue trail; T=toggle tangents; R=reset; Q=quit
-- [ ] P232 — Life Evolution: apps/life-evo/ Conway's GoL + rule variants (Day&Night, HighLife); 120×80 grid CELL=8; P=toggle rule; S=step; Space=run/pause; R=random; C=clear; Q=quit
+- [ ] P233 — Terrain Generator: apps/terrain/ 120×80 heightmap; diamond-square fractal; color by height (deep blue→blue→green→tan→white); arrows=pan; +/-=zoom; R=regen; Q=quit
+- [ ] P234 — Sorting Visualizer: apps/sort-viz/ 80 bars; 5 algorithms (bubble/insertion/selection/merge/quick); ping-pong step; color current comparisons; Tab=algorithm; Space=reset; Q=quit
 
 ## Completed (recent — full list in plan README)
+- [x] P229 — Sine Wave Generator: apps/sine-gen/ 4 overlaid waves; Tab/A/Z/S/X/D/C controls; right panel; ping-pong; Q=quit
+- [x] P230 — Pixel Rain: apps/pixel-rain/ 40 columns; LCG chars; speed 1-3; green gradient; ping-pong; Q=quit
 - [x] P227 — Ray Marching: apps/ray-march/ SDF sphere+box+checkerboard; 48-step march; soft shadows; camera orbit; ping-pong; Space=pause; Q=quit
 - [x] P228 — Network Graph: apps/net-graph/ 12 nodes 18 edges; force-directed spring+repulsion; degree-based colors; ping-pong; Q=quit
 - [x] P225 — Fluid Simulation: apps/fluid/ 160×106 CELL=6; density u8; water-like equalize-flow; blue→white color; RLE; C=clear; Q=quit
