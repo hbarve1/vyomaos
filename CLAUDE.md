@@ -283,3 +283,9 @@ See `.context/plans/plan-vyomaos/` for detailed phase specs and task breakdowns.
 - **supervisor/src/main.rs**: Manifest parsing, app scheduler, IPC broker logic
 - **.context/plans/**: Implementation roadmap (phases, tasks, design specs)
 
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan at
+`specs/001-vyomaos-refinement/plan.md`.
+<!-- SPECKIT END -->
