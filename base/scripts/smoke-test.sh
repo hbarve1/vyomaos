@@ -21,14 +21,13 @@ fi
 cleanup() { rm -f "$LOG_FILE"; }
 trap cleanup EXIT
 
-# Boot headlessly; capture serial output to file and pipe simultaneously.
+# Boot headlessly; -nographic already maps serial->stdio, so no -serial flag needed.
 timeout "$TIMEOUT_SECS" qemu-system-x86_64 \
     -kernel  "$BZIMAGE" \
     -initrd  "$INITRAMFS" \
     -nographic \
-    -serial  stdio \
     -append  "console=ttyS0 quiet" \
-    -m       128M \
+    -m       512M \
     -no-reboot \
     2>/dev/null \
     | tee "$LOG_FILE" \
