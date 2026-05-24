@@ -196,3 +196,51 @@ fn unknown_btn_falls_back_to_left() {
 fn move_event_zero_coords() {
     assert_eq!(format_mouse_event(0, 0, 0), "VYOMA_INPUT:mouse:move:0,0");
 }
+
+// ── titlebar_color_for_state ──────────────────────────────────────────────────
+
+/// Mirror of the title-bar colour constants from main.rs.
+const MAC_TITLE_ACT:   u32 = 0x3A3A3CFF; // active / focused
+const MAC_TITLE_INACT: u32 = 0x2C2C2EFF; // inactive / unfocused
+const MAC_TITLE_HOVER: u32 = 0x444C56FF; // hovered (midpoint, slightly lighter)
+
+/// Mirror of `titlebar_color_for_state` from main.rs.
+///
+/// Priority: hovered > focused > inactive.
+fn titlebar_color_for_state(focused: bool, hovered: bool) -> u32 {
+    if hovered      { MAC_TITLE_HOVER }
+    else if focused { MAC_TITLE_ACT   }
+    else            { MAC_TITLE_INACT }
+}
+
+#[test]
+fn titlebar_color_hovered_returns_hover_color() {
+    // A hovered title bar (regardless of focus) must return the hover colour.
+    assert_eq!(titlebar_color_for_state(false, true),  MAC_TITLE_HOVER);
+}
+
+#[test]
+fn titlebar_color_focused_not_hovered_returns_active_color() {
+    // Focused but not hovered → active (bright) colour.
+    assert_eq!(titlebar_color_for_state(true, false), MAC_TITLE_ACT);
+}
+
+#[test]
+fn titlebar_color_unfocused_not_hovered_returns_inactive_color() {
+    // Neither focused nor hovered → inactive (dim) colour.
+    assert_eq!(titlebar_color_for_state(false, false), MAC_TITLE_INACT);
+}
+
+#[test]
+fn titlebar_color_hover_wins_over_focus() {
+    // When both focused AND hovered, hover wins (hover highlight takes priority).
+    assert_eq!(titlebar_color_for_state(true, true), MAC_TITLE_HOVER);
+}
+
+#[test]
+fn titlebar_color_hover_is_lighter_than_inactive() {
+    // Hover colour RGB luminance should be greater than inactive (visual affordance).
+    let hover_r = (MAC_TITLE_HOVER >> 24) & 0xFF;
+    let inact_r = (MAC_TITLE_INACT >> 24) & 0xFF;
+    assert!(hover_r > inact_r, "hover R ({hover_r}) should exceed inactive R ({inact_r})");
+}
