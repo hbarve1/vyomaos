@@ -1470,6 +1470,8 @@ fn handle_supervisor_command(
                 let mut rows: Vec<(String, String)> = reg.iter().map(|(name, st)| {
                     let st = st.lock().unwrap();
                     let pid = st.child_pid.unwrap_or(0);
+                    let uptime_secs = st.start_time.elapsed().as_secs();
+                    let uptime_str = supervisor::lifecycle::format_uptime(uptime_secs);
                     let state_str = match &st.status {
                         AppStatus::Running    => "running".to_string(),
                         AppStatus::Stopped(c) => format!("stopped({})", c),
@@ -1484,7 +1486,7 @@ fn handle_supervisor_command(
                         st.last_cpu_reset.elapsed().as_millis() as u64,
                     );
                     let base = format_ps_line(name, pid, &state_str, st.restart_count);
-                    let info = format!("{}{} cpu:{}", base, wd_tag, cpu);
+                    let info = format!("{}{} up:{} cpu:{}", base, wd_tag, uptime_str, cpu);
                     (name.clone(), info)
                 }).collect();
                 rows.sort_by(|a, b| a.0.cmp(&b.0));

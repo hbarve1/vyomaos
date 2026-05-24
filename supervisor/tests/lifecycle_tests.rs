@@ -213,3 +213,30 @@ fn format_cpu_fifty_pct() {
 fn format_cpu_hundred_pct() {
     assert_eq!(supervisor::lifecycle::format_cpu(1000, 1000), "100%");
 }
+
+// ── format_uptime unit tests ──────────────────────────────────────────────────
+
+#[test]
+fn format_uptime_seconds() {
+    assert_eq!(supervisor::lifecycle::format_uptime(5), "5s");
+}
+
+#[test]
+fn format_uptime_exact_minute() {
+    assert_eq!(supervisor::lifecycle::format_uptime(60), "1m");
+}
+
+#[test]
+fn format_uptime_minutes_secs() {
+    assert_eq!(supervisor::lifecycle::format_uptime(150), "2m30s");
+}
+
+#[test]
+fn format_uptime_hours() {
+    assert_eq!(supervisor::lifecycle::format_uptime(3600), "1h");
+}
+
+#[test]
+fn format_uptime_hours_minutes() {
+    assert_eq!(supervisor::lifecycle::format_uptime(3900), "1h5m");
+}
