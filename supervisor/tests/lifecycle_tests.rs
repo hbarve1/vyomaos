@@ -52,3 +52,25 @@ fn test_focus_unchanged_when_no_focused_app() {
     let new_focus = transfer_focus("gui-demo", None, &["ticker"]);
     assert!(new_focus.is_none(), "no focus to transfer when focused is None");
 }
+
+// ── format_system_uptime ──────────────────────────────────────────────────────
+
+#[test]
+fn format_system_uptime_seconds() {
+    assert_eq!(supervisor::lifecycle::format_system_uptime(5), "up 5s");
+}
+
+#[test]
+fn format_system_uptime_minutes() {
+    assert_eq!(supervisor::lifecycle::format_system_uptime(90), "up 1m30s");
+}
+
+#[test]
+fn format_system_uptime_hours() {
+    assert_eq!(supervisor::lifecycle::format_system_uptime(3600), "up 1h");
+}
+
+#[test]
+fn format_system_uptime_prefix() {
+    assert!(supervisor::lifecycle::format_system_uptime(0).starts_with("up "));
+}

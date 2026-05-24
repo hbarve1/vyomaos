@@ -2225,6 +2225,14 @@ fn handle_supervisor_command(
             send_reply(sender, &format!("REPLY:download-progress {dest} 0"), inbox);
         }
 
+        // uptime — reply with how long the supervisor has been running
+        "uptime" => {
+            let secs = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
+            let reply = supervisor::lifecycle::format_system_uptime(secs);
+            send_reply(sender, &format!("REPLY:{reply}"), inbox);
+            log_info!(Subsystem::Ipc, None, "uptime query from {sender}: {reply}");
+        }
+
         other => {
             log_warn!(Subsystem::Ipc, None, "unknown @supervisor command from {sender}: {other}");
         }
