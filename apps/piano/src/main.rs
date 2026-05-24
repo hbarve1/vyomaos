@@ -12,6 +12,7 @@ const C_ORANGE: u32 = 0xFFA657FF;
 const C_SEL: u32    = 0x58A6FFFF;
 const C_CARD: u32   = 0x161B22FF;
 const C_WHITE: u32  = 0xF0F0F0FF;
+const C_GREEN: u32  = 0x3FB950FF;
 const C_BLACK: u32  = 0x1A1A1AFF;
 
 fn fill(x: i32, y: i32, w: i32, h: i32, c: u32) {
