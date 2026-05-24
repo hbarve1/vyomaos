@@ -46,6 +46,21 @@ fn tab_complete(input: &str) -> Option<&'static str> {
     if matches.len() == 1 { Some(matches[0]) } else { None }
 }
 
+// ── Soft-wrap helper ──────────────────────────────────────────────────────────
+
+/// Split `text` into chunks of at most `cols` chars.
+/// Pure function with no side effects — safe to unit-test.
+fn wrap_line(text: &str, cols: usize) -> Vec<String> {
+    if cols == 0 || text.is_empty() {
+        return vec![text.to_string()];
+    }
+    text.chars()
+        .collect::<Vec<_>>()
+        .chunks(cols)
+        .map(|c| c.iter().collect())
+        .collect()
+}
+
 // ── Panel geometry (local window coords; window declared at y=440 in vyoma.toml) ──────
 
 const PX: u32 = 24;       // panel left edge (horizontal margin within window)
@@ -533,12 +548,15 @@ fn draw_panel(lines: &[String], input: &str, cursor_pos: usize) {
     // Clear output area
     clear_region(INNER_X, INNER_Y, PW - 16, PROMPT_Y - INNER_Y);
 
-    // Output lines (word-wrapped)
-    for (i, line) in lines.iter().enumerate() {
-        let ly = INNER_Y + i as u32 * LINE_H;
-        if ly + LINE_H > PROMPT_Y { break; }
+    // Output lines — each logical line is soft-wrapped at 90 chars
+    let mut ly = INNER_Y;
+    'outer: for line in lines.iter() {
         let colour = if line.starts_with("> ") { C_DIM } else { C_WHITE };
-        text_wrap(INNER_X, ly, PW - 16, colour, line);
+        for wrapped in wrap_line(line, 90) {
+            if ly + LINE_H > PROMPT_Y { break 'outer; }
+            text(INNER_X, ly, colour, &wrapped);
+            ly += LINE_H;
+        }
     }
 
     // Prompt + cursor
@@ -577,14 +595,45 @@ fn clear_region(x: u32, y: u32, w: u32, h: u32) {
 }
 
 #[inline]
-fn text_wrap(x: u32, y: u32, max_w: u32, rgba: u32, s: &str) {
-    println!("VYOMA_DRAW:draw_text_wrap:{x},{y},{max_w},{rgba},m,{s}");
-}
-
-#[inline]
 fn flush() {
     println!("VYOMA_DRAW:flush");
     // Pipe stdout is block-buffered — must flush explicitly so VYOMA_DRAW
     // commands reach the supervisor without waiting for the buffer to fill.
     let _ = std::io::stdout().flush();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wrap_line;
+
+    #[test]
+    fn wrap_line_short_fits_one_chunk() {
+        assert_eq!(wrap_line("hello", 90), vec!["hello"]);
+    }
+
+    #[test]
+    fn wrap_line_exact_boundary() {
+        let s = "a".repeat(90);
+        assert_eq!(wrap_line(&s, 90), vec![s]);
+    }
+
+    #[test]
+    fn wrap_line_splits_long_line() {
+        let s = "a".repeat(91);
+        let result = wrap_line(&s, 90);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].len(), 90);
+        assert_eq!(result[1].len(), 1);
+    }
+
+    #[test]
+    fn wrap_line_empty_returns_one() {
+        assert_eq!(wrap_line("", 90), vec![""]);
+    }
+
+    #[test]
+    fn wrap_line_zero_cols_no_panic() {
+        let result = wrap_line("hello", 0);
+        assert_eq!(result, vec!["hello"]);
+    }
 }
