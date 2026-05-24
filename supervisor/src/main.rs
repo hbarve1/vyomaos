@@ -2225,6 +2225,17 @@ fn handle_supervisor_command(
             send_reply(sender, &format!("REPLY:download-progress {dest} 0"), inbox);
         }
 
+        // ping — reply to sender with "pong <timestamp_ms>"
+        "ping" => {
+            let ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let reply = supervisor::ipc::format_pong_reply(ms);
+            log_info!(Subsystem::Ipc, None, "ping from={sender} reply={reply}");
+            send_reply(sender, &format!("REPLY:{reply}"), inbox);
+        }
+
         other => {
             log_warn!(Subsystem::Ipc, None, "unknown @supervisor command from {sender}: {other}");
         }

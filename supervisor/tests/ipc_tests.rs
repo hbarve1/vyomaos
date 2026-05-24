@@ -25,3 +25,25 @@ fn test_valid_ipc_format_parses_correctly() {
     assert_eq!(target,  "ping",            "target mismatch");
     assert_eq!(payload, "hello from pong", "payload mismatch");
 }
+
+// format_pong_reply tests
+#[test]
+fn format_pong_reply_zero() {
+    assert_eq!(supervisor::ipc::format_pong_reply(0), "pong 0");
+}
+
+#[test]
+fn format_pong_reply_nonzero() {
+    assert_eq!(supervisor::ipc::format_pong_reply(1234567890), "pong 1234567890");
+}
+
+#[test]
+fn format_pong_reply_large() {
+    assert_eq!(supervisor::ipc::format_pong_reply(u64::MAX), format!("pong {}", u64::MAX));
+}
+
+#[test]
+fn format_pong_reply_starts_with_pong() {
+    let r = supervisor::ipc::format_pong_reply(42);
+    assert!(r.starts_with("pong "), "expected 'pong ...' got '{r}'");
+}

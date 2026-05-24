@@ -14,3 +14,9 @@ pub fn parse_ipc_target(line: &str) -> Result<(&str, &str), String> {
     let payload = &rest[sep + 2..];
     Ok((target, payload))
 }
+
+/// Format the pong reply payload for a ping command.
+/// Returns `"pong <ms>"` where `ms` is the provided millisecond timestamp.
+pub fn format_pong_reply(ms: u64) -> String {
+    format!("pong {ms}")
+}
