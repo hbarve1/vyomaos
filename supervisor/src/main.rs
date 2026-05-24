@@ -379,7 +379,8 @@ fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
         draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, name);
     }
     #[cfg(target_os = "linux")]
-    if let Some((sw, _)) = display::screen_size() {
+    {
+        let sw = fb.width;
         let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
         draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref());
     }
@@ -2448,11 +2449,11 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
             }
         }
 
-        // Global menu bar (refreshed on every frame to keep clock live)
-        if let Some((sw, _)) = display::screen_size() {
-            let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
-            draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref());
-        }
+        // Global menu bar — read sw directly from held lock (avoids deadlock
+        // that would occur if we called display::screen_size() while holding fb).
+        let sw = fb.width;
+        let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
+        draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref());
 
         fb.flush();
         return;
