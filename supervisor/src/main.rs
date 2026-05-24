@@ -270,6 +270,12 @@ static APP_DIRTY: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
 // Updated on every mouse-motion event; None when cursor is not over any title bar.
 static HOVERED_APP: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 
+// Per-app log level filter — set via @supervisor: loglevel <name> <level>.
+static APP_LOG_LEVELS: OnceLock<Mutex<HashMap<String, supervisor::ipc::LogLevel>>> = OnceLock::new();
+fn app_log_levels() -> &'static Mutex<HashMap<String, supervisor::ipc::LogLevel>> {
+    APP_LOG_LEVELS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 // ── macOS-inspired chrome ─────────────────────────────────────────────────────
 
 const MENUBAR_H:       u32 = 24;   // global menu bar height
@@ -2354,6 +2360,27 @@ fn handle_supervisor_command(
             let reply = supervisor::lifecycle::format_system_uptime(secs);
             send_reply(sender, &format!("REPLY:{reply}"), inbox);
             log_info!(Subsystem::Ipc, None, "uptime query from {sender}: {reply}");
+        }
+
+        // 023: loglevel <app> <level> — set per-app log level filter
+        "loglevel" => {
+            let rest = parts.get(1).unwrap_or(&"").trim();
+            let sub_parts: Vec<&str> = rest.splitn(2, ' ').collect();
+            if sub_parts.len() == 2 {
+                let app_name = sub_parts[0].trim();
+                let level_str = sub_parts[1].trim();
+                if let Some(lvl) = supervisor::ipc::parse_log_level(level_str) {
+                    app_log_levels().lock().unwrap().insert(app_name.to_string(), lvl);
+                    log_info!(Subsystem::Ipc, Some(app_name),
+                        "app={} log_level set to {:?}", app_name, lvl);
+                } else {
+                    log_warn!(Subsystem::Ipc, None,
+                        "loglevel: unknown level {:?}", level_str);
+                }
+            } else {
+                log_warn!(Subsystem::Ipc, None,
+                    "loglevel: usage: loglevel <app> <debug|info|warn|error>");
+            }
         }
 
         other => {
