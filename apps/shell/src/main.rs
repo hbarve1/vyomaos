@@ -18,6 +18,18 @@
 
 use std::io::{BufRead, Write};
 
+// ── Static environment pairs ──────────────────────────────────────────────────
+
+const ENV_PAIRS: &[(&str, &str)] = &[
+    ("PATH", "/data/bin"),
+    ("HOME", "/data"),
+    ("SHELL", "vyomash"),
+];
+
+fn format_env_output(pairs: &[(&str, &str)]) -> String {
+    pairs.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("\n")
+}
+
 // ── Panel geometry (local window coords; window declared at y=440 in vyoma.toml) ──────
 
 const PX: u32 = 24;       // panel left edge (horizontal margin within window)
@@ -184,6 +196,7 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  clip-set <text>    — copy text to supervisor clipboard".into());
             push_line(lines, "  clip-get           — paste text from supervisor clipboard".into());
             push_line(lines, "  screenshot [path]  — save framebuffer PPM to /data/screenshot.ppm".into());
+            push_line(lines, "  env               — print environment variables".into());
             push_line(lines, "  clear             — clear shell output".into());
         }
         "clear" => {
@@ -403,6 +416,12 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             println!("@supervisor: screenshot {dest}");
             push_line(lines, format!("saving screenshot to {dest}..."));
         }
+        "env" => {
+            let out = format_env_output(ENV_PAIRS);
+            for line in out.lines() {
+                push_line(lines, line.to_string());
+            }
+        }
         other => {
             push_line(lines, format!("unknown: {other}"));
         }
@@ -488,4 +507,33 @@ fn flush() {
     // Pipe stdout is block-buffered — must flush explicitly so VYOMA_DRAW
     // commands reach the supervisor without waiting for the buffer to fill.
     let _ = std::io::stdout().flush();
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::format_env_output;
+
+    #[test]
+    fn format_env_output_empty() {
+        assert_eq!(format_env_output(&[]), "");
+    }
+
+    #[test]
+    fn format_env_output_one() {
+        assert_eq!(format_env_output(&[("K", "V")]), "K=V");
+    }
+
+    #[test]
+    fn format_env_output_multiple() {
+        let r = format_env_output(&[("A", "1"), ("B", "2")]);
+        assert_eq!(r, "A=1\nB=2");
+    }
+
+    #[test]
+    fn format_env_output_no_trailing_newline() {
+        let r = format_env_output(&[("X", "y")]);
+        assert!(!r.ends_with('\n'));
+    }
 }
