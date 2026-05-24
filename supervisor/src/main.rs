@@ -79,11 +79,18 @@ mod seccomp {
 
     const SECCOMP_RET_KILL_PROCESS: u32 = 0x8000_0000;
     const SECCOMP_RET_ALLOW: u32 = 0x7fff_0000;
+    // Return ENOSYS (38) so glibc falls back from clone3 → clone when threading.
+    const SECCOMP_RET_ERRNO_ENOSYS: u32 = 0x0005_0000 | 38;
 
     const OFF_NR: u32 = 0;
     const OFF_ARCH: u32 = 4;
 
     const AUDIT_ARCH_X86_64: u32 = 0xc000_003e;
+
+    // Syscalls that return ENOSYS so libc falls back gracefully.
+    const ENOSYS_FALLBACK: &[u32] = &[
+        435, // clone3 — glibc falls back to clone(2) when clone3 returns ENOSYS
+    ];
 
     const DENIED: &[u32] = &[
         101, // ptrace
@@ -114,6 +121,10 @@ mod seccomp {
             stmt!(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
             stmt!(BPF_LD | BPF_W | BPF_ABS, OFF_NR),
         ];
+        for &nr in ENOSYS_FALLBACK {
+            f.push(jump!(BPF_JMP | BPF_JEQ | BPF_K, nr, 0, 1));
+            f.push(stmt!(BPF_RET | BPF_K, SECCOMP_RET_ERRNO_ENOSYS));
+        }
         for &nr in DENIED {
             f.push(jump!(BPF_JMP | BPF_JEQ | BPF_K, nr, 0, 1));
             f.push(stmt!(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
@@ -940,17 +951,20 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
 
+    // Limit tokio's multi-thread pool to 1 worker; prevents the OS-thread
+    // cap from causing EINVAL on clone() inside the VM's constrained kernel.
+    cmd.env("TOKIO_WORKER_THREADS", "1");
+
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::process::CommandExt;
         let filter = seccomp::build();
         unsafe {
-            cmd.pre_exec(move || {
-                // P27: isolate mount + PID namespaces per app.
-                // Non-fatal: ignored if kernel lacks CONFIG_NAMESPACES/CONFIG_PID_NS/CONFIG_MNT_NS.
-                let _ = libc::unshare(libc::CLONE_NEWNS | libc::CLONE_NEWPID);
-                seccomp::apply(&filter)
-            });
+            // P08T01: apply seccomp denylist. clone3 returns ENOSYS so glibc
+            // falls back to clone(2) — fixes EINVAL on Linux 5.10 + BASE_SMALL.
+            // CLONE_NEWPID unshare removed: it persists across exec and confuses
+            // tokio thread spawning on this kernel config.
+            cmd.pre_exec(move || seccomp::apply(&filter));
         }
     }
 
