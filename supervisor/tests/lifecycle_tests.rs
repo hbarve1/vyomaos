@@ -240,3 +240,25 @@ fn format_uptime_hours() {
 fn format_uptime_hours_minutes() {
     assert_eq!(supervisor::lifecycle::format_uptime(3900), "1h5m");
 }
+
+// ── format_system_uptime ──────────────────────────────────────────────────────
+
+#[test]
+fn format_system_uptime_seconds() {
+    assert_eq!(supervisor::lifecycle::format_system_uptime(5), "up 5s");
+}
+
+#[test]
+fn format_system_uptime_minutes() {
+    assert_eq!(supervisor::lifecycle::format_system_uptime(90), "up 1m30s");
+}
+
+#[test]
+fn format_system_uptime_hours() {
+    assert_eq!(supervisor::lifecycle::format_system_uptime(3600), "up 1h");
+}
+
+#[test]
+fn format_system_uptime_prefix() {
+    assert!(supervisor::lifecycle::format_system_uptime(0).starts_with("up "));
+}

@@ -68,3 +68,9 @@ pub fn format_uptime(secs: u64) -> String {
         if m == 0 { format!("{h}h") } else { format!("{h}h{m}m") }
     }
 }
+
+/// Return a human-readable system uptime string prefixed with "up ".
+/// This is a pure function suitable for use in IPC reply formatting.
+pub fn format_system_uptime(secs: u64) -> String {
+    format!("up {}", format_uptime(secs))
+}
