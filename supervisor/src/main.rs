@@ -17,8 +17,6 @@
 #[cfg(target_os = "linux")]
 mod display;
 mod font;
-pub mod manifest;
-pub mod logging;
 
 #[cfg(target_os = "linux")]
 use std::ffi::CString;
@@ -33,78 +31,9 @@ use std::{
     time::Instant,
 };
 
-use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-// ── Boot config structs ───────────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-struct BootConfig {
-    apps: Vec<BootEntry>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct BootEntry {
-    manifest: String,
-    #[serde(default = "default_restart")]
-    restart: String,
-}
-
-fn default_restart() -> String {
-    "never".to_string()
-}
-
-// ── App manifest structs ──────────────────────────────────────────────────────
-
-#[derive(Debug, Default, Deserialize, Clone, Copy)]
-#[serde(deny_unknown_fields)]
-struct WindowRegion {
-    x: u32,
-    y: u32,
-    w: u32,
-    h: u32,
-}
-
-#[derive(Debug, Deserialize)]
-struct AppManifest {
-    app: AppMeta,
-    capabilities: Capabilities,
-    #[serde(default)]
-    window: Option<WindowRegion>,  // optional [window] section in vyoma.toml
-}
-
-#[derive(Debug, Deserialize)]
-struct AppMeta {
-    name: String,
-    version: String,
-    wasm: String,
-    /// P28: optional SHA-256 hex digest of the .wasm binary.
-    /// If present, supervisor verifies before spawning; rejects on mismatch.
-    #[serde(default)]
-    wasm_sha256: Option<String>,
-}
-
-// deny_unknown_fields ensures manifests cannot declare undocumented capabilities.
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Capabilities {
-    #[serde(default)]
-    stdio: bool,
-    #[serde(default)]
-    filesystem: bool,
-    #[serde(default)]
-    network: bool,
-    #[serde(default)]
-    network_port: Option<u16>,
-    #[serde(default)]
-    display: bool,
-    #[serde(default)]
-    shell: bool,
-    #[serde(default)]
-    watchdog_secs: u32,  // 0 = disabled; >0 = kill app if silent for this many seconds
-    #[serde(default)]
-    mouse: bool,   // receives VYOMA_INPUT:mouse: events when cursor is in window
-}
+use supervisor::{manifest::{AppManifest, AppMeta, BootConfig, BootEntry, Capabilities, WindowRegion}};
 
 // ── P08T01: seccomp BPF denylist ──────────────────────────────────────────────
 #[cfg(target_os = "linux")]
