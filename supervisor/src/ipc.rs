@@ -52,3 +52,9 @@ pub fn is_reply_target(target: &str) -> bool {
 pub fn resolve_reply<'a>(sender: &str, last_senders: &'a HashMap<String, String>) -> Option<&'a str> {
     last_senders.get(sender).map(|s| s.as_str())
 }
+
+/// Format the pong reply payload for a ping command.
+/// Returns `"pong <ms>"` where `ms` is the provided millisecond timestamp.
+pub fn format_pong_reply(ms: u64) -> String {
+    format!("pong {ms}")
+}
