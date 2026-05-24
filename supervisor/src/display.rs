@@ -577,6 +577,16 @@ impl Framebuffer {
     }
 }
 
+/// Return the RGBA title-bar background colour for a window.
+///
+/// - `focused = true`  → bright blue accent  (`0x388BFDFF`)
+/// - `focused = false` → dark grey           (`0x30363DFF`)
+///
+/// Pure function: no I/O, no side-effects.
+pub fn titlebar_color(focused: bool) -> u32 {
+    if focused { 0x388BFDFF } else { 0x30363DFF }
+}
+
 /// Word-wrap `text` so each line is at most `max_chars` wide.
 /// Long single words are placed on their own line without truncation.
 /// If `max_chars` is 0, returns the full text as a single line.

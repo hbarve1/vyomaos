@@ -1,6 +1,26 @@
-// Tests for display module: word-wrap logic and cursor draw/restore.
+// Tests for display module: word-wrap logic, cursor draw/restore, and titlebar colors.
 
-use supervisor::display::{Framebuffer, CURSOR_W, CURSOR_H};
+use supervisor::display::{Framebuffer, CURSOR_W, CURSOR_H, titlebar_color};
+
+// ── titlebar_color ────────────────────────────────────────────────────────────
+
+#[test]
+fn titlebar_color_focused_is_bright_blue() {
+    assert_eq!(titlebar_color(true), 0x388BFDFF,
+        "focused title bar must use the bright blue accent 0x388BFDFF");
+}
+
+#[test]
+fn titlebar_color_unfocused_is_dark_grey() {
+    assert_eq!(titlebar_color(false), 0x30363DFF,
+        "unfocused title bar must use the dark grey 0x30363DFF");
+}
+
+#[test]
+fn titlebar_color_focused_differs_from_unfocused() {
+    assert_ne!(titlebar_color(true), titlebar_color(false),
+        "focused and unfocused title bar colors must be distinct");
+}
 
 /// Pure word-wrap helper — duplicated here because supervisor is a binary crate.
 fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {

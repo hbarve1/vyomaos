@@ -263,8 +263,6 @@ const TITLEBAR_H:      u32 = 28;   // per-window title bar height
 const TL_DOT:          u32 = 12;   // traffic-light dot size (px)
 
 const MAC_MENUBAR:     u32 = 0x1C1C1EFF; // system background (menubar)
-const MAC_TITLE_ACT:   u32 = 0x3A3A3CFF; // active window title bar
-const MAC_TITLE_INACT: u32 = 0x2C2C2EFF; // inactive window title bar
 const MAC_SEP:         u32 = 0x48484AFF; // separator line
 const MAC_LABEL:       u32 = 0xFFFFFFFF; // primary label (white)
 const MAC_LABEL2:      u32 = 0x8E8E93FF; // secondary label (gray)
@@ -340,8 +338,7 @@ fn apply_tiling_layout(registry: &AppRegistry) {
 /// App name is centered in the bar.
 #[cfg(target_os = "linux")]
 fn draw_titlebar(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, is_focused: bool, name: &str) {
-    let bg = if is_focused { MAC_TITLE_ACT } else { MAC_TITLE_INACT };
-    fb.fill_rect(wx, wy, ww, TITLEBAR_H, bg);
+    fb.fill_rect(wx, wy, ww, TITLEBAR_H, display::titlebar_color(is_focused));
     fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
 
     // Traffic lights — 12×12, left-aligned, vertically centered
