@@ -1,6 +1,6 @@
-// Tests for display module: word-wrap logic, cursor draw/restore, and titlebar colors.
+// Tests for display module: word-wrap logic, cursor draw/restore, titlebar colors, accent colors.
 
-use supervisor::display::{Framebuffer, CURSOR_W, CURSOR_H, titlebar_color};
+use supervisor::display::{app_accent_color, Framebuffer, CURSOR_W, CURSOR_H, titlebar_color};
 
 // ── titlebar_color ────────────────────────────────────────────────────────────
 
@@ -166,4 +166,51 @@ fn test_restore_noop_when_not_drawn() {
     let snapshot = fb.back.clone();
     fb.restore_under_cursor(); // drawn=false → must be a no-op
     assert_eq!(fb.back, snapshot, "restore_under_cursor must not modify back-buffer when not drawn");
+}
+
+// ── app_accent_color tests ────────────────────────────────────────────────────
+
+const PALETTE: [u32; 6] = [
+    0xFF6B6BFF, // red-ish
+    0xFFD93DFF, // yellow
+    0x6BCB77FF, // green
+    0x4D96FFFF, // blue
+    0xC77DFFFF, // purple
+    0xFF9F43FF, // orange
+];
+
+#[test]
+fn accent_color_is_from_palette() {
+    // The returned color must be one of the six known palette entries.
+    let color = app_accent_color("hello-world");
+    assert!(
+        PALETTE.contains(&color),
+        "app_accent_color returned 0x{color:08X} which is not in the palette"
+    );
+}
+
+#[test]
+fn accent_color_is_deterministic() {
+    // Same name always yields the same color regardless of call order.
+    let a = app_accent_color("gui-demo");
+    let b = app_accent_color("gui-demo");
+    assert_eq!(a, b, "app_accent_color must return the same value for the same name");
+}
+
+#[test]
+fn accent_color_differs_for_distinct_names() {
+    // "ping" (slot 3, blue) and "shell" (slot 5, orange) hash to different palette slots.
+    let ping = app_accent_color("ping");
+    let shell = app_accent_color("shell");
+    assert_ne!(ping, shell, "expected 'ping' and 'shell' to map to different accent colors");
+}
+
+#[test]
+fn accent_color_empty_name_does_not_panic() {
+    // Empty string must not panic and must return a palette color.
+    let color = app_accent_color("");
+    assert!(
+        PALETTE.contains(&color),
+        "app_accent_color(\"\") returned 0x{color:08X} which is not in the palette"
+    );
 }

@@ -590,6 +590,25 @@ pub fn titlebar_color(focused: bool) -> u32 {
     if focused { 0x388BFDFF } else { 0x30363DFF }
 }
 
+/// Return a deterministic accent color for an app based on its name.
+///
+/// The color is derived from a djb2 hash of the app name, then mapped to one
+/// of six palette entries.  The function is pure — no randomness, no global state.
+pub fn app_accent_color(name: &str) -> u32 {
+    const PALETTE: [u32; 6] = [
+        0xFF6B6BFF, // red-ish
+        0xFFD93DFF, // yellow
+        0x6BCB77FF, // green
+        0x4D96FFFF, // blue
+        0xC77DFFFF, // purple
+        0xFF9F43FF, // orange
+    ];
+    let hash = name
+        .bytes()
+        .fold(5381u32, |h, b| h.wrapping_mul(33).wrapping_add(b as u32));
+    PALETTE[(hash % 6) as usize]
+}
+
 /// Word-wrap `text` so each line is at most `max_chars` wide.
 /// Long single words are placed on their own line without truncation.
 /// If `max_chars` is 0, returns the full text as a single line.
