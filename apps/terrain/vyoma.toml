@@ -1,0 +1,12 @@
+[app]
+name    = "terrain"
+version = "0.1.0"
+wasm    = "terrain.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+width  = 960
+height = 720

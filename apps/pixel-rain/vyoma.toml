@@ -1,0 +1,12 @@
+[app]
+name    = "pixel-rain"
+version = "0.1.0"
+wasm    = "pixel-rain.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+width  = 960
+height = 720

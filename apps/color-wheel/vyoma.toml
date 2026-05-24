@@ -1,0 +1,13 @@
+[app]
+name    = "color-wheel"
+version = "0.1.0"
+wasm    = "color-wheel.wasm"
+
+[window]
+title  = "Color Theory Wheel"
+width  = 960
+height = 720
+
+[capabilities]
+stdio   = true
+display = true

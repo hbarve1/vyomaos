@@ -1,0 +1,12 @@
+[app]
+name    = "ray-march"
+version = "0.1.0"
+wasm    = "ray-march.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+width  = 960
+height = 720

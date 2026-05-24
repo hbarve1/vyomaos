@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-23  <!-- P203+P204 complete -->
+last_updated: 2026-05-24  <!-- P235+P236 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,30 +18,65 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P205 — Number Base Converter
-  - P206 — Lissajous Curves
+  - P237 — DNA Visualizer
+  - P238 — Gravity Wells
 notes: |
-  P205: Number Base Converter. Create apps/base-conv/ WASM app.
-        Window w=800, h=560. Capabilities: stdio=true, display=true.
-        4 panels showing the same number in binary / octal / decimal / hex simultaneously.
-        User selects active base with keys B/O/D/X (or 1-4).
-        Type digits valid for selected base; all 4 panels update in real-time.
-        Shows bit-width breakdown (8/16/32/64 bit) and overflow indicator.
-        Backspace to delete. C = clear. Q=quit.
-
-  P206: Lissajous Curves. Create apps/lissajous/ WASM app.
+  P237: DNA Visualizer. Create apps/dna-viz/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Animated Lissajous figure: x=A*sin(a*t+δ), y=B*sin(b*t).
-        Canvas 600×600 px centered. Parameters: a (1-8), b (1-8), δ (0-360 deg in 15° steps).
-        Hue-cycle trail: each point colored by angle t modulo 360.
-        Ping-pong tick advances t by 0.02 per tick (360 total steps, then wraps).
-        ←→ change ratio a:b. ↑↓ change δ. R=reset. Q=quit.
+        Double helix animation: 20 base pairs rendered as connected dots.
+        ATCG color coding: A=C_GREEN, T=C_RED, C=C_SEL, G=C_ORANGE.
+        Helix rotates around the Y axis; perspective projection.
+        Ping-pong tick: rotate by 3° per tick.
+        Draw connecting "rungs" between complementary pairs (A-T, C-G).
+        Labels panel on right: base pair names, rotation angle.
+        Q=quit.
+
+  P238: Gravity Wells. Create apps/gravity-wells/ WASM app.
+        Window w=960, h=720. Capabilities: stdio=true, display=true.
+        3 gravity wells (fixed positions) + 60 particles.
+        Euler integration: each tick update particle vx,vy from gravitational force.
+        Draw wells as filled circles r=12; particles as 2×2 dots.
+        Trail: each particle stores last 8 positions (ring buffer).
+        Colors: well colors [C_SEL, C_ORANGE, C_RED]; particles hue by well attraction.
+        Ping-pong tick. Q=quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P207 — Tic Tac Toe: apps/tictactoe/ 3×3 grid; human vs AI (minimax); win detection; score tracking
-- [ ] P208 — ASCII Table: apps/ascii-table/ 128 chars; hex/dec/oct/bin columns; search by char or code; scrollable
+- [ ] P239 — Plasma Effect: apps/plasma/ 120×80 grid; sinusoidal plasma colors; time-based animation; CELL=8; ping-pong; Q=quit
+- [ ] P240 — Word Cloud: apps/word-cloud/ 40 words with sizes; random placement avoiding overlap; color by frequency; Space=regen; Q=quit
 
 ## Completed (recent — full list in plan README)
+- [x] P235 — Clock Tower: apps/clock-tower/ analog; trig tables 0..60; hour/min/sec hands; tick marks; ping-pong 1s; Q=quit
+- [x] P236 — Markov Text: apps/markov-text/ bigram chain; 3 corpora; 3 sentences per gen; text_wrap; Space/Tab/Q
+- [x] P233 — Terrain Generator: apps/terrain/ 120×80; diamond-square 129×129; 5-biome lerp colors; RLE; R=regen; Q=quit
+- [x] P234 — Sorting Visualizer: apps/sort-viz/ 80 bars; 5 algorithms; precomputed ops; orange/green highlight; Tab/Space/Q
+- [x] P231 — Bezier Curve Editor: apps/bezier/ De Casteljau; hue trail; control polygon; tangent handles; Tab/arrows/T/R/Q
+- [x] P232 — Life Evolution: apps/life-evo/ 120×80 CELL=8; Conway/HighLife/Day&Night; RLE draw; P/S/Space/R/C/Q
+- [x] P229 — Sine Wave Generator: apps/sine-gen/ 4 overlaid waves; Tab/A/Z/S/X/D/C controls; right panel; ping-pong; Q=quit
+- [x] P230 — Pixel Rain: apps/pixel-rain/ 40 columns; LCG chars; speed 1-3; green gradient; ping-pong; Q=quit
+- [x] P227 — Ray Marching: apps/ray-march/ SDF sphere+box+checkerboard; 48-step march; soft shadows; camera orbit; ping-pong; Space=pause; Q=quit
+- [x] P228 — Network Graph: apps/net-graph/ 12 nodes 18 edges; force-directed spring+repulsion; degree-based colors; ping-pong; Q=quit
+- [x] P225 — Fluid Simulation: apps/fluid/ 160×106 CELL=6; density u8; water-like equalize-flow; blue→white color; RLE; C=clear; Q=quit
+- [x] P226 — Logic Gates Simulator: apps/logic-gates/ 5 circuits; AND/OR/NOT/XOR/NAND/NOR; propagate; schematics; ←→=circuit; 1-4=toggle; Q=quit
+- [x] P223 — Particle Fireworks: apps/fireworks/ 60-120 particles/burst; HSV hue; gravity+fade; auto-burst 60ticks; Space=burst; Q=quit
+- [x] P224 — Mandala Builder: apps/mandala/ 1°/tick rotation; 3-16 fold; Dot/Line/Arc; max 20 marks; ←→sym; ↑↓type; Space=add; C=clear; Q=quit
+- [x] P221 — Sand Simulation: apps/sand/ COLS=160 ROWS=112 CELL=6; 5 materials; RLE draw; 3×3 brush; hold-paint; H/C/1-5/arrows/Q
+- [x] P222 — Kakuro Puzzle: apps/kakuro/ 8×8; 3 puzzles; clue/entry/blocked; run check (dupe+sum); C/N/arrows/1-9/Bksp/Q
+- [x] P219 — Waveform Oscilloscope: apps/oscilloscope/ 2-channel; 4 waveforms; amp/freq controls; overlay mode; Tab/1-4/A/Z/S/X/O/Q
+- [x] P220 — Binary Tree Visualizer: apps/bin-tree/ 31-node; in/pre/post/bfs traversal; gold active highlight; traversal strip; Tab/R/Space/Q
+- [x] P217 — Cellular Automaton: apps/cellular/ 1D Wolfram CA; 120 cells; 83 rows scroll; VecDeque; rule 0-255; +/-/R/Space/Q
+- [x] P218 — Color Theory Wheel: apps/color-wheel/ HSV disc; f32 atan2; complementary/triadic/analogous/tetradic; harmony markers; swatches; +/-/Space/Q
+- [x] P215 — Fourier Series: apps/fourier/ phasor arms + wave panel; Square/Sawtooth/Triangle; 1-20 harmonics; fixed-point sin/cos; Tab/+/-/Space/Q
+- [x] P216 — Typing Stats Dashboard: apps/type-stats/ WPM histogram; letter heatmap QWERTY; error by row; LCG data; Tab/R/Q
+- [x] P213 — Gravity Simulator: apps/gravity/ N-body; 5 planets; MP=256 fixed-point; trails; ping-pong; A/R/Space/Q
+- [x] P214 — Circuit Diagram Viewer: apps/circuit/ 10 circuits; fill_rect schematics; R/C/LED/SW; ←→/Q
+- [x] P211 — Morse Code Decoder Live: apps/morse-live/ . and - input; real-time decode; chart highlights; Space/Enter/N/Q
+- [x] P212 — Prime Sieve: apps/prime-sieve/ Sieve of Eratosthenes; 2-200 animated; ping-pong; Space/R/+/-/Q
+- [x] P209 — RGB Mixer: apps/rgb-mixer/ R/G/B sliders; 200×200 preview; complementary + 2 analogous; C copy; Q quit
+- [x] P210 — Word Search: apps/word-search/ 15×15 grid; 10 hidden words; H/V/diagonal; Enter select; N new; Q quit
+- [x] P207 — Tic Tac Toe: apps/tictactoe/ 3×3 grid; minimax AI; X vs O; W/D/L score; R/Q
+- [x] P208 — ASCII Table: apps/ascii-table/ 128 chars; Dec/Hex/Oct/Bin/Name cols; search; color by type
+- [x] P205 — Number Base Converter: apps/base-conv/ bin/oct/dec/hex panels; B/O/D/X select; bit-width; overflow
+- [x] P206 — Lissajous Curves: apps/lissajous/ hue trail; ping-pong; a/b ratio; delta phase
 - [x] P203 — Kanban Board v2: apps/kanban2/ 4 cols; 20 cards; Tab/Enter promote; D demote; priority colors; N new
 - [x] P204 — Geo Puzzle: apps/geo-puzzle/ 30 country rect silhouettes; type guess; H hint; N skip; score
 - [x] P201 — Fractal Explorer: apps/fractal/ Mandelbrot; i64 fixed-point; 5 palettes; arrows pan; +/- zoom

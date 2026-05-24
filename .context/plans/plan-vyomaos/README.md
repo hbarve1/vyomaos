@@ -212,6 +212,38 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 202 — Tarot Card Reader | `apps/tarot/` 22 major arcana; LCG 3-card spread; upright/reversed; detail panel; N/Q | **complete** | — |
 | 203 — Kanban Board v2 | `apps/kanban2/` 4 cols; 20 seeded cards; priority colors; Tab/Enter promote; D demote; N new | **complete** | — |
 | 204 — Geo Puzzle | `apps/geo-puzzle/` 30 country rect silhouettes; type+Enter guess; H hint; N skip; score | **complete** | — |
+| 205 — Number Base Converter | `apps/base-conv/` bin/oct/dec/hex panels; B/O/D/X select; live update; bit-width; overflow | **complete** | — |
+| 206 — Lissajous Curves | `apps/lissajous/` x=sin(a*t+δ) y=sin(b*t); hue trail; ping-pong; ←→ ratio; ↑↓ delta | **complete** | — |
+| 207 — Tic Tac Toe | `apps/tictactoe/` 3×3 grid; minimax AI; X vs O; W/D/L score; R/Q | **complete** | — |
+| 208 — ASCII Table | `apps/ascii-table/` 128 chars; Dec/Hex/Oct/Bin/Name cols; search; color by type | **complete** | — |
+| 209 — RGB Mixer | `apps/rgb-mixer/` R/G/B sliders; 200×200 preview; complementary + 2 analogous swatches; C copy; Q quit | **complete** | — |
+| 210 — Word Search | `apps/word-search/` 15×15 grid; 10 hidden words; horizontal/vertical/diagonal; Enter select; N new; Q quit | **complete** | — |
+| 211 — Morse Code Decoder Live | `apps/morse-live/` type . and -; real-time decode; chart highlights; Space=commit; Enter=word; N=clear; Q quit | **complete** | — |
+| 212 — Prime Sieve | `apps/prime-sieve/` Sieve of Eratosthenes; 2-200 animated; ping-pong; Space/R/+/-; prime list; Q quit | **complete** | — |
+| 213 — Gravity Simulator | `apps/gravity/` N-body gravity; 5 planets; fixed-point MP=256; trails; ping-pong; A/R/Space/Q | **complete** | — |
+| 214 — Circuit Diagram Viewer | `apps/circuit/` 10 preset circuits; fill_rect schematics; R/C/LED/SW/motor components; ←→/Q | **complete** | — |
+| 215 — Fourier Series | `apps/fourier/` phasor arms + wave panel; Square/Sawtooth/Triangle; 1-20 harmonics; fixed-point sin/cos; Tab/+/-/Space/Q | **complete** | — |
+| 216 — Typing Stats Dashboard | `apps/type-stats/` WPM histogram; letter heatmap QWERTY; error by row; LCG data; Tab/R/Q | **complete** | — |
+| 217 — Cellular Automaton | `apps/cellular/` 1D Wolfram CA rule 0-255; 120 cells; 83 rows scroll; VecDeque; ping-pong; +/-/R/Space/Q | **complete** | — |
+| 218 — Color Theory Wheel | `apps/color-wheel/` HSV disc CX=420 R=200 CELL=6; harmony markers; complementary/triadic/analogous/tetradic; swatches; +/-/Space/Q | **complete** | — |
+| 219 — Waveform Oscilloscope | `apps/oscilloscope/` 2-channel; Sin/Square/Sawtooth/Triangle; amp 1-5; freq 1-8; overlay mode; Tab/1-4/A/Z/S/X/O/Q | **complete** | — |
+| 220 — Binary Tree Visualizer | `apps/bin-tree/` 31-node; radius=22; traversal strip; In/Pre/Post/BFS; gold active node; Tab/R/Space/Q | **complete** | — |
+| 221 — Sand Simulation | `apps/sand/` falling-sand CA; COLS=160 ROWS=112 CELL=6; 5 materials (Empty/Sand/Water/Stone/Fire); RLE draw; 3×3 brush; H=hold; C=clear; Q=quit | **complete** | — |
+| 222 — Kakuro Puzzle | `apps/kakuro/` 8×8 grid; 3 hardcoded puzzles; clue/entry/blocked cells; run-check logic; C=check; N=next; Q=quit | **complete** | — |
+| 223 — Particle Fireworks | `apps/fireworks/` ping-pong tick; 60-120 particles/burst; HSV hue cycle; gravity+fade; auto-burst every 60 ticks; Space=burst; Q=quit | **complete** | — |
+| 224 — Mandala Builder | `apps/mandala/` ping-pong rotation 1°/tick; 3-16 fold symmetry; Dot/Line/Arc marks; HSV colors; cursor at CURSOR_R=180; ←→=sym; ↑↓=type; Space=add; C=clear; Q=quit | **complete** | — |
+| 225 — Fluid Simulation | `apps/fluid/` 160×106 grid CELL=6 GY=32; density u8; water-like flow bottom-to-top; blue→cyan→white color; RLE draw; 3×3 brush; C=clear; Q=quit | **complete** | — |
+| 226 — Logic Gates Simulator | `apps/logic-gates/` 5 circuits (half-adder/majority/mux/xor-nand/decoder); AND/OR/NOT/XOR/NAND/NOR; propagate; fill_rect schematics; wire lines; ←→=circuit; 1-4=toggle; Q=quit | **complete** | — |
+| 227 — Ray Marching | `apps/ray-march/` SDF sphere+box+checkerboard; 48-step march; soft shadows; camera orbit; ping-pong; Space=pause; Q=quit | **complete** | — |
+| 228 — Network Graph | `apps/net-graph/` 12 nodes 18 edges; force-directed layout (spring+repulsion); node colors by degree; ping-pong tick; Q=quit | **complete** | — |
+| 229 — Sine Wave Generator | `apps/sine-gen/` 4 overlaid sine waves; right panel with freq/amp/phase; Tab=select; A/Z=amp; S/X=freq; D/C=phase; ping-pong; Q=quit | **complete** | — |
+| 230 — Pixel Rain | `apps/pixel-rain/` Matrix-style; 40 columns; LCG chars; speed 1-3; green gradient fade; head white; ping-pong; Q=quit | **complete** | — |
+| 231 — Bezier Curve Editor | `apps/bezier/` 4 cubic control points; De Casteljau 200-sample; hue trail; control polygon; T=tangents; Tab=select; arrows=move; R=reset; Q=quit | **complete** | — |
+| 232 — Life Evolution | `apps/life-evo/` 120×80 grid CELL=8; 3 rules (Conway/HighLife/Day&Night); RLE draw; P=rule; S=step; Space=run/pause; R=random; C=clear; Q=quit | **complete** | — |
+| 233 — Terrain Generator | `apps/terrain/` 120×80 heightmap; diamond-square fractal 129×129; 5-biome color lerp; RLE render; R=regen; Q=quit | **complete** | — |
+| 234 — Sorting Visualizer | `apps/sort-viz/` 80 bars; 5 algorithms (bubble/insertion/selection/merge/quick); precomputed ops; orange highlight; green sorted; Tab=algo; Space=shuffle; Q=quit | **complete** | — |
+| 235 — Clock Tower | `apps/clock-tower/` analog clock; integer trig tables (0..60); hour/min/sec hands; 60 tick marks; 12 labels; date display; ping-pong 1s; Q=quit | **complete** | — |
+| 236 — Markov Text | `apps/markov-text/` bigram Markov chain; 3 corpora (Tech/Nature/Philosophy); 3 sentences per gen; text_wrap display; Space=generate; Tab=corpus; Q=quit | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

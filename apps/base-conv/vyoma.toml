@@ -1,0 +1,13 @@
+[app]
+name    = "base-conv"
+version = "0.1.0"
+wasm    = "base-conv.wasm"
+
+[window]
+title  = "Number Base Converter"
+width  = 800
+height = 560
+
+[capabilities]
+stdio   = true
+display = true

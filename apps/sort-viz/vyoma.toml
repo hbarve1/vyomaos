@@ -1,0 +1,12 @@
+[app]
+name    = "sort-viz"
+version = "0.1.0"
+wasm    = "sort-viz.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+width  = 960
+height = 720

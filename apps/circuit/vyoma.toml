@@ -1,0 +1,13 @@
+[app]
+name    = "circuit"
+version = "0.1.0"
+wasm    = "circuit.wasm"
+
+[window]
+title  = "Circuit Diagrams"
+width  = 960
+height = 720
+
+[capabilities]
+stdio   = true
+display = true

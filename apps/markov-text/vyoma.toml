@@ -1,0 +1,12 @@
+[app]
+name    = "markov-text"
+version = "0.1.0"
+wasm    = "markov-text.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+width  = 960
+height = 720

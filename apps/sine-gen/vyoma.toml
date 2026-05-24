@@ -1,0 +1,12 @@
+[app]
+name    = "sine-gen"
+version = "0.1.0"
+wasm    = "sine-gen.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+width  = 960
+height = 720

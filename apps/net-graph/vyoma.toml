@@ -1,0 +1,12 @@
+[app]
+name    = "net-graph"
+version = "0.1.0"
+wasm    = "net-graph.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+
+[window]
+width  = 960
+height = 720

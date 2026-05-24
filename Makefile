@@ -261,6 +261,38 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/tarot/Cargo.toml              --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/kanban2/Cargo.toml            --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/geo-puzzle/Cargo.toml         --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/base-conv/Cargo.toml          --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/lissajous/Cargo.toml          --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/tictactoe/Cargo.toml          --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/ascii-table/Cargo.toml        --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/rgb-mixer/Cargo.toml          --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/word-search/Cargo.toml        --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/morse-live/Cargo.toml         --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/prime-sieve/Cargo.toml        --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/gravity/Cargo.toml            --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/circuit/Cargo.toml            --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/fourier/Cargo.toml            --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/type-stats/Cargo.toml         --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/cellular/Cargo.toml           --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/color-wheel/Cargo.toml        --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/oscilloscope/Cargo.toml       --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/bin-tree/Cargo.toml           --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/sand/Cargo.toml               --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/kakuro/Cargo.toml             --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/fireworks/Cargo.toml          --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/mandala/Cargo.toml            --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/fluid/Cargo.toml              --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/logic-gates/Cargo.toml        --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/ray-march/Cargo.toml          --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/net-graph/Cargo.toml          --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/sine-gen/Cargo.toml           --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/pixel-rain/Cargo.toml         --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/bezier/Cargo.toml             --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/life-evo/Cargo.toml           --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/terrain/Cargo.toml            --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/sort-viz/Cargo.toml           --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/clock-tower/Cargo.toml        --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/markov-text/Cargo.toml        --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────

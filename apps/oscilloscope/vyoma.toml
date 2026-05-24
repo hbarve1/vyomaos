@@ -1,0 +1,13 @@
+[app]
+name    = "oscilloscope"
+version = "0.1.0"
+wasm    = "oscilloscope.wasm"
+
+[window]
+title  = "Oscilloscope"
+width  = 960
+height = 720
+
+[capabilities]
+stdio   = true
+display = true
