@@ -1,7 +1,7 @@
 # VyomaOS Auto-Build State
 <!-- Owned by the autonomous loop. Each iteration reads this, does work, updates it. -->
 
-last_updated: 2026-05-24  <!-- P233+P234 complete -->
+last_updated: 2026-05-24  <!-- P235+P236 complete -->
 repo: /Users/hbarve1/codes/hbarve1/vyomaos
 
 ## Goal: macOS-like OS
@@ -18,33 +18,35 @@ The next major milestone is a macOS-like desktop experience:
 ## Current batch
 status: ready
 phases:
-  - P235 — Clock Tower
-  - P236 — Markov Text
+  - P237 — DNA Visualizer
+  - P238 — Gravity Wells
 notes: |
-  P235: Clock Tower. Create apps/clock-tower/ WASM app.
+  P237: DNA Visualizer. Create apps/dna-viz/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        Analog clock face centered at (480, 380), radius=300px.
-        Hour hand: length 150, width 6; Minute hand: length 220, width 4; Second hand: length 260, width 2.
-        60 tick marks around face: major (every 5) length 20, width 3; minor length 10, width 1.
-        12 hour numbers positioned around face.
-        Date display below center: "Sat 24 May 2026" style.
-        Ping-pong tick: advance simulated time 1 second per tick. Q=quit.
-        Use integer trig: precompute sin/cos tables for 0..60.
+        Double helix animation: 20 base pairs rendered as connected dots.
+        ATCG color coding: A=C_GREEN, T=C_RED, C=C_SEL, G=C_ORANGE.
+        Helix rotates around the Y axis; perspective projection.
+        Ping-pong tick: rotate by 3° per tick.
+        Draw connecting "rungs" between complementary pairs (A-T, C-G).
+        Labels panel on right: base pair names, rotation angle.
+        Q=quit.
 
-  P236: Markov Text. Create apps/markov-text/ WASM app.
+  P238: Gravity Wells. Create apps/gravity-wells/ WASM app.
         Window w=960, h=720. Capabilities: stdio=true, display=true.
-        200-word corpus (hardcoded tech/nature sentences).
-        Build bigram chain at startup. Generate 3 random sentences per generation.
-        Display sentences as wrapped text in a card.
-        Space=generate new sentences; Tab=cycle corpus (3 different corpora); Q=quit.
-        LCG for random word selection. Show corpus name in header.
-        No ping-pong needed (static display, regenerate on Space).
+        3 gravity wells (fixed positions) + 60 particles.
+        Euler integration: each tick update particle vx,vy from gravitational force.
+        Draw wells as filled circles r=12; particles as 2×2 dots.
+        Trail: each particle stores last 8 positions (ring buffer).
+        Colors: well colors [C_SEL, C_ORANGE, C_RED]; particles hue by well attraction.
+        Ping-pong tick. Q=quit.
 
 ## Queue (implement in order after current batch)
-- [ ] P237 — DNA Visualizer: apps/dna-viz/ double helix animation; 20 base pairs; ATCG color coding; ping-pong rotate; Q=quit
-- [ ] P238 — Gravity Wells: apps/gravity-wells/ 3 gravity wells + particles; Euler integration; trail; ping-pong; Q=quit
+- [ ] P239 — Plasma Effect: apps/plasma/ 120×80 grid; sinusoidal plasma colors; time-based animation; CELL=8; ping-pong; Q=quit
+- [ ] P240 — Word Cloud: apps/word-cloud/ 40 words with sizes; random placement avoiding overlap; color by frequency; Space=regen; Q=quit
 
 ## Completed (recent — full list in plan README)
+- [x] P235 — Clock Tower: apps/clock-tower/ analog; trig tables 0..60; hour/min/sec hands; tick marks; ping-pong 1s; Q=quit
+- [x] P236 — Markov Text: apps/markov-text/ bigram chain; 3 corpora; 3 sentences per gen; text_wrap; Space/Tab/Q
 - [x] P233 — Terrain Generator: apps/terrain/ 120×80; diamond-square 129×129; 5-biome lerp colors; RLE; R=regen; Q=quit
 - [x] P234 — Sorting Visualizer: apps/sort-viz/ 80 bars; 5 algorithms; precomputed ops; orange/green highlight; Tab/Space/Q
 - [x] P231 — Bezier Curve Editor: apps/bezier/ De Casteljau; hue trail; control polygon; tangent handles; Tab/arrows/T/R/Q

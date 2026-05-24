@@ -242,6 +242,8 @@ Build a minimal, production-quality OS that uses a Linux kernel for hardware abs
 | 232 — Life Evolution | `apps/life-evo/` 120×80 grid CELL=8; 3 rules (Conway/HighLife/Day&Night); RLE draw; P=rule; S=step; Space=run/pause; R=random; C=clear; Q=quit | **complete** | — |
 | 233 — Terrain Generator | `apps/terrain/` 120×80 heightmap; diamond-square fractal 129×129; 5-biome color lerp; RLE render; R=regen; Q=quit | **complete** | — |
 | 234 — Sorting Visualizer | `apps/sort-viz/` 80 bars; 5 algorithms (bubble/insertion/selection/merge/quick); precomputed ops; orange highlight; green sorted; Tab=algo; Space=shuffle; Q=quit | **complete** | — |
+| 235 — Clock Tower | `apps/clock-tower/` analog clock; integer trig tables (0..60); hour/min/sec hands; 60 tick marks; 12 labels; date display; ping-pong 1s; Q=quit | **complete** | — |
+| 236 — Markov Text | `apps/markov-text/` bigram Markov chain; 3 corpora (Tech/Nature/Philosophy); 3 sentences per gen; text_wrap display; Space=generate; Tab=corpus; Q=quit | **complete** | — |
 
 See [full OS roadmap](../../docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) for P31–P112 (window manager → desktop shell → networking → filesystem → app ecosystem → dev tools → media → accessibility → security → performance → real hardware → production release).
 

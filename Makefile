@@ -291,6 +291,8 @@ $(APPS_STAMP): $(APPS_SRC) | image
 	$(DOCKER_RUN) cargo build --manifest-path apps/life-evo/Cargo.toml           --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/terrain/Cargo.toml            --target wasm32-wasip2 --release
 	$(DOCKER_RUN) cargo build --manifest-path apps/sort-viz/Cargo.toml           --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/clock-tower/Cargo.toml        --target wasm32-wasip2 --release
+	$(DOCKER_RUN) cargo build --manifest-path apps/markov-text/Cargo.toml        --target wasm32-wasip2 --release
 	@touch $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────
