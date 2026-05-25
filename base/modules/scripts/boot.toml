@@ -1,53 +1,15 @@
 # VyomaOS boot configuration
-# Each [[apps]] entry declares one application to launch at startup.
+# Minimal startup: desktop + dock + background HTTP server.
+# All other apps are launched on-demand via the desktop icon grid.
 
 [[apps]]
-manifest = "/apps/hello-world/vyoma.toml"
-restart  = "never"
-
-[[apps]]
-manifest = "/apps/calculator/vyoma.toml"
-restart  = "never"
-
-[[apps]]
-manifest = "/apps/factorial/vyoma.toml"
-restart  = "never"
-
-# IPC demo: ping and pong exchange 3 messages through the supervisor broker
-[[apps]]
-manifest = "/apps/ping/vyoma.toml"
-restart  = "never"
-
-[[apps]]
-manifest = "/apps/pong/vyoma.toml"
-restart  = "never"
-
-# Storage demo: reads/writes /data on the virtio-blk ext4 disk
-[[apps]]
-manifest = "/apps/storage-demo/vyoma.toml"
-restart  = "never"
-
-# GUI demo: live system dashboard — redraws every 2 s via @supervisor: ps-raw
-[[apps]]
-manifest = "/apps/gui-demo/vyoma.toml"
+manifest = "/apps/desktop/vyoma.toml"
 restart  = "always"
 
-# HTTP server: serves status page at http://localhost:8080
+[[apps]]
+manifest = "/apps/dock/vyoma.toml"
+restart  = "always"
+
 [[apps]]
 manifest = "/apps/http-server/vyoma.toml"
-restart  = "always"
-
-# Ticker: live heartbeat — updates every second to prove GUI pipeline is alive
-[[apps]]
-manifest = "/apps/ticker/vyoma.toml"
-restart  = "always"
-
-# Interactive shell: keyboard input from /dev/tty0 → command prompt on screen
-[[apps]]
-manifest = "/apps/shell/vyoma.toml"
-restart  = "never"
-
-# Mouse demo: displays live mouse move/click events for testing input routing
-[[apps]]
-manifest = "/apps/mouse-demo/vyoma.toml"
 restart  = "always"

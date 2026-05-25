@@ -3,4 +3,5 @@ members = [
     "supervisor",
     "cli",
 ]
+exclude = ["apps/*", "tools/*"]
 resolver = "2"
