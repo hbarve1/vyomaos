@@ -417,23 +417,35 @@ impl Framebuffer {
     }
 
     /// Blit cursor sprite region only; does not consume the dirty rect.
+    /// Fast path for mouse motion when no app content changed — avoids the full
+    /// 5 MB blit for every cursor move event.
     #[allow(dead_code)]
     pub fn flush_cursor_only(&mut self) {
         if !self.cursor.visible || self.bpp != 32 { return; }
+        if self.cursor.cx < 0 || self.cursor.cy < 0 { return; }
+
         self.restore_under_cursor();
         self.draw_cursor();
+
         let cx = self.cursor.cx as u32;
         let cy = self.cursor.cy as u32;
         let x1 = (cx + CURSOR_W).min(self.width);
         let y1 = (cy + CURSOR_H).min(self.height);
+
         for row in cy..y1 {
             let start = (row * self.stride + cx * 4) as usize;
             let end   = (row * self.stride + x1 * 4) as usize;
-            if end <= self.buf_len { unsafe {
-                std::ptr::copy_nonoverlapping(
-                    self.back.as_ptr().add(start), self.buf.add(start), end - start);
-            }}
+            if start < end && end <= self.buf_len {
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        self.back.as_ptr().add(start),
+                        self.buf.add(start),
+                        end - start,
+                    );
+                }
+            }
         }
+
         self.restore_under_cursor();
     }
 
