@@ -20,3 +20,6 @@ apps/*/target/
 
 # PowerPoint temporary/lock files
 ~$*.pptx
+
+# Local git worktrees
+.worktrees/
