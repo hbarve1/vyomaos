@@ -290,6 +290,20 @@ specs/<feature-name>/       ← speckit artifacts (spec.md, plan.md, tasks.md, c
 docs/superpowers/plans/     ← superpowers one-off plans (refactors, perf work)
 ```
 
+### Branching strategy
+
+| Branch | Role |
+|--------|------|
+| `main` | Production — only receives merges from `develop` via PR |
+| `develop` | Integration — all feature PRs target here |
+| `<feature>` | Short-lived; one branch per task; always PRs to `develop` |
+
+**Rules for agents:**
+- Always create a dedicated git worktree for each independent task (`superpowers:using-git-worktrees`)
+- All PRs target **`develop`**, never `main` directly
+- If a feature branch depends on another in-progress branch, base it on that branch (not `develop`) and note the dependency in the PR description — e.g. `Depends on #<PR>`
+- When the dependency merges to `develop`, rebase the dependent branch onto `develop` before opening its own PR
+
 ## Testing Strategy
 
 ### Unit tests (supervisor)
