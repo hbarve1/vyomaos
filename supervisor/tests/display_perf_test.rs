@@ -78,4 +78,17 @@ mod tests {
         assert_eq!(fb.dirty.y0, before_y0, "dirty.y0 must survive flush_cursor_only");
         assert_eq!(fb.dirty.y1, before_y1, "dirty.y1 must survive flush_cursor_only");
     }
+
+    #[test]
+    fn status_bar_throttle_skips_same_uptime() {
+        use std::collections::HashMap;
+        use supervisor::draw_cmd::should_redraw_statusbar;
+        let mut cache: HashMap<String, u64> = HashMap::new();
+        // First call: uptime=10 → should draw
+        assert!(should_redraw_statusbar("my-app", 10, &mut cache));
+        // Second call: uptime=10 again → skip
+        assert!(!should_redraw_statusbar("my-app", 10, &mut cache));
+        // Third call: uptime advanced → should draw
+        assert!(should_redraw_statusbar("my-app", 11, &mut cache));
+    }
 }

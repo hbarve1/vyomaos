@@ -14,6 +14,14 @@ use supervisor::logging::Subsystem;
 #[cfg(target_os = "linux")]
 use crate::{display, font};
 
+#[cfg(target_os = "linux")]
+static STATUS_UPTIME_CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, u64>>> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "linux")]
+fn status_uptime_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, u64>> {
+    STATUS_UPTIME_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
 /// Parse a u32 that may be decimal ("218169855") or hex ("0x0d1117ff" / "0X0D1117FF").
 #[cfg(target_os = "linux")]
 #[inline]
@@ -75,7 +83,7 @@ pub fn handle_draw_command(
                         .as_deref() == Some(sender);
                     draw_titlebar(&mut *fb, wx, wy, ww, is_focused, is_hovered, sender);
                 }
-                // Per-window status strip — redrawn on every flush so uptime advances.
+                // Per-window status strip — only repaint when uptime_secs advances (≤1 redraw/sec per app).
                 if ww > 0 && wh > STATUS_H {
                     let uptime_secs: u64 = {
                         let reg = app_registry.lock().unwrap();
@@ -83,7 +91,14 @@ pub fn handle_draw_command(
                             .map(|st| st.lock().unwrap().start_time.elapsed().as_secs())
                             .unwrap_or(0)
                     };
-                    draw_statusbar(&mut *fb, sender, uptime_secs, wx, wy, ww, wh);
+                    // Only redraw status strip when uptime_secs advances (≤1 redraw/sec per app).
+                    let do_draw = {
+                        let mut cache = status_uptime_cache().lock().unwrap();
+                        supervisor::draw_cmd::should_redraw_statusbar(sender, uptime_secs, &mut cache)
+                    };
+                    if do_draw {
+                        draw_statusbar(&mut *fb, sender, uptime_secs, wx, wy, ww, wh);
+                    }
                 }
             }
         }
