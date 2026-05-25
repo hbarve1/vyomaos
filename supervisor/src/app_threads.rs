@@ -278,6 +278,8 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         min_size,
         draw_ticks:       0,
         last_cpu_reset:   Instant::now(),
+        minimized:           false,
+        pre_minimize_region: None,
     }));
     app_registry.lock().unwrap().insert(name.clone(), state);
 

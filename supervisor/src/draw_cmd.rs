@@ -34,6 +34,14 @@ pub fn handle_draw_command(
     focused: &FocusedApp,
     app_registry: &AppRegistry,
 ) {
+    // Skip draw commands for minimized windows (content area is hidden).
+    {
+        let reg = app_registry.lock().unwrap();
+        if reg.get(sender).map(|st| st.lock().unwrap().minimized).unwrap_or(false) {
+            return;
+        }
+    }
+
     let Some(fb_lock) = display::get() else { return };
 
     // Mark this app dirty for any draw command other than flush/present.

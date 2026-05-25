@@ -193,6 +193,36 @@ pub fn drag_delta(x1: i32, y1: i32, x2: i32, y2: i32) -> (i32, i32) {
 }
 
 
+/// Find the nearest tiled grid slot (Chebyshev distance) to `win_pos`.
+///
+/// Returns `Some((x, y, w, h))` if the nearest slot is within 40 px, `None` otherwise.
+/// This is a pure function — no side effects, no platform dependencies.
+pub fn nearest_tiled_slot(
+    win_pos: (u32, u32),
+    n_apps: usize,
+    sw: u32,
+    sh: u32,
+    menubar_h: u32,
+) -> Option<(u32, u32, u32, u32)> {
+    if n_apps == 0 { return None; }
+    let usable_h = sh.saturating_sub(menubar_h);
+    let hints = vec![(0u32, 0u32); n_apps];
+    let slots: Vec<(u32, u32, u32, u32)> = compute_tiling_with_hints(n_apps, sw, usable_h, &hints)
+        .into_iter()
+        .map(|(x, y, w, h)| (x, y + menubar_h, w, h))
+        .collect();
+    let (px, py) = win_pos;
+    slots.into_iter().min_by_key(|&(sx, sy, _, _)| {
+        let dx = (px as i32 - sx as i32).unsigned_abs();
+        let dy = (py as i32 - sy as i32).unsigned_abs();
+        dx.max(dy)
+    }).filter(|&(sx, sy, _, _)| {
+        let dx = (px as i32 - sx as i32).unsigned_abs();
+        let dy = (py as i32 - sy as i32).unsigned_abs();
+        dx.max(dy) <= 40
+    })
+}
+
 /// Integer ceiling of sqrt(n).
 fn ceil_sqrt(n: usize) -> usize {
     if n == 0 {
