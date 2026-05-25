@@ -10,6 +10,6 @@ shell   = true
 
 [window]
 x = 240
-y = 20
+y = 24
 w = 560
-h = 860
+h = 856

@@ -9,7 +9,7 @@ display = true
 
 [window]
 x = 0
-y = 20
+y = 24
 w = 960
 h = 700
 title = "Typing Statistics"

@@ -287,8 +287,11 @@ pub fn draw(app: &App) {
         let focus_col = if app.focus == Focus::List { C_ORANGE } else { C_SEL };
         super::text(8, sb_y + 8, focus_col, focus_str);
         if let Some(n) = app.cur_note() {
-            let lines = n.body.len();
-            let info = format!("  {}  ({} lines)", n.title, lines);
+            let line_count = n.body.len();
+            let word_count: usize = n.body.iter()
+                .map(|l| l.split_whitespace().count())
+                .sum();
+            let info = format!("  {}  |  Words: {}  |  Lines: {}", n.title, word_count, line_count);
             super::text(8 + 6 * CHAR_W, sb_y + 8, C_HINT, &info);
         }
     }

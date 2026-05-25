@@ -6,6 +6,7 @@ wasm    = "geo-quiz.wasm"
 [capabilities]
 stdio   = true
 display = true
+mouse   = true
 
 [window]
 x = 60
