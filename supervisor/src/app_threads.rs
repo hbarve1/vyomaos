@@ -21,7 +21,7 @@ use crate::{
     AppRegistry, AppState, AppStatus, FocusedApp, Inbox, SpawnedApp,
     LAST_SENDER, LOG_BUF_SIZE, LOG_DIR,
 };
-use crate::{route_or_print, watchdog_next_backoff};
+use crate::{chrome, route_or_print, watchdog_next_backoff};
 use supervisor::logging::Subsystem;
 use supervisor::manifest::BootEntry;
 
@@ -279,7 +279,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         has_mouse:        caps.mouse,
         has_display:      caps.display,
         win_region:       None,
-        win_z:            manifest.window.as_ref().map(|w| w.z).unwrap_or(10),
+        win_z:            manifest.window.as_ref().map(|w| w.z).unwrap_or(chrome::Z_APP),
         min_size,
         draw_ticks:       0,
         last_cpu_reset:   Instant::now(),

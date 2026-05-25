@@ -12,3 +12,5 @@ supervisor = { path = "../../supervisor" }
 
 [dev-dependencies]
 tempfile = "3"
+
+[workspace]

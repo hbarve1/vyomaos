@@ -8,3 +8,5 @@ name = "storage-demo"
 path = "src/main.rs"
 
 [dependencies]
+
+[workspace]
