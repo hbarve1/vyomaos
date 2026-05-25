@@ -1442,3 +1442,78 @@ When a new platform is added:
 - **Multi-touch on mobile**: Pinch-to-zoom and two-finger gestures are out of scope for the initial mobile testing phase. They will require QEMU multitouch support or a hardware-in-the-loop test.
 - **RISC-V architecture**: SC-007 and FR-013 reference RISC-V support. No QEMU RISC-V smoke test exists yet. Add once the `riscv32`/`riscv64` cross-compilation toolchain is integrated into the Docker builder image.
 - **Coverage reporting**: No code coverage tooling is currently configured. `cargo-tarpaulin` or `cargo-llvm-cov` should be added as a nightly CI step to track coverage trends over time. Target: > 70% line coverage for supervisor modules.
+
+---
+
+## Appendix: Performance Baselines
+
+The following ranges are **target values** from `specs/043-universal-modular-os/spec.md` (success criteria SC-001 through SC-013). They are not measured values from a benchmark run — they are the thresholds that Layer 8 performance tests must eventually verify. A performance regression is any result that crosses a threshold in the wrong direction on a nightly CI run.
+
+### Boot Time (SC-004)
+
+| Platform | Target | Condition |
+|----------|--------|-----------|
+| Desktop / Server | < 5 s | From kernel start to `[lifecycle] all apps spawned` on serial |
+| Embedded (IoT, Robotics) | < 5 s | From kernel start in QEMU VM |
+| Embedded with preloaded image | < 1 s | Supervisor + apps pre-staged in flash, no network load, no disk init |
+
+"Preloaded image" means the initramfs is stored on flash/eMMC and the kernel is loaded directly into RAM by the bootloader. Boot time under QEMU emulation is expected to be 2–3× slower than real hardware.
+
+### WASM Cold Start (SC-004, FR-012)
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| Time from supervisor `spawn` command to first app stdout line | < 5 ms | Wasmtime JIT on desktop/server |
+| Time from supervisor `spawn` command to first app stdout line | < 50 ms | wasm3 interpreter on IoT/MCU (no JIT) |
+
+Cold start is measured from the moment the supervisor invokes `wasmtime run <app>.wasm` (or equivalent) to the first byte of app output on its stdout pipe. This includes WASM parsing, compilation (Wasmtime only), and main() initialization overhead.
+
+### Supervisor and Runtime Memory (SC-006)
+
+| Component | Target | Platform |
+|-----------|--------|----------|
+| Supervisor binary (static musl) | < 1 MB | All platforms |
+| Supervisor + wasm3 runtime + 1 minimal app | < 8 MB total RSS | MCU / IoT embedded profiles |
+| Supervisor + Wasmtime + 10 apps | < 64 MB total RSS | Desktop / Server |
+| 200 concurrent WASM apps (SC-009) | No OOM, stable RSS | Desktop / Server |
+
+The 8 MB embedded target applies to the `mcu-minimal` and `iot-edge` profiles. Wasmtime's JIT compiler cache grows with the number of unique apps loaded; the < 64 MB figure assumes 10 apps of approximately 5–50 KB each.
+
+### GUI Frame Rate (SC from PR #65)
+
+| Metric | Target | Platform |
+|--------|--------|----------|
+| VYOMA_DRAW flush rate (GUI dashboard) | >= 60 fps | Desktop `desktop-full` profile |
+| VYOMA_DRAW flush rate (minimal display) | >= 30 fps | Embedded with display (`mobile` profile) |
+
+60 fps at the `desktop-full` profile was achieved in PR #65 (double-buffered compositor with back-buffer blit). The 30 fps mobile target applies to the `virtio-gpu` device at 1080×2340 resolution in QEMU.
+
+### OTA Update Timing (SC-003, SC-008)
+
+| Metric | Target |
+|--------|--------|
+| Module hot-swap (stop old, start new) | < 2 s end-to-end |
+| OTA update on IoT device (standard connectivity) | < 30 s from command to slot B running |
+| Health check window (configurable, default) | 60 s |
+| Automatic rollback from health check failure to slot A restored | < 5 s |
+
+### Measurement Commands (Reference)
+
+These commands will be used by the Layer 8 nightly CI job once `make perf-baseline` is implemented:
+
+```bash
+# Boot time:
+time make smoke  # measures wall time from QEMU start to SMOKE: PASS
+
+# WASM cold start (inside VM via log timestamps):
+# Supervisor logs [spawn] <app> at time T1 and app writes first stdout at T2
+# T2 - T1 = cold start latency per app
+
+# Memory footprint (inside VM):
+# After boot: cat /proc/meminfo | grep MemFree
+# Supervisor RSS: cat /proc/1/status | grep VmRSS
+
+# Frame rate (GUI profile):
+# Count VYOMA_DRAW:flush calls per second in supervisor display loop
+# make run-gui 2>&1 | grep -c 'VYOMA_DRAW:flush' over a 1-second window
+```
