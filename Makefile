@@ -224,6 +224,10 @@ check-profiles: | image
 test-all-platforms: unit-test check-profiles check-manifests
 	@echo "ALL-PLATFORMS: OK"
 
+# ── test-e2e-gui: QEMU screendump visual test — saves out/screenshots/latest.ppm
+test-e2e-gui: $(BZIMAGE) $(INITRAMFS)
+	bash base/scripts/test-e2e-gui.sh
+
 # ── build (all) ───────────────────────────────────────────────────────────────
 build: kernel supervisor apps rootfs disk data
 

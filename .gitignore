@@ -1,5 +1,6 @@
 # Build outputs
 out/
+out/screenshots/
 
 # Rust build artifacts
 supervisor/target/
