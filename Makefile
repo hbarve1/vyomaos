@@ -88,7 +88,7 @@ DOCKER_RUN := docker run --rm \
 KVM ?=
 
 # ── phony declarations ────────────────────────────────────────────────────────
-.PHONY: image kernel supervisor apps rootfs disk build run run-gui run-net run-gui-net shell clean clean-image data \
+.PHONY: image kernel supervisor apps rootfs disk build run run-gui run-net run-gui-net run-net-mgmt shell clean clean-image data \
         unit-test smoke test check-manifests check-profiles test-all-platforms
 
 # ── Docker image ──────────────────────────────────────────────────────────────
@@ -270,6 +270,23 @@ run-net: $(BZIMAGE) $(INITRAMFS) data
 	  -initrd $(INITRAMFS) \
 	  -append "console=ttyS0 panic=1 $(PLATFORM_KERNEL_ARG)" \
 	  -netdev user,id=net0,hostfwd=tcp::8080-:8080 \
+	  -device virtio-net-pci,netdev=net0 \
+	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
+	  -nographic \
+	  -m 512M \
+	  -no-reboot \
+	  $(KVM)
+
+# ── run-net-mgmt (headless + virtio-net, port 8080 + mgmt port 9090) ─────────
+# Used with the `vyoma` CLI: connects on host:9090 → guest:9090.
+# Note: `vyoma push` uses the management server at :9090, wrapping the
+#       @supervisor: ota-update IPC command.
+run-net-mgmt: $(BZIMAGE) $(INITRAMFS) data
+	qemu-system-x86_64 \
+	  -kernel $(BZIMAGE) \
+	  -initrd $(INITRAMFS) \
+	  -append "console=ttyS0 panic=1 $(PLATFORM_KERNEL_ARG)" \
+	  -netdev user,id=net0,hostfwd=tcp::8080-:8080,hostfwd=tcp::9090-:9090 \
 	  -device virtio-net-pci,netdev=net0 \
 	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
 	  -nographic \
