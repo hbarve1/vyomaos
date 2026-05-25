@@ -8,6 +8,9 @@
 use serde::Deserialize;
 
 pub mod loader;
+pub mod mobile;
+
+pub use mobile::{MobileCapabilities, MobileDisplayConfig};
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
@@ -141,6 +144,12 @@ pub struct PlatformProfile {
     pub ota: OtaConfig,
     #[serde(default)]
     pub build: BuildConfig,
+    /// Mobile-specific capability flags.  Present only in mobile platform profiles.
+    #[serde(default)]
+    pub mobile_caps: Option<MobileCapabilities>,
+    /// Mobile display geometry.  Present only in mobile platform profiles.
+    #[serde(default)]
+    pub mobile_display: Option<MobileDisplayConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

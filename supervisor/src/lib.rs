@@ -14,6 +14,9 @@ pub mod ota;
 pub mod observability;
 pub mod capability;
 
+// 043-mobile: Touch input parser
+pub mod touch_input;
+
 #[cfg(target_os = "linux")]
 pub mod font;
 #[cfg(target_os = "linux")]

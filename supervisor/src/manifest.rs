@@ -87,6 +87,9 @@ pub struct Capabilities {
     pub watchdog_secs: u32,
     #[serde(default)]
     pub mouse: bool,
+    /// App receives `VYOMA_INPUT:touch:` events when touch = true in manifest.
+    #[serde(default)]
+    pub touch: bool,
 }
 
 // ── Parse + validate functions ────────────────────────────────────────────────
