@@ -20,6 +20,7 @@ fn default_config() -> RuntimeConfig {
         max_memory_pages: 0,
         fuel_limit: 0,
         wasi_imports: vec![],
+        ..Default::default()
     }
 }
 

@@ -8,7 +8,7 @@ use crate::manifest::Capabilities;
 
 pub mod wasmtime;
 
-// ── Engine / Mode enums ───────────────────────────────────────────────────────
+// ── Engine / Mode / Target enums ──────────────────────────────────────────────
 
 /// The WASM execution engine being used.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,6 +26,26 @@ pub enum ExecutionMode {
     Aot,
 }
 
+/// WASM address-width target.
+///
+/// `Wasm32` is the standard 32-bit address space (all current toolchains).
+/// `Wasm64` enables the memory64 proposal, providing a 64-bit linear memory
+/// address space for memory-intensive HPC workloads.
+///
+/// # Runtime support
+/// Wasmtime supports wasm64 via the `memory64` proposal (enabled when this
+/// variant is used).  If the installed Wasmtime version predates memory64
+/// support, `WasmtimeAdapter::instantiate` returns `Err` with message:
+/// `"wasm64 requires wasmtime with memory64 feature"`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum WasmTarget {
+    /// Standard 32-bit linear memory (default, all toolchains).
+    #[default]
+    Wasm32,
+    /// 64-bit linear memory via the WASM memory64 proposal (T048/T049).
+    Wasm64,
+}
+
 // ── RuntimeConfig ─────────────────────────────────────────────────────────────
 
 /// Configuration passed to a `WasmRuntime` on construction.
@@ -39,6 +59,8 @@ pub struct RuntimeConfig {
     pub fuel_limit: u64,
     /// WASI interfaces to wire up for apps (e.g. "wasi:cli/stdout@0.2.0").
     pub wasi_imports: Vec<String>,
+    /// Address-width target for the WASM binary.  Defaults to Wasm32.
+    pub target: WasmTarget,
 }
 
 impl Default for RuntimeConfig {
@@ -49,6 +71,7 @@ impl Default for RuntimeConfig {
             max_memory_pages: 0,
             fuel_limit: 0,
             wasi_imports: Vec::new(),
+            target: WasmTarget::Wasm32,
         }
     }
 }
