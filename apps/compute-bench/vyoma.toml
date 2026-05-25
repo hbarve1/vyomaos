@@ -1,0 +1,8 @@
+[app]
+name    = "compute-bench"
+version = "0.1.0"
+wasm    = "compute-bench.wasm"
+
+[capabilities]
+# Only stdio is needed: benchmark reads nothing and writes the final hash to stdout.
+stdio = true
