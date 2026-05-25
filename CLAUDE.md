@@ -88,6 +88,79 @@ make apps               # Compile all WASM apps
 make rootfs             # Create initramfs from supervisor + apps + busybox
 ```
 
+### Multi-Platform Build
+
+VyomaOS supports 6 platform profiles selectable via `PLATFORM=<name>`:
+
+| Platform name | Target | Runtime | RAM floor |
+|---------------|--------|---------|-----------|
+| `mcu-minimal` | ARM Cortex-M4 MCU | wasm3 interpreter | 128 KB |
+| `iot-edge` | ARM64 SBC (Raspberry Pi) | WAMR AOT | 4 MB |
+| `robotics-rt` | ARM64 robot controller | WAMR AOT | 8 MB |
+| `mobile` | ARM64 tablet/phone | Wasmtime JIT | 256 MB |
+| `desktop-full` | x86-64 workstation (default) | Wasmtime JIT | 512 MB |
+| `server-headless` | ARM64 / x86-64 server | Wasmtime JIT | 1 GB |
+
+```bash
+make build PLATFORM=desktop-full     # default, equivalent to plain `make build`
+make build PLATFORM=iot-edge         # IoT/embedded ARM64 image
+make build PLATFORM=server-headless  # headless server ARM64 image
+make build PLATFORM=robotics-rt      # robotics ARM64 image
+make build PLATFORM=mobile           # mobile ARM64 image with touchscreen
+make build PLATFORM=mcu-minimal      # ARM Cortex-M MCU image (wasm3)
+```
+
+Per-platform QEMU invocations:
+- `desktop-full` / default: uses `qemu-system-x86_64` with `-kernel out/bzImage` (existing `make run`, `make run-gui`)
+- `iot-edge`, `robotics-rt`, `mobile`, `server-headless`: use `qemu-system-aarch64 -machine virt -cpu cortex-a72`
+- `mcu-minimal`: uses `qemu-system-arm -machine mps2-an385 -cpu cortex-m3`
+
+```bash
+make run PLATFORM=iot-edge           # headless ARM64 QEMU boot
+make run PLATFORM=server-headless    # headless server ARM64
+```
+
+### New Supervisor Subsystem Modules (spec-043)
+
+The supervisor is organized into focused subsystems under `supervisor/src/`:
+
+| Directory | Purpose |
+|-----------|---------|
+| `runtime/` | `WasmRuntime` trait + Wasmtime and wasm3 adapters |
+| `hal/` | Hardware Abstraction Layer — GPIO, I2C, SPI, UART, ADC trait definitions |
+| `profile/` | Platform profile loader — parses TOML files from `profile/profiles/` |
+| `ota/` | A/B slot OTA update manager with health-check and rollback |
+| `observability/` | Structured heartbeat emitter (JSON-line format) |
+| `capability/` | Peripheral capability enforcer — `PeripheralRegistry` exclusive-access tracking |
+
+Platform profile TOML files live in `supervisor/src/profile/profiles/` (one per platform).
+
+### New Peripheral Capability Fields
+
+Beyond `stdio`, `filesystem`, `network`, `display`, `shell`, `mouse`, apps on embedded/robotics platforms may also declare hardware peripheral capabilities in `vyoma.toml`:
+
+| Field | Type | Effect |
+|-------|------|--------|
+| `touch` | `bool` | App receives `VYOMA_INPUT:touch:` events (mobile profile) |
+| `gpio_pins` | `[u8]` | App gets exclusive access to the listed GPIO pin numbers |
+| `i2c_bus` | `u8` | App gets access to the specified I2C bus number |
+| `spi_bus` | `u8` | App gets access to the specified SPI bus number |
+| `uart_port` | `u8` | App gets access to the specified UART port number |
+| `adc_channel` | `u8` | App gets access to the specified ADC channel number |
+
+Example with peripheral capabilities:
+```toml
+[capabilities]
+stdio = true
+
+[capabilities.gpio]
+pins = [4, 17]
+direction = "output"
+
+[capabilities.i2c]
+bus = 1
+```
+
 ### Run
 
 ```bash
