@@ -2963,6 +2963,37 @@ fn auto_transfer_focus(exiting: &str, app_registry: &AppRegistry, focused: &Focu
     *focused.lock().unwrap() = next;
 }
 
+// ── Crash toast — visible notification when a restart=never app exits badly ───
+
+fn show_crash_toast(name: &str, code: i32) {
+    let title = format!("{name} crashed");
+    let msg   = format!("exited with code {code}");
+    #[cfg(target_os = "linux")]
+    {
+        const NX: u32 = 1020;
+        const NY: u32 = 10;
+        const NW: u32 = 400;
+        const NH: u32 = 60;
+        if let Some(fb_lock) = display::get() {
+            let mut fb = fb_lock.lock().unwrap();
+            fb.fill_rect(NX, NY, NW, NH, 0x21262DFF);
+            fb.rect_border(NX, NY, NW, NH, 0x58A6FFFF);
+            fb.draw_text(NX + 8, NY + 8, &title, 0xFFFFFFFF, font::FontSize::Medium);
+            fb.draw_text(NX + 8, NY + 28, &msg,  0x8B949EFF, font::FontSize::Medium);
+            fb.flush();
+        }
+        thread::spawn(move || {
+            thread::sleep(std::time::Duration::from_secs(3));
+            if let Some(fb_lock) = display::get() {
+                let mut fb = fb_lock.lock().unwrap();
+                fb.fill_rect(NX, NY, NW, NH, 0x0D1117FF);
+                fb.flush();
+            }
+        });
+    }
+    log_info!(Subsystem::Display, None, "crash toast: {title:?} — {msg:?}");
+}
+
 // ── App waiter — handles exit + automatic restart policy ─────────────────────
 
 fn wait_app(
@@ -3029,6 +3060,9 @@ fn wait_app(
         };
 
         if !should_restart {
+            if exit_code != 0 {
+                show_crash_toast(&name, exit_code);
+            }
             break;
         }
 

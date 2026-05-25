@@ -69,3 +69,42 @@ fn test_focus_transfers_on_exit() {
         "focus should transfer to alphabetically-first remaining display app"
     );
 }
+
+// ── crash notification condition ──────────────────────────────────────────────
+
+/// restart=never, non-zero exit → notification should fire
+#[test]
+fn test_crash_exit_triggers_notification() {
+    // will_restart=false (policy=never), exit_code=1 → needs toast
+    assert!(
+        supervisor::lifecycle::needs_crash_notification(false, 1),
+        "non-zero exit of a restart=never app must trigger a crash notification"
+    );
+}
+
+/// restart=never, zero exit → clean shutdown, no notification
+#[test]
+fn test_clean_exit_does_not_trigger_notification() {
+    assert!(
+        !supervisor::lifecycle::needs_crash_notification(false, 0),
+        "clean exit (code 0) must not trigger a crash notification"
+    );
+}
+
+/// restart=always, non-zero exit → app will restart, no notification
+#[test]
+fn test_restarting_app_does_not_trigger_notification() {
+    assert!(
+        !supervisor::lifecycle::needs_crash_notification(true, 1),
+        "an app that will restart must not show a crash notification"
+    );
+}
+
+/// restart=always, zero exit → will restart, clean exit, no notification
+#[test]
+fn test_restarting_clean_exit_does_not_trigger_notification() {
+    assert!(
+        !supervisor::lifecycle::needs_crash_notification(true, 0),
+        "restarting app with clean exit must not show a crash notification"
+    );
+}
