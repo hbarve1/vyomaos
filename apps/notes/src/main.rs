@@ -5,8 +5,11 @@ mod app;
 
 use std::io::{self, BufRead, Write};
 
-const W: u32 = 1100;
-const H: u32 = 760;
+const DEFAULT_SW: u32 = 1100;  // fallback width if VYOMA_SYSTEM:screen: never arrives
+const DEFAULT_SH: u32 = 760;   // fallback height
+// W and H are used by app.rs via `super::` — keep them as runtime aliases below.
+const W: u32 = DEFAULT_SW;
+const H: u32 = DEFAULT_SH;
 const HEADER_H: u32 = 48;
 const STATUS_H: u32 = 32;
 const SIDEBAR_W: u32 = 260;
@@ -48,6 +51,7 @@ fn main() {
 
     for line in stdin.lock().lines() {
         let raw = match line { Ok(l) => l, Err(_) => break };
+        if raw.starts_with("VYOMA_SYSTEM:screen:") { continue; } // handled by supervisor
         if raw.starts_with("REPLY:") { continue; }
 
         app.status.clear();

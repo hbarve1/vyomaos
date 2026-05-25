@@ -351,7 +351,7 @@ pub fn run_mouse_input(inbox: Inbox, focused: FocusedApp, registry: AppRegistry)
     const BTN_MID: u16   = 0x112;
     const ABS_MAX: i64   = 32768;
 
-    let (sw, sh) = display::screen_size().unwrap_or((1440, 900));
+    let (sw, sh) = display::screen_size().unwrap_or((1440, 900)); // DEFAULT_SCREEN_W/H fallback
     let screen_w: i32 = sw as i32;
     let screen_h: i32 = sh as i32;
 

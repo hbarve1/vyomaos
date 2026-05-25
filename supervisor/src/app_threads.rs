@@ -48,10 +48,12 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
     };
     if apps.is_empty() { return; }
 
+    const DEFAULT_SCREEN_W: u32 = 1440;
+    const DEFAULT_SCREEN_H: u32 = 900;
     #[cfg(target_os = "linux")]
-    let (sw, sh) = crate::display::screen_size().unwrap_or((1440, 900));
+    let (sw, sh) = crate::display::screen_size().unwrap_or((DEFAULT_SCREEN_W, DEFAULT_SCREEN_H));
     #[cfg(not(target_os = "linux"))]
-    let (sw, sh) = (1440u32, 900u32);
+    let (sw, sh) = (DEFAULT_SCREEN_W, DEFAULT_SCREEN_H);
 
     let min_sizes: Vec<(u32, u32)> = apps.iter().map(|(_, mw, mh)| (*mw, *mh)).collect();
     let usable_h = sh.saturating_sub(MENUBAR_H);

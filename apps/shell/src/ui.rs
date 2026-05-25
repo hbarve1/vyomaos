@@ -3,12 +3,16 @@
 
 use std::io::Write;
 
+// ── Default screen dimensions (fallback if VYOMA_SYSTEM:screen: never arrives) ─
+
+pub const DEFAULT_SW: u32 = 1440;
+pub const DEFAULT_SH: u32 = 900;
+
 // ── Panel geometry (local window coords; window declared at y=440 in vyoma.toml) ──
 
 pub const PX: u32 = 24;       // panel left edge (horizontal margin within window)
 pub const PY: u32 = 10;       // panel top edge in LOCAL window coords (window.y=440)
-pub const PW: u32 = 1392;     // panel width  (1440 - 24*2)
-pub const PH: u32 = 420;      // panel height
+pub const PH: u32 = 420;      // panel height (fixed; shell panel height doesn't change with resolution)
 
 const TITLE_H: u32 = 24;                    // title bar height
 const INNER_X: u32 = PX + 8;               // content left margin
@@ -26,19 +30,21 @@ const C_DIM:     u32 = 0x8B949EFF; // dimmed text
 const C_GREEN:   u32 = 0x3FB950FF;
 const C_PROMPT:  u32 = 0x58A6FFFF; // prompt colour
 
-pub fn draw_panel(lines: &[String], input: &str, cursor_pos: usize) {
+pub fn draw_panel(lines: &[String], input: &str, cursor_pos: usize, sw: u32, _sh: u32) {
+    // Panel width computed from runtime screen width
+    let pw = sw.saturating_sub(PX * 2);
     // Panel background + border
-    fill(PX, PY, PW, PH, C_PANEL);
+    fill(PX, PY, pw, PH, C_PANEL);
 
     // Title bar
-    fill(PX, PY, PW, TITLE_H, C_TITLE);
-    fill(PX, PY + TITLE_H, PW, 2, C_ACCENT); // accent line
+    fill(PX, PY, pw, TITLE_H, C_TITLE);
+    fill(PX, PY + TITLE_H, pw, 2, C_ACCENT); // accent line
     text(PX + 8, PY + 4, C_ACCENT, "shell");
-    text(PX + PW - 136, PY + 4, C_DIM, "VyomaOS v0.1");
-    border(PX, PY, PW, PH, C_ACCENT);
+    if pw >= 136 { text(PX + pw - 136, PY + 4, C_DIM, "VyomaOS v0.1"); }
+    border(PX, PY, pw, PH, C_ACCENT);
 
     // Clear output area
-    clear_region(INNER_X, INNER_Y, PW - 16, PROMPT_Y - INNER_Y);
+    clear_region(INNER_X, INNER_Y, pw.saturating_sub(16), PROMPT_Y - INNER_Y);
 
     // Output lines — each logical line is soft-wrapped at 90 chars
     let mut ly = INNER_Y;
@@ -52,7 +58,7 @@ pub fn draw_panel(lines: &[String], input: &str, cursor_pos: usize) {
     }
 
     // Prompt + cursor
-    fill(PX, PROMPT_Y - 2, PW, 2, 0x30363DFF); // separator
+    fill(PX, PROMPT_Y - 2, pw, 2, 0x30363DFF); // separator
     text(INNER_X, PROMPT_Y, C_PROMPT, "> ");
     if !input.is_empty() {
         text(INNER_X + 16, PROMPT_Y, C_WHITE, input);
