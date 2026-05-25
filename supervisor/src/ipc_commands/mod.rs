@@ -5,6 +5,7 @@
 //! session-*, display, network helpers, uptime, loglevel, ping, version (P14–P55).
 
 mod tcp;
+pub mod ota;
 
 use std::{fs, path::Path, sync::Arc, thread};
 
@@ -474,6 +475,12 @@ pub fn handle_extended_command(
             let v = supervisor::ipc::format_version(0, 19, 0);
             send_reply(sender, &format!("REPLY:{v}"), inbox);
             log_info!(Subsystem::Ipc, None, "version query from {sender}: {v}");
+        }
+
+        // ── T026: OTA A/B slot update ─────────────────────────────────────────
+        "ota-update" => {
+            let args = parts.get(1).copied().unwrap_or("").trim();
+            return ota::handle_ota_update(args, sender, inbox, focused, app_registry);
         }
 
         _ => return false,
