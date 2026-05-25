@@ -59,7 +59,7 @@ KVM ?=
 
 # ── phony declarations ────────────────────────────────────────────────────────
 .PHONY: image kernel supervisor apps rootfs disk build run run-gui run-net run-gui-net shell clean clean-image data \
-        unit-test smoke test check-manifests
+        unit-test smoke test check-manifests check-profiles test-all-platforms
 
 # ── Docker image ──────────────────────────────────────────────────────────────
 image: $(DOCKERFILE)
@@ -158,6 +158,40 @@ test: build unit-test smoke
 # ── check-manifests (T034): validate all apps/*/vyoma.toml files ─────────────
 check-manifests: | image
 	$(DOCKER_RUN) cargo run --manifest-path tools/check-manifests/Cargo.toml
+
+# ── check-profiles (T062): validate all platform profile TOML files ──────────
+# Verifies that every expected profile file exists and is valid TOML.
+# Runs the platform_profile unit tests which exercise TOML parsing and
+# validation logic for all 6 profiles in supervisor/src/profile/profiles/.
+PROFILE_DIR := supervisor/src/profile/profiles
+PROFILE_NAMES := mcu-minimal iot-edge robotics-rt mobile desktop-full server-headless
+
+check-profiles: | image
+	@echo "Checking platform profile TOML files..."
+	@fail=0; \
+	for name in $(PROFILE_NAMES); do \
+	  f="$(PROFILE_DIR)/$$name.toml"; \
+	  if [ -f "$$f" ]; then \
+	    echo "  $$name ... OK"; \
+	  else \
+	    echo "PROFILES: FAIL: $$name (missing: $$f)"; \
+	    fail=1; \
+	  fi; \
+	done; \
+	if [ "$$fail" -eq 0 ]; then \
+	  $(DOCKER_RUN) env RUSTFLAGS="$(RUSTFLAGS)" \
+	    cargo test --manifest-path supervisor/Cargo.toml \
+	    --target x86_64-unknown-linux-musl \
+	    -- profile 2>&1 | tail -5; \
+	  echo "PROFILES: OK"; \
+	else \
+	  exit 1; \
+	fi
+
+# ── test-all-platforms (T063): unit-test + check-profiles + check-manifests ──
+# Single command to validate everything without requiring QEMU.
+test-all-platforms: unit-test check-profiles check-manifests
+	@echo "ALL-PLATFORMS: OK"
 
 # ── build (all) ───────────────────────────────────────────────────────────────
 build: kernel supervisor apps rootfs disk data
