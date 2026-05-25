@@ -5,7 +5,7 @@
 
 use std::{
     net::{SocketAddr, TcpListener},
-    sync::{Arc, Mutex},
+    sync::Arc,
     thread,
 };
 

@@ -170,7 +170,7 @@ pub fn handle_push(
     sha256:   Option<&str>,
     _registry: &AppRegistry,
 ) {
-    use std::{fs, io::Read as _};
+    use std::fs;
 
     let start = Instant::now();
 

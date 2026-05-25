@@ -79,6 +79,15 @@ pub fn route_or_print(
                     .and_then(|m| m.lock().ok())
                     .and_then(|map| map.get(sender).cloned());
                 match reply_target {
+                    Some(orig) if orig == "__mgmt__" => {
+                        // Route to exec handler channel.
+                        if let Some(channels) = EXEC_REPLY_CHANNELS.get() {
+                            let map = channels.lock().unwrap();
+                            if let Some(tx) = map.get(sender) {
+                                let _ = tx.send(msg.to_string());
+                            }
+                        }
+                    }
                     Some(orig) => {
                         let map = inbox.lock().unwrap();
                         if let Some(tx) = map.get(&orig) {
