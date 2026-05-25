@@ -52,4 +52,16 @@ mod tests {
         // After flush dirty must be reset
         assert!(fb.dirty.is_empty());
     }
+
+    #[test]
+    fn flush_cursor_only_does_not_consume_dirty() {
+        let (mut fb, _) = display::Framebuffer::new_for_test(200, 100);
+        fb.fill_rect(0, 30, 200, 10, 0xFFFFFFFF); // dirty rows 30–39
+        fb.cursor.visible = true;
+        fb.flush_cursor_only();
+        // Dirty rect must still be set — cursor-only flush does NOT consume it
+        assert!(!fb.dirty.is_empty(),
+            "flush_cursor_only must not consume dirty rect");
+        assert_eq!(fb.dirty.y0, 30);
+    }
 }

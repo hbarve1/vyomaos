@@ -1,6 +1,5 @@
 // Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
-
 //! VyomaOS framebuffer display module (Linux only)
 //!
 //! Opened once at supervisor startup.  Reader threads call `fill_rect` /
@@ -12,21 +11,17 @@
 //!   VYOMA_DRAW:fill_rect:<x>,<y>,<w>,<h>,<rgba_decimal>
 //!   VYOMA_DRAW:draw_text:<x>,<y>,<rgba_decimal>,<text>
 //!   VYOMA_DRAW:flush
-
 mod cursor;
 mod fb_ioctl;
 mod helpers;
 mod screenshot;
-
 pub use cursor::{CursorState, CURSOR_W, CURSOR_H, CURSOR_MASK};
 // blend_alpha and titlebar_color are used by tests and helper modules;
 // the binary path does not call them directly but they are part of the public API.
 #[allow(unused_imports)]
 pub use helpers::{blend_alpha, titlebar_color, border_color, app_accent_color, format_fps, wrap_words};
 use fb_ioctl::{FBIOGET_VSCREENINFO, FbVarScreeninfo};
-
 use super::font;
-
 use std::{
     fs::OpenOptions,
     io,
@@ -35,9 +30,7 @@ use std::{
     thread,
     time::Duration,
 };
-
 // ── Dirty-region tracking ─────────────────────────────────────────────────────
-
 /// Bounding scanline range for back-buffer writes since the last flush.
 /// Empty state: `y0 > y1` (use `DirtyRect::empty(height)`).
 #[derive(Clone, Copy)]
@@ -54,9 +47,7 @@ impl DirtyRect {
         self.y1 = self.y1.max(row_end_inclusive);
     }
 }
-
 // ── Framebuffer handle ────────────────────────────────────────────────────────
-
 pub struct Framebuffer {
     _file: std::fs::File, // keeps the fd alive
     pub width: u32,
@@ -70,14 +61,10 @@ pub struct Framebuffer {
     pub cursor: CursorState,
     mmaped: bool,         // false for test-only heap-allocated instances
 }
-
 // All mutable access is serialised through `Mutex<Framebuffer>`.
 unsafe impl Send for Framebuffer {}
-
 static FB: OnceLock<Mutex<Framebuffer>> = OnceLock::new();
-
 // ── Public API ────────────────────────────────────────────────────────────────
-
 /// Open `/dev/fb0`, mmap the pixel buffer.
 /// Retries up to 5× with 200 ms delay to handle DRM async init at boot.
 /// Returns `true` if the display is ready.
@@ -99,12 +86,10 @@ pub fn init() -> bool {
     }
     false
 }
-
 /// Return the global framebuffer, or `None` if GUI is not available.
 pub fn get() -> Option<&'static Mutex<Framebuffer>> {
     FB.get()
 }
-
 /// Return the actual framebuffer resolution read via FBIOGET_VSCREENINFO.
 /// Returns `None` on headless boots where `/dev/fb0` was not opened.
 pub fn screen_size() -> Option<(u32, u32)> {
@@ -113,7 +98,6 @@ pub fn screen_size() -> Option<(u32, u32)> {
         (fb.width, fb.height)
     })
 }
-
 /// Update cursor position (clamped to screen bounds).
 pub fn set_cursor_pos(cx: i32, cy: i32) {
     if let Some(m) = FB.get() {
@@ -124,7 +108,6 @@ pub fn set_cursor_pos(cx: i32, cy: i32) {
         fb.cursor.cy = cy.clamp(0, max_y);
     }
 }
-
 /// Enable cursor visibility (called once a mouse device is found).
 pub fn enable_cursor() {
     if let Some(m) = FB.get() {
@@ -134,15 +117,16 @@ pub fn enable_cursor() {
         eprintln!("cursor: sprite enabled at ({cx},{cy})");
     }
 }
-
+/// Blit only the cursor sprite region (fast path for mouse motion).
+#[allow(dead_code)]
+pub fn flush_cursor_only() {
+    if let Some(m) = FB.get() { m.lock().unwrap().flush_cursor_only(); }
+}
 // ── Framebuffer open + mmap ───────────────────────────────────────────────────
-
 fn open_fb() -> io::Result<Framebuffer> {
     let file = OpenOptions::new().read(true).write(true).open("/dev/fb0")?;
     let fd = file.as_raw_fd();
-
     let mut var: FbVarScreeninfo = unsafe { std::mem::zeroed() };
-
     let (width, height, bpp) = if unsafe {
         libc::ioctl(fd, FBIOGET_VSCREENINFO,
                     &mut var as *mut FbVarScreeninfo as *mut libc::c_void)
@@ -152,10 +136,8 @@ fn open_fb() -> io::Result<Framebuffer> {
         eprintln!("vyoma-display: FBIOGET_VSCREENINFO failed, using 1024×768 defaults");
         (1024, 768, 32)
     };
-
     let stride = width * bpp.max(8) / 8;
     let buf_len = (stride * height) as usize;
-
     let buf = unsafe {
         libc::mmap(
             std::ptr::null_mut(),
@@ -201,9 +183,7 @@ impl Drop for Framebuffer {
         }
     }
 }
-
 // ── Drawing primitives ────────────────────────────────────────────────────────
-
 impl Framebuffer {
     /// Fill a rectangle with an RGBA colour (0xRRGGBBAA, big-endian).
     /// virtio-gpu framebuffer is XRGB8888 little-endian → stored as [B, G, R, X].
@@ -433,6 +413,27 @@ impl Framebuffer {
             self.dirty = DirtyRect::empty(self.height);
         }
 
+        self.restore_under_cursor();
+    }
+
+    /// Blit cursor sprite region only; does not consume the dirty rect.
+    #[allow(dead_code)]
+    pub fn flush_cursor_only(&mut self) {
+        if !self.cursor.visible || self.bpp != 32 { return; }
+        self.restore_under_cursor();
+        self.draw_cursor();
+        let cx = self.cursor.cx as u32;
+        let cy = self.cursor.cy as u32;
+        let x1 = (cx + CURSOR_W).min(self.width);
+        let y1 = (cy + CURSOR_H).min(self.height);
+        for row in cy..y1 {
+            let start = (row * self.stride + cx * 4) as usize;
+            let end   = (row * self.stride + x1 * 4) as usize;
+            if end <= self.buf_len { unsafe {
+                std::ptr::copy_nonoverlapping(
+                    self.back.as_ptr().add(start), self.buf.add(start), end - start);
+            }}
+        }
         self.restore_under_cursor();
     }
 
