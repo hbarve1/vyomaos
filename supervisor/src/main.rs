@@ -435,16 +435,9 @@ fn draw_titlebar(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, is_fo
     fb.fill_rect(wx, wy, ww, TITLEBAR_H, bg);
     fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
 
-    // 2px focus border — drawn around the full window frame (titlebar + content)
+    // 2px focus border — top edge only (full frame drawn at flush time when wh is known)
     let bc = display::border_color(is_focused);
-    // top edge
     fb.fill_rect(wx, wy, ww, 2, bc);
-    // bottom edge
-    if wh >= 2 { fb.fill_rect(wx, wy + wh - 2, ww, 2, bc); }
-    // left edge
-    fb.fill_rect(wx, wy, 2, wh, bc);
-    // right edge
-    if ww >= 2 { fb.fill_rect(wx + ww - 2, wy, 2, wh, bc); }
 
     // Traffic lights — 12×12, left-aligned, vertically centered
     let tl_y = wy + (TITLEBAR_H - TL_DOT) / 2;
@@ -583,7 +576,7 @@ fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     };
     let Some(fb_lock) = display::get() else { return };
     let mut fb = fb_lock.lock().unwrap();
-    for (name, (wx, wy, ww, wh)) in &regions {
+    for (name, (wx, wy, ww, _wh)) in &regions {
         if *ww < 60 { continue; }
         let is_focused = focused_name.as_deref() == Some(name.as_str());
         let is_hovered = hovered_name.as_deref() == Some(name.as_str());
@@ -3559,37 +3552,6 @@ fn auto_transfer_focus(exiting: &str, app_registry: &AppRegistry, focused: &Focu
     };
 
     *focused.lock().unwrap() = next;
-}
-
-// ── Crash toast — visible notification when a restart=never app exits badly ───
-
-fn show_crash_toast(name: &str, code: i32) {
-    let title = format!("{name} crashed");
-    let msg   = format!("exited with code {code}");
-    #[cfg(target_os = "linux")]
-    {
-        const NX: u32 = 1020;
-        const NY: u32 = 10;
-        const NW: u32 = 400;
-        const NH: u32 = 60;
-        if let Some(fb_lock) = display::get() {
-            let mut fb = fb_lock.lock().unwrap();
-            fb.fill_rect(NX, NY, NW, NH, 0x21262DFF);
-            fb.rect_border(NX, NY, NW, NH, 0x58A6FFFF);
-            fb.draw_text(NX + 8, NY + 8, &title, 0xFFFFFFFF, font::FontSize::Medium);
-            fb.draw_text(NX + 8, NY + 28, &msg,  0x8B949EFF, font::FontSize::Medium);
-            fb.flush();
-        }
-        thread::spawn(move || {
-            thread::sleep(std::time::Duration::from_secs(3));
-            if let Some(fb_lock) = display::get() {
-                let mut fb = fb_lock.lock().unwrap();
-                fb.fill_rect(NX, NY, NW, NH, 0x0D1117FF);
-                fb.flush();
-            }
-        });
-    }
-    log_info!(Subsystem::Display, None, "crash toast: {title:?} — {msg:?}");
 }
 
 // ── App waiter — handles exit + automatic restart policy ─────────────────────

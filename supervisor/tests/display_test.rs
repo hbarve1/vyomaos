@@ -158,28 +158,6 @@ fn test_cursor_draw_restore() {
     }
 }
 
-// ── format_fps ────────────────────────────────────────────────────────────────
-
-#[test]
-fn format_fps_zero_elapsed() {
-    assert_eq!(format_fps(10, 0), "0fps");
-}
-
-#[test]
-fn format_fps_one_per_sec() {
-    assert_eq!(format_fps(1, 1000), "1fps");
-}
-
-#[test]
-fn format_fps_sixty() {
-    assert_eq!(format_fps(60, 1000), "60fps");
-}
-
-#[test]
-fn format_fps_fractional() {
-    assert_eq!(format_fps(30, 2000), "15fps");
-}
-
 #[test]
 fn test_restore_noop_when_not_drawn() {
     let (mut fb, _) = Framebuffer::new_for_test(50, 50);

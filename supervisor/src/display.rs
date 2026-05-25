@@ -585,6 +585,7 @@ impl Framebuffer {
 /// Both `fg` and `bg` are packed RGBA `u32` values (`0xRRGGBBAA`).  The output
 /// alpha byte is always `0xFF` (the result is fully opaque).  This is a pure
 /// function with no global state.
+#[allow(dead_code)]
 pub fn blend_alpha(fg: u32, bg: u32, a: u8) -> u32 {
     let af = a as u32;
     let blend = |f: u32, b: u32| ((f * af + b * (255 - af)) / 255) & 0xFF;
@@ -600,6 +601,7 @@ pub fn blend_alpha(fg: u32, bg: u32, a: u8) -> u32 {
 /// - `focused = false` → dark grey           (`0x30363DFF`)
 ///
 /// Pure function: no I/O, no side-effects.
+#[allow(dead_code)]
 pub fn titlebar_color(focused: bool) -> u32 {
     if focused { 0x388BFDFF } else { 0x30363DFF }
 }
