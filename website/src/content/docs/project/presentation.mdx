@@ -1,0 +1,199 @@
+---
+title: Presentation
+description: Conference-grade slide deck introducing VyomaOS — download or browse inline.
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<p>
+  <a href="/VyomaOS.pptx" download style="display:inline-flex;align-items:center;gap:0.5rem;padding:0.6rem 1.2rem;background:var(--sl-color-accent);color:var(--sl-color-black);border-radius:0.5rem;font-weight:600;text-decoration:none;">
+    Download VyomaOS.pptx
+  </a>
+</p>
+
+18-slide dark-tech-themed presentation covering VyomaOS architecture, security model, app ecosystem, and roadmap. Designed for conferences, meetups, and technical reviews.
+
+---
+
+## Slide Overview
+
+### 1. Title
+
+**VyomaOS — The WASM-First Operating System**
+
+Capability-Secure · 18 MB · < 5s Boot · 200+ WASM Apps
+
+---
+
+### 2. The Problem
+
+Modern OSes carry 40 years of legacy attack surface:
+
+<CardGrid>
+  <Card title="C Userland" icon="error">
+    Shared libraries, POSIX quirks, shell injection. Every app inherits all of it.
+  </Card>
+  <Card title="Coarse Permissions" icon="warning">
+    Android/Linux DAC: either you have access, or you don't. No fine-grained capability model.
+  </Card>
+  <Card title="Non-Deterministic Binaries" icon="warning">
+    ELF binaries vary by libc/arch. No reproducibility guarantee. Supply chain attacks thrive.
+  </Card>
+</CardGrid>
+
+---
+
+### 3. The Vision
+
+A fully capable general-purpose OS built entirely on WASM.
+
+From 18 MB embedded appliance → Full desktop OS — same security model at every scale.
+
+<CardGrid>
+  <Card title="WASM-native package manager" icon="seti:npm" />
+  <Card title="Fine-grained permission model" icon="seti:lock" />
+  <Card title="Deterministic binaries" icon="approve-check-circle" />
+  <Card title="Minimal kernel (2.3 MB)" icon="rocket" />
+</CardGrid>
+
+---
+
+### 4. Architecture
+
+```
+Linux 5.10 (allnoconfig, 2.3 MB)
+  └── Wasmtime (WASI Preview 2)
+        └── Rust Supervisor (PID 1, 697 KB)
+              └── 200+ WASM Apps (1–10 KB each)
+```
+
+| Metric | Value |
+|--------|-------|
+| Supervisor binary | 697 KB |
+| Linux kernel | 2.3 MB |
+| Full initramfs | 18 MB |
+| Boot time | < 5s |
+| Concurrent apps | 200+ |
+
+---
+
+### 5. Capability Security
+
+Apps declare capabilities in `vyoma.toml`. Undeclared = never wired up.
+
+| Capability | Effect |
+|-----------|--------|
+| `stdio` | stdin/stdout/stderr |
+| `filesystem` | Mount `/data` (persistent) |
+| `network` | WASI sockets (TCP) |
+| `display` | Framebuffer + VYOMA_DRAW |
+| `shell` | @supervisor: commands |
+| `mouse` | Mouse input events |
+
+---
+
+### 6. The Supervisor
+
+Rust PID 1 — 697 KB static binary with six core modules:
+
+<CardGrid>
+  <Card title="Manifest Parser" icon="seti:config">Reads vyoma.toml, enforces capability schema</Card>
+  <Card title="Scheduler" icon="list-format">One thread per app, concurrent spawn + lifecycle</Card>
+  <Card title="IPC Broker" icon="forward-slash">@app: message routing, broadcast, reply</Card>
+  <Card title="Display Driver" icon="laptop">DRM/virtio-gpu framebuffer, VYOMA_DRAW parser</Card>
+  <Card title="Input Router" icon="seti:keyboard">Raw TTY mode, per-keypress dispatch</Card>
+  <Card title="Process Manager" icon="setting">ps, kill, restart, reload, log, watchdog</Card>
+</CardGrid>
+
+---
+
+### 7. Display System
+
+Line-oriented `VYOMA_DRAW:` protocol from app stdout → supervisor renders to framebuffer.
+
+```
+VYOMA_DRAW:fill_rect:<x>,<y>,<w>,<h>,<rgba>
+VYOMA_DRAW:draw_text:<x>,<y>,<rgba>,<size>,<text>
+VYOMA_DRAW:flush
+```
+
+Font sizes: `s` = 4x8, `m` = 8x16, `l` = 16x32
+
+---
+
+### 8. IPC Broker
+
+Every message flows through the supervisor:
+
+| Pattern | Format | Description |
+|---------|--------|-------------|
+| Unicast | `@app: msg` | Route to one app |
+| Broadcast | `@broadcast: msg` | All running apps |
+| Reply | `@reply: msg` | Back to last sender |
+| Control | `@supervisor: cmd` | Built-in commands |
+
+---
+
+### 9. App Ecosystem
+
+200+ WASM apps across six categories:
+
+- **Productivity**: text-editor, notes, kanban, calendar, spreadsheet
+- **Developer**: code-editor, hex-editor, json-viewer, terminal
+- **System**: system-monitor, file-manager, settings, app-store
+- **Games**: chess, tetris, snake, minesweeper, asteroids
+- **Visualization**: fractal, fourier, oscilloscope, fluid
+- **Creativity**: paint-pro, music-composer, pixel-art, photo-editor
+
+All 1–10 KB each. Zero native deps.
+
+---
+
+### 10. Build System
+
+Docker-based hermetic builds. SHA-256 verified. Fully reproducible.
+
+```
+make kernel → make supervisor → make apps → make rootfs → make run
+```
+
+Per-app stamp files for incremental builds. `make test` runs build + unit tests + smoke test.
+
+---
+
+### 11. Performance Numbers
+
+<CardGrid>
+  <Card title="< 5s" icon="star">Boot time (QEMU, 10 apps)</Card>
+  <Card title="2.3 MB" icon="star">Linux kernel</Card>
+  <Card title="697 KB" icon="star">Supervisor binary</Card>
+  <Card title="18 MB" icon="star">Complete initramfs</Card>
+  <Card title="1–10 KB" icon="star">Average app size</Card>
+  <Card title="200+" icon="star">Concurrent apps</Card>
+</CardGrid>
+
+---
+
+### 12–13. Comparison & Roadmap
+
+17 phases complete. VyomaOS vs Alpine, Docker, MirageOS — see the [Comparison Matrix](/project/comparison/) and [Roadmap](/project/roadmap/) pages.
+
+---
+
+### 14–16. Current Work & Dev Experience
+
+Windowing system with focus borders, title bar accents, click-to-focus, drag-to-move, keyboard shortcut overlay. Four-step developer workflow: create → declare → build → boot.
+
+---
+
+### 17–18. Vision & Closing
+
+Every feature a modern OS ships — delivered as WASM apps. App store, package manager, desktop shell, multi-user auth, hardware drivers, OTA updates.
+
+**The runtime IS the OS boundary.**
+
+<p>
+  <a href="/VyomaOS.pptx" download style="display:inline-flex;align-items:center;gap:0.5rem;padding:0.6rem 1.2rem;background:var(--sl-color-accent);color:var(--sl-color-black);border-radius:0.5rem;font-weight:600;text-decoration:none;">
+    Download the full slide deck (VyomaOS.pptx)
+  </a>
+</p>

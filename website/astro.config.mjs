@@ -38,6 +38,7 @@ export default defineConfig({
 				{
 					label: 'Project',
 					items: [
+						{ label: 'Presentation', slug: 'project/presentation' },
 						{ label: 'Roadmap', slug: 'project/roadmap' },
 						{ label: 'Comparison Matrix', slug: 'project/comparison' },
 						{ label: 'Contributing', slug: 'project/contributing' },
