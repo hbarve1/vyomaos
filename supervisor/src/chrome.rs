@@ -3,7 +3,7 @@
 
 //! macOS-inspired UI chrome: title bars, menu bar, status bar, Z-order helpers.
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 
 use crate::{AppRegistry, AppStatus, FocusedApp, HOVERED_APP, Z_ORDER, BOOT_INSTANT};
 use supervisor::logging::Subsystem;
@@ -280,13 +280,9 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     }
 }
 
-// Satisfy the borrow checker on non-Linux builds where `OnceLock` is imported but
-// BOOT_INSTANT may appear unused.
-#[cfg(not(target_os = "linux"))]
-fn _unused_oncelock<T>(_: &OnceLock<T>) {}
-
 /// Recompute tiled regions for all running display apps and write them into
 /// the registry. Called on every display-app spawn or exit.
+#[allow(dead_code)]
 pub fn apply_tiling_layout(registry: &AppRegistry) {
     use supervisor::windows::compute_tiling_with_hints;
 

@@ -6,7 +6,7 @@
 use std::sync::Mutex;
 
 use crate::{log_error, log_info, log_warn, AppRegistry, FocusedApp};
-use crate::chrome::{draw_menubar, draw_statusbar, draw_titlebar, MENUBAR_H, STATUS_H, TITLEBAR_H};
+use crate::chrome::{draw_menubar, draw_statusbar, draw_titlebar, STATUS_H, TITLEBAR_H};
 use crate::{BOOT_INSTANT, LAST_MENUBAR_DRAW, APP_DIRTY, HOVERED_APP};
 use crate::flush_counts;
 use supervisor::logging::Subsystem;
@@ -355,7 +355,6 @@ pub fn handle_draw_command(
 // Satisfy unused-import warnings on non-Linux builds.
 #[cfg(not(target_os = "linux"))]
 fn _dummy_non_linux() {
-    let _ = MENUBAR_H;
     let _ = STATUS_H;
     let _ = TITLEBAR_H;
 }

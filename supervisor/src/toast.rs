@@ -3,7 +3,6 @@
 
 //! Crash / watchdog notification toasts and focus transfer on app exit.
 
-use std::sync::Mutex;
 use std::thread;
 
 use crate::{log_info, AppRegistry, AppStatus, FocusedApp};

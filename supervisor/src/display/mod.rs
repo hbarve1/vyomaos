@@ -18,6 +18,7 @@ mod fb_ioctl;
 mod helpers;
 
 pub use cursor::{CursorState, CURSOR_W, CURSOR_H, CURSOR_MASK};
+#[allow(unused_imports)]
 pub use helpers::{blend_alpha, titlebar_color, border_color, app_accent_color, format_fps, wrap_words};
 use fb_ioctl::{FBIOGET_VSCREENINFO, FbVarScreeninfo};
 
