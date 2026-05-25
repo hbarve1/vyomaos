@@ -7,6 +7,7 @@
 use crate::manifest::Capabilities;
 
 pub mod wasmtime;
+pub mod wasm3;
 
 // ── Engine / Mode enums ───────────────────────────────────────────────────────
 
