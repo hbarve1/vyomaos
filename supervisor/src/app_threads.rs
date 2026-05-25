@@ -200,6 +200,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         if caps.display    { wired.push("display")     } else { skipped.push("display") }
         if caps.shell      { wired.push("shell")       } else { skipped.push("shell") }
         if caps.mouse      { wired.push("mouse")       } else { skipped.push("mouse") }
+        if caps.touch      { wired.push("touch")       } else { skipped.push("touch") }
         let net_note = if caps.network { format!(" (port={net_port})") } else { String::new() };
         log_info!(Subsystem::Capability, Some(name.as_str()),
             "wired: {}{net_note}; skipped: {}", wired.join(" "), skipped.join(" "));
@@ -273,6 +274,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         last_output:      Arc::new(Mutex::new(Instant::now())),
         watchdog_backoff: Arc::new(Mutex::new(0u64)),
         has_mouse:        caps.mouse,
+        has_touch:        caps.touch,
         has_display:      caps.display,
         win_region:       None,
         min_size,

@@ -11,7 +11,7 @@ modules = ["lifecycle", "capability", "ipc", "display", "input", "net", "observa
 drivers = []
 
 [boot]
-apps = []
+apps = ["touch-demo"]
 
 [observability]
 tier = "baseline"
@@ -25,3 +25,14 @@ ab_slots = true
 [build]
 kernel_config = "kernel.config"
 rootfs_script = "rootfs.sh"
+
+[mobile_caps]
+touch   = true
+mouse   = false
+display = true
+network = true
+
+[mobile_display]
+screen_w    = 1080
+screen_h    = 2340
+orientation = "portrait"

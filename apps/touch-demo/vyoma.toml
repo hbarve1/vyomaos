@@ -1,0 +1,13 @@
+[app]
+name    = "touch-demo"
+version = "0.1.0"
+wasm    = "touch-demo.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+touch   = true
+
+[window]
+width  = 1080
+height = 500

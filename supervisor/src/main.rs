@@ -31,9 +31,11 @@ mod mount;
 mod mouse_input;
 mod net;
 mod packages;
+mod router;
 #[cfg(target_os = "linux")]
 mod seccomp;
 mod toast;
+mod touch_dispatch;
 mod win_actions;
 
 use std::{
@@ -91,6 +93,7 @@ struct AppState {
     last_output:      Arc<Mutex<Instant>>,
     watchdog_backoff: Arc<Mutex<u64>>,   // seconds until next restart allowed
     has_mouse:   bool,
+    has_touch:   bool,
     has_display: bool,
     win_region:  Option<(u32, u32, u32, u32)>,  // supervisor-assigned; updated by apply_tiling_layout
     min_size:    (u32, u32),                     // (min_w, min_h) hint from manifest [window]
@@ -386,6 +389,18 @@ fn main() {
             .expect("spawn mouse-input thread");
     }
 
+    // ── TM09: touch-input thread — virtio-touchscreen → touch-capable apps ───
+    #[cfg(target_os = "linux")]
+    {
+        let inbox_t    = Arc::clone(&inbox);
+        let registry_t = Arc::clone(&app_registry);
+        let focused_t  = Arc::clone(&focused);
+        thread::Builder::new()
+            .name("touch-input".into())
+            .spawn(move || crate::touch_dispatch::run_touch_input(inbox_t, focused_t, registry_t))
+            .expect("spawn touch-input thread");
+    }
+
     // ── Pass 2: start IO threads for each spawned app ─────────────────────────
     let mut waiter_handles = vec![];
     for app in spawned {
@@ -414,94 +429,8 @@ fn main() {
     loop { thread::park(); }
 }
 
-// ── IPC router + display dispatcher ──────────────────────────────────────────
+// ── IPC router + display dispatcher (forwarded to router module) ─────────────
 
-fn route_or_print(
-    line:         &str,
-    sender:       &str,
-    inbox:        &Inbox,
-    has_display:  bool,
-    win_region:   Option<(u32, u32, u32, u32)>,  // P21
-    focused:      &FocusedApp,
-    app_registry: &AppRegistry,
-) {
-    if has_display {
-        if let Some(cmd) = line.strip_prefix("VYOMA_DRAW:") {
-            // Increment draw_ticks for CPU% tracking
-            {
-                let reg = app_registry.lock().unwrap();
-                if let Some(st) = reg.get(sender) {
-                    st.lock().unwrap().draw_ticks += 1;
-                }
-            }
-            #[cfg(target_os = "linux")]
-            {
-                draw_cmd::handle_draw_command(cmd, sender, win_region, focused, app_registry);
-            }
-            #[cfg(not(target_os = "linux"))]
-            let _ = cmd;
-            return;
-        }
-    }
-    let _ = has_display;
-    let _ = win_region;
-
-    if let Some(rest) = line.strip_prefix('@') {
-        if let Some((target, msg)) = rest.split_once(": ") {
-            if target == "supervisor" {
-                ipc_handlers::handle_supervisor_command(msg, sender, inbox, focused, app_registry);
-                return;
-            }
-            if supervisor::ipc::is_broadcast_target(target) {
-                // Deliver message to every running app (including the sender).
-                let map = inbox.lock().unwrap();
-                for tx in map.values() {
-                    let _ = tx.send(msg.to_string());
-                }
-                log_info!(Subsystem::Ipc, Some(sender), "broadcast: \"{}\" → {} app(s)", msg, map.len());
-                return;
-            }
-            // @reply: routes message back to whichever app last sent an IPC message
-            // to the current sender (i.e. LAST_SENDER[sender]).
-            if supervisor::ipc::is_reply_target(target) {
-                let reply_target = LAST_SENDER
-                    .get()
-                    .and_then(|m| m.lock().ok())
-                    .and_then(|map| map.get(sender).cloned());
-                match reply_target {
-                    Some(orig) => {
-                        let map = inbox.lock().unwrap();
-                        if let Some(tx) = map.get(&orig) {
-                            let _ = tx.send(msg.to_string());
-                        }
-                    }
-                    None => {
-                        log_warn!(Subsystem::Ipc, Some(sender),
-                            "@reply: no last sender recorded for {sender}, message dropped");
-                    }
-                }
-                return;
-            }
-            // Record that `sender` sent a message to `target` so `target` can @reply:.
-            if let Some(ls) = LAST_SENDER.get() {
-                if let Ok(mut map) = ls.lock() {
-                    map.insert(target.to_string(), sender.to_string());
-                }
-            }
-            let map = inbox.lock().unwrap();
-            if let Some(tx) = map.get(target) {
-                if tx.send(msg.to_string()).is_ok() {
-                    return;
-                }
-            }
-        }
-    }
-    println!("[{sender}] {line}");
-}
-
-fn send_reply(target: &str, msg: &str, inbox: &Inbox) {
-    if let Some(tx) = inbox.lock().unwrap().get(target) {
-        let _ = tx.send(msg.to_string());
-    }
-}
+pub(crate) use router::route_or_print;
+pub(crate) use router::send_reply;
 
