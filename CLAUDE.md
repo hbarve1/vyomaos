@@ -247,6 +247,49 @@ This rule applies to all `.rs` files across the repo (supervisor and apps). The 
 
 **Supervisor-side IPC**: Apps don't directly communicate; supervisor brokers all messages. This centralizes routing logic and enables future debugging/monitoring features.
 
+## Development Workflow
+
+Use **speckit** for all feature work — it produces persistent, cross-session artifacts. Supplement with **superpowers** skills for execution quality gates.
+
+### Canonical workflow for any new feature
+
+```
+/speckit-specify   → write spec.md from a natural-language description
+/speckit-clarify   → ask up to 5 targeted questions; answers are encoded back into spec.md
+/speckit-plan      → generate plan.md (design, data model, contracts)
+/speckit-tasks     → generate tasks.md (dependency-ordered, actionable checklist)
+/speckit-analyze   → cross-artifact consistency check (spec ↔ plan ↔ tasks)
+/speckit-implement → execute tasks.md task by task
+```
+
+After implementation:
+
+```
+superpowers:verification-before-completion  → run tests, confirm output before claiming done
+superpowers:finishing-a-development-branch  → push + PR, or merge locally
+```
+
+### Why speckit for large codebases
+
+- Artifacts (`specs/<name>/spec.md`, `plan.md`, `tasks.md`) persist across sessions so any agent can resume
+- Clarification step catches ambiguities before a single line of code is written
+- Analysis step enforces spec ↔ plan ↔ task consistency
+- GitHub issues integration (`/speckit-taskstoissues`) maps tasks to trackable issues
+- Feature branches follow naming conventions enforced by `/speckit-git-feature`
+
+### When to use superpowers:writing-plans instead
+
+Use `/superpowers:writing-plans` only for **tactical, self-contained refactors** (no persistent spec needed, no cross-session tracking required). Example: splitting a file that exceeds 500 lines. Use `/superpowers:subagent-driven-development` to execute those plans with per-task subagent isolation and two-stage review.
+
+**Never mix approaches within a single feature.** Pick one workflow for each feature and stick to it.
+
+### Artifact locations
+
+```
+specs/<feature-name>/       ← speckit artifacts (spec.md, plan.md, tasks.md, contracts/)
+docs/superpowers/plans/     ← superpowers one-off plans (refactors, perf work)
+```
+
 ## Testing Strategy
 
 ### Unit tests (supervisor)
