@@ -191,15 +191,7 @@ fn main() {
                 }
             }
             "\x09" => {
-                // Tab — attempt unique-prefix completion (cursor must be at end)
-                if let Some(completed) = tab_complete(&current_input) {
-                    current_input = completed.to_string();
-                    draw_panel(&lines, &current_input);
-                }
-                // If no unique match, do nothing
-            }
-            "\t" => {
-                // Tab — complete a /data/ path if the input starts with that prefix
+                // Tab — /data/ path completion takes priority, then command completion
                 const DATA_PREFIX: &str = "/data/";
                 if let Some(suffix) = current_input.strip_prefix(DATA_PREFIX) {
                     let matches = path_completions(suffix, DATA_ENTRIES);
@@ -211,8 +203,10 @@ fn main() {
                         let hint = matches.join("  ");
                         push_line(&mut lines, format!("candidates: {hint}"));
                     }
+                } else if let Some(completed) = tab_complete(&current_input) {
+                    current_input = completed.to_string();
                 }
-                draw_panel(&lines, &current_input);
+                draw_panel(&lines, &current_input, cursor_pos);
             }
             s if s.len() == 1
                 && s.bytes().next().map(|b| (0x20..=0x7E).contains(&b)).unwrap_or(false) =>
@@ -303,6 +297,24 @@ fn parse_echo_cmd(input: &str) -> Option<String> {
 }
 
 
+// ── Pure command helpers ──────────────────────────────────────────────────────
+
+fn is_pwd_cmd(input: &str) -> bool { input.trim() == "pwd" }
+
+fn format_date_output(secs: u64) -> String { format!("Unix time: {secs}s") }
+
+const ENV_PAIRS: &[(&str, &str)] = &[
+    ("PATH", "/data/bin"),
+    ("HOME", "/data"),
+    ("SHELL", "vyomash"),
+];
+
+fn format_env_output(pairs: &[(&str, &str)]) -> String {
+    pairs.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("\n")
+}
+
+fn is_whoami_cmd(input: &str) -> bool { input.trim() == "whoami" }
+
 // ── Command dispatcher ────────────────────────────────────────────────────────
 
 fn handle_command(cmd: &str, lines: &mut Vec<String>) {
@@ -353,6 +365,10 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  clip-get           — paste text from supervisor clipboard".into());
             push_line(lines, "  screenshot [path]  — save framebuffer PPM to /data/screenshot.ppm".into());
             push_line(lines, "  clear             — clear shell output".into());
+            push_line(lines, "  pwd               — print working directory".into());
+            push_line(lines, "  date              — print current Unix timestamp".into());
+            push_line(lines, "  env               — print environment variables".into());
+            push_line(lines, "  whoami            — print current user name".into());
         }
         "ps" => {
             println!("@supervisor: ps");
@@ -568,6 +584,25 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             println!("@supervisor: screenshot {dest}");
             push_line(lines, format!("saving screenshot to {dest}..."));
         }
+        _ if is_pwd_cmd(cmd) => {
+            push_line(lines, "/data".into());
+        }
+        "date" => {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            push_line(lines, format_date_output(secs));
+        }
+        "env" => {
+            let out = format_env_output(ENV_PAIRS);
+            for line in out.lines() {
+                push_line(lines, line.to_string());
+            }
+        }
+        _ if is_whoami_cmd(cmd) => {
+            push_line(lines, "vyoma".to_string());
+        }
         other => {
             push_line(lines, format!("unknown: {other}"));
         }
@@ -666,7 +701,8 @@ fn flush() {
 
 #[cfg(test)]
 mod tests {
-    use super::{wrap_line, path_completions, is_clear_cmd, parse_echo_cmd};
+    use super::{wrap_line, path_completions, is_clear_cmd, parse_echo_cmd,
+                is_pwd_cmd, format_date_output, format_env_output, is_whoami_cmd};
 
     #[test]
     fn wrap_line_short_fits_one_chunk() {
@@ -775,4 +811,42 @@ mod tests {
             Some(" hello world".to_string())
         );
     }
+
+    #[test]
+    fn is_pwd_cmd_basic() { assert!(is_pwd_cmd("pwd")); }
+    #[test]
+    fn is_pwd_cmd_spaces() { assert!(is_pwd_cmd("  pwd  ")); }
+    #[test]
+    fn is_pwd_cmd_not_pwd() { assert!(!is_pwd_cmd("ls")); }
+    #[test]
+    fn is_pwd_cmd_empty() { assert!(!is_pwd_cmd("")); }
+    #[test]
+    fn is_pwd_cmd_partial() { assert!(!is_pwd_cmd("pwd /")); }
+
+    #[test]
+    fn format_date_output_zero() { assert_eq!(format_date_output(0), "Unix time: 0s"); }
+    #[test]
+    fn format_date_output_nonzero() { assert_eq!(format_date_output(1000), "Unix time: 1000s"); }
+    #[test]
+    fn format_date_output_prefix() { assert!(format_date_output(42).starts_with("Unix time:")); }
+
+    #[test]
+    fn format_env_output_empty() { assert_eq!(format_env_output(&[]), ""); }
+    #[test]
+    fn format_env_output_one() { assert_eq!(format_env_output(&[("K", "V")]), "K=V"); }
+    #[test]
+    fn format_env_output_multiple() {
+        assert_eq!(format_env_output(&[("A", "1"), ("B", "2")]), "A=1\nB=2");
+    }
+    #[test]
+    fn format_env_no_trailing_newline() { assert!(!format_env_output(&[("X", "y")]).ends_with('\n')); }
+
+    #[test]
+    fn is_whoami_cmd_basic() { assert!(is_whoami_cmd("whoami")); }
+    #[test]
+    fn is_whoami_cmd_spaces() { assert!(is_whoami_cmd("  whoami  ")); }
+    #[test]
+    fn is_whoami_cmd_not_who() { assert!(!is_whoami_cmd("who")); }
+    #[test]
+    fn is_whoami_cmd_empty() { assert!(!is_whoami_cmd("")); }
 }
