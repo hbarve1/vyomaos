@@ -13,6 +13,14 @@
 //!   VYOMA_DRAW:draw_text:<x>,<y>,<rgba_decimal>,<text>
 //!   VYOMA_DRAW:flush
 
+mod cursor;
+mod fb_ioctl;
+mod helpers;
+
+pub use cursor::{CursorState, CURSOR_W, CURSOR_H, CURSOR_MASK};
+pub use helpers::{blend_alpha, titlebar_color, border_color, app_accent_color, format_fps, wrap_words};
+use fb_ioctl::{FBIOGET_VSCREENINFO, FbVarScreeninfo};
+
 use super::font;
 
 use std::{
@@ -23,93 +31,6 @@ use std::{
     thread,
     time::Duration,
 };
-
-// ── Cursor sprite constants ───────────────────────────────────────────────────
-
-pub const CURSOR_W: u32 = 12;
-pub const CURSOR_H: u32 = 19;
-
-// Standard arrow cursor bitmask: each u16 is one row, MSB = leftmost pixel.
-// 12 columns wide, 19 rows tall.
-const CURSOR_MASK: [u16; 19] = [
-    0b1000_0000_0000_0000, // row 0
-    0b1100_0000_0000_0000,
-    0b1110_0000_0000_0000,
-    0b1111_0000_0000_0000,
-    0b1111_1000_0000_0000,
-    0b1111_1100_0000_0000,
-    0b1111_1110_0000_0000,
-    0b1111_1111_0000_0000,
-    0b1111_1111_1000_0000,
-    0b1111_1111_1100_0000,
-    0b1111_1111_0000_0000, // row 10
-    0b1111_0110_0000_0000,
-    0b1110_0110_0000_0000,
-    0b1100_0011_0000_0000,
-    0b1000_0011_0000_0000,
-    0b0000_0001_1000_0000,
-    0b0000_0001_1000_0000,
-    0b0000_0000_0000_0000,
-    0b0000_0000_0000_0000, // row 18
-];
-
-// ── Cursor state ──────────────────────────────────────────────────────────────
-
-pub struct CursorState {
-    pub cx:          i32,
-    pub cy:          i32,
-    pub visible:     bool,
-    // Pixels saved from the back-buffer before the cursor was drawn.
-    // CURSOR_W * CURSOR_H * 4 bytes (BGRA).
-    pub saved_under: Vec<u8>,
-    pub drawn:       bool,
-}
-
-// ── Linux framebuffer ioctl ───────────────────────────────────────────────────
-
-const FBIOGET_VSCREENINFO: libc::Ioctl = 0x4600;
-
-// fb_var_screeninfo — purely u32 fields (+ bitfield sub-structs of u32),
-// so no cross-platform alignment surprises on x86_64.
-#[repr(C)]
-struct FbBitfield {
-    offset: u32,
-    length: u32,
-    msb_right: u32,
-}
-
-#[repr(C)]
-struct FbVarScreeninfo {
-    xres: u32,
-    yres: u32,
-    xres_virtual: u32,
-    yres_virtual: u32,
-    xoffset: u32,
-    yoffset: u32,
-    bits_per_pixel: u32,
-    grayscale: u32,
-    red: FbBitfield,
-    green: FbBitfield,
-    blue: FbBitfield,
-    transp: FbBitfield,
-    nonstd: u32,
-    activate: u32,
-    height: u32,  // physical mm — not pixel height
-    width: u32,   // physical mm — not pixel width
-    accel_flags: u32,
-    pixclock: u32,
-    left_margin: u32,
-    right_margin: u32,
-    upper_margin: u32,
-    lower_margin: u32,
-    hsync_len: u32,
-    vsync_len: u32,
-    sync: u32,
-    vmode: u32,
-    rotate: u32,
-    colorspace: u32,
-    reserved: [u32; 4],
-}
 
 // ── Framebuffer handle ────────────────────────────────────────────────────────
 
@@ -204,7 +125,6 @@ fn open_fb() -> io::Result<Framebuffer> {
     } >= 0 && var.xres > 0 {
         (var.xres, var.yres, var.bits_per_pixel)
     } else {
-        // QEMU virtio-gpu default resolution
         eprintln!("vyoma-display: FBIOGET_VSCREENINFO failed, using 1024×768 defaults");
         (1024, 768, 32)
     };
@@ -248,7 +168,6 @@ impl Drop for Framebuffer {
         if self.mmaped {
             unsafe { libc::munmap(self.buf as *mut libc::c_void, self.buf_len); }
         } else {
-            // Heap-allocated (test instance): free with the allocator.
             use std::alloc::{dealloc, Layout};
             if self.buf_len > 0 {
                 let layout = Layout::from_size_align(self.buf_len, 4).unwrap();
@@ -313,7 +232,6 @@ impl Framebuffer {
 
             match size {
                 font::FontSize::Medium => {
-                    // Original 8×16 rendering (unchanged)
                     for row in 0..font::GLYPH_H {
                         let scan_y = y + row;
                         if scan_y >= self.height { break; }
@@ -332,7 +250,7 @@ impl Framebuffer {
                 font::FontSize::Small => {
                     // 8×8: sample every other row of the 8×16 glyph (rows 0,2,4,...14)
                     for out_row in 0..8u32 {
-                        let src_row = out_row * 2; // source rows 0,2,4,...14
+                        let src_row = out_row * 2;
                         let scan_y = y + out_row;
                         if scan_y >= self.height { break; }
                         let byte = font::FONT[glyph_base + src_row as usize];
@@ -351,12 +269,12 @@ impl Framebuffer {
                     // 16×32: pixel-double the 8×16 glyph (each bit → 2×2 block)
                     for src_row in 0..font::GLYPH_H {
                         let byte = font::FONT[glyph_base + src_row as usize];
-                        for rep in 0..2u32 { // each source row drawn twice
+                        for rep in 0..2u32 {
                             let scan_y = y + src_row * 2 + rep;
                             if scan_y >= self.height { break; }
                             for src_bit in 0..font::GLYPH_W {
                                 if byte & (0x80 >> src_bit) != 0 {
-                                    for rep_x in 0..2u32 { // each bit drawn twice
+                                    for rep_x in 0..2u32 {
                                         let px = cx + src_bit * 2 + rep_x;
                                         let off = (scan_y * self.stride + px * 4) as usize;
                                         if off + 4 <= self.buf_len {
@@ -383,18 +301,13 @@ impl Framebuffer {
         let cx = self.cursor.cx as u32;
         let cy = self.cursor.cy as u32;
 
-        // Save pixels that will be under the cursor.
         let mut saved_idx = 0usize;
         for row in 0..CURSOR_H {
             let py = cy + row;
-            if py >= self.height {
-                break;
-            }
+            if py >= self.height { break; }
             for col in 0..CURSOR_W {
                 let px = cx + col;
-                if px >= self.width {
-                    break;
-                }
+                if px >= self.width { break; }
                 let off = (py * self.stride + px * 4) as usize;
                 if off + 4 <= self.buf_len && saved_idx + 4 <= self.cursor.saved_under.len() {
                     self.cursor.saved_under[saved_idx..saved_idx + 4]
@@ -405,26 +318,16 @@ impl Framebuffer {
         }
         self.cursor.drawn = true;
 
-        // Paint cursor sprite using CURSOR_MASK.
         for row in 0..CURSOR_H as usize {
             let py = cy + row as u32;
-            if py >= self.height {
-                break;
-            }
+            if py >= self.height { break; }
             let mask = CURSOR_MASK[row];
             for col in 0..CURSOR_W as usize {
-                if mask & (0x8000 >> col) == 0 {
-                    continue;
-                }
+                if mask & (0x8000 >> col) == 0 { continue; }
                 let px = cx + col as u32;
-                if px >= self.width {
-                    break;
-                }
+                if px >= self.width { break; }
                 let off = (py * self.stride + px * 4) as usize;
-                if off + 4 > self.buf_len {
-                    continue;
-                }
-                // Outline: pixels adjacent to a transparent (0) bit get black; sprite body white
+                if off + 4 > self.buf_len { continue; }
                 let is_edge = col == 0 || row == 0
                     || (col > 0 && CURSOR_MASK[row] & (0x8000 >> (col - 1)) == 0)
                     || (row > 0 && CURSOR_MASK[row - 1] & (0x8000 >> col) == 0)
@@ -443,22 +346,16 @@ impl Framebuffer {
     /// Restore pixels that were saved by the most recent `draw_cursor()` call.
     /// No-op when `cursor.drawn` is false.
     pub fn restore_under_cursor(&mut self) {
-        if !self.cursor.drawn {
-            return;
-        }
+        if !self.cursor.drawn { return; }
         let cx = self.cursor.cx as u32;
         let cy = self.cursor.cy as u32;
         let mut saved_idx = 0usize;
         for row in 0..CURSOR_H {
             let py = cy + row;
-            if py >= self.height {
-                break;
-            }
+            if py >= self.height { break; }
             for col in 0..CURSOR_W {
                 let px = cx + col;
-                if px >= self.width {
-                    break;
-                }
+                if px >= self.width { break; }
                 let off = (py * self.stride + px * 4) as usize;
                 if off + 4 <= self.buf_len && saved_idx + 4 <= self.cursor.saved_under.len() {
                     self.back[off..off + 4]
@@ -484,9 +381,7 @@ impl Framebuffer {
 
     /// Draw a 1-pixel border rectangle (no fill).
     pub fn rect_border(&mut self, x: u32, y: u32, w: u32, h: u32, rgba: u32) {
-        if w == 0 || h == 0 {
-            return;
-        }
+        if w == 0 || h == 0 { return; }
         self.fill_rect(x, y, w, 1, rgba);              // top
         self.fill_rect(x, y + h - 1, w, 1, rgba);      // bottom
         self.fill_rect(x, y, 1, h, rgba);              // left
@@ -508,7 +403,6 @@ impl Framebuffer {
         let stride = width * 4;
         let buf_len = (stride * height) as usize;
         let layout = Layout::from_size_align(buf_len, 4).unwrap();
-        // SAFETY: we own this allocation for the lifetime of the test Framebuffer.
         let buf = unsafe { alloc_zeroed(layout) };
         let back = vec![0u8; buf_len];
         let cursor = CursorState {
@@ -518,7 +412,6 @@ impl Framebuffer {
             saved_under: vec![0u8; (CURSOR_W * CURSOR_H * 4) as usize],
             drawn:       false,
         };
-        // We pass a dummy File using /dev/null so the struct is valid.
         let file = std::fs::File::open("/dev/null").unwrap();
         let fb = Self { _file: file, width, height, stride, bpp, buf, buf_len, back, cursor, mmaped: false };
         (fb, vec![0u8; buf_len])
@@ -561,117 +454,13 @@ impl Framebuffer {
         rgba: u32,
         size: font::FontSize,
     ) {
-        if self.bpp != 32 {
-            return;
-        }
+        if self.bpp != 32 { return; }
         let (glyph_w, glyph_h) = font::glyph_dims(size);
-        let max_chars = if glyph_w > 0 {
-            (max_w / glyph_w) as usize
-        } else {
-            0
-        };
+        let max_chars = if glyph_w > 0 { (max_w / glyph_w) as usize } else { 0 };
         for (i, line) in wrap_words(text, max_chars).into_iter().enumerate() {
             let ly = y + i as u32 * glyph_h;
-            if ly + glyph_h > self.height {
-                break;
-            }
+            if ly + glyph_h > self.height { break; }
             self.draw_text(x, ly, &line, rgba, size);
         }
     }
-}
-
-/// Alpha-blend `fg` over `bg` using the given alpha value `a` (0 = fully transparent, 255 = fully opaque).
-///
-/// Both `fg` and `bg` are packed RGBA `u32` values (`0xRRGGBBAA`).  The output
-/// alpha byte is always `0xFF` (the result is fully opaque).  This is a pure
-/// function with no global state.
-#[allow(dead_code)]
-pub fn blend_alpha(fg: u32, bg: u32, a: u8) -> u32 {
-    let af = a as u32;
-    let blend = |f: u32, b: u32| ((f * af + b * (255 - af)) / 255) & 0xFF;
-    let r = blend((fg >> 24) & 0xFF, (bg >> 24) & 0xFF);
-    let g = blend((fg >> 16) & 0xFF, (bg >> 16) & 0xFF);
-    let b = blend((fg >>  8) & 0xFF, (bg >>  8) & 0xFF);
-    (r << 24) | (g << 16) | (b << 8) | 0xFF
-}
-
-/// Return the RGBA title-bar background colour for a window.
-///
-/// - `focused = true`  → bright blue accent  (`0x388BFDFF`)
-/// - `focused = false` → dark grey           (`0x30363DFF`)
-///
-/// Pure function: no I/O, no side-effects.
-#[allow(dead_code)]
-pub fn titlebar_color(focused: bool) -> u32 {
-    if focused { 0x388BFDFF } else { 0x30363DFF }
-}
-
-/// Return the 2px focus-border color for a window.
-///
-/// Focused windows get a bright blue accent (`0x388BFDFF`).
-/// Unfocused windows get a dim gray (`0x30363DFF`).
-/// This is a pure function — no I/O, no side effects.
-pub fn border_color(focused: bool) -> u32 {
-    if focused { 0x388BFDFF } else { 0x30363DFF }
-}
-
-/// Return a deterministic accent color for an app based on its name.
-///
-/// The color is derived from a djb2 hash of the app name, then mapped to one
-/// of six palette entries.  The function is pure — no randomness, no global state.
-pub fn app_accent_color(name: &str) -> u32 {
-    const PALETTE: [u32; 6] = [
-        0xFF6B6BFF, // red-ish
-        0xFFD93DFF, // yellow
-        0x6BCB77FF, // green
-        0x4D96FFFF, // blue
-        0xC77DFFFF, // purple
-        0xFF9F43FF, // orange
-    ];
-    let hash = name
-        .bytes()
-        .fold(5381u32, |h, b| h.wrapping_mul(33).wrapping_add(b as u32));
-    PALETTE[(hash % 6) as usize]
-}
-
-/// Compute a display string for flush rate from raw counters.
-///
-/// `flushes` is the number of `VYOMA_DRAW:flush` calls recorded in
-/// `elapsed_ms` milliseconds.  Returns `"0fps"` when `elapsed_ms == 0`
-/// to avoid a divide-by-zero.
-///
-/// This function is **pure**: it has no side-effects and does not
-/// touch any global state.
-pub fn format_fps(flushes: u64, elapsed_ms: u64) -> String {
-    if elapsed_ms == 0 {
-        return "0fps".to_string();
-    }
-    let fps = (flushes * 1000) / elapsed_ms;
-    format!("{fps}fps")
-}
-
-
-/// Word-wrap `text` so each line is at most `max_chars` wide.
-/// Long single words are placed on their own line without truncation.
-/// If `max_chars` is 0, returns the full text as a single line.
-/// SYNC: algorithm duplicated in supervisor/tests/display_test.rs — keep in lockstep.
-pub fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {
-    if max_chars == 0 {
-        return vec![text.to_string()];
-    }
-    let mut lines: Vec<String> = Vec::new();
-    let mut current = String::new();
-    for word in text.split(' ').filter(|w| !w.is_empty()) {
-        if current.is_empty() {
-            current.push_str(word);
-        } else if current.len() + 1 + word.len() <= max_chars {
-            current.push(' ');
-            current.push_str(word);
-        } else {
-            lines.push(std::mem::take(&mut current));
-            current.push_str(word);
-        }
-    }
-    lines.push(current);  // always push, even if empty — ensures empty input returns vec![""]
-    lines
 }
