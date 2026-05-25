@@ -91,7 +91,6 @@ pub fn handle_draw_command(
                             .map(|st| st.lock().unwrap().start_time.elapsed().as_secs())
                             .unwrap_or(0)
                     };
-                    // Only redraw status strip when uptime_secs advances (≤1 redraw/sec per app).
                     let do_draw = {
                         let mut cache = status_uptime_cache().lock().unwrap();
                         supervisor::draw_cmd::should_redraw_statusbar(sender, uptime_secs, &mut cache)
