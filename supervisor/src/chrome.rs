@@ -18,6 +18,9 @@ pub const Z_APP:      u32 = 10;   // default app window layer
 pub const Z_DOCK:     u32 = 100;  // dock — always above app windows
 pub const Z_OVERLAY:  u32 = 255;  // notifications, system overlays
 
+// Ordering invariant: background < apps < dock < overlay
+const _: () = assert!(Z_DESKTOP < Z_APP && Z_APP < Z_DOCK && Z_DOCK < Z_OVERLAY);
+
 // ── macOS-inspired chrome constants ──────────────────────────────────────────
 
 pub const MENUBAR_H:    u32 = 24;   // global menu bar height
