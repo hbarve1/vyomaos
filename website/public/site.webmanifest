@@ -1,0 +1,21 @@
+{
+  "name": "VyomaOS",
+  "short_name": "VyomaOS",
+  "description": "The WASM-First Operating System — Capability-Secure, 18 MB, Boots in Under 5 Seconds",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#0D1117",
+  "theme_color": "#7C3AED",
+  "icons": [
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

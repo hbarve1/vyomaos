@@ -3,5 +3,6 @@ main = "worker.js"
 compatibility_date = "2025-05-25"
 
 routes = [
-  { pattern = "vyomaos.com/*", zone_name = "vyomaos.com" }
+  { pattern = "vyomaos.com/*", zone_name = "vyomaos.com" },
+  { pattern = "www.vyomaos.com/*", zone_name = "vyomaos.com" }
 ]

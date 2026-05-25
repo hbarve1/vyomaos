@@ -13,6 +13,10 @@ export default defineConfig({
 			head: [
 				{
 					tag: 'meta',
+					attrs: { name: 'robots', content: 'index, follow' },
+				},
+				{
+					tag: 'meta',
 					attrs: { name: 'keywords', content: 'VyomaOS, WebAssembly, WASM, operating system, capability security, Rust, WASI, wasm32-wasip2, Wasmtime, sandbox, embedded OS' },
 				},
 				{
@@ -21,7 +25,27 @@ export default defineConfig({
 				},
 				{
 					tag: 'meta',
+					attrs: { property: 'og:image:width', content: '1200' },
+				},
+				{
+					tag: 'meta',
+					attrs: { property: 'og:image:height', content: '630' },
+				},
+				{
+					tag: 'meta',
 					attrs: { name: 'twitter:image', content: 'https://vyomaos.org/og-image.png' },
+				},
+				{
+					tag: 'link',
+					attrs: { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
+				},
+				{
+					tag: 'link',
+					attrs: { rel: 'manifest', href: '/site.webmanifest' },
+				},
+				{
+					tag: 'meta',
+					attrs: { name: 'theme-color', content: '#7C3AED' },
 				},
 				{
 					tag: 'script',
