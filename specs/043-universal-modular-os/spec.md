@@ -10,6 +10,18 @@
 
 ---
 
+## Clarifications
+
+### Session 2026-05-25
+
+- Q: What is the platform rollout priority order? → A: MCU → IoT → Robotics → Mobile → Desktop → Server → HPC (bottom-up, start from most constrained)
+- Q: What WASM runtime strategy for constrained devices? → A: Tiered — wasm3/WAMR for MCU/IoT, Wasmtime for Desktop/Server; supervisor abstracts the runtime difference
+- Q: How should hardware peripheral access be modeled? → A: Per-peripheral capabilities in vyoma.toml (e.g., `gpio_pins = [2,4]`, `i2c_bus = 1`), fine-grained and enforced by supervisor; ReBAC (Relationship-Based Access Control) planned as future security extension for inter-module relationship enforcement
+- Q: What observability and diagnostics strategy? → A: Structured logs + health heartbeat as baseline for all platforms; full OpenTelemetry-compatible telemetry available on devices with sufficient resources (desktop/server/rich IoT gateways); platform profile determines active tier
+- Q: What OTA update safety model? → A: A/B slot with automatic rollback — two module slots, supervisor validates new version on first boot, rolls back if health check fails
+
+---
+
 ## Market Analysis
 
 ### Target Market Segments
@@ -224,7 +236,12 @@ A research computing operator wants to run deterministic, reproducible compute j
 - **FR-015**: System MUST support seccomp BPF (or equivalent) as a defense-in-depth layer on platforms that support it
 - **FR-016**: System MUST support running on bare metal, in virtual machines, and in containers
 - **FR-017**: System MUST provide a supervisor API for process management (list, kill, restart, logs, resource usage)
-- **FR-018**: System MUST support capability-declared access to hardware peripherals (GPIO, I2C, SPI, UART, ADC) on embedded/robotics platforms
+- **FR-018**: System MUST support capability-declared access to hardware peripherals (GPIO, I2C, SPI, UART, ADC) on embedded/robotics platforms, with per-peripheral granularity in the manifest (e.g., `gpio_pins = [2,4]`, `i2c_bus = 1`)
+- **FR-019**: System MUST support a tiered WASM runtime model — lightweight interpreters (wasm3/WAMR) for MCU/IoT platforms and JIT/AOT runtimes (Wasmtime) for desktop/server platforms, with the supervisor abstracting the runtime difference from apps
+- **FR-020**: System MUST implement A/B slot OTA updates with automatic rollback — two module slots per app, supervisor validates new version health on first boot, and rolls back to the previous slot if health check fails
+- **FR-021**: System MUST emit structured log events and periodic health heartbeats from all running modules, with the supervisor aggregating and exporting them via network when available
+- **FR-022**: System SHOULD support full OpenTelemetry-compatible telemetry (traces, metrics, logs) on platforms with sufficient resources, selectable via platform profile
+- **FR-023**: System SHOULD support ReBAC (Relationship-Based Access Control) as a future extension, enabling inter-module relationship declarations (e.g., `controls`, `reads_from`, `administered_by`) enforced by the supervisor at IPC routing time
 
 ### Key Entities
 
@@ -249,6 +266,9 @@ A research computing operator wants to run deterministic, reproducible compute j
 - **SC-008**: OTA app updates complete in under 30 seconds on IoT devices with standard connectivity
 - **SC-009**: System supports at least 200 concurrent WASM apps on desktop/server platforms without resource exhaustion
 - **SC-010**: The modular architecture allows a deployment target to be configured (e.g., IoT vs desktop vs server) by selecting a platform profile, with no code changes to the supervisor core
+- **SC-011**: OTA updates with A/B rollback complete successfully — if a new module version fails its health check within 60 seconds, the system automatically reverts to the previous working version with zero manual intervention
+- **SC-012**: Structured health heartbeats from all running modules are receivable by a remote monitoring endpoint within 5 seconds of module startup on network-capable devices
+- **SC-013**: The same WASM app binary runs identically on wasm3 (MCU) and Wasmtime (desktop) runtimes, producing equivalent output regardless of the underlying execution engine
 
 ## Assumptions
 
@@ -260,3 +280,7 @@ A research computing operator wants to run deterministic, reproducible compute j
 - GPIO, I2C, SPI, UART, and ADC hardware interfaces will be exposed through custom WASI host functions defined by VyomaOS, not through upstream WASI proposals (which do not cover embedded hardware)
 - Sub-$1 MCUs with < 256 KB RAM are out of scope for the initial WASM-based architecture; these will require a lightweight interpreter (wasm3/WAMR) adaptation in a future phase
 - The plug-and-play module system applies to userspace WASM modules; the kernel itself remains a monolithic Linux build with minimal config per platform
+- Platform rollout follows a bottom-up strategy: MCU → IoT → Robotics → Mobile → Desktop → Server → HPC — starting from the most constrained ensures the architecture scales upward naturally
+- The WASM runtime is a pluggable component of the supervisor — wasm3/WAMR on constrained platforms, Wasmtime on rich platforms — apps are unaware of which runtime executes them
+- OTA updates use an A/B slot model with automatic rollback; partial or failed updates never leave a device in an unrecoverable state
+- ReBAC-style relationship-based access control is a planned extension; the initial system uses flat per-peripheral capability declarations
