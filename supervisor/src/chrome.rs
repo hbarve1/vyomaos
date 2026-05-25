@@ -11,6 +11,13 @@ use supervisor::logging::Subsystem;
 #[cfg(target_os = "linux")]
 use crate::{display, font};
 
+// ── Z-layer constants ─────────────────────────────────────────────────────────
+
+pub const Z_DESKTOP:  u32 = 0;    // desktop wallpaper — always background
+pub const Z_APP:      u32 = 10;   // default app window layer
+pub const Z_DOCK:     u32 = 100;  // dock — always above app windows
+pub const Z_OVERLAY:  u32 = 255;  // notifications, system overlays
+
 // ── macOS-inspired chrome constants ──────────────────────────────────────────
 
 pub const MENUBAR_H:    u32 = 24;   // global menu bar height
@@ -235,9 +242,11 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
         .lock()
         .unwrap()
         .clone();
+    // Collect (win_z, name, region) then sort by win_z ascending so lower-z
+    // windows are painted first (appear behind higher-z windows).
     let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
         let reg = registry.lock().unwrap();
-        let mut regions = Vec::new();
+        let mut regions_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = Vec::new();
         let mut display_apps: Vec<String> = reg.iter()
             .filter_map(|(name, st)| {
                 let st = st.lock().unwrap();
@@ -252,9 +261,12 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
         for (name, st) in reg.iter() {
             let st = st.lock().unwrap();
             if let Some(r) = st.win_region {
-                regions.push((name.clone(), r));
+                regions_with_z.push((st.win_z, name.clone(), r));
             }
         }
+        // Sort ascending by z so lowest-z windows are painted first (background first).
+        regions_with_z.sort_by_key(|(z, _, _)| *z);
+        let regions = regions_with_z.into_iter().map(|(_, n, r)| (n, r)).collect();
         (regions, display_apps)
     };
     #[cfg(target_os = "linux")]

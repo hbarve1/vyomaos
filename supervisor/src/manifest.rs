@@ -35,6 +35,10 @@ pub struct WindowRegion {
     pub w: u32,
     #[serde(default)]
     pub h: u32,
+    /// Z-layer for window stacking order.
+    /// 0=desktop background, 10=default app, 100=dock, 200=menu bar, 255=overlay.
+    #[serde(default = "default_win_z")]
+    pub z: u32,
     // App-declared display metadata (optional; ignored by supervisor layout engine).
     #[serde(default)]
     pub title: Option<String>,
@@ -43,6 +47,8 @@ pub struct WindowRegion {
     #[serde(default)]
     pub height: Option<u32>,
 }
+
+fn default_win_z() -> u32 { 10 }  // default app layer
 
 #[derive(Debug, Deserialize)]
 pub struct AppManifest {
