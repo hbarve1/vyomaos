@@ -1,0 +1,10 @@
+[package]
+name    = "motor-driver"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "motor-driver"
+path = "src/main.rs"
+
+[dependencies]

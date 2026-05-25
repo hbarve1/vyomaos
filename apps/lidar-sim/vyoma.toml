@@ -1,0 +1,11 @@
+[app]
+name    = "lidar-sim"
+version = "0.1.0"
+wasm    = "lidar-sim.wasm"
+
+[capabilities]
+stdio  = true
+
+[capabilities.uart]
+port = 0
+baud = 115200

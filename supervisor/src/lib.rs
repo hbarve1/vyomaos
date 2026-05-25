@@ -13,6 +13,7 @@ pub mod profile;
 pub mod ota;
 pub mod observability;
 pub mod capability;
+pub mod hot_swap;
 
 #[cfg(target_os = "linux")]
 pub mod font;

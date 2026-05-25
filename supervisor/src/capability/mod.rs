@@ -6,7 +6,7 @@
 
 pub mod peripheral;
 
-pub use peripheral::{PeripheralCapability, PeripheralEnforcer};
+pub use peripheral::{PeripheralCapability, PeripheralEnforcer, PeripheralRegistry};
 
 // ── PeripheralCapabilitySet ───────────────────────────────────────────────────
 

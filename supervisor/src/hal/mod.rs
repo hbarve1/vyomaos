@@ -5,6 +5,14 @@
 // The supervisor uses `HalProvider` to validate capability manifests and
 // to route WASM host-function calls to the correct driver.
 
+pub mod gpio;
+pub mod i2c;
+pub mod uart;
+
+pub use gpio::MockGpioDriver;
+pub use i2c::MockI2cDriver;
+pub use uart::MockUartDriver;
+
 // ── Supporting types ──────────────────────────────────────────────────────────
 
 /// GPIO pin direction.

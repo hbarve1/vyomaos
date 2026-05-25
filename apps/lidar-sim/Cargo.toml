@@ -1,0 +1,10 @@
+[package]
+name    = "lidar-sim"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "lidar-sim"
+path = "src/main.rs"
+
+[dependencies]

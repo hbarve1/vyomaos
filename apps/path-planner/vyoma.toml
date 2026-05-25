@@ -1,0 +1,7 @@
+[app]
+name    = "path-planner"
+version = "0.1.0"
+wasm    = "path-planner.wasm"
+
+[capabilities]
+stdio = true

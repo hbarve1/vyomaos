@@ -1,7 +1,10 @@
-// Peripheral capability enforcer — T006 + T014
+// Peripheral capability enforcer — T006 + T014 + T037
 //
 // Parses `[capabilities.gpio]`, `[capabilities.i2c]` etc. from a vyoma.toml
 // TOML value and enforces access at spawn time.
+//
+// T037: `PeripheralRegistry` — tracks which module owns each peripheral resource
+// and rejects conflicting exclusive-access claims at spawn time.
 
 use serde::Deserialize;
 use super::{
@@ -192,5 +195,117 @@ impl PeripheralEnforcer {
                 Ok(())
             }
         }
+    }
+}
+
+// ── PeripheralRegistry — T037 ─────────────────────────────────────────────────
+
+/// Identifies a unique peripheral resource that can be exclusively owned.
+///
+/// For GPIO Output pins and UART ports, the resource is exclusive (one owner).
+/// For GPIO Input pins and I2C devices, multiple readers are allowed on the
+/// same resource.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum ResourceKey {
+    /// GPIO output pin — exclusive.
+    GpioOutput(u8),
+    /// UART port — exclusive.
+    UartPort(u8),
+    /// I2C device (bus + address) — exclusive.
+    I2cDevice(u8, u8),
+    /// SPI device (bus + cs) — exclusive.
+    SpiDevice(u8, u8),
+}
+
+/// System-wide peripheral ownership registry.
+///
+/// Tracks which module has claimed each exclusive peripheral resource.
+/// Must be consulted before spawning any module that declares peripheral
+/// capabilities — if a conflict is detected the spawn is rejected.
+pub struct PeripheralRegistry {
+    /// Maps exclusive resource → owning module name.
+    owners: std::collections::HashMap<ResourceKey, String>,
+}
+
+impl PeripheralRegistry {
+    pub fn new() -> Self {
+        Self { owners: std::collections::HashMap::new() }
+    }
+
+    /// Attempt to claim a peripheral resource on behalf of `module_name`.
+    ///
+    /// Returns `Ok(())` if the resource is available (or is non-exclusive).
+    /// Returns `Err(String)` with a descriptive conflict message otherwise.
+    pub fn claim(
+        &mut self,
+        module_name: &str,
+        capability: &PeripheralCapability,
+    ) -> Result<(), String> {
+        let key = match capability {
+            PeripheralCapability::Gpio { pin, direction } => {
+                // Only output pins are exclusive; input pins can be shared.
+                if *direction == Direction::Output {
+                    Some(ResourceKey::GpioOutput(*pin))
+                } else {
+                    None // Input — shared, no conflict.
+                }
+            }
+            PeripheralCapability::Uart { port } => {
+                Some(ResourceKey::UartPort(*port))
+            }
+            PeripheralCapability::I2c { bus, addr } => {
+                Some(ResourceKey::I2cDevice(*bus, *addr))
+            }
+            PeripheralCapability::Spi { bus, cs } => {
+                Some(ResourceKey::SpiDevice(*bus, *cs))
+            }
+            PeripheralCapability::Adc { .. } => {
+                None // ADC channels are read-only; sharing is safe.
+            }
+        };
+
+        if let Some(key) = key {
+            if let Some(owner) = self.owners.get(&key) {
+                return Err(format!(
+                    "peripheral conflict: {key:?} already owned by '{owner}'; \
+                     '{module_name}' cannot claim exclusive access"
+                ));
+            }
+            self.owners.insert(key, module_name.to_string());
+        }
+
+        Ok(())
+    }
+
+    /// Release all peripheral claims held by `module_name`.
+    ///
+    /// Called when a module exits or is killed.
+    pub fn release(&mut self, module_name: &str) {
+        self.owners.retain(|_, owner| owner != module_name);
+    }
+
+    /// Return the name of the module that owns a resource, if any.
+    #[cfg(test)]
+    pub fn owner_of(&self, capability: &PeripheralCapability) -> Option<&str> {
+        let key = match capability {
+            PeripheralCapability::Gpio { pin, direction } => {
+                if *direction == Direction::Output {
+                    Some(ResourceKey::GpioOutput(*pin))
+                } else {
+                    None
+                }
+            }
+            PeripheralCapability::Uart { port } => Some(ResourceKey::UartPort(*port)),
+            PeripheralCapability::I2c { bus, addr } => Some(ResourceKey::I2cDevice(*bus, *addr)),
+            PeripheralCapability::Spi { bus, cs } => Some(ResourceKey::SpiDevice(*bus, *cs)),
+            PeripheralCapability::Adc { .. } => None,
+        };
+        key.and_then(|k| self.owners.get(&k).map(|s| s.as_str()))
+    }
+}
+
+impl Default for PeripheralRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }
