@@ -402,5 +402,5 @@ See `.context/plans/plan-vyomaos/` for detailed phase specs and task breakdowns.
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan at
-`specs/043-universal-modular-os/plan.md`.
+`specs/044-developer-tooling/plan.md`.
 <!-- SPECKIT END -->
