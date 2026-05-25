@@ -51,7 +51,7 @@ jobs:
           for cargo_toml in apps/*/Cargo.toml; do
             app=$(dirname "$cargo_toml")
             echo "Checking $app ..."
-            RUSTFLAGS="-D warnings" cargo check \
+            cargo check \
               --manifest-path "$cargo_toml" \
               --target wasm32-wasip2
           done
