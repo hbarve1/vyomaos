@@ -1,0 +1,10 @@
+[app]
+name    = "doc-viewer"
+version = "0.1.0"
+wasm    = "doc-viewer.wasm"
+
+[capabilities]
+stdio        = true
+display      = true    # wired on desktop-full profile → VYOMA_DRAW rendering
+network      = true    # wired on server-headless profile → HTTP serving
+network_port = 8081    # HTTP port when in server mode

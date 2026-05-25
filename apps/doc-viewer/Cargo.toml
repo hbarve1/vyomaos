@@ -1,0 +1,11 @@
+[package]
+name    = "doc-viewer"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "doc-viewer"
+path = "src/main.rs"
+
+[dependencies]
+# No external dependencies — keep binary small
