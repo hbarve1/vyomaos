@@ -46,6 +46,8 @@ pub struct Framebuffer {
     pub back: Vec<u8>,    // back-buffer; blitted to buf on flush()
     pub cursor: CursorState,
     mmaped: bool,         // false for test-only heap-allocated instances
+    dirty_top: u32,       // first dirty row since last flush (> dirty_bottom = clean)
+    dirty_bottom: u32,    // one past last dirty row
 }
 
 // All mutable access is serialised through `Mutex<Framebuffer>`.
@@ -161,7 +163,7 @@ fn open_fb() -> io::Result<Framebuffer> {
         saved_under: vec![0u8; (CURSOR_W * CURSOR_H * 4) as usize],
         drawn:       false,
     };
-    Ok(Framebuffer { _file: file, width, height, stride, bpp, buf: buf as *mut u8, buf_len, back, cursor, mmaped: true })
+    Ok(Framebuffer { _file: file, width, height, stride, bpp, buf: buf as *mut u8, buf_len, back, cursor, mmaped: true, dirty_top: height, dirty_bottom: 0 })
 }
 
 impl Drop for Framebuffer {
@@ -204,6 +206,11 @@ impl Framebuffer {
             for off in (base..end).step_by(4) {
                 self.back[off..off + 4].copy_from_slice(&pixel);
             }
+        }
+
+        if y1 > y {
+            self.dirty_top    = self.dirty_top.min(y);
+            self.dirty_bottom = self.dirty_bottom.max(y1);
         }
     }
 
@@ -290,6 +297,13 @@ impl Framebuffer {
             }
             cx += glyph_w;
         }
+
+        let (_, glyph_h) = font::glyph_dims(size);
+        let y1 = (y + glyph_h).min(self.height);
+        if y1 > y {
+            self.dirty_top    = self.dirty_top.min(y);
+            self.dirty_bottom = self.dirty_bottom.max(y1);
+        }
     }
 
     /// Save pixels under the cursor hotspot into `cursor.saved_under`, then
@@ -368,15 +382,32 @@ impl Framebuffer {
         self.cursor.drawn = false;
     }
 
-    /// Blit back-buffer to the mmap'd framebuffer (front-buffer).
-    /// Composites the cursor sprite on top before blitting, then restores the
-    /// back-buffer so subsequent draw ops see a clean canvas.
+    /// Blit dirty rows + cursor rows from back-buffer to the mmap'd framebuffer.
     pub fn flush(&mut self) {
         self.restore_under_cursor();
         self.draw_cursor();
-        unsafe {
-            std::ptr::copy_nonoverlapping(self.back.as_ptr(), self.buf, self.buf_len);
+
+        // Expand dirty bounds to include the cursor sprite rows.
+        let cur_top = self.cursor.cy.max(0) as u32;
+        let cur_bot = (self.cursor.cy as u32 + CURSOR_H).min(self.height);
+        let row_top = self.dirty_top.min(cur_top);
+        let row_bot = self.dirty_bottom.max(cur_bot);
+
+        if row_top < row_bot {
+            let start = (row_top * self.stride) as usize;
+            let end   = ((row_bot * self.stride) as usize).min(self.buf_len);
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    self.back.as_ptr().add(start),
+                    self.buf.add(start),
+                    end - start,
+                );
+            }
         }
+
+        // Reset dirty tracking; restore cursor pixels in back-buffer.
+        self.dirty_top    = self.height;
+        self.dirty_bottom = 0;
         self.restore_under_cursor();
     }
 
@@ -414,7 +445,7 @@ impl Framebuffer {
             drawn:       false,
         };
         let file = std::fs::File::open("/dev/null").unwrap();
-        let fb = Self { _file: file, width, height, stride, bpp, buf, buf_len, back, cursor, mmaped: false };
+        let fb = Self { _file: file, width, height, stride, bpp, buf, buf_len, back, cursor, mmaped: false, dirty_top: height, dirty_bottom: 0 };
         (fb, vec![0u8; buf_len])
     }
 

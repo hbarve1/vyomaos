@@ -3,16 +3,17 @@
 
 //! VyomaOS GUI demo — live system dashboard
 //!
-//! Runs in a continuous loop, querying the supervisor every 2 seconds via
-//! `@supervisor: ps-raw` and rendering a live grid of app status cards.
+//! Renders at 60 fps (16 ms frame budget) so the dashboard feels responsive.
+//! App status is fetched from supervisor via `@supervisor: ps-raw` every 2 s;
+//! between fetches the last known state is redrawn at full frame rate.
 //!
 //! Each card shows: status dot (green=running, red=stopped), name, uptime,
-//! and restart count.  The dashboard redraws only its half of the screen
-//! (Y=0..440) so the shell panel below is undisturbed.
+//! and restart count.  Mouse events accumulated in the stdin pipe are drained
+//! on each fetch cycle to keep the cursor-hover highlight up to date.
 
 use std::io::{BufRead, BufReader, Write};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const W:      u32 = 1440;
 const DASH_H: u32 = 440;   // dashboard height; matches [window] h=440 in vyoma.toml
@@ -40,31 +41,46 @@ fn main() {
     let stdin = std::io::stdin();
     let mut stdin_lines = BufReader::new(stdin).lines();
     let mut refresh: u64 = 0;
-    let mut cursor_pos: Option<(u32, u32)> = None;  // local window coords from mouse events
+    let mut cursor_pos: Option<(u32, u32)> = None;
+    let mut cached_apps: Vec<AppInfo> = vec![];
+
+    // Trigger an immediate fetch on the first frame.
+    let mut last_fetch = Instant::now() - Duration::from_secs(3);
 
     loop {
-        // Request live status from supervisor
-        println!("@supervisor: ps-raw");
-        let _ = std::io::stdout().flush();
+        let frame_start = Instant::now();
 
-        // Read reply — also absorb mouse events that arrived since last iteration
-        let apps = loop {
-            match stdin_lines.next() {
-                Some(Ok(line)) if line.starts_with("REPLY:") => {
-                    break parse_ps(&line);
+        // Fetch app status every 2 seconds; drain stdin for mouse events too.
+        if last_fetch.elapsed() >= Duration::from_secs(2) {
+            println!("@supervisor: ps-raw");
+            let _ = std::io::stdout().flush();
+
+            // Blocking read: drain accumulated mouse events then consume REPLY.
+            loop {
+                match stdin_lines.next() {
+                    Some(Ok(line)) if line.starts_with("REPLY:") => {
+                        cached_apps = parse_ps(&line);
+                        break;
+                    }
+                    Some(Ok(line)) if line.starts_with("VYOMA_INPUT:mouse:") => {
+                        cursor_pos = parse_mouse_event(&line).or(cursor_pos);
+                    }
+                    Some(Ok(_)) => {}
+                    Some(Err(_)) | None => break,
                 }
-                Some(Ok(line)) if line.starts_with("VYOMA_INPUT:mouse:") => {
-                    cursor_pos = parse_mouse_event(&line).or(cursor_pos);
-                }
-                Some(Ok(_)) => {}
-                Some(Err(_)) | None => break vec![],
             }
-        };
+            last_fetch = Instant::now();
+        }
 
-        draw(&apps, boot_count, refresh, cursor_pos);
+        draw(&cached_apps, boot_count, refresh, cursor_pos);
         refresh += 1;
 
-        thread::sleep(Duration::from_secs(2));
+        // Sleep for the remainder of the 16 ms frame budget (≈60 fps).
+        let elapsed = frame_start.elapsed();
+        let budget  = Duration::from_millis(16);
+        if elapsed < budget {
+            thread::sleep(budget - elapsed);
+        }
     }
 }
 
