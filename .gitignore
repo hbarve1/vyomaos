@@ -9,5 +9,14 @@ apps/*/target/
 **/*.wasm
 
 # For local development, ignore the data directory
-/data/ 
+/data/
 .superpowers/
+
+# macOS metadata
+.DS_Store
+
+# Cloudflare Wrangler cache
+.wrangler/
+
+# PowerPoint temporary/lock files
+~$*.pptx
