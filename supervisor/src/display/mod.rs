@@ -33,6 +33,25 @@ use std::{
     time::Duration,
 };
 
+// ── Dirty-region tracking ─────────────────────────────────────────────────────
+
+/// Bounding scanline range for back-buffer writes since the last flush.
+/// Empty state: `y0 > y1` (use `DirtyRect::empty(height)`).
+#[derive(Clone, Copy)]
+pub struct DirtyRect {
+    pub y0: u32,
+    pub y1: u32,
+}
+
+impl DirtyRect {
+    pub fn empty(height: u32) -> Self { Self { y0: height, y1: 0 } }
+    pub fn is_empty(&self) -> bool { self.y0 > self.y1 }
+    pub fn expand(&mut self, row_start: u32, row_end_inclusive: u32) {
+        self.y0 = self.y0.min(row_start);
+        self.y1 = self.y1.max(row_end_inclusive);
+    }
+}
+
 // ── Framebuffer handle ────────────────────────────────────────────────────────
 
 pub struct Framebuffer {
@@ -44,6 +63,7 @@ pub struct Framebuffer {
     buf: *mut u8,
     buf_len: usize,
     pub back: Vec<u8>,    // back-buffer; blitted to buf on flush()
+    pub dirty: DirtyRect, // modified scanline range since last flush
     pub cursor: CursorState,
     mmaped: bool,         // false for test-only heap-allocated instances
 }
@@ -154,6 +174,7 @@ fn open_fb() -> io::Result<Framebuffer> {
     );
 
     let back = vec![0u8; buf_len];
+    let dirty = DirtyRect::empty(height);
     let cursor = CursorState {
         cx:          (width / 2) as i32,
         cy:          (height / 2) as i32,
@@ -161,7 +182,7 @@ fn open_fb() -> io::Result<Framebuffer> {
         saved_under: vec![0u8; (CURSOR_W * CURSOR_H * 4) as usize],
         drawn:       false,
     };
-    Ok(Framebuffer { _file: file, width, height, stride, bpp, buf: buf as *mut u8, buf_len, back, cursor, mmaped: true })
+    Ok(Framebuffer { _file: file, width, height, stride, bpp, buf: buf as *mut u8, buf_len, back, dirty, cursor, mmaped: true })
 }
 
 impl Drop for Framebuffer {
@@ -195,6 +216,10 @@ impl Framebuffer {
         let x1 = (x + w).min(self.width);
         let y1 = (y + h).min(self.height);
 
+        if y1 > y {
+            self.dirty.expand(y, y1 - 1);
+        }
+
         for row in y..y1 {
             let base = (row * self.stride + x * 4) as usize;
             let end  = (row * self.stride + x1 * 4) as usize;
@@ -218,7 +243,11 @@ impl Framebuffer {
         let b = ((rgba >>  8) & 0xFF) as u8;
         let fg = [b, g, r, 0xFF_u8]; // BGRA little-endian
 
-        let (glyph_w, _glyph_h) = font::glyph_dims(size);
+        let (glyph_w, glyph_h) = font::glyph_dims(size);
+        let y_end = (y + glyph_h - 1).min(self.height.saturating_sub(1));
+        if y < self.height {
+            self.dirty.expand(y, y_end);
+        }
         let mut cx = x;
 
         for ch in text.chars() {
@@ -378,6 +407,7 @@ impl Framebuffer {
             std::ptr::copy_nonoverlapping(self.back.as_ptr(), self.buf, self.buf_len);
         }
         self.restore_under_cursor();
+        self.dirty = DirtyRect::empty(self.height);
     }
 
     /// Draw a 1-pixel border rectangle (no fill).
@@ -406,6 +436,7 @@ impl Framebuffer {
         let layout = Layout::from_size_align(buf_len, 4).unwrap();
         let buf = unsafe { alloc_zeroed(layout) };
         let back = vec![0u8; buf_len];
+        let dirty = DirtyRect::empty(height);
         let cursor = CursorState {
             cx:          (width / 2) as i32,
             cy:          (height / 2) as i32,
@@ -414,7 +445,7 @@ impl Framebuffer {
             drawn:       false,
         };
         let file = std::fs::File::open("/dev/null").unwrap();
-        let fb = Self { _file: file, width, height, stride, bpp, buf, buf_len, back, cursor, mmaped: false };
+        let fb = Self { _file: file, width, height, stride, bpp, buf, buf_len, back, dirty, cursor, mmaped: false };
         (fb, vec![0u8; buf_len])
     }
 
