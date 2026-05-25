@@ -13,11 +13,8 @@ const DEFAULT_SW: u32 = 1440;
 const DEFAULT_SH: u32 = 900;
 const DOCK_H:     u32 = 60;
 
-// Color palette — GitHub Dark theme-inspired
-const C_BG1:     u32 = 0x0D1117FF;
-const C_BG2:     u32 = 0x0F172AFF;
-const C_BG3:     u32 = 0x111827FF;
-const C_BG4:     u32 = 0x0D1117FF;
+// Color palette
+const C_BG2:     u32 = 0x0D1120FF;  // matches gradient midpoint for corner clipping
 const C_GRID_BG: u32 = 0x161B2299;
 const C_LABEL:   u32 = 0xE6EDF3FF;
 const C_DIM:     u32 = 0x8B949EFF;
@@ -105,13 +102,102 @@ fn icon_xy(cx: u32, cy: u32) -> (u32, u32) {
     (cx + (CELL_W - ICON_W) / 2, cy + 4)
 }
 
+/// Interpolate between dark navy colors as t goes 0..=255
+fn gradient_color(t: u8) -> u32 {
+    // Color stops: deep space (top) → midnight blue → deep indigo (bottom)
+    let (r, g, b) = match t {
+        0..=63   => lerp_rgb((0x06, 0x0A, 0x14), (0x0D, 0x11, 0x20), t, 63),
+        64..=127 => lerp_rgb((0x0D, 0x11, 0x20), (0x0E, 0x0F, 0x2A), t - 64, 63),
+        128..=191 => lerp_rgb((0x0E, 0x0F, 0x2A), (0x0A, 0x0C, 0x1E), t - 128, 63),
+        _        => lerp_rgb((0x0A, 0x0C, 0x1E), (0x06, 0x08, 0x12), t - 192, 63),
+    };
+    (r as u32) << 24 | (g as u32) << 16 | (b as u32) << 8 | 0xFF
+}
+
+fn lerp_rgb(from: (u8, u8, u8), to: (u8, u8, u8), t: u8, max: u8) -> (u8, u8, u8) {
+    let lerp = |a: u8, b: u8| -> u8 {
+        let a = a as i32;
+        let b = b as i32;
+        let t = t as i32;
+        let m = max as i32;
+        (a + (b - a) * t / m).clamp(0, 255) as u8
+    };
+    (lerp(from.0, to.0), lerp(from.1, to.1), lerp(from.2, to.2))
+}
+
+/// Blend an aurora tint color at given alpha over the gradient background
+fn aurora_tint(y: u32, content_h: u32, alpha: u8, ar: u8, ag: u8, ab: u8) -> u32 {
+    let t = (y * 255 / content_h.max(1)) as u8;
+    let (br, bg, bb) = match t {
+        0..=63   => lerp_rgb((0x06, 0x0A, 0x14), (0x0D, 0x11, 0x20), t, 63),
+        64..=127 => lerp_rgb((0x0D, 0x11, 0x20), (0x0E, 0x0F, 0x2A), t - 64, 63),
+        128..=191 => lerp_rgb((0x0E, 0x0F, 0x2A), (0x0A, 0x0C, 0x1E), t - 128, 63),
+        _        => lerp_rgb((0x0A, 0x0C, 0x1E), (0x06, 0x08, 0x12), t - 192, 63),
+    };
+    // Alpha-blend aurora over background: out = src*a + dst*(1-a)
+    let a = alpha as u32;
+    let blend = |src: u8, dst: u8| -> u8 {
+        let s = src as u32;
+        let d = dst as u32;
+        ((s * a + d * (255 - a)) / 255) as u8
+    };
+    let r = blend(ar, br);
+    let g = blend(ag, bg);
+    let b = blend(ab, bb);
+    (r as u32) << 24 | (g as u32) << 16 | (b as u32) << 8 | 0xFF
+}
+
 fn draw_wallpaper(sw: u32, sh: u32) {
     let content_h = sh.saturating_sub(DOCK_H);
-    let band = content_h / 4;
-    fill(0, 0,        sw, band,                     C_BG1);
-    fill(0, band,     sw, band,                     C_BG2);
-    fill(0, band * 2, sw, band,                     C_BG3);
-    fill(0, band * 3, sw, content_h - band * 3,     C_BG4);
+    let strips = 80u32;
+    let strip_h = (content_h + strips - 1) / strips; // ceiling division
+
+    for i in 0..strips {
+        let y = i * strip_h;
+        let h = strip_h.min(content_h.saturating_sub(y));
+        if h == 0 { break; }
+        let t = (i * 255 / strips) as u8;
+        let color = gradient_color(t);
+        fill(0, y, sw, h, color);
+    }
+
+    // Aurora band 1: teal glow across upper third
+    let a1_y = content_h / 6;
+    let a1_h = content_h / 8;
+    for i in 0..12u32 {
+        let ay = a1_y + i * (a1_h / 12);
+        let intensity = if i < 6 { i } else { 11 - i };
+        let alpha = (intensity * 18 + 10) as u8;
+        let color = aurora_tint(ay, content_h, alpha, 0x00, 0xC8, 0x80);
+        fill(0, ay, sw, a1_h / 12 + 1, color);
+    }
+
+    // Aurora band 2: purple glow in the middle
+    let a2_y = content_h * 2 / 5;
+    let a2_h = content_h / 10;
+    for i in 0..8u32 {
+        let ay = a2_y + i * (a2_h / 8);
+        let intensity = if i < 4 { i } else { 7 - i };
+        let alpha = (intensity * 14 + 8) as u8;
+        let color = aurora_tint(ay, content_h, alpha, 0x80, 0x00, 0xC0);
+        fill(0, ay, sw, a2_h / 8 + 1, color);
+    }
+
+    // Subtle star field — deterministic positions in upper 40% of wallpaper
+    let stars: &[(u32, u32)] = &[
+        (120, 30), (340, 55), (680, 20), (890, 70), (1100, 40), (1300, 25),
+        (200, 100), (450, 80), (760, 110), (980, 60), (1200, 90), (60, 140),
+        (570, 130), (820, 150), (1050, 120), (1380, 80), (300, 180), (640, 170),
+        (1150, 160), (400, 200), (750, 190), (1000, 210), (180, 230), (520, 220),
+        (870, 240), (1240, 200), (80, 260), (420, 250), (710, 280), (960, 260),
+        (1320, 270), (240, 300), (590, 290), (830, 310), (1080, 290), (1410, 300),
+        (150, 320), (480, 340), (770, 330), (1200, 320),
+    ];
+    for &(sx, sy) in stars {
+        if sx < sw && sy < content_h {
+            fill(sx, sy, 1, 1, 0xCCDDEEFF);
+        }
+    }
 }
 
 fn section_label_y(row: u32) -> u32 {

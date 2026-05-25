@@ -67,6 +67,16 @@ if [ ! -f "$SCREENSHOT" ] || [ ! -s "$SCREENSHOT" ]; then
     exit 1
 fi
 
+mkdir -p out/screenshots
+cp "$SCREENSHOT" out/screenshots/latest.ppm
+echo "Screenshot saved: out/screenshots/latest.ppm"
+
+python3 base/scripts/check-screenshot.py out/screenshots/latest.ppm || {
+    echo "E2E-GUI: FAIL: screenshot checks failed"
+    exit 1
+}
+
+
 # Count distinct RGB colors in the PPM (skip header lines).
 COLORS=$(python3 - "$SCREENSHOT" <<'PYEOF'
 import sys, struct
