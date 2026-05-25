@@ -1,0 +1,19 @@
+[package]
+name    = "compute-bench"
+version = "0.1.0"
+edition = "2021"
+
+# T050: Deterministic SHA-256 hash-chain benchmark.
+#
+# Intended target: wasm64-wasip2 for 64-bit linear-memory HPC workloads.
+# CI target:       wasm32-wasip2 (wasm64 toolchain not yet available in CI).
+#
+# The wasm64 toolchain (wasm64-wasip2) requires a nightly Rust build and is
+# not yet in stable.  Until it ships, this crate compiles as wasm32 for CI.
+# The logic is target-width-agnostic — only pointer size changes.
+
+[[bin]]
+name = "compute-bench"
+path = "src/main.rs"
+
+[dependencies]
