@@ -14,7 +14,8 @@ use crate::{
     AppRegistry, AppStatus, FocusedApp, Inbox,
     BOOT_CONFIG_PATH, LOG_DIR, LOG_TAIL_LINES,
 };
-use crate::{send_reply, spawn_app, launch_app_threads};
+use crate::send_reply;
+use crate::app_threads::{spawn_app, launch_app_threads};
 use supervisor::lifecycle::format_ps_line;
 use supervisor::logging::Subsystem;
 use supervisor::manifest::{AppManifest, BootConfig, BootEntry};

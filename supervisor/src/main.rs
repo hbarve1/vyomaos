@@ -45,22 +45,25 @@ use std::{
     time::Instant,
 };
 
-use supervisor::logging::{format_log, Level, Subsystem};
+use supervisor::logging::Subsystem;
 use supervisor::manifest::{BootConfig, BootEntry};
 
+#[macro_export]
 macro_rules! log_info {
     ($sub:expr, $app:expr, $($arg:tt)*) => {
-        eprintln!("{}", format_log(Level::Info,  $sub, $app, &format!($($arg)*)))
+        eprintln!("{}", supervisor::logging::format_log(supervisor::logging::Level::Info,  $sub, $app, &format!($($arg)*)))
     };
 }
+#[macro_export]
 macro_rules! log_warn {
     ($sub:expr, $app:expr, $($arg:tt)*) => {
-        eprintln!("{}", format_log(Level::Warn,  $sub, $app, &format!($($arg)*)))
+        eprintln!("{}", supervisor::logging::format_log(supervisor::logging::Level::Warn,  $sub, $app, &format!($($arg)*)))
     };
 }
+#[macro_export]
 macro_rules! log_error {
     ($sub:expr, $app:expr, $($arg:tt)*) => {
-        eprintln!("{}", format_log(Level::Error, $sub, $app, &format!($($arg)*)))
+        eprintln!("{}", supervisor::logging::format_log(supervisor::logging::Level::Error, $sub, $app, &format!($($arg)*)))
     };
 }
 
@@ -325,7 +328,7 @@ fn main() {
         let focused_m  = Arc::clone(&focused);
         thread::Builder::new()
             .name("mouse-input".into())
-            .spawn(move || mouse_input::run_mouse_input(inbox_m, registry_m, focused_m))
+            .spawn(move || mouse_input::run_mouse_input(inbox_m, focused_m, registry_m))
             .expect("spawn mouse-input thread");
     }
 
