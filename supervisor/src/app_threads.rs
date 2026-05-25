@@ -1,0 +1,398 @@
+// Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
+// See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
+
+//! App lifecycle helpers: spawn, IO threads, waiter thread.
+
+use std::{
+    collections::VecDeque,
+    fs,
+    io::{BufRead, BufReader, Write},
+    path::Path,
+    process::{Child, ChildStdin, ChildStdout, Stdio},
+    sync::{mpsc, Arc, Mutex},
+    thread,
+    time::Instant,
+};
+
+use sha2::{Digest, Sha256};
+
+use crate::{
+    log_error, log_info, log_warn,
+    AppRegistry, AppState, AppStatus, FocusedApp, Inbox, SpawnedApp,
+    LAST_SENDER, LOG_BUF_SIZE, LOG_DIR,
+};
+use crate::{route_or_print, watchdog_next_backoff};
+use supervisor::logging::Subsystem;
+use supervisor::manifest::BootEntry;
+
+// ── apply_tiling_layout ───────────────────────────────────────────────────────
+
+/// Recompute tiled regions for all running display apps and write them into
+/// the registry.  Called on every display-app spawn or exit.
+pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
+    use supervisor::windows::compute_tiling_with_hints;
+    use crate::chrome::MENUBAR_H;
+
+    let apps: Vec<(String, u32, u32)> = {
+        let reg = registry.lock().unwrap();
+        let mut v: Vec<(String, u32, u32)> = reg.iter()
+            .filter_map(|(name, st)| {
+                let st = st.lock().unwrap();
+                if st.has_display && matches!(st.status, AppStatus::Running) {
+                    Some((name.clone(), st.min_size.0, st.min_size.1))
+                } else { None }
+            })
+            .collect();
+        v.sort_by(|a, b| a.0.cmp(&b.0));
+        v
+    };
+    if apps.is_empty() { return; }
+
+    #[cfg(target_os = "linux")]
+    let (sw, sh) = crate::display::screen_size().unwrap_or((1440, 900));
+    #[cfg(not(target_os = "linux"))]
+    let (sw, sh) = (1440u32, 900u32);
+
+    let min_sizes: Vec<(u32, u32)> = apps.iter().map(|(_, mw, mh)| (*mw, *mh)).collect();
+    let usable_h = sh.saturating_sub(MENUBAR_H);
+    let regions: Vec<(u32, u32, u32, u32)> = compute_tiling_with_hints(apps.len(), sw, usable_h, &min_sizes)
+        .into_iter().map(|(x, y, w, h)| (x, y + MENUBAR_H, w, h)).collect();
+
+    {
+        let reg = registry.lock().unwrap();
+        for (i, (name, _, _)) in apps.iter().enumerate() {
+            if let Some(st) = reg.get(name) {
+                if let Some(&region) = regions.get(i) {
+                    st.lock().unwrap().win_region = Some(region);
+                    log_info!(Subsystem::Display, Some(name.as_str()),
+                        "tiling: assigned ({},{},{},{})", region.0, region.1, region.2, region.3);
+                }
+            }
+        }
+    }
+    log_info!(Subsystem::Display, None, "layout reflow: {} display app(s) tiled", apps.len());
+}
+
+// ── spawn_io_threads ──────────────────────────────────────────────────────────
+
+pub fn spawn_io_threads(
+    name:         &str,
+    child_stdin:  ChildStdin,
+    child_stdout: ChildStdout,
+    msg_rx:       mpsc::Receiver<String>,
+    has_display:  bool,
+    inbox:        &Inbox,
+    focused:      &FocusedApp,
+    app_registry: &AppRegistry,
+) {
+    thread::Builder::new()
+        .name(format!("{name}-writer"))
+        .spawn(move || {
+            let mut stdin = child_stdin;
+            while let Ok(msg) = msg_rx.recv() {
+                if writeln!(stdin, "{msg}").is_err() { break; }
+            }
+        })
+        .expect("spawn writer thread");
+
+    let inbox_r    = Arc::clone(inbox);
+    let focused_r  = Arc::clone(focused);
+    let registry_r = Arc::clone(app_registry);
+    let name_r     = name.to_string();
+    let last_output_r: Arc<Mutex<Instant>> = {
+        let reg = app_registry.lock().unwrap();
+        reg.get(name)
+            .map(|st| Arc::clone(&st.lock().unwrap().last_output))
+            .unwrap_or_else(|| Arc::new(Mutex::new(Instant::now())))
+    };
+    thread::Builder::new()
+        .name(format!("{name}-reader"))
+        .spawn(move || {
+            *last_output_r.lock().unwrap() = Instant::now();
+            let _ = fs::create_dir_all(LOG_DIR);
+            let log_path = format!("{LOG_DIR}/{name_r}.log");
+            let mut log_file = std::fs::OpenOptions::new()
+                .create(true).append(true)
+                .open(&log_path).ok();
+
+            for line in BufReader::new(child_stdout).lines() {
+                let line = match line { Ok(l) => l, Err(_) => break };
+                *last_output_r.lock().unwrap() = Instant::now();
+                if let Some(ref mut f) = log_file { let _ = writeln!(f, "{line}"); }
+                {
+                    let reg = registry_r.lock().unwrap();
+                    if let Some(st) = reg.get(&name_r) {
+                        let mut st = st.lock().unwrap();
+                        st.log_buf.push_back(line.clone());
+                        if st.log_buf.len() > LOG_BUF_SIZE { st.log_buf.pop_front(); }
+                    }
+                }
+                let win_region = if has_display {
+                    registry_r.lock().unwrap()
+                        .get(&name_r)
+                        .and_then(|st| st.lock().unwrap().win_region)
+                } else { None };
+                route_or_print(&line, &name_r, &inbox_r, has_display, win_region, &focused_r, &registry_r);
+            }
+        })
+        .expect("spawn reader thread");
+}
+
+// ── launch_app_threads ────────────────────────────────────────────────────────
+
+pub fn launch_app_threads(
+    app:          SpawnedApp,
+    inbox:        &Inbox,
+    focused:      &FocusedApp,
+    app_registry: &AppRegistry,
+) -> thread::JoinHandle<()> {
+    let SpawnedApp { entry, name, child, msg_rx, child_stdin, child_stdout, has_display, is_shell: _ } = app;
+
+    if has_display {
+        apply_tiling_layout(app_registry);
+        #[cfg(target_os = "linux")]
+        crate::chrome::repaint_all_borders(app_registry, focused);
+    }
+
+    spawn_io_threads(&name, child_stdin, child_stdout, msg_rx, has_display, inbox, focused, app_registry);
+
+    #[cfg(target_os = "linux")]
+    if has_display {
+        if let Some((w, h)) = crate::display::screen_size() {
+            if let Some(tx) = inbox.lock().unwrap().get(&name) {
+                let _ = tx.send(format!("VYOMA_SYSTEM:screen:{w},{h}"));
+            }
+        }
+    }
+
+    if has_display {
+        crate::chrome::z_order_push_front(&name);
+    }
+
+    let registry_w = Arc::clone(app_registry);
+    let inbox_w    = Arc::clone(inbox);
+    let focused_w  = Arc::clone(focused);
+
+    thread::Builder::new()
+        .name(format!("{name}-waiter"))
+        .spawn(move || wait_app(entry, name, child, registry_w, inbox_w, focused_w))
+        .expect("spawn waiter thread")
+}
+
+// ── spawn_app ─────────────────────────────────────────────────────────────────
+
+pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Option<SpawnedApp> {
+    let manifest = match supervisor::manifest::parse_manifest(Path::new(&entry.manifest)) {
+        Ok(m) => m,
+        Err(e) => { log_warn!(Subsystem::Manifest, None, "{e}"); return None; }
+    };
+
+    let name = manifest.app.name.clone();
+    let caps = &manifest.capabilities;
+    let net_port = caps.network_port.unwrap_or(8080);
+
+    {
+        let mut wired:   Vec<&str> = Vec::new();
+        let mut skipped: Vec<&str> = Vec::new();
+        if caps.stdio      { wired.push("stdio")      } else { skipped.push("stdio") }
+        if caps.filesystem { wired.push("filesystem")  } else { skipped.push("filesystem") }
+        if caps.network    { wired.push("network")     } else { skipped.push("network") }
+        if caps.display    { wired.push("display")     } else { skipped.push("display") }
+        if caps.shell      { wired.push("shell")       } else { skipped.push("shell") }
+        if caps.mouse      { wired.push("mouse")       } else { skipped.push("mouse") }
+        let net_note = if caps.network { format!(" (port={net_port})") } else { String::new() };
+        log_info!(Subsystem::Capability, Some(name.as_str()),
+            "wired: {}{net_note}; skipped: {}", wired.join(" "), skipped.join(" "));
+    }
+
+    let (tx, msg_rx) = mpsc::channel::<String>();
+    inbox.lock().unwrap().insert(name.clone(), tx);
+
+    let wasm_path = Path::new(&entry.manifest)
+        .parent().unwrap_or(Path::new("/apps"))
+        .join(&manifest.app.wasm);
+
+    if let Some(expected) = &manifest.app.wasm_sha256 {
+        match fs::read(&wasm_path) {
+            Ok(bytes) => {
+                let actual = format!("{:x}", Sha256::digest(&bytes));
+                if actual != expected.to_lowercase() {
+                    log_error!(Subsystem::Capability, Some(name.as_str()),
+                        "SECURITY: {name} rejected — SHA-256 mismatch\n  expected {expected}\n  actual   {actual}");
+                    inbox.lock().unwrap().remove(&name);
+                    return None;
+                }
+                log_info!(Subsystem::Capability, Some(name.as_str()), "[security] {name} wasm_sha256 verified OK");
+            }
+            Err(e) => log_warn!(Subsystem::Capability, Some(name.as_str()), "cannot read wasm for hash check: {e}"),
+        }
+    }
+
+    log_info!(Subsystem::Lifecycle, Some(name.as_str()),
+        "spawning {} v{} (restart={})", name, manifest.app.version, entry.restart);
+
+    let mut cmd = std::process::Command::new("/usr/bin/wasmtime");
+    cmd.arg("run");
+    if caps.filesystem { cmd.args(["--dir", "/data::/data"]); }
+    if caps.network    { cmd.args(["-S", "inherit-network"]); }
+    cmd.arg("--").arg(&wasm_path);
+    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit());
+    cmd.env("TOKIO_WORKER_THREADS", "1");
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::process::CommandExt;
+        let filter = crate::seccomp::build();
+        unsafe { cmd.pre_exec(move || crate::seccomp::apply(&filter)); }
+    }
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            log_error!(Subsystem::Lifecycle, Some(name.as_str()), "failed to spawn wasmtime for {name}: {e}");
+            inbox.lock().unwrap().remove(&name);
+            return None;
+        }
+    };
+
+    let child_pid    = child.id();
+    let child_stdin  = child.stdin.take().expect("stdin pipe");
+    let child_stdout = child.stdout.take().expect("stdout pipe");
+    let min_size = manifest.window.as_ref()
+        .map(|wr| (wr.width.unwrap_or(0), wr.height.unwrap_or(0)))
+        .unwrap_or((0, 0));
+
+    let state = Arc::new(Mutex::new(AppState {
+        entry:            entry.clone(),
+        status:           AppStatus::Running,
+        start_time:       Instant::now(),
+        restart_count:    0,
+        log_buf:          VecDeque::new(),
+        child_pid:        Some(child_pid),
+        watchdog_secs:    caps.watchdog_secs,
+        last_output:      Arc::new(Mutex::new(Instant::now())),
+        watchdog_backoff: Arc::new(Mutex::new(0u64)),
+        has_mouse:        caps.mouse,
+        has_display:      caps.display,
+        win_region:       None,
+        min_size,
+        draw_ticks:       0,
+        last_cpu_reset:   Instant::now(),
+    }));
+    app_registry.lock().unwrap().insert(name.clone(), state);
+
+    Some(SpawnedApp { entry: entry.clone(), name, child, msg_rx, child_stdin, child_stdout,
+                      has_display: caps.display, is_shell: caps.shell })
+}
+
+// ── wait_app ──────────────────────────────────────────────────────────────────
+
+pub fn wait_app(
+    entry:        BootEntry,
+    name:         String,
+    mut child:    Child,
+    app_registry: AppRegistry,
+    inbox:        Inbox,
+    focused:      FocusedApp,
+) {
+    let mut restart_count: u32 = 0;
+    loop {
+        let exit_code = match child.wait() {
+            Ok(s) => { let c = s.code().unwrap_or(-1); log_info!(Subsystem::Lifecycle, Some(name.as_str()), "{name} exited (code {c})"); c }
+            Err(e) => { log_error!(Subsystem::Lifecycle, Some(name.as_str()), "wait failed for {name}: {e}"); -1 }
+        };
+
+        let (had_display, old_win_region) = {
+            let reg = app_registry.lock().unwrap();
+            if let Some(st) = reg.get(&name) {
+                let mut st = st.lock().unwrap();
+                st.status = AppStatus::Stopped(exit_code);
+                st.child_pid = None;
+                (st.has_display, st.win_region)
+            } else { (false, None) }
+        };
+
+        #[cfg(target_os = "linux")]
+        if let (true, Some((wx, wy, ww, wh))) = (had_display, old_win_region) {
+            if let Some(fb_lock) = crate::display::get() {
+                let mut fb = fb_lock.lock().unwrap();
+                fb.fill_rect(wx, wy, ww, wh, 0x0D1117FF);
+                fb.flush();
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = old_win_region;
+
+        crate::toast::auto_transfer_focus(&name, &app_registry, &focused);
+
+        if had_display {
+            apply_tiling_layout(&app_registry);
+            #[cfg(target_os = "linux")]
+            crate::chrome::repaint_all_borders(&app_registry, &focused);
+        }
+
+        let should_restart = matches!(entry.restart.as_str(), "always" | "on-failure")
+            && (entry.restart == "always" || exit_code != 0);
+
+        if !should_restart {
+            if exit_code != 0 { crate::toast::show_crash_toast(&name, exit_code); }
+            break;
+        }
+
+        log_info!(Subsystem::Lifecycle, Some(name.as_str()),
+            "restarting {name} (policy={}, count={})", entry.restart, restart_count + 1);
+
+        match spawn_app(&entry, &inbox, &app_registry) {
+            Some(app) => {
+                restart_count += 1;
+                { let reg = app_registry.lock().unwrap();
+                  if let Some(st) = reg.get(&name) { st.lock().unwrap().restart_count = restart_count; } }
+                if app.has_display {
+                    apply_tiling_layout(&app_registry);
+                    #[cfg(target_os = "linux")]
+                    crate::chrome::repaint_all_borders(&app_registry, &focused);
+                }
+                let SpawnedApp { child: new_child, child_stdin, child_stdout, msg_rx, has_display, .. } = app;
+                spawn_io_threads(&name, child_stdin, child_stdout, msg_rx, has_display, &inbox, &focused, &app_registry);
+                child = new_child;
+            }
+            None => { log_error!(Subsystem::Lifecycle, Some(name.as_str()), "failed to restart {name}, giving up"); break; }
+        }
+    }
+
+    // Remove from registry so Z_ORDER cleanup is consistent
+    let _ = LAST_SENDER.get().and_then(|m| m.lock().ok()).map(|mut m| m.remove(&name));
+}
+
+// ── run_watchdog ──────────────────────────────────────────────────────────────
+
+/// P19: watchdog loop — kills any app that has been silent longer than its
+/// configured `watchdog_secs`.  Runs forever in its own named thread.
+pub fn run_watchdog(registry: AppRegistry) {
+    loop {
+        thread::sleep(std::time::Duration::from_secs(1));
+        let reg = registry.lock().unwrap();
+        for (name, state_arc) in reg.iter() {
+            let st = state_arc.lock().unwrap();
+            let wsecs = st.watchdog_secs;
+            if wsecs == 0 { continue; }
+            {
+                let mut backoff = st.watchdog_backoff.lock().unwrap();
+                if *backoff > 0 { *backoff -= 1; continue; }
+            }
+            let elapsed = st.last_output.lock().unwrap().elapsed();
+            if elapsed.as_secs() >= wsecs as u64 {
+                if let Some(pid) = st.child_pid {
+                    log_warn!(Subsystem::Lifecycle, Some(name.as_str()),
+                        "silent for {}s (limit={wsecs}s) — killing pid {pid}", elapsed.as_secs());
+                    crate::toast::show_crash_toast(name, -1);
+                    #[cfg(target_os = "linux")]
+                    unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+                }
+                let restarts = st.restart_count;
+                *st.watchdog_backoff.lock().unwrap() = watchdog_next_backoff(wsecs, restarts);
+                *st.last_output.lock().unwrap() = Instant::now();
+            }
+        }
+    }
+}
