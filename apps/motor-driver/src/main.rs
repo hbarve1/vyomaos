@@ -16,7 +16,7 @@ fn main() {
         // HAL command format: VYOMA_HAL:gpio:write:<pin>,<level>
         println!("VYOMA_HAL:gpio:write:5,{}", if level { 1 } else { 0 });
         println!("VYOMA_HAL:gpio:write:6,{}", if level { 0 } else { 1 });
-        println!("motor-driver: tick {tick} — pin5={} pin6={}", level as u8, !level as u8);
+        println!("motor-driver: tick {tick} — pin5={} pin6={}", level as u8, (!level) as u8);
         tick = tick.wrapping_add(1);
         thread::sleep(Duration::from_secs(1));
     }
