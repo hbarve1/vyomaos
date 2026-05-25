@@ -89,7 +89,8 @@ KVM ?=
 
 # ── phony declarations ────────────────────────────────────────────────────────
 .PHONY: image kernel supervisor apps rootfs disk build run run-gui run-net run-gui-net run-net-mgmt shell clean clean-image data \
-        unit-test smoke test check-manifests check-profiles test-all-platforms
+        unit-test smoke test check-manifests check-profiles test-all-platforms \
+        test-unit-apps test-gui-protocol test-e2e-gui test-gui
 
 # ── Docker image ──────────────────────────────────────────────────────────────
 image: $(DOCKERFILE)
@@ -319,6 +320,27 @@ shell: | image
 	  -w /work \
 	  $(IMAGE):$(IMAGE_TAG) \
 	  /bin/bash
+
+# ── test-unit-apps: run unit tests for display apps (desktop, dock) ──────────
+test-unit-apps: | image
+	$(DOCKER_RUN) env RUSTFLAGS="$(RUSTFLAGS)" \
+	  cargo test --manifest-path apps/desktop/Cargo.toml
+	$(DOCKER_RUN) env RUSTFLAGS="$(RUSTFLAGS)" \
+	  cargo test --manifest-path apps/dock/Cargo.toml
+
+# ── test-gui-protocol: WASM app protocol output tests ────────────────────────
+# Requires 'make apps' first to build WASM binaries.
+test-gui-protocol: apps | image
+	$(DOCKER_RUN) bash scripts/test-gui-protocol.sh
+
+# ── test-e2e-gui: QEMU screendump visual test (requires make build) ───────────
+# Runs on the HOST (not in Docker). Requires socat + graphical qemu build.
+test-e2e-gui: build
+	bash base/scripts/test-e2e-gui.sh
+
+# ── test-gui: all GUI tests (unit + protocol) — does not require QEMU ────────
+test-gui: test-unit-apps test-gui-protocol
+	@echo "GUI-TESTS: OK"
 
 # ── clean ─────────────────────────────────────────────────────────────────────
 clean:
