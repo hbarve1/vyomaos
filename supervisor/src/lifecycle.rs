@@ -11,3 +11,66 @@ pub fn should_restart(policy: &str) -> bool {
 pub fn needs_crash_notification(will_restart: bool, exit_code: i32) -> bool {
     !will_restart && exit_code != 0
 }
+
+/// Returns true if the exit code is the watchdog-kill sentinel (-1).
+///
+/// The supervisor uses -1 as a distinguished sentinel to indicate an app was
+/// killed by the watchdog (silent for too long), as opposed to a real exit code.
+pub fn is_watchdog_kill(exit_code: i32) -> bool {
+    exit_code == -1
+}
+
+/// Format a single `ps` output line for an app.
+///
+/// When `restarts` is 0 the `restarts=N` field is omitted to keep the output
+/// clean for apps that have never been restarted.
+pub fn format_ps_line(name: &str, pid: u32, state: &str, restarts: u32) -> String {
+    if restarts == 0 {
+        format!("{:<20} pid={:<6} state={}", name, pid, state)
+    } else {
+        format!("{:<20} pid={:<6} state={} restarts={}", name, pid, state, restarts)
+    }
+}
+
+/// Returns CPU usage as a percentage string, e.g. "12%" or "<1%".
+/// ticks: number of busy ticks observed; elapsed_ms: total elapsed milliseconds.
+/// Assumes each tick represents 1ms of work (supervisor loop tick).
+pub fn format_cpu(ticks: u64, elapsed_ms: u64) -> String {
+    if elapsed_ms == 0 {
+        return "0%".to_string();
+    }
+    let pct = (ticks * 100) / elapsed_ms;
+    if pct == 0 {
+        "<1%".to_string()
+    } else {
+        format!("{pct}%")
+    }
+}
+
+/// Format a duration given in whole seconds as a compact human-readable string.
+///
+/// Examples:
+/// - `5`    → `"5s"`
+/// - `60`   → `"1m"`
+/// - `150`  → `"2m30s"`
+/// - `3600` → `"1h"`
+/// - `3900` → `"1h5m"`
+pub fn format_uptime(secs: u64) -> String {
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        let m = secs / 60;
+        let s = secs % 60;
+        if s == 0 { format!("{m}m") } else { format!("{m}m{s}s") }
+    } else {
+        let h = secs / 3600;
+        let m = (secs % 3600) / 60;
+        if m == 0 { format!("{h}h") } else { format!("{h}h{m}m") }
+    }
+}
+
+/// Return a human-readable system uptime string prefixed with "up ".
+/// This is a pure function suitable for use in IPC reply formatting.
+pub fn format_system_uptime(secs: u64) -> String {
+    format!("up {}", format_uptime(secs))
+}

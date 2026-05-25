@@ -1,5 +1,87 @@
 // Lifecycle unit tests — TDD RED until should_restart is implemented.
 
+// ── is_watchdog_kill ──────────────────────────────────────────────────────────
+
+#[test]
+fn test_watchdog_sentinel_minus_one_is_kill() {
+    assert!(
+        supervisor::lifecycle::is_watchdog_kill(-1),
+        "exit code -1 is the watchdog-kill sentinel"
+    );
+}
+
+#[test]
+fn test_zero_exit_code_is_not_watchdog_kill() {
+    assert!(
+        !supervisor::lifecycle::is_watchdog_kill(0),
+        "exit code 0 (clean exit) must not be treated as a watchdog kill"
+    );
+}
+
+#[test]
+fn test_positive_exit_code_is_not_watchdog_kill() {
+    assert!(
+        !supervisor::lifecycle::is_watchdog_kill(1),
+        "non-zero positive exit code must not be treated as a watchdog kill"
+    );
+}
+
+#[test]
+fn test_negative_non_sentinel_is_not_watchdog_kill() {
+    // Only -1 is the sentinel; other negative values are not watchdog kills.
+    assert!(
+        !supervisor::lifecycle::is_watchdog_kill(-2),
+        "exit code -2 must not match the watchdog sentinel"
+    );
+}
+
+// ── format_ps_line tests ──────────────────────────────────────────────────────
+
+#[test]
+fn test_format_ps_line_zero_restarts_omits_field() {
+    let line = supervisor::lifecycle::format_ps_line("my-app", 1234, "running", 0);
+    assert!(
+        !line.contains("restarts"),
+        "restarts field should be omitted when count is 0, got: {line}"
+    );
+    assert!(line.contains("pid=1234"), "should include pid");
+    assert!(line.contains("state=running"), "should include state");
+}
+
+#[test]
+fn test_format_ps_line_nonzero_restarts_includes_field() {
+    let line = supervisor::lifecycle::format_ps_line("my-app", 5678, "running", 3);
+    assert!(
+        line.contains("restarts=3"),
+        "restarts=N should appear when count > 0, got: {line}"
+    );
+}
+
+#[test]
+fn test_format_ps_line_one_restart_shows_count() {
+    let line = supervisor::lifecycle::format_ps_line("ticker", 42, "running", 1);
+    assert!(
+        line.contains("restarts=1"),
+        "restarts=1 should appear after a single restart, got: {line}"
+    );
+}
+
+#[test]
+fn test_format_ps_line_stopped_state() {
+    let line = supervisor::lifecycle::format_ps_line("worker", 0, "stopped(-1)", 7);
+    assert!(line.contains("state=stopped(-1)"), "should include stopped state");
+    assert!(line.contains("restarts=7"), "should include restart count");
+}
+
+#[test]
+fn test_format_ps_line_name_padded() {
+    let line = supervisor::lifecycle::format_ps_line("hi", 1, "running", 0);
+    // Name field is padded to 20 chars; line should start with "hi" followed by spaces
+    assert!(line.starts_with("hi"), "line should start with the app name");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 // (1) restart_policy "never" → should not restart
 #[test]
 fn test_never_policy_does_not_restart() {
@@ -107,4 +189,76 @@ fn test_restarting_clean_exit_does_not_trigger_notification() {
         !supervisor::lifecycle::needs_crash_notification(true, 0),
         "restarting app with clean exit must not show a crash notification"
     );
+}
+
+// ── format_cpu tests ──────────────────────────────────────────────────────────
+
+#[test]
+fn format_cpu_zero_elapsed() {
+    assert_eq!(supervisor::lifecycle::format_cpu(10, 0), "0%");
+}
+
+#[test]
+fn format_cpu_under_one_pct() {
+    // 0 busy ticks in 1000ms → <1%
+    assert_eq!(supervisor::lifecycle::format_cpu(0, 1000), "<1%");
+}
+
+#[test]
+fn format_cpu_fifty_pct() {
+    assert_eq!(supervisor::lifecycle::format_cpu(500, 1000), "50%");
+}
+
+#[test]
+fn format_cpu_hundred_pct() {
+    assert_eq!(supervisor::lifecycle::format_cpu(1000, 1000), "100%");
+}
+
+// ── format_uptime unit tests ──────────────────────────────────────────────────
+
+#[test]
+fn format_uptime_seconds() {
+    assert_eq!(supervisor::lifecycle::format_uptime(5), "5s");
+}
+
+#[test]
+fn format_uptime_exact_minute() {
+    assert_eq!(supervisor::lifecycle::format_uptime(60), "1m");
+}
+
+#[test]
+fn format_uptime_minutes_secs() {
+    assert_eq!(supervisor::lifecycle::format_uptime(150), "2m30s");
+}
+
+#[test]
+fn format_uptime_hours() {
+    assert_eq!(supervisor::lifecycle::format_uptime(3600), "1h");
+}
+
+#[test]
+fn format_uptime_hours_minutes() {
+    assert_eq!(supervisor::lifecycle::format_uptime(3900), "1h5m");
+}
+
+// ── format_system_uptime ──────────────────────────────────────────────────────
+
+#[test]
+fn format_system_uptime_seconds() {
+    assert_eq!(supervisor::lifecycle::format_system_uptime(5), "up 5s");
+}
+
+#[test]
+fn format_system_uptime_minutes() {
+    assert_eq!(supervisor::lifecycle::format_system_uptime(90), "up 1m30s");
+}
+
+#[test]
+fn format_system_uptime_hours() {
+    assert_eq!(supervisor::lifecycle::format_system_uptime(3600), "up 1h");
+}
+
+#[test]
+fn format_system_uptime_prefix() {
+    assert!(supervisor::lifecycle::format_system_uptime(0).starts_with("up "));
 }

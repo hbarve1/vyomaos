@@ -36,6 +36,7 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
+use supervisor::lifecycle::format_ps_line;
 use supervisor::logging::{format_log, Level, Subsystem};
 use supervisor::manifest::{AppManifest, BootConfig, BootEntry};
 
@@ -174,6 +175,7 @@ enum InputAction {
     AltShiftTab,  // Alt+Shift+Tab — cycle focus backward
     AltW,         // Alt+W        — close focused window
     AltF,         // Alt+F        — maximize focused window (stub)
+    AltQuestion,  // Alt+?        — show keyboard shortcut overlay toast
     PassThrough,  // Everything else: forward to the focused app as-is
 }
 
@@ -184,14 +186,55 @@ enum InputAction {
 ///   `[0x1B, 0x5B, 0x5A]`  → AltShiftTab   (ESC + [ + Z  i.e. \x1b[Z)
 ///   `[0x1B, 0x77]`        → AltW          (ESC + 'w')
 ///   `[0x1B, 0x66]`        → AltF          (ESC + 'f')
+///   `[0x1B, 0x3F]`        → AltQuestion   (ESC + '?')
 ///   anything else         → PassThrough
 fn classify_input_sequence(bytes: &[u8]) -> InputAction {
     match bytes {
-        [0x1B, 0x09]             => InputAction::AltTab,
-        [0x1B, 0x5B, 0x5A]      => InputAction::AltShiftTab,
-        [0x1B, 0x77]             => InputAction::AltW,
-        [0x1B, 0x66]             => InputAction::AltF,
-        _                        => InputAction::PassThrough,
+        [0x1B, 0x09]        => InputAction::AltTab,
+        [0x1B, 0x5B, 0x5A] => InputAction::AltShiftTab,
+        [0x1B, 0x77]        => InputAction::AltW,
+        [0x1B, 0x66]        => InputAction::AltF,
+        [0x1B, 0x3F]        => InputAction::AltQuestion,
+        _                   => InputAction::PassThrough,
+    }
+}
+
+/// Return the static help text listing all window-management keyboard shortcuts.
+///
+/// Pure function — no side effects, no allocation.
+pub fn shortcut_help_text() -> &'static str {
+    "Alt+Tab: next window  Alt+W: close  Alt+F: snap  Alt+?: help"
+}
+
+/// Draw a 3-second shortcut-help toast in the bottom-right corner of the screen.
+///
+/// Renders a filled panel with a border and the shortcut help text, then spawns
+/// a background thread to clear the region after 3 seconds.
+///
+/// Only compiled on Linux (where `/dev/fb0` is available).
+#[cfg(target_os = "linux")]
+fn show_shortcut_overlay() {
+    const OW: u32 = 500;
+    const OH: u32 = 60;
+    if let Some((screen_w, screen_h)) = display::screen_size() {
+        let ox: u32 = screen_w.saturating_sub(OW + 20);
+        let oy: u32 = screen_h.saturating_sub(OH + 20);
+        if let Some(fb_lock) = display::get() {
+            let mut fb = fb_lock.lock().unwrap();
+            fb.fill_rect(ox, oy, OW, OH, 0x21262DFF);
+            fb.rect_border(ox, oy, OW, OH, 0x58A6FFFF);
+            fb.draw_text(ox + 8, oy + 8,  "Keyboard Shortcuts", 0xFFFFFFFF, font::FontSize::Medium);
+            fb.draw_text(ox + 8, oy + 28, shortcut_help_text(),  0x8B949EFF, font::FontSize::Medium);
+            fb.flush();
+        }
+        thread::spawn(move || {
+            thread::sleep(std::time::Duration::from_secs(3));
+            if let Some(fb_lock) = display::get() {
+                let mut fb = fb_lock.lock().unwrap();
+                fb.fill_rect(ox, oy, OW, OH, 0x0D1117FF);
+                fb.flush();
+            }
+        });
     }
 }
 
@@ -220,6 +263,8 @@ struct AppState {
     has_display: bool,
     win_region:  Option<(u32, u32, u32, u32)>,  // supervisor-assigned; updated by apply_tiling_layout
     min_size:    (u32, u32),                     // (min_w, min_h) hint from manifest [window]
+    draw_ticks:      u64,           // incremented each time the app issues a VYOMA_DRAW command
+    last_cpu_reset:  std::time::Instant, // when draw_ticks was last zeroed
 }
 
 type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
@@ -232,6 +277,10 @@ type FocusedApp = Arc<Mutex<Option<String>>>;
 // ── P33: Global Z-order stack (index 0 = topmost / frontmost window) ─────────
 
 static Z_ORDER: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+
+// ── IPC reply routing: maps recipient_app → last sender_app ──────────────────
+
+static LAST_SENDER: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 // ── P47: Raw TCP connection pool ──────────────────────────────────────────────
 
@@ -248,6 +297,13 @@ static CLIPBOARD: OnceLock<Mutex<String>> = OnceLock::new();
 
 static FONT_SIZE: OnceLock<Mutex<String>> = OnceLock::new();
 
+// Drag-start state: Some((x, y)) while the left button is held, None otherwise.
+// Used by the drag-delta logging stub (P031).
+static MOUSE_DRAG_START: OnceLock<Mutex<Option<(i32, i32)>>> = OnceLock::new();
+fn mouse_drag_start() -> &'static Mutex<Option<(i32, i32)>> {
+    MOUSE_DRAG_START.get_or_init(|| Mutex::new(None))
+}
+
 // Boot timestamp — used to render the elapsed clock in the menu bar.
 static BOOT_INSTANT: OnceLock<std::time::Instant> = OnceLock::new();
 
@@ -259,16 +315,37 @@ static LAST_MENUBAR_DRAW: OnceLock<Mutex<(std::time::Instant, Option<String>)>> 
 // last flush.  Avoids repainting the title bar for windows with no new content.
 static APP_DIRTY: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
 
+// Currently hovered app name (title bar hover, no button press).
+// Updated on every mouse-motion event; None when cursor is not over any title bar.
+static HOVERED_APP: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+// Per-app log level filter — set via @supervisor: loglevel <name> <level>.
+static APP_LOG_LEVELS: OnceLock<Mutex<HashMap<String, supervisor::ipc::LogLevel>>> = OnceLock::new();
+fn app_log_levels() -> &'static Mutex<HashMap<String, supervisor::ipc::LogLevel>> {
+    APP_LOG_LEVELS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+// Per-app flush rate tracking: maps app name → (flush_count, window_start).
+// Logged every 5 seconds via `display::format_fps`.
+static FLUSH_COUNTS: OnceLock<Mutex<HashMap<String, (u64, std::time::Instant)>>> =
+    OnceLock::new();
+
+fn flush_counts() -> &'static Mutex<HashMap<String, (u64, std::time::Instant)>> {
+    FLUSH_COUNTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 // ── macOS-inspired chrome ─────────────────────────────────────────────────────
 
 const MENUBAR_H:       u32 = 24;   // global menu bar height
 const TITLEBAR_H:      u32 = 28;   // per-window title bar height
+const STATUS_H:        u32 = 16;   // per-window status strip height (bottom of window)
 const TL_DOT:          u32 = 12;   // traffic-light dot size (px)
 
-const MAC_MENUBAR:     u32 = 0x1C1C1EFF; // system background (menubar)
-const MAC_TITLE_ACT:   u32 = 0x3A3A3CFF; // active window title bar
-const MAC_TITLE_INACT: u32 = 0x2C2C2EFF; // inactive window title bar
-const MAC_SEP:         u32 = 0x48484AFF; // separator line
+const MAC_MENUBAR:        u32 = 0x1C1C1EFF; // system background (menubar)
+const MAC_TITLE_ACT:      u32 = 0x3A3A3CFF; // active window title bar
+const MAC_TITLE_INACT:    u32 = 0x2C2C2EFF; // inactive window title bar
+const MAC_TITLE_HOVER:    u32 = 0x444C56FF; // hovered title bar (midpoint between active and inactive)
+const MAC_SEP:            u32 = 0x48484AFF; // separator line
 const MAC_LABEL:       u32 = 0xFFFFFFFF; // primary label (white)
 const MAC_LABEL2:      u32 = 0x8E8E93FF; // secondary label (gray)
 const TL_CLOSE:        u32 = 0xFF5F57FF; // traffic light red
@@ -337,15 +414,30 @@ fn apply_tiling_layout(registry: &AppRegistry) {
     log_info!(Subsystem::Display, None, "layout reflow: {n} display app(s) tiled");
 }
 
-/// Repaint 2 px inset focus borders for all display apps in the framebuffer back-buffer.
+/// Return the title bar background colour for the given window state.
+///
+/// Priority: hovered > focused > inactive; `hovered` wins regardless of focus.
+///
+/// Pure function — no side-effects, no global state reads.
+pub fn titlebar_color_for_state(focused: bool, hovered: bool) -> u32 {
+    if hovered      { MAC_TITLE_HOVER } // hover — slightly lighter for affordance
+    else if focused { MAC_TITLE_ACT   } // active window
+    else            { MAC_TITLE_INACT } // inactive window
+}
+
 /// Draw a macOS-style title bar at (wx, wy, ww, TITLEBAR_H).
 /// Traffic lights are colored when focused, gray otherwise.
 /// App name is centered in the bar.
+/// `is_hovered` makes the background slightly lighter for mouse-hover affordance.
 #[cfg(target_os = "linux")]
-fn draw_titlebar(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, is_focused: bool, name: &str) {
-    let bg = if is_focused { MAC_TITLE_ACT } else { MAC_TITLE_INACT };
+fn draw_titlebar(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, is_focused: bool, is_hovered: bool, name: &str) {
+    let bg = titlebar_color_for_state(is_focused, is_hovered);
     fb.fill_rect(wx, wy, ww, TITLEBAR_H, bg);
     fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
+
+    // 2px focus border — top edge only (full frame drawn at flush time when wh is known)
+    let bc = display::border_color(is_focused);
+    fb.fill_rect(wx, wy, ww, 2, bc);
 
     // Traffic lights — 12×12, left-aligned, vertically centered
     let tl_y = wy + (TITLEBAR_H - TL_DOT) / 2;
@@ -357,6 +449,10 @@ fn draw_titlebar(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, is_fo
     fb.fill_rect(wx + 8,  tl_y, TL_DOT, TL_DOT, c1);
     fb.fill_rect(wx + 24, tl_y, TL_DOT, TL_DOT, c2);
     fb.fill_rect(wx + 40, tl_y, TL_DOT, TL_DOT, c3);
+
+    // Accent color dot — deterministic per-app identity marker (12×12 at x+60)
+    let accent = display::app_accent_color(name);
+    fb.fill_rect(wx + 60, tl_y, TL_DOT, TL_DOT, accent);
 
     // App name centered (medium font = 8 px/char, 16 px tall)
     let nlen = name.len().min(20) as u32;  // cap to avoid overflow
@@ -370,9 +466,22 @@ fn draw_titlebar(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, is_fo
 }
 
 /// Draw the global menu bar at y=0 across the full screen width.
-/// Shows "VyomaOS" on the left, focused app in the center, clock on the right.
+/// Shows "VyomaOS" on the left, app-switcher labels after it, focused app in
+/// the center, and clock on the right.
+///
+/// `apps` is an ordered slice of display-app names drawn as clickable labels
+/// immediately after the brand name.  The same ordering is used by
+/// [`supervisor::windows::menubar_hit_app`] for click-to-focus hit detection.
 #[cfg(target_os = "linux")]
-fn draw_menubar(fb: &mut display::Framebuffer, sw: u32, elapsed_secs: u64, focused: Option<&str>) {
+fn draw_menubar(
+    fb: &mut display::Framebuffer,
+    sw: u32,
+    elapsed_secs: u64,
+    focused: Option<&str>,
+    apps: &[String],
+) {
+    use supervisor::windows::{MENUBAR_APPS_START_X, menubar_label_width};
+
     fb.fill_rect(0, 0, sw, MENUBAR_H, MAC_MENUBAR);
     fb.fill_rect(0, MENUBAR_H - 1, sw, 1, MAC_SEP);
 
@@ -380,6 +489,16 @@ fn draw_menubar(fb: &mut display::Framebuffer, sw: u32, elapsed_secs: u64, focus
 
     // Left: brand
     fb.draw_text(12, ty, "VyomaOS", MAC_LABEL, font::FontSize::Medium);
+
+    // App-switcher labels: drawn immediately after the brand name.
+    // Highlighted (white) when focused, dimmed otherwise.
+    let mut lx = MENUBAR_APPS_START_X as u32;
+    for app in apps {
+        let is_focused = focused.map_or(false, |f| f == app.as_str());
+        let color = if is_focused { MAC_LABEL } else { MAC_LABEL2 };
+        fb.draw_text(lx + 8, ty, app, color, font::FontSize::Medium);
+        lx += menubar_label_width(app.len()) as u32;
+    }
 
     // Center: focused app name
     if let Some(name) = focused {
@@ -399,31 +518,76 @@ fn draw_menubar(fb: &mut display::Framebuffer, sw: u32, elapsed_secs: u64, focus
     }
 }
 
+/// Draw a 16px status strip at the very bottom of a window's chrome.
+/// Background: `0x161B22FF` (dark).  Text: `0x8B949EFF` (grey).
+/// Shows `[name]  up <uptime_secs>s` in small font, left-aligned with 4px inset.
+#[cfg(target_os = "linux")]
+fn draw_statusbar(
+    fb:           &mut display::Framebuffer,
+    name:         &str,
+    uptime_secs:  u64,
+    wx:           u32,
+    wy:           u32,
+    ww:           u32,
+    wh:           u32,
+) {
+    const STATUS_BG:   u32 = 0x161B22FF; // very dark navy background
+    const STATUS_FG:   u32 = 0x8B949EFF; // muted grey text
+
+    // Fill the status strip
+    let sy = wy + wh - STATUS_H;
+    fb.fill_rect(wx, sy, ww, STATUS_H, STATUS_BG);
+
+    // Build and draw the label using the public helper
+    let label = supervisor::statusbar::format_status_text(name, uptime_secs);
+    // Vertically center 8px small font in the 16px strip: (16 - 8) / 2 = 4
+    fb.draw_text(wx + 4, sy + 4, &label, STATUS_FG, font::FontSize::Small);
+}
+
 /// Immediately repaint title bars for all windowed apps (called on focus changes).
 fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     let focused_name = focused.lock().unwrap().clone();
-    let regions: Vec<(String, (u32, u32, u32, u32))> = {
+    let hovered_name = HOVERED_APP
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap()
+        .clone();
+    let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
         let reg = registry.lock().unwrap();
-        reg.iter()
+        let mut regions = Vec::new();
+        let mut display_apps: Vec<String> = reg.iter()
             .filter_map(|(name, st)| {
                 let st = st.lock().unwrap();
-                st.win_region.map(|r| (name.clone(), r))
+                if st.has_display && matches!(st.status, AppStatus::Running) {
+                    Some(name.clone())
+                } else {
+                    None
+                }
             })
-            .collect()
+            .collect();
+        display_apps.sort();
+        for (name, st) in reg.iter() {
+            let st = st.lock().unwrap();
+            if let Some(r) = st.win_region {
+                regions.push((name.clone(), r));
+            }
+        }
+        (regions, display_apps)
     };
     let Some(fb_lock) = display::get() else { return };
     let mut fb = fb_lock.lock().unwrap();
     for (name, (wx, wy, ww, _wh)) in &regions {
         if *ww < 60 { continue; }
         let is_focused = focused_name.as_deref() == Some(name.as_str());
+        let is_hovered = hovered_name.as_deref() == Some(name.as_str());
         #[cfg(target_os = "linux")]
-        draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, name);
+        draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, is_hovered, name);
     }
     #[cfg(target_os = "linux")]
     {
         let sw = fb.width;
         let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
-        draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref());
+        draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref(), &display_apps);
     }
 }
 
@@ -538,8 +702,8 @@ fn main() {
             let mut fb = fb_lock.lock().unwrap();
             let (w, h) = (fb.width, fb.height);
             fb.fill_rect(0, 0, w, h, 0x0D1117FF);
-            // Draw initial menu bar (no focused app yet)
-            draw_menubar(&mut *fb, w, 0, None);
+            // Draw initial menu bar (no focused app yet, no apps yet)
+            draw_menubar(&mut *fb, w, 0, None, &[]);
             fb.flush();
         }
     }
@@ -594,6 +758,7 @@ fn main() {
     let _ = TCP_CONNS.set(Mutex::new(std::collections::HashMap::new()));
     let _ = CLIPBOARD.set(Mutex::new(String::new()));
     let _ = FONT_SIZE.set(Mutex::new("m".to_string()));
+    let _ = LAST_SENDER.set(Mutex::new(HashMap::new()));
 
     let inbox:        Inbox       = Arc::new(Mutex::new(HashMap::new()));
     let focused:      FocusedApp  = Arc::new(Mutex::new(None));
@@ -781,14 +946,55 @@ fn main() {
                                             }
                                         }
                                         InputAction::AltF => {
-                                            // Maximize focused app (stub).
+                                            // Snap focused app to left 2/3; others share right 1/3.
+                                            use supervisor::windows::compute_snap_layout;
                                             let focused_name = focused_input.lock().unwrap().clone();
                                             if let Some(ref name) = focused_name {
-                                                log_info!(Subsystem::Input, Some(name.as_str()), "alt+f: maximize {name} (stub)");
+                                                log_info!(Subsystem::Input, Some(name.as_str()), "alt+f: snap {name}");
+
+                                                // Collect sorted display-app names (same order as tiling).
+                                                let apps: Vec<String> = {
+                                                    let reg = registry_input.lock().unwrap();
+                                                    let mut v: Vec<String> = reg.iter()
+                                                        .filter(|(_, st)| st.lock().unwrap().win_region.is_some())
+                                                        .map(|(n, _)| n.clone())
+                                                        .collect();
+                                                    v.sort();
+                                                    v
+                                                };
+
+                                                let focused_idx = apps.iter().position(|n| n == name);
+                                                if let Some(idx) = focused_idx {
+                                                    #[cfg(target_os = "linux")]
+                                                    let (sw, sh) = display::screen_size().unwrap_or((1440, 900));
+                                                    #[cfg(not(target_os = "linux"))]
+                                                    let (sw, sh) = (1440u32, 900u32);
+
+                                                    let snap = compute_snap_layout(sw, sh, MENUBAR_H, idx, apps.len());
+                                                    {
+                                                        let reg = registry_input.lock().unwrap();
+                                                        for (i, app_name) in apps.iter().enumerate() {
+                                                            if let Some(st) = reg.get(app_name) {
+                                                                if let Some(&region) = snap.get(i) {
+                                                                    st.lock().unwrap().win_region = Some(region);
+                                                                    log_info!(Subsystem::Display, Some(app_name.as_str()),
+                                                                        "snap: assigned ({},{},{},{})", region.0, region.1, region.2, region.3);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    repaint_all_borders(&registry_input, &focused_input);
+                                                }
                                             }
                                         }
-                                        // AltShiftTab handled above in the CSI branch.
-                                        // PassThrough: lone Alt+unknown key — discard.
+                                        InputAction::AltQuestion => {
+                                            // Show keyboard shortcut overlay toast for 3 seconds.
+                                            log_info!(Subsystem::Input, None, "alt+?: showing shortcut overlay");
+                                            #[cfg(target_os = "linux")]
+                                            show_shortcut_overlay();
+                                        }
+                                        // AltShiftTab handled in the CSI branch above.
+                                        // PassThrough: unknown Alt+key — discard.
                                         _ => {}
                                     }
                                 }
@@ -861,7 +1067,9 @@ fn main() {
 
                 let mut cx: i32 = screen_w / 2;
                 let mut cy: i32 = screen_h / 2;
-                let mut pending_click_mask: u8 = 0;
+                let mut pending_click_mask:   u8 = 0;
+                let mut pending_release_mask: u8 = 0;
+                let mut btn_held:             u8 = 0; // bitmask of currently held buttons
                 let mut pending_abs_x: Option<i32> = None;
                 let mut pending_abs_y: Option<i32> = None;
                 let mut pending_dx:    i32 = 0;
@@ -891,13 +1099,18 @@ fn main() {
                             _     => {}
                         },
                         EV_KEY => {
+                            let bit = match code {
+                                BTN_LEFT  => 1u8,
+                                BTN_RIGHT => 2u8,
+                                BTN_MID   => 4u8,
+                                _         => 0u8,
+                            };
                             if value == 1 {
-                                pending_click_mask |= match code {
-                                    BTN_LEFT  => 1,
-                                    BTN_RIGHT => 2,
-                                    BTN_MID   => 4,
-                                    _         => 0,
-                                };
+                                // Button pressed
+                                pending_click_mask |= bit;
+                            } else if value == 0 && bit != 0 {
+                                // Button released
+                                pending_release_mask |= bit;
                             }
                         }
                         EV_SYN => {
@@ -921,10 +1134,52 @@ fn main() {
                             }
                             display::set_cursor_pos(cx, cy);
                             if pending_click_mask != 0 {
+                                // Button pressed — store drag-start position
+                                if pending_click_mask & 1 != 0 {
+                                    *mouse_drag_start().lock().unwrap() = Some((cx, cy));
+                                }
+                                btn_held |= pending_click_mask;
                                 dispatch_mouse(cx, cy, pending_click_mask, &inbox_m, &registry_m, &focused_m);
                                 pending_click_mask = 0;
                             } else if pos_changed {
+                                // Mouse moved — if left button held, log drag delta
+                                if btn_held & 1 != 0 {
+                                    let drag_start = *mouse_drag_start().lock().unwrap();
+                                    if let Some((sx, sy)) = drag_start {
+                                        let (dx, dy) = supervisor::windows::drag_delta(sx, sy, cx, cy);
+                                        // Find the topmost mouse-capable app under cursor for logging
+                                        let z_snap: Vec<String> = Z_ORDER.get()
+                                            .map(|m| m.lock().unwrap().clone())
+                                            .unwrap_or_default();
+                                        let app_name: Option<String> = {
+                                            let reg = registry_m.lock().unwrap();
+                                            let mut found: Option<String> = None;
+                                            for name in &z_snap {
+                                                let Some(st_arc) = reg.get(name) else { continue };
+                                                let st = st_arc.lock().unwrap();
+                                                let Some((wx, wy, ww, wh)) = st.win_region else { continue };
+                                                if cx >= wx as i32 && cy >= wy as i32
+                                                    && cx < (wx + ww) as i32 && cy < (wy + wh) as i32
+                                                {
+                                                    found = Some(name.clone());
+                                                    break;
+                                                }
+                                            }
+                                            found
+                                        };
+                                        let name = app_name.as_deref().unwrap_or("none");
+                                        log_info!(Subsystem::Input, None, "drag: app={name} dx={dx} dy={dy}");
+                                    }
+                                }
                                 dispatch_mouse(cx, cy, 0, &inbox_m, &registry_m, &focused_m);
+                            }
+                            // Button released — clear drag-start state
+                            if pending_release_mask != 0 {
+                                if pending_release_mask & 1 != 0 {
+                                    *mouse_drag_start().lock().unwrap() = None;
+                                }
+                                btn_held &= !pending_release_mask;
+                                pending_release_mask = 0;
                             }
                         }
                         _ => {}
@@ -971,6 +1226,7 @@ fn main() {
                             // Kill the child process
                             if let Some(pid) = st.child_pid {
                                 log_warn!(Subsystem::Lifecycle, Some(name.as_str()), "silent for {}s (limit={wsecs}s) — killing pid {pid}", elapsed.as_secs());
+                                show_crash_toast(name, -1);
                                 #[cfg(target_os = "linux")]
                                 unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
                             }
@@ -1259,6 +1515,8 @@ fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -> Op
         has_display:      caps.display,
         win_region:       None,
         min_size,
+        draw_ticks:       0,
+        last_cpu_reset:   Instant::now(),
     }));
     app_registry.lock().unwrap().insert(name.clone(), state);
 
@@ -1285,10 +1543,21 @@ fn route_or_print(
     focused:      &FocusedApp,
     app_registry: &AppRegistry,
 ) {
-    #[cfg(target_os = "linux")]
     if has_display {
         if let Some(cmd) = line.strip_prefix("VYOMA_DRAW:") {
-            handle_draw_command(cmd, sender, win_region, focused);
+            // Increment draw_ticks for CPU% tracking
+            {
+                let reg = app_registry.lock().unwrap();
+                if let Some(st) = reg.get(sender) {
+                    st.lock().unwrap().draw_ticks += 1;
+                }
+            }
+            #[cfg(target_os = "linux")]
+            {
+                handle_draw_command(cmd, sender, win_region, focused, app_registry);
+            }
+            #[cfg(not(target_os = "linux"))]
+            let _ = cmd;
             return;
         }
     }
@@ -1300,6 +1569,42 @@ fn route_or_print(
             if target == "supervisor" {
                 handle_supervisor_command(msg, sender, inbox, focused, app_registry);
                 return;
+            }
+            if supervisor::ipc::is_broadcast_target(target) {
+                // Deliver message to every running app (including the sender).
+                let map = inbox.lock().unwrap();
+                for tx in map.values() {
+                    let _ = tx.send(msg.to_string());
+                }
+                log_info!(Subsystem::Ipc, Some(sender), "broadcast: \"{}\" → {} app(s)", msg, map.len());
+                return;
+            }
+            // @reply: routes message back to whichever app last sent an IPC message
+            // to the current sender (i.e. LAST_SENDER[sender]).
+            if supervisor::ipc::is_reply_target(target) {
+                let reply_target = LAST_SENDER
+                    .get()
+                    .and_then(|m| m.lock().ok())
+                    .and_then(|map| map.get(sender).cloned());
+                match reply_target {
+                    Some(orig) => {
+                        let map = inbox.lock().unwrap();
+                        if let Some(tx) = map.get(&orig) {
+                            let _ = tx.send(msg.to_string());
+                        }
+                    }
+                    None => {
+                        log_warn!(Subsystem::Ipc, Some(sender),
+                            "@reply: no last sender recorded for {sender}, message dropped");
+                    }
+                }
+                return;
+            }
+            // Record that `sender` sent a message to `target` so `target` can @reply:.
+            if let Some(ls) = LAST_SENDER.get() {
+                if let Ok(mut map) = ls.lock() {
+                    map.insert(target.to_string(), sender.to_string());
+                }
             }
             let map = inbox.lock().unwrap();
             if let Some(tx) = map.get(target) {
@@ -1332,6 +1637,24 @@ fn handle_supervisor_command(
             let count = inbox.lock().unwrap().len();
             send_reply(sender, &format!("REPLY:{{\"running\":{count}}}"), inbox);
         }
+
+        // 030-ipc-list-apps: return newline-separated list of running app names
+        "apps" => {
+            let names: Vec<String> = {
+                let reg = app_registry.lock().unwrap();
+                let mut v: Vec<String> = reg.iter()
+                    .filter(|(_, st)| matches!(st.lock().unwrap().status, AppStatus::Running))
+                    .map(|(name, _)| name.clone())
+                    .collect();
+                v.sort();
+                v
+            };
+            let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+            let reply = supervisor::ipc::format_app_list(&name_refs);
+            send_reply(sender, &format!("REPLY:{reply}"), inbox);
+            log_info!(Subsystem::Ipc, None, "apps list sent to {sender}: {} apps", names.len());
+        }
+
         "focus" => {
             if let Some(name) = parts.get(1).map(|s| s.trim()) {
                 *focused.lock().unwrap() = Some(name.to_string());
@@ -1424,14 +1747,16 @@ fn handle_supervisor_command(
             send_reply(sender, &format!("REPLY:{}", entries.join("|")), inbox);
         }
 
-        // ps — list all apps with status, uptime, restart count
+        // ps — list all apps with status, uptime, restart count, cpu%
         "ps" => {
             let entries: Vec<String> = {
                 let reg = app_registry.lock().unwrap();
                 let mut rows: Vec<(String, String)> = reg.iter().map(|(name, st)| {
                     let st = st.lock().unwrap();
-                    let uptime = st.start_time.elapsed().as_secs();
-                    let status_str = match &st.status {
+                    let pid = st.child_pid.unwrap_or(0);
+                    let uptime_secs = st.start_time.elapsed().as_secs();
+                    let uptime_str = supervisor::lifecycle::format_uptime(uptime_secs);
+                    let state_str = match &st.status {
                         AppStatus::Running    => "running".to_string(),
                         AppStatus::Stopped(c) => format!("stopped({})", c),
                     };
@@ -1440,10 +1765,12 @@ fn handle_supervisor_command(
                     } else {
                         String::new()
                     };
-                    let info = format!(
-                        "{:<16} {:<12} {:>5}s  restarts:{}{}",
-                        name, status_str, uptime, st.restart_count, wd_tag
+                    let cpu = supervisor::lifecycle::format_cpu(
+                        st.draw_ticks,
+                        st.last_cpu_reset.elapsed().as_millis() as u64,
                     );
+                    let base = format_ps_line(name, pid, &state_str, st.restart_count);
+                    let info = format!("{}{} up:{} cpu:{}", base, wd_tag, uptime_str, cpu);
                     (name.clone(), info)
                 }).collect();
                 rows.sort_by(|a, b| a.0.cmp(&b.0));
@@ -1461,10 +1788,18 @@ fn handle_supervisor_command(
                     return;
                 }
             };
-            let pid = {
+            let (pid, running_names) = {
                 let reg = app_registry.lock().unwrap();
-                reg.get(&app_name).and_then(|st| st.lock().unwrap().child_pid)
+                let pid = reg.get(&app_name).and_then(|st| st.lock().unwrap().child_pid);
+                let names: Vec<String> = reg.keys().cloned().collect();
+                (pid, names)
             };
+            let running_refs: Vec<&str> = running_names.iter().map(|s| s.as_str()).collect();
+            if !supervisor::ipc::validate_kill_target(&app_name, &running_refs) {
+                log_info!(Subsystem::Ipc, Some(app_name.as_str()), "kill: app={app_name} not found or not running");
+                send_reply(sender, &format!("REPLY:{app_name} not running"), inbox);
+                return;
+            }
             match pid {
                 Some(pid) => {
                     #[cfg(target_os = "linux")]
@@ -1473,6 +1808,7 @@ fn handle_supervisor_command(
                     send_reply(sender, &format!("REPLY:killed {app_name}"), inbox);
                 }
                 None => {
+                    log_info!(Subsystem::Ipc, Some(app_name.as_str()), "kill: app={app_name} not found or not running");
                     send_reply(sender, &format!("REPLY:{app_name} not running"), inbox);
                 }
             }
@@ -2229,6 +2565,53 @@ fn handle_supervisor_command(
             send_reply(sender, &format!("REPLY:download-progress {dest} 0"), inbox);
         }
 
+        // uptime — reply with how long the supervisor has been running
+        "uptime" => {
+            let secs = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
+            let reply = supervisor::lifecycle::format_system_uptime(secs);
+            send_reply(sender, &format!("REPLY:{reply}"), inbox);
+            log_info!(Subsystem::Ipc, None, "uptime query from {sender}: {reply}");
+        }
+
+        // 023: loglevel <app> <level> — set per-app log level filter
+        "loglevel" => {
+            let rest = parts.get(1).unwrap_or(&"").trim();
+            let sub_parts: Vec<&str> = rest.splitn(2, ' ').collect();
+            if sub_parts.len() == 2 {
+                let app_name = sub_parts[0].trim();
+                let level_str = sub_parts[1].trim();
+                if let Some(lvl) = supervisor::ipc::parse_log_level(level_str) {
+                    app_log_levels().lock().unwrap().insert(app_name.to_string(), lvl);
+                    log_info!(Subsystem::Ipc, Some(app_name),
+                        "app={} log_level set to {:?}", app_name, lvl);
+                } else {
+                    log_warn!(Subsystem::Ipc, None,
+                        "loglevel: unknown level {:?}", level_str);
+                }
+            } else {
+                log_warn!(Subsystem::Ipc, None,
+                    "loglevel: usage: loglevel <app> <debug|info|warn|error>");
+            }
+        }
+
+        // ping — reply to sender with "pong <timestamp_ms>"
+        "ping" => {
+            let ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let reply = supervisor::ipc::format_pong_reply(ms);
+            log_info!(Subsystem::Ipc, None, "ping from={sender} reply={reply}");
+            send_reply(sender, &format!("REPLY:{reply}"), inbox);
+        }
+
+        // version — reply with the VyomaOS version string
+        "version" => {
+            let v = supervisor::ipc::format_version(0, 19, 0);
+            send_reply(sender, &format!("REPLY:{v}"), inbox);
+            log_info!(Subsystem::Ipc, None, "version query from {sender}: {v}");
+        }
+
         other => {
             log_warn!(Subsystem::Ipc, None, "unknown @supervisor command from {sender}: {other}");
         }
@@ -2549,6 +2932,118 @@ fn dispatch_mouse(
         .map(|m| m.lock().unwrap().clone())
         .unwrap_or_default();
 
+    // ── Title-bar hover highlight (motion only, no button press) ─────────────
+    // On every motion event (btn == 0), determine which app's title bar (if any)
+    // the cursor is over.  If the hovered window changed, redraw the previous
+    // title bar (un-highlight) and the new one (highlight).  We guard with a
+    // `new_hover != old_hover` check so no extra work is done when the cursor
+    // stays in the same title bar.
+    if btn == 0 {
+        // Determine which app's title bar the cursor is currently over.
+        let new_hover: Option<String> = {
+            let reg = app_registry.lock().unwrap();
+            let mut found: Option<String> = None;
+            // Check z-order first so topmost window wins.
+            for name in &z_snapshot {
+                let Some(state_arc) = reg.get(name) else { continue };
+                let st = state_arc.lock().unwrap();
+                let Some((wx, wy, ww, _wh)) = st.win_region else { continue };
+                // Title bar spans y in [wy, wy + TITLEBAR_H) and x in [wx, wx + ww).
+                if cx >= wx as i32 && cx < (wx + ww) as i32
+                    && cy >= wy as i32 && cy < (wy + TITLEBAR_H) as i32 {
+                    found = Some(name.clone());
+                    break;
+                }
+            }
+            // Fallback: apps not in z_order
+            if found.is_none() {
+                for (name, state_arc) in reg.iter() {
+                    let st = state_arc.lock().unwrap();
+                    let Some((wx, wy, ww, _wh)) = st.win_region else { continue };
+                    if cx >= wx as i32 && cx < (wx + ww) as i32
+                        && cy >= wy as i32 && cy < (wy + TITLEBAR_H) as i32 {
+                        found = Some(name.clone());
+                        break;
+                    }
+                }
+            }
+            found
+        };
+
+        let old_hover = {
+            HOVERED_APP
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .unwrap()
+                .clone()
+        };
+
+        if new_hover != old_hover {
+            // Update hover state.
+            *HOVERED_APP.get_or_init(|| Mutex::new(None)).lock().unwrap() = new_hover.clone();
+
+            // Collect the regions we need to redraw (previous and new hovered window).
+            let focused_name = focused.lock().unwrap().clone();
+            let mut to_redraw: Vec<(String, u32, u32, u32)> = Vec::new();
+            {
+                let reg = app_registry.lock().unwrap();
+                for candidate in old_hover.iter().chain(new_hover.iter()) {
+                    if let Some(state_arc) = reg.get(candidate.as_str()) {
+                        let st = state_arc.lock().unwrap();
+                        if let Some((wx, wy, ww, _wh)) = st.win_region {
+                            if ww >= 60 {
+                                to_redraw.push((candidate.clone(), wx, wy, ww));
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !to_redraw.is_empty() {
+                if let Some(fb_lock) = display::get() {
+                    let mut fb = fb_lock.lock().unwrap();
+                    for (name, wx, wy, ww) in &to_redraw {
+                        let is_focused = focused_name.as_deref() == Some(name.as_str());
+                        let is_hovered = new_hover.as_deref() == Some(name.as_str());
+                        draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, is_hovered, name);
+                    }
+                    fb.flush();
+                }
+            }
+        }
+    }
+
+    // Menu-bar click: if the user clicks inside the MENUBAR_H-pixel band at the
+    // top of the screen on an app-name label, raise and focus that app without
+    // also triggering window hit-test or mouse-event dispatch.
+    if btn != 0 && cy >= 0 && cy < MENUBAR_H as i32 {
+        use supervisor::windows::menubar_hit_app;
+        let display_apps: Vec<String> = {
+            let reg = app_registry.lock().unwrap();
+            let mut v: Vec<String> = reg.iter()
+                .filter_map(|(name, st)| {
+                    let st = st.lock().unwrap();
+                    if st.has_display && matches!(st.status, AppStatus::Running) {
+                        Some(name.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            v.sort();
+            v
+        };
+        let app_refs: Vec<&str> = display_apps.iter().map(String::as_str).collect();
+        if let Some(name) = menubar_hit_app(cx, cy, MENUBAR_H, &app_refs) {
+            let name = name.to_string();
+            z_order_push_front(&name);
+            *focused.lock().unwrap() = Some(name.clone());
+            log_info!(Subsystem::Input, Some(name.as_str()), "menubar click: focus → {name}");
+            repaint_all_borders(app_registry, focused);
+            return;
+        }
+    }
+
     // Traffic-light hit-test: on any click, check if a dot was hit before
     // falling through to the focus/raise and mouse-event dispatch logic.
     if btn != 0 {
@@ -2674,7 +3169,13 @@ fn parse_color(s: &str) -> Option<u32> {
 }
 
 #[cfg(target_os = "linux")]
-fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)>, focused: &FocusedApp) {
+fn handle_draw_command(
+    cmd: &str,
+    sender: &str,
+    win: Option<(u32, u32, u32, u32)>,
+    focused: &FocusedApp,
+    app_registry: &AppRegistry,
+) {
     let Some(fb_lock) = display::get() else { return };
 
     // Mark this app dirty for any draw command other than flush/present.
@@ -2707,9 +3208,24 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
         };
 
         if is_dirty {
-            if let Some((wx, wy, ww, _wh)) = win {
+            if let Some((wx, wy, ww, wh)) = win {
                 if ww >= 60 {
-                    draw_titlebar(&mut *fb, wx, wy, ww, is_focused, sender);
+                    let is_hovered = HOVERED_APP
+                        .get_or_init(|| Mutex::new(None))
+                        .lock()
+                        .unwrap()
+                        .as_deref() == Some(sender);
+                    draw_titlebar(&mut *fb, wx, wy, ww, is_focused, is_hovered, sender);
+                }
+                // Per-window status strip — redrawn on every flush so uptime advances.
+                if ww > 0 && wh > STATUS_H {
+                    let uptime_secs: u64 = {
+                        let reg = app_registry.lock().unwrap();
+                        reg.get(sender)
+                            .map(|st| st.lock().unwrap().start_time.elapsed().as_secs())
+                            .unwrap_or(0)
+                    };
+                    draw_statusbar(&mut *fb, sender, uptime_secs, wx, wy, ww, wh);
                 }
             }
         }
@@ -2738,10 +3254,43 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
         };
 
         if should_draw_menubar {
-            draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref());
+            let display_apps: Vec<String> = {
+                let reg = app_registry.lock().unwrap();
+                let mut v: Vec<String> = reg.iter()
+                    .filter_map(|(name, st)| {
+                        let st = st.lock().unwrap();
+                        if st.has_display && matches!(st.status, AppStatus::Running) {
+                            Some(name.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                v.sort();
+                v
+            };
+            draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref(), &display_apps);
         }
 
         fb.flush();
+
+        // ── FPS tracking ─────────────────────────────────────────────────────
+        // Increment the flush counter for this app; log FPS every 5 seconds.
+        {
+            const FPS_WINDOW_MS: u64 = 5_000;
+            let mut map = flush_counts().lock().unwrap();
+            let entry = map
+                .entry(sender.to_string())
+                .or_insert_with(|| (0, std::time::Instant::now()));
+            entry.0 += 1;
+            let elapsed_ms = entry.1.elapsed().as_millis() as u64;
+            if elapsed_ms >= FPS_WINDOW_MS {
+                let fps_str = display::format_fps(entry.0, elapsed_ms);
+                log_info!(Subsystem::Display, Some(sender), "fps: {fps_str}");
+                *entry = (0, std::time::Instant::now());
+            }
+        }
+
         return;
     }
 
@@ -2760,7 +3309,8 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
                         let ax = wx + lx;
                         let ay = content_wy + ly;
                         let win_right  = wx + ww;
-                        let win_bottom = wy + wh;
+                        // Clip content bottom to exclude the status strip.
+                        let win_bottom = (wy + wh).saturating_sub(STATUS_H);
                         if ax >= win_right || ay >= win_bottom { return; }
                         let aw = w.min(win_right  - ax);
                         let ah = h.min(win_bottom - ay);
@@ -2822,7 +3372,9 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
                     let content_wy = wy + TITLEBAR_H;
                     let ax = wx + lx;
                     let ay = content_wy + ly;
-                    if ax >= wx + ww || ay >= wy + wh { return; }
+                    // Clip content bottom to exclude the status strip.
+                    let content_bottom = (wy + wh).saturating_sub(STATUS_H);
+                    if ax >= wx + ww || ay >= content_bottom { return; }
                     (ax, ay)
                 }
             };
@@ -2850,7 +3402,8 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
                         let ax = wx + lx;
                         let ay = content_wy + ly;
                         let win_right  = wx + ww;
-                        let win_bottom = wy + wh;
+                        // Clip content bottom to exclude the status strip.
+                        let win_bottom = (wy + wh).saturating_sub(STATUS_H);
                         if ax >= win_right || ay >= win_bottom { return; }
                         let aw = w.min(win_right  - ax);
                         let ah = h.min(win_bottom - ay);
@@ -2884,7 +3437,8 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
                         let ax = wx + lx;
                         let ay = content_wy + ly;
                         let win_right  = wx + ww;
-                        let win_bottom = wy + wh;
+                        // Clip content bottom to exclude the status strip.
+                        let win_bottom = (wy + wh).saturating_sub(STATUS_H);
                         if ax >= win_right || ay >= win_bottom { return; }
                         let aw = w.min(win_right  - ax);
                         let ah = h.min(win_bottom - ay);
@@ -2920,7 +3474,9 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
                         let content_wy = wy + TITLEBAR_H;
                         let ax = wx + lx;
                         let ay = content_wy + ly;
-                        if ax >= wx + ww || ay >= wy + wh { return; }
+                        // Clip content bottom to exclude the status strip.
+                        let content_bottom = (wy + wh).saturating_sub(STATUS_H);
+                        if ax >= wx + ww || ay >= content_bottom { return; }
                         let effective_max_w = max_w.min(ww.saturating_sub(lx));
                         if effective_max_w == 0 { return; }
                         (ax, ay, effective_max_w)
@@ -2937,6 +3493,41 @@ fn handle_draw_command(cmd: &str, sender: &str, win: Option<(u32, u32, u32, u32)
     }
 
     log_warn!(Subsystem::Display, Some(sender), "unknown command: {cmd}");
+}
+
+// ── Crash / watchdog toast ────────────────────────────────────────────────────
+
+fn show_crash_toast(name: &str, code: i32) {
+    let title = format!("{name} crashed");
+    let msg = if supervisor::lifecycle::is_watchdog_kill(code) {
+        "killed by watchdog (no output)".to_string()
+    } else {
+        format!("exited with code {code}")
+    };
+    #[cfg(target_os = "linux")]
+    {
+        const NX: u32 = 1020;
+        const NY: u32 = 10;
+        const NW: u32 = 400;
+        const NH: u32 = 60;
+        if let Some(fb_lock) = display::get() {
+            let mut fb = fb_lock.lock().unwrap();
+            fb.fill_rect(NX, NY, NW, NH, 0x21262DFF);
+            fb.rect_border(NX, NY, NW, NH, 0x58A6FFFF);
+            fb.draw_text(NX + 8, NY + 8, &title, 0xFFFFFFFF, font::FontSize::Medium);
+            fb.draw_text(NX + 8, NY + 28, &msg, 0x8B949EFF, font::FontSize::Medium);
+            fb.flush();
+        }
+        thread::spawn(move || {
+            thread::sleep(std::time::Duration::from_secs(3));
+            if let Some(fb_lock) = display::get() {
+                let mut fb = fb_lock.lock().unwrap();
+                fb.fill_rect(NX, NY, NW, NH, 0x0D1117FF);
+                fb.flush();
+            }
+        });
+    }
+    log_info!(Subsystem::Display, None, "crash toast: {title:?} — {msg:?}");
 }
 
 // ── Focus transfer on app exit ────────────────────────────────────────────────
@@ -2961,37 +3552,6 @@ fn auto_transfer_focus(exiting: &str, app_registry: &AppRegistry, focused: &Focu
     };
 
     *focused.lock().unwrap() = next;
-}
-
-// ── Crash toast — visible notification when a restart=never app exits badly ───
-
-fn show_crash_toast(name: &str, code: i32) {
-    let title = format!("{name} crashed");
-    let msg   = format!("exited with code {code}");
-    #[cfg(target_os = "linux")]
-    {
-        const NX: u32 = 1020;
-        const NY: u32 = 10;
-        const NW: u32 = 400;
-        const NH: u32 = 60;
-        if let Some(fb_lock) = display::get() {
-            let mut fb = fb_lock.lock().unwrap();
-            fb.fill_rect(NX, NY, NW, NH, 0x21262DFF);
-            fb.rect_border(NX, NY, NW, NH, 0x58A6FFFF);
-            fb.draw_text(NX + 8, NY + 8, &title, 0xFFFFFFFF, font::FontSize::Medium);
-            fb.draw_text(NX + 8, NY + 28, &msg,  0x8B949EFF, font::FontSize::Medium);
-            fb.flush();
-        }
-        thread::spawn(move || {
-            thread::sleep(std::time::Duration::from_secs(3));
-            if let Some(fb_lock) = display::get() {
-                let mut fb = fb_lock.lock().unwrap();
-                fb.fill_rect(NX, NY, NW, NH, 0x0D1117FF);
-                fb.flush();
-            }
-        });
-    }
-    log_info!(Subsystem::Display, None, "crash toast: {title:?} — {msg:?}");
 }
 
 // ── App waiter — handles exit + automatic restart policy ─────────────────────

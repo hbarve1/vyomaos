@@ -1,7 +1,7 @@
 // Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
-use supervisor::windows::{compute_tiling, compute_tiling_with_hints};
+use supervisor::windows::{clamp_tile_size, compute_tiling, compute_tiling_with_hints, compute_snap_layout, MIN_WIN_H, MIN_WIN_W};
 
 const W: u32 = 1024;
 const H: u32 = 768;
@@ -170,4 +170,96 @@ fn test_hints_all_within_screen_4_apps() {
         assert!(x + w <= W, "region right edge {} exceeds screen", x + w);
         assert!(y + h <= H, "region bottom edge {} exceeds screen", y + h);
     }
+}
+
+// ── clamp_tile_size unit tests ────────────────────────────────────────────────
+
+#[test]
+fn test_clamp_tile_size_already_large_passes_through() {
+    let (w, h) = clamp_tile_size(800, 600, MIN_WIN_W, MIN_WIN_H);
+    assert_eq!(w, 800);
+    assert_eq!(h, 600);
+}
+
+#[test]
+fn test_clamp_tile_size_below_min_width_clamped() {
+    let (w, h) = clamp_tile_size(50, 300, MIN_WIN_W, MIN_WIN_H);
+    assert_eq!(w, MIN_WIN_W);
+    assert_eq!(h, 300);
+}
+
+#[test]
+fn test_clamp_tile_size_below_min_height_clamped() {
+    let (w, h) = clamp_tile_size(400, 20, MIN_WIN_W, MIN_WIN_H);
+    assert_eq!(w, 400);
+    assert_eq!(h, MIN_WIN_H);
+}
+
+#[test]
+fn test_clamp_tile_size_both_below_min_clamped() {
+    let (w, h) = clamp_tile_size(10, 5, MIN_WIN_W, MIN_WIN_H);
+    assert_eq!(w, MIN_WIN_W);
+    assert_eq!(h, MIN_WIN_H);
+}
+
+#[test]
+fn test_clamp_tile_size_exactly_at_min_passes_through() {
+    let (w, h) = clamp_tile_size(MIN_WIN_W, MIN_WIN_H, MIN_WIN_W, MIN_WIN_H);
+    assert_eq!(w, MIN_WIN_W);
+    assert_eq!(h, MIN_WIN_H);
+}
+
+#[test]
+fn test_compute_tiling_respects_min_size_for_many_apps() {
+    let r = compute_tiling(9, W, H);
+    assert_eq!(r.len(), 9);
+    for &(_, _, w, h) in &r {
+        assert!(w >= MIN_WIN_W, "tile width {w} is below MIN_WIN_W={MIN_WIN_W}");
+        assert!(h >= MIN_WIN_H, "tile height {h} is below MIN_WIN_H={MIN_WIN_H}");
+    }
+}
+
+// ── compute_snap_layout ───────────────────────────────────────────────────────
+
+const MENUBAR: u32 = 24;
+
+#[test]
+fn test_snap_single_app_full_screen() {
+    let r = compute_snap_layout(W, H, MENUBAR, 0, 1);
+    assert_eq!(r.len(), 1);
+    assert_eq!(r[0], (0, MENUBAR, W, H - MENUBAR));
+}
+
+#[test]
+fn test_snap_two_apps_focused_first() {
+    let r = compute_snap_layout(W, H, MENUBAR, 0, 2);
+    assert_eq!(r.len(), 2);
+    let left_w   = W * 2 / 3;
+    let right_x  = left_w;
+    let right_w  = W - left_w;
+    let usable_h = H - MENUBAR;
+    assert_eq!(r[0], (0, MENUBAR, left_w, usable_h), "focused tile mismatch");
+    assert_eq!(r[1], (right_x, MENUBAR, right_w, usable_h), "other tile mismatch");
+    assert_eq!(r[0].2 + r[1].2, W, "widths do not sum to screen width");
+}
+
+#[test]
+fn test_snap_three_apps_focused_middle() {
+    let r = compute_snap_layout(W, H, MENUBAR, 1, 3);
+    assert_eq!(r.len(), 3);
+    let left_w   = W * 2 / 3;
+    let right_x  = left_w;
+    let right_w  = W - left_w;
+    let usable_h = H - MENUBAR;
+    let slot_h   = usable_h / 2;
+    assert_eq!(r[0].0, right_x, "r[0].x");
+    assert_eq!(r[0].1, MENUBAR, "r[0].y");
+    assert_eq!(r[0].2, right_w, "r[0].w");
+    assert_eq!(r[0].3, slot_h,  "r[0].h");
+    assert_eq!(r[1], (0, MENUBAR, left_w, usable_h), "focused tile mismatch");
+    assert_eq!(r[2].0, right_x,           "r[2].x");
+    assert_eq!(r[2].1, MENUBAR + slot_h,  "r[2].y");
+    assert_eq!(r[2].2, right_w,           "r[2].w");
+    assert_eq!(r[2].3, usable_h - slot_h, "r[2].h (remainder)");
+    assert_eq!(r[0].3 + r[2].3, usable_h, "right-column heights must sum to usable_h");
 }
