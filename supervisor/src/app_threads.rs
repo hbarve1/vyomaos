@@ -125,6 +125,8 @@ pub fn spawn_io_threads(
                         let mut st = st.lock().unwrap();
                         st.log_buf.push_back(line.clone());
                         if st.log_buf.len() > LOG_BUF_SIZE { st.log_buf.pop_front(); }
+                        // Broadcast to live log subscribers (spec-044 management server).
+                        st.log_subscribers.retain(|tx| tx.send(line.clone()).is_ok());
                     }
                 }
                 let win_region = if has_display {
@@ -280,6 +282,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         last_cpu_reset:   Instant::now(),
         minimized:           false,
         pre_minimize_region: None,
+        log_subscribers:     Vec::new(),
     }));
     app_registry.lock().unwrap().insert(name.clone(), state);
 

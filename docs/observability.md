@@ -165,9 +165,43 @@ OpenTelemetry export is not implemented in the current codebase. The `full` tier
 
 ---
 
+## Management Server Heartbeat Stream
+
+The `vyoma monitor` CLI command subscribes to a live heartbeat stream via the management TCP server (port 9090). This stream is separate from the file-based heartbeat log described above.
+
+### Request
+
+```json
+{"type":"heartbeat_stream"}
+```
+
+Send this as a single NDJSON line after connecting to `localhost:9090`. The server streams `heartbeat` response objects until the client disconnects.
+
+### Response Format
+
+```json
+{"type":"heartbeat","module":"notes","uptime_s":42,"mem_kb":128,"status":"healthy","last_error":""}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | Always `"heartbeat"` |
+| `module` | string | App name |
+| `uptime_s` | u64 | Seconds since app last started |
+| `mem_kb` | u64 | Memory usage in kilobytes (0 if unavailable) |
+| `status` | string | `"healthy"` \| `"degraded"` \| `"unhealthy"` \| `"stopped"` |
+| `last_error` | string | Most recent error string, or empty string |
+
+Heartbeats are sent every 2 seconds. The stream continues indefinitely; disconnect to stop receiving.
+
+For full protocol details see [`specs/044-developer-tooling/contracts/mgmt-protocol.md`](../specs/044-developer-tooling/contracts/mgmt-protocol.md).
+
+---
+
 ## See Also
 
 - `supervisor/src/observability/heartbeat.rs` — implementation
+- `supervisor/src/mgmt_handlers.rs` — `handle_heartbeat_stream` management server handler
 - `supervisor/src/profile/profiles/*.toml` — per-platform heartbeat interval configuration
 - [docs/ota-updates.md](ota-updates.md) — how health status affects OTA rollback decisions
 - [docs/testing-strategy.md](testing-strategy.md) — Layer 8 performance baselines including heartbeat delivery timing

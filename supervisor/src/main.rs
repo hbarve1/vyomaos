@@ -34,6 +34,10 @@ mod packages;
 #[cfg(target_os = "linux")]
 mod seccomp;
 mod toast;
+mod mgmt_protocol;
+mod mgmt_server;
+mod mgmt_handlers;
+mod router;
 mod win_actions;
 
 use std::{
@@ -99,6 +103,8 @@ struct AppState {
     // spec-042: minimize/restore state
     minimized:           bool,
     pre_minimize_region: Option<(u32, u32, u32, u32)>,
+    // spec-044: management server live log subscribers
+    log_subscribers: Vec<mpsc::Sender<String>>,
 }
 
 type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
@@ -137,6 +143,15 @@ static MOUSE_DRAG_START: OnceLock<Mutex<Option<(i32, i32)>>> = OnceLock::new();
 fn mouse_drag_start() -> &'static Mutex<Option<(i32, i32)>> {
     MOUSE_DRAG_START.get_or_init(|| Mutex::new(None))
 }
+
+// ── spec-044: management server global state ──────────────────────────────────
+
+/// Shared inbox Arc reference for the exec handler (set once after inbox is created).
+static MGMT_INBOX: OnceLock<Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>> = OnceLock::new();
+
+/// One-shot reply channels registered by the exec handler, keyed by app name.
+static EXEC_REPLY_CHANNELS: OnceLock<Mutex<HashMap<String, mpsc::Sender<String>>>> =
+    OnceLock::new();
 
 // Boot timestamp — used to render the elapsed clock in the menu bar.
 static BOOT_INSTANT: OnceLock<std::time::Instant> = OnceLock::new();
@@ -320,6 +335,7 @@ fn main() {
     let _ = CLIPBOARD.set(Mutex::new(String::new()));
     let _ = FONT_SIZE.set(Mutex::new("m".to_string()));
     let _ = LAST_SENDER.set(Mutex::new(HashMap::new()));
+    let _ = EXEC_REPLY_CHANNELS.set(Mutex::new(HashMap::new()));
 
     let inbox:        Inbox       = Arc::new(Mutex::new(HashMap::new()));
     let focused:      FocusedApp  = Arc::new(Mutex::new(None));
@@ -386,6 +402,21 @@ fn main() {
             .expect("spawn mouse-input thread");
     }
 
+    // ── spec-044: share inbox Arc with mgmt exec handler ────────────────────
+    let _ = MGMT_INBOX.set(Arc::clone(&inbox));
+
+    // ── spec-044: management server thread — binds 0.0.0.0:9090 ─────────────
+    {
+        let registry_mgmt = Arc::clone(&app_registry);
+        thread::Builder::new()
+            .name("mgmt-server".into())
+            .spawn(move || {
+                let addr: std::net::SocketAddr = "0.0.0.0:9090".parse().unwrap();
+                mgmt_server::MgmtServer::new(registry_mgmt).start(addr);
+            })
+            .expect("spawn mgmt-server thread");
+    }
+
     // ── Pass 2: start IO threads for each spawned app ─────────────────────────
     let mut waiter_handles = vec![];
     for app in spawned {
@@ -414,94 +445,21 @@ fn main() {
     loop { thread::park(); }
 }
 
-// ── IPC router + display dispatcher ──────────────────────────────────────────
+// ── IPC router + display dispatcher — delegated to router.rs ──────────────────
 
 fn route_or_print(
     line:         &str,
     sender:       &str,
     inbox:        &Inbox,
     has_display:  bool,
-    win_region:   Option<(u32, u32, u32, u32)>,  // P21
+    win_region:   Option<(u32, u32, u32, u32)>,
     focused:      &FocusedApp,
     app_registry: &AppRegistry,
 ) {
-    if has_display {
-        if let Some(cmd) = line.strip_prefix("VYOMA_DRAW:") {
-            // Increment draw_ticks for CPU% tracking
-            {
-                let reg = app_registry.lock().unwrap();
-                if let Some(st) = reg.get(sender) {
-                    st.lock().unwrap().draw_ticks += 1;
-                }
-            }
-            #[cfg(target_os = "linux")]
-            {
-                draw_cmd::handle_draw_command(cmd, sender, win_region, focused, app_registry);
-            }
-            #[cfg(not(target_os = "linux"))]
-            let _ = cmd;
-            return;
-        }
-    }
-    let _ = has_display;
-    let _ = win_region;
-
-    if let Some(rest) = line.strip_prefix('@') {
-        if let Some((target, msg)) = rest.split_once(": ") {
-            if target == "supervisor" {
-                ipc_handlers::handle_supervisor_command(msg, sender, inbox, focused, app_registry);
-                return;
-            }
-            if supervisor::ipc::is_broadcast_target(target) {
-                // Deliver message to every running app (including the sender).
-                let map = inbox.lock().unwrap();
-                for tx in map.values() {
-                    let _ = tx.send(msg.to_string());
-                }
-                log_info!(Subsystem::Ipc, Some(sender), "broadcast: \"{}\" → {} app(s)", msg, map.len());
-                return;
-            }
-            // @reply: routes message back to whichever app last sent an IPC message
-            // to the current sender (i.e. LAST_SENDER[sender]).
-            if supervisor::ipc::is_reply_target(target) {
-                let reply_target = LAST_SENDER
-                    .get()
-                    .and_then(|m| m.lock().ok())
-                    .and_then(|map| map.get(sender).cloned());
-                match reply_target {
-                    Some(orig) => {
-                        let map = inbox.lock().unwrap();
-                        if let Some(tx) = map.get(&orig) {
-                            let _ = tx.send(msg.to_string());
-                        }
-                    }
-                    None => {
-                        log_warn!(Subsystem::Ipc, Some(sender),
-                            "@reply: no last sender recorded for {sender}, message dropped");
-                    }
-                }
-                return;
-            }
-            // Record that `sender` sent a message to `target` so `target` can @reply:.
-            if let Some(ls) = LAST_SENDER.get() {
-                if let Ok(mut map) = ls.lock() {
-                    map.insert(target.to_string(), sender.to_string());
-                }
-            }
-            let map = inbox.lock().unwrap();
-            if let Some(tx) = map.get(target) {
-                if tx.send(msg.to_string()).is_ok() {
-                    return;
-                }
-            }
-        }
-    }
-    println!("[{sender}] {line}");
+    router::route_or_print(line, sender, inbox, has_display, win_region, focused, app_registry);
 }
 
 fn send_reply(target: &str, msg: &str, inbox: &Inbox) {
-    if let Some(tx) = inbox.lock().unwrap().get(target) {
-        let _ = tx.send(msg.to_string());
-    }
+    router::send_reply(target, msg, inbox);
 }
 
