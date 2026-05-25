@@ -228,6 +228,12 @@ Receiving app reads stdin line-by-line; supervisor strips `@sender:` prefix befo
 - `docs/`: Manifest schema, comparison matrix, design docs for future phases
 - `.context/plans/`: Phased implementation roadmap (P01–P17 complete, P18+ planned)
 
+## Code Size Rule
+
+**No source file may exceed 500 lines.** When a file approaches or exceeds this limit, split it into focused submodules before adding more code. For the supervisor, this means separate files per subsystem (chrome, ipc_handlers, draw_cmd, mouse_input, etc.). For WASM apps, extract helper modules under `src/` when `main.rs` grows beyond 500 lines.
+
+This rule applies to all `.rs` files across the repo (supervisor and apps). The `.tessl/` plugin cache is excluded.
+
 ## Key Design Decisions
 
 **Capability-secure by default**: Supervisor does not filter app syscalls; it only wires up the WASI imports declared in vyoma.toml. This means:
