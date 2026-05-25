@@ -6,6 +6,14 @@ pub mod lifecycle;
 pub mod windows;
 pub mod statusbar;
 
+// 043: Core foundation modules
+pub mod runtime;
+pub mod hal;
+pub mod profile;
+pub mod ota;
+pub mod observability;
+pub mod capability;
+
 #[cfg(target_os = "linux")]
 pub mod font;
 #[cfg(target_os = "linux")]

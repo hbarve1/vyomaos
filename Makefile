@@ -39,6 +39,36 @@ APPS_STAMP       := $(OUT)/.apps.stamp
 RUSTFLAGS        := -D warnings
 WASM_FLAGS       :=
 
+# ── T019: Platform profile selection ─────────────────────────────────────────
+# Pass PLATFORM=<name> to select a target from platforms/<name>/.
+# Supported values: desktop-x86 (default), iot-rpi, mcu-arm-cortex-m, server-arm64
+#
+# When PLATFORM is set and platforms/<PLATFORM>/kernel.config exists, the
+# platform-specific kernel config and rootfs script are used in place of the
+# base/ defaults.  The PLATFORM value is passed as an environment variable to
+# the supervisor via the QEMU kernel command line.
+#
+# Example:
+#   make build PLATFORM=desktop-x86
+#   make run   PLATFORM=desktop-x86
+PLATFORM ?=
+
+# Select kernel config and rootfs script based on PLATFORM.
+# Falls back to base/ defaults when PLATFORM is empty or the platform dir
+# does not provide its own files.
+ifneq ($(PLATFORM),)
+  PLATFORM_DIR := platforms/$(PLATFORM)
+  ifneq ($(wildcard $(PLATFORM_DIR)/kernel.config),)
+    KERNEL_CONFIG := $(PLATFORM_DIR)/kernel.config
+  endif
+  ifneq ($(wildcard $(PLATFORM_DIR)/rootfs.sh),)
+    ROOTFS_SCRIPT := $(PLATFORM_DIR)/rootfs.sh
+  endif
+  PLATFORM_KERNEL_ARG := PLATFORM=$(PLATFORM)
+else
+  PLATFORM_KERNEL_ARG :=
+endif
+
 # ── kernel source tracking ────────────────────────────────────────────────────
 KERNEL_PATCHES := $(wildcard base/patches/kernel/*.patch)
 KERNEL_DEPS    := $(KERNEL_SCRIPT) $(KERNEL_CONFIG) $(KERNEL_PATCHES)
@@ -167,7 +197,7 @@ run: $(BZIMAGE) $(INITRAMFS) data
 	qemu-system-x86_64 \
 	  -kernel $(BZIMAGE) \
 	  -initrd $(INITRAMFS) \
-	  -append "console=ttyS0 panic=1" \
+	  -append "console=ttyS0 panic=1 $(PLATFORM_KERNEL_ARG)" \
 	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
 	  -nographic \
 	  -m 512M \
@@ -189,7 +219,7 @@ run-gui: $(BZIMAGE) $(INITRAMFS) data
 	qemu-system-x86_64 \
 	  -kernel $(BZIMAGE) \
 	  -initrd $(INITRAMFS) \
-	  -append "console=tty0 console=ttyS0 panic=1" \
+	  -append "console=tty0 console=ttyS0 panic=1 $(PLATFORM_KERNEL_ARG)" \
 	  -device virtio-vga,xres=1440,yres=900 \
 	  -device virtio-mouse-pci \
 	  -display $(DISPLAY_BACKEND),zoom-to-fit=on,full-screen=on \
@@ -204,7 +234,7 @@ run-net: $(BZIMAGE) $(INITRAMFS) data
 	qemu-system-x86_64 \
 	  -kernel $(BZIMAGE) \
 	  -initrd $(INITRAMFS) \
-	  -append "console=ttyS0 panic=1" \
+	  -append "console=ttyS0 panic=1 $(PLATFORM_KERNEL_ARG)" \
 	  -netdev user,id=net0,hostfwd=tcp::8080-:8080 \
 	  -device virtio-net-pci,netdev=net0 \
 	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
@@ -218,7 +248,7 @@ run-gui-net: $(BZIMAGE) $(INITRAMFS) data
 	qemu-system-x86_64 \
 	  -kernel $(BZIMAGE) \
 	  -initrd $(INITRAMFS) \
-	  -append "console=tty0 console=ttyS0 panic=1" \
+	  -append "console=tty0 console=ttyS0 panic=1 $(PLATFORM_KERNEL_ARG)" \
 	  -device virtio-vga,xres=1440,yres=900 \
 	  -device virtio-mouse-pci \
 	  -display $(DISPLAY_BACKEND),zoom-to-fit=on,full-screen=on \

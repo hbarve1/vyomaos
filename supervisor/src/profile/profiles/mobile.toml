@@ -1,0 +1,27 @@
+[platform]
+name = "mobile"
+arch = "arm64"
+runtime = "wasmtime"
+min_ram_kb = 262144
+
+[supervisor]
+modules = ["lifecycle", "capability", "ipc", "display", "input", "net", "observability"]
+
+[hal]
+drivers = []
+
+[boot]
+apps = []
+
+[observability]
+tier = "baseline"
+heartbeat_interval_s = 30
+
+[ota]
+enabled = true
+health_check_secs = 60
+ab_slots = true
+
+[build]
+kernel_config = "kernel.config"
+rootfs_script = "rootfs.sh"

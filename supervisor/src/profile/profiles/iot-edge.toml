@@ -1,0 +1,27 @@
+[platform]
+name = "iot-edge"
+arch = "arm64"
+runtime = "wamr"
+min_ram_kb = 4096
+
+[supervisor]
+modules = ["lifecycle", "capability", "ipc", "hal", "observability", "net", "packages"]
+
+[hal]
+drivers = ["gpio", "i2c", "spi", "uart", "adc"]
+
+[boot]
+apps = []
+
+[observability]
+tier = "baseline"
+heartbeat_interval_s = 30
+
+[ota]
+enabled = true
+health_check_secs = 60
+ab_slots = true
+
+[build]
+kernel_config = "kernel.config"
+rootfs_script = "rootfs.sh"
