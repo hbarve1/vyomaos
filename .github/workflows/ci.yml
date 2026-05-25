@@ -47,6 +47,8 @@ jobs:
             --target x86_64-unknown-linux-musl
 
       - name: cargo check — all WASM apps (wasm32-wasip2)
+        env:
+          RUSTFLAGS: ""
         run: |
           for cargo_toml in apps/*/Cargo.toml; do
             app=$(dirname "$cargo_toml")
