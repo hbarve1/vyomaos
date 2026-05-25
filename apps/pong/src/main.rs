@@ -206,7 +206,7 @@ fn main() {
     for line in stdin.lock().lines() {
         let raw = match line { Ok(l) => l, Err(_) => break };
 
-        if raw == "REPLY:pong" {
+        if raw.starts_with("REPLY:pong") {
             game.step();
             draw(&game);
             println!("@supervisor: ping");
