@@ -12,10 +12,12 @@
 //!   VYOMA_DRAW:draw_text:<x>,<y>,<rgba_decimal>,<text>
 //!   VYOMA_DRAW:flush
 mod cursor;
+mod dirty_rect;
 mod fb_ioctl;
 mod helpers;
 mod screenshot;
 pub use cursor::{CursorState, CURSOR_W, CURSOR_H, CURSOR_MASK};
+pub use dirty_rect::DirtyRect;
 // blend_alpha and titlebar_color are used by tests and helper modules;
 // the binary path does not call them directly but they are part of the public API.
 #[allow(unused_imports)]
@@ -30,23 +32,6 @@ use std::{
     thread,
     time::Duration,
 };
-// ── Dirty-region tracking ─────────────────────────────────────────────────────
-/// Bounding scanline range for back-buffer writes since the last flush.
-/// Empty state: `y0 > y1` (use `DirtyRect::empty(height)`).
-#[derive(Clone, Copy)]
-pub struct DirtyRect {
-    pub y0: u32,
-    pub y1: u32,
-}
-
-impl DirtyRect {
-    pub fn empty(height: u32) -> Self { Self { y0: height, y1: 0 } }
-    pub fn is_empty(&self) -> bool { self.y0 > self.y1 }
-    pub fn expand(&mut self, row_start: u32, row_end_inclusive: u32) {
-        self.y0 = self.y0.min(row_start);
-        self.y1 = self.y1.max(row_end_inclusive);
-    }
-}
 // ── Framebuffer handle ────────────────────────────────────────────────────────
 pub struct Framebuffer {
     _file: std::fs::File, // keeps the fd alive
