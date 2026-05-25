@@ -34,6 +34,7 @@ mod packages;
 #[cfg(target_os = "linux")]
 mod seccomp;
 mod toast;
+mod win_actions;
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -94,6 +95,9 @@ struct AppState {
     min_size:    (u32, u32),                     // (min_w, min_h) hint from manifest [window]
     draw_ticks:      u64,           // incremented each time the app issues a VYOMA_DRAW command
     last_cpu_reset:  std::time::Instant, // when draw_ticks was last zeroed
+    // spec-042: minimize/restore state
+    minimized:           bool,
+    pre_minimize_region: Option<(u32, u32, u32, u32)>,
 }
 
 type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
