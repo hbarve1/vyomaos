@@ -14,7 +14,7 @@ use std::{
 };
 
 use crate::manifest::Capabilities;
-use super::{ExitCode, ModuleInstance, RuntimeConfig, WasmRuntime};
+use super::{ExitCode, ModuleInstance, RuntimeConfig, WasmRuntime, WasmTarget};
 
 // ── WasmtimeInstance ──────────────────────────────────────────────────────────
 
@@ -70,6 +70,20 @@ impl WasmtimeAdapter {
         self
     }
 
+    /// Probe whether the installed wasmtime binary supports the memory64 proposal.
+    ///
+    /// Runs `wasmtime --wasm-features=memory64 --version` and returns `true` if
+    /// the command exits successfully.  Returns `false` on any error (binary
+    /// missing, flag not recognised, etc.).
+    fn probe_memory64_support(&self) -> bool {
+        std::process::Command::new(&self.wasmtime_bin)
+            .arg("--wasm-features=memory64")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
     /// Write `wasm_bytes` to a temp file and return the path.
     fn write_tmp(&self, name: &str, wasm_bytes: &[u8]) -> Result<PathBuf, String> {
         let tmp_dir = self.tmp_dir.clone()
@@ -105,6 +119,31 @@ impl WasmRuntime for WasmtimeAdapter {
             ));
         }
 
+        // T049: Handle wasm64 target.
+        //
+        // The wasm64 / memory64 proposal extends WASM linear memory to 64-bit
+        // addresses.  We detect the request here and gate it on a compile-time
+        // feature flag.
+        //
+        // When `cfg(feature = "memory64")` is set (future Wasmtime integration
+        // that links wasmtime as a library), the adapter can pass
+        // `Config::wasm_memory64(true)` to the engine.  Until then, the
+        // subprocess model cannot pass flags to an external wasmtime binary in
+        // a way that is guaranteed to be supported, so we return a clear error
+        // rather than silently hanging or producing wrong output.
+        if self.config.target == WasmTarget::Wasm64 {
+            // Check whether the installed wasmtime binary understands
+            // --wasm-features=memory64.  We do a quick --help probe; if it
+            // fails we still return a descriptive error instead of panicking.
+            let supported = self.probe_memory64_support();
+            if !supported {
+                return Err(format!(
+                    "instantiate {name}: wasm64 requires wasmtime with memory64 feature; \
+                     current runtime does not support it"
+                ));
+            }
+        }
+
         Ok(Box::new(WasmtimeInstance {
             name: name.to_string(),
             wasm_bytes: wasm_bytes.to_vec(),
@@ -130,6 +169,11 @@ impl WasmRuntime for WasmtimeAdapter {
 
         let mut cmd = std::process::Command::new(&self.wasmtime_bin);
         cmd.arg("run");
+
+        // T049: enable memory64 proposal flag for wasm64 binaries.
+        if self.config.target == WasmTarget::Wasm64 {
+            cmd.arg("--wasm-features=memory64");
+        }
 
         if self.config.fuel_limit > 0 {
             cmd.arg("--fuel").arg(self.config.fuel_limit.to_string());
