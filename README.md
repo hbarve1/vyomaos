@@ -4,6 +4,10 @@ A **WASM-first operating system** with the long-term goal of becoming a lightwei
 
 > **This is an open research project. We're actively looking for contributors.** See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
 
+## Universal OS Positioning
+
+VyomaOS is the only operating system designed from the ground up to deploy the same `.wasm` application binary across all seven major computing segments — microcontrollers, IoT edge devices, robotics platforms, mobile/tablet, desktop, server, and supercomputer — with a single unified security and capability model at every scale. Unlike Linux distributions (which require architecture-specific builds), Android (which exposes native C userland), or FreeRTOS/Zephyr (which are locked to constrained hardware), VyomaOS delivers structural security (WASM sandbox, not bolted-on filters), deterministic binaries (byte-identical across builds and architectures), and language-agnostic application development (any language that compiles to WASM targets works). The same manifest-declared capability model that enforces network isolation on an MCU also enforces filesystem isolation on a cloud server.
+
 ## The Vision
 
 Most operating systems carry decades of accumulated complexity: C runtimes, shared libraries, POSIX quirks, shell injection surfaces. Every app inherits all of it. Android made progress — apps run in a managed runtime with a permission model — but native code still bypasses it entirely.
@@ -75,6 +79,30 @@ Linux 5.10 (allnoconfig, ~2.3 MB)
 - Process management, package manager, OTA updates, session manager
 - 77+ WASM apps covering productivity, dev tools, networking, media
 
+## Platform Profiles
+
+VyomaOS selects its runtime, supervisor modules, and HAL drivers from a platform profile TOML file. Six profiles ship out of the box:
+
+| Profile | Target | Runtime | RAM Floor |
+|---------|--------|---------|-----------|
+| `mcu-minimal` | ARM Cortex-M4 MCU | wasm3 interpreter | 128 KB |
+| `iot-edge` | ARM64 SBC (Raspberry Pi) | WAMR AOT | 4 MB |
+| `robotics-rt` | ARM64 robot controller | WAMR AOT | 8 MB |
+| `mobile` | ARM64 tablet / phone | Wasmtime JIT | 256 MB |
+| `desktop-full` | x86-64 workstation (default) | Wasmtime JIT | 512 MB |
+| `server-headless` | ARM64 / x86-64 server | Wasmtime JIT | 1 GB |
+
+Build for a specific platform:
+```sh
+make build PLATFORM=iot-edge           # IoT/embedded ARM64
+make build PLATFORM=server-headless    # headless server
+make build                             # default: desktop-full
+```
+
+Profile TOML files: `supervisor/src/profile/profiles/<name>.toml`
+
+See [docs/testing-strategy.md](docs/testing-strategy.md) for per-platform QEMU invocations, smoke test commands, and CI pipeline design.
+
 ## Getting Started
 
 ```sh
@@ -116,7 +144,8 @@ The project is at a genuinely interesting point: the foundation is solid (boot, 
 | P52–P69 | More apps (virtual keyboard, color picker, process inspector, 17+ apps) | complete |
 | P70–P77 | CSV/JSON viewers, Menu Bar, Dock, Spotlight, App Switcher, Notification Center, Mission Control | complete |
 | P78–P80 | Desktop Icons, Context Menu, Finder v2 | in progress |
-| P81+ | Wayland compositor, GPU acceleration, multi-user, real hardware | planned |
+| P81+ (spec-043) | Universal Modular OS: multi-platform profiles, HAL, OTA A/B slots, tiered runtime (wasm3/Wasmtime), observability | complete |
+| P82+ | Wayland compositor, GPU acceleration, multi-user, real hardware | planned |
 
 Full phase details: [`.context/plans/plan-vyomaos/`](.context/plans/plan-vyomaos/README.md)
 

@@ -1,5 +1,23 @@
 # Quickstart: VyomaOS Universal Modular OS
 
+**Last validated: 2026-05-25**
+
+> **Architecture status note**: This quickstart describes the target architecture for spec-043
+> (Universal Modular OS). As of 2026-05-25, the following items are **planned but not yet
+> implemented** in the `develop` branch and will produce errors if run literally:
+>
+> - `make build PLATFORM=<name>` — the `PLATFORM=` Makefile argument is not yet wired (T019).
+>   Use plain `make build` for the default `desktop-full` profile.
+> - `vyoma_hal::i2c_read()` — the HAL host function API is not yet exposed (T038). Replace
+>   with `eprintln!` stubs for local testing.
+> - `vyoma-ota push` / `vyoma-monitor` CLI tools — not yet implemented. Use the IPC command
+>   `@supervisor: ota-update <name> <path>` from inside the VM instead (see docs/ota-updates.md).
+> - `make test-runtime-parity APP=my-sensor` — not yet implemented (T056).
+>
+> All multi-platform `make run PLATFORM=<name>` variants require the per-platform build configs
+> in `platforms/<name>/` to be present (T027, T042, T057). Until those exist, only
+> `make run` (desktop-full, x86-64) works end-to-end.
+
 ## Prerequisites
 
 - Docker (for hermetic builds)
