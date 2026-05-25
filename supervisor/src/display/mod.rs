@@ -16,8 +16,11 @@
 mod cursor;
 mod fb_ioctl;
 mod helpers;
+mod screenshot;
 
 pub use cursor::{CursorState, CURSOR_W, CURSOR_H, CURSOR_MASK};
+// blend_alpha and titlebar_color are used by tests and helper modules;
+// the binary path does not call them directly but they are part of the public API.
 #[allow(unused_imports)]
 pub use helpers::{blend_alpha, titlebar_color, border_color, app_accent_color, format_fps, wrap_words};
 use fb_ioctl::{FBIOGET_VSCREENINFO, FbVarScreeninfo};
@@ -400,14 +403,37 @@ impl Framebuffer {
     /// Blit back-buffer to the mmap'd framebuffer (front-buffer).
     /// Composites the cursor sprite on top before blitting, then restores the
     /// back-buffer so subsequent draw ops see a clean canvas.
+    /// Only the dirty scanline range is copied to avoid blitting the full frame.
     pub fn flush(&mut self) {
         self.restore_under_cursor();
         self.draw_cursor();
-        unsafe {
-            std::ptr::copy_nonoverlapping(self.back.as_ptr(), self.buf, self.buf_len);
+
+        // Ensure cursor sprite rows are included in the dirty region so the
+        // partial blit always covers the cursor even if no app content changed.
+        if self.cursor.visible && self.bpp == 32 {
+            let cy = self.cursor.cy as u32;
+            let cy_end = (cy + CURSOR_H - 1).min(self.height.saturating_sub(1));
+            self.dirty.expand(cy, cy_end);
         }
+
+        if !self.dirty.is_empty() {
+            let y0    = self.dirty.y0 as usize;
+            let y1    = (self.dirty.y1 as usize + 1).min(self.height as usize);
+            let start = y0 * self.stride as usize;
+            let end   = y1 * self.stride as usize;
+            if end <= self.buf_len {
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        self.back.as_ptr().add(start),
+                        self.buf.add(start),
+                        end - start,
+                    );
+                }
+            }
+            self.dirty = DirtyRect::empty(self.height);
+        }
+
         self.restore_under_cursor();
-        self.dirty = DirtyRect::empty(self.height);
     }
 
     /// Draw a 1-pixel border rectangle (no fill).
@@ -447,32 +473,6 @@ impl Framebuffer {
         let file = std::fs::File::open("/dev/null").unwrap();
         let fb = Self { _file: file, width, height, stride, bpp, buf, buf_len, back, dirty, cursor, mmaped: false };
         (fb, vec![0u8; buf_len])
-    }
-
-    /// Write the current back-buffer as a raw PPM (P6) file to `path`.
-    /// Pixels are in BGRA order in the back-buffer; output is RGB.
-    pub fn screenshot(&self, path: &str) -> Result<(), String> {
-        use std::io::Write as IoWrite;
-        let mut rgb = Vec::with_capacity(3 * (self.width * self.height) as usize);
-        for row in 0..self.height {
-            for col in 0..self.width {
-                let off = (row * self.stride + col * 4) as usize;
-                if off + 4 <= self.back.len() {
-                    let b = self.back[off];
-                    let g = self.back[off + 1];
-                    let r = self.back[off + 2];
-                    rgb.push(r);
-                    rgb.push(g);
-                    rgb.push(b);
-                }
-            }
-        }
-        let header = format!("P6\n{} {}\n255\n", self.width, self.height);
-        let mut f = std::fs::File::create(path)
-            .map_err(|e| format!("create {path}: {e}"))?;
-        f.write_all(header.as_bytes()).map_err(|e| format!("write: {e}"))?;
-        f.write_all(&rgb).map_err(|e| format!("write: {e}"))?;
-        Ok(())
     }
 
     /// Draw word-wrapped text. Each line is `glyph_h` pixels tall.

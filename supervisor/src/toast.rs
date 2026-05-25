@@ -70,6 +70,3 @@ pub fn auto_transfer_focus(exiting: &str, app_registry: &AppRegistry, focused: &
     *focused.lock().unwrap() = next;
 }
 
-// Satisfy the borrow checker on non-Linux builds where `display` is not imported.
-#[cfg(not(target_os = "linux"))]
-fn _unused_mutex<T>(_: &Mutex<T>) {}

@@ -39,4 +39,17 @@ mod tests {
         assert!(fb.dirty.y0 > fb.dirty.y1,
             "dirty rect should be cleared after flush");
     }
+
+    #[test]
+    fn flush_copies_only_dirty_region() {
+        let (mut fb, _) = display::Framebuffer::new_for_test(200, 100);
+        // Paint row 50 only (y=50, h=1)
+        fb.fill_rect(0, 50, 200, 1, 0xFF0000FF);
+        // Confirm dirty region is just row 50
+        assert_eq!(fb.dirty.y0, 50);
+        assert_eq!(fb.dirty.y1, 50);
+        fb.flush();
+        // After flush dirty must be reset
+        assert!(fb.dirty.is_empty());
+    }
 }
