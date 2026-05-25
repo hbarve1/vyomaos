@@ -86,17 +86,14 @@ impl PeripheralEnforcer {
     /// Accepts the raw TOML text of the whole `[capabilities]` section; only
     /// the peripheral sub-tables are examined here.
     pub fn from_toml(toml_text: &str) -> Result<Self, String> {
-        // Wrap in a [root] so toml::from_str can parse it as a table.
-        let wrapped = format!("[root]\n{toml_text}");
-
-        #[derive(Deserialize)]
-        struct Root {
-            root: RawPeripherals,
-        }
-
-        let root: Root = toml::from_str(&wrapped)
-            .map_err(|e| format!("peripheral capability parse error: {e}"))?;
-        let raw = root.root;
+        // Parse the TOML text directly as a RawPeripherals struct.
+        // If the text is empty, use defaults.
+        let raw: RawPeripherals = if toml_text.trim().is_empty() {
+            RawPeripherals::default()
+        } else {
+            toml::from_str(toml_text)
+                .map_err(|e| format!("peripheral capability parse error: {e}"))?
+        };
 
         let gpio = raw.gpio.map(|g| {
             let direction = g.direction.as_deref().and_then(|d| match d {

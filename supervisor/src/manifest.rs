@@ -2,6 +2,8 @@
 
 use serde::Deserialize;
 
+use crate::capability::peripheral::PeripheralEnforcer;
+
 // ── Boot config structs ───────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -49,6 +51,10 @@ pub struct AppManifest {
     pub capabilities: Capabilities,
     #[serde(default)]
     pub window: Option<WindowRegion>,
+    /// Peripheral capability enforcer derived from `[capabilities.gpio]` etc.
+    /// Populated by `parse_manifest`; not from serde directly.
+    #[serde(skip)]
+    pub peripherals: Option<PeripheralEnforcer>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,12 +92,70 @@ pub struct Capabilities {
 // ── Parse + validate functions ────────────────────────────────────────────────
 
 /// Read and deserialize a `vyoma.toml` manifest file.
+///
 /// Returns `Err` for I/O failures, TOML parse errors, or unknown capability fields.
+///
+/// T018: Also extracts `[capabilities.gpio]`, `[capabilities.i2c]` etc. into
+/// `AppManifest::peripherals` as a `PeripheralEnforcer`.  The peripheral
+/// sub-tables are stripped before the normal serde deserialization so the
+/// `deny_unknown_fields` on `Capabilities` is not triggered.
 pub fn parse_manifest(path: &std::path::Path) -> Result<AppManifest, String> {
     let raw = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    toml::from_str::<AppManifest>(&raw)
-        .map_err(|e| format!("invalid manifest {}: {e}", path.display()))
+
+    // Parse as a generic TOML value first to extract peripheral sub-tables.
+    let mut doc: toml::Value = toml::from_str(&raw)
+        .map_err(|e| format!("invalid manifest {}: {e}", path.display()))?;
+
+    // Extract [capabilities.gpio/i2c/spi/uart/adc] before strict struct parse.
+    let peripheral_toml = extract_peripheral_toml(&mut doc);
+
+    // Now re-serialise the sanitised doc and parse into AppManifest.
+    let sanitised = toml::to_string(&doc)
+        .map_err(|e| format!("manifest re-serialise error: {e}"))?;
+    let mut manifest: AppManifest = toml::from_str(&sanitised)
+        .map_err(|e| format!("invalid manifest {}: {e}", path.display()))?;
+
+    // Parse peripheral capabilities (may be empty if no sub-tables declared).
+    manifest.peripherals = match PeripheralEnforcer::from_toml(&peripheral_toml) {
+        Ok(enforcer) => Some(enforcer),
+        Err(e) => return Err(format!("peripheral capability error in {}: {e}", path.display())),
+    };
+
+    Ok(manifest)
+}
+
+/// Extract peripheral sub-tables from the `[capabilities]` table in a TOML value.
+///
+/// Removes `gpio`, `i2c`, `spi`, `uart`, `adc` keys from `[capabilities]` and
+/// returns them as a TOML string suitable for `PeripheralEnforcer::from_toml`.
+fn extract_peripheral_toml(doc: &mut toml::Value) -> String {
+    const PERIPHERAL_KEYS: &[&str] = &["gpio", "i2c", "spi", "uart", "adc"];
+
+    let caps_table = match doc
+        .as_table_mut()
+        .and_then(|t| t.get_mut("capabilities"))
+        .and_then(|v| v.as_table_mut())
+    {
+        Some(t) => t,
+        None => return String::new(),
+    };
+
+    let mut peripheral_entries = Vec::new();
+    for key in PERIPHERAL_KEYS {
+        if let Some(val) = caps_table.remove(*key) {
+            // Serialise each peripheral sub-table back to TOML.
+            if let Ok(s) = toml::to_string(&toml::Value::Table({
+                let mut t = toml::value::Table::new();
+                t.insert((*key).to_string(), val);
+                t
+            })) {
+                peripheral_entries.push(s);
+            }
+        }
+    }
+
+    peripheral_entries.join("\n")
 }
 
 /// Validate a parsed manifest against already-registered app names.
