@@ -13,28 +13,28 @@ use std::time::Duration;
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
-const W: u32 = 1440;
-const H: u32 = 900;
-const PX: u32 = 32;
-const PY: u32 = 32;
-const PW: u32 = W - 64;
-const PH: u32 = H - 64;
+const W: u32 = 700;
+const H: u32 = 500;
+const PX: u32 = 8;
+const PY: u32 = 8;
+const PW: u32 = W - 16;
+const PH: u32 = H - 16;
 const TITLE_H: u32 = 28;
-const HDR_H: u32 = 22;     // column header row
-const STATUS_H: u32 = 20;
-const ROW_H: u32 = 22;
-const INNER_X: u32 = PX + 14;
+const HDR_H: u32 = 20;     // column header row
+const STATUS_H: u32 = 18;
+const ROW_H: u32 = 18;
+const INNER_X: u32 = PX + 8;
 const INNER_Y: u32 = PY + TITLE_H + HDR_H + 4;
-const INNER_W: u32 = PW - 28;
+const INNER_W: u32 = PW - 16;
 const INNER_H: u32 = PH - TITLE_H - HDR_H - STATUS_H - 8;
 const MAX_ROWS: usize = (INNER_H / ROW_H) as usize;
 
-// Column X offsets (relative to INNER_X)
+// Column X offsets (relative to INNER_X) — tighter layout for 700px window
 const COL_NAME: u32 = 0;
-const COL_STATUS: u32 = 280;
-const COL_UPTIME: u32 = 400;
-const COL_RESTARTS: u32 = 580;
-const COL_WATCHDOG: u32 = 720;
+const COL_STATUS: u32 = 160;
+const COL_UPTIME: u32 = 270;
+const COL_RESTARTS: u32 = 380;
+const COL_WATCHDOG: u32 = 460;
 
 // ── Colours ───────────────────────────────────────────────────────────────────
 

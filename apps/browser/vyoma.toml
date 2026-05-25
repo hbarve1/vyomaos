@@ -11,6 +11,6 @@ network = true
 
 [window]
 x = 0
-y = 20
+y = 24
 w = 1440
-h = 880
+h = 876

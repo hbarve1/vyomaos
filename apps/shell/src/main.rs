@@ -24,6 +24,7 @@
 
 use std::io::BufRead;
 
+mod banner;
 mod commands;
 mod history;
 mod ui;
@@ -42,8 +43,10 @@ fn main() {
     // Runtime screen width — updated when VYOMA_SYSTEM:screen: arrives.
     let mut sw: u32 = ui::DEFAULT_SW;
     let mut sh: u32 = ui::DEFAULT_SH;
-
+    // Draw panel first, then overlay the welcome banner.
+    // The banner is naturally cleared on the next draw_panel call (first keypress).
     draw_panel(&lines, &current_input, cursor_pos, sw, sh);
+    banner::draw_banner(sw);
 
     let stdin = std::io::stdin();
     for raw in stdin.lock().lines() {

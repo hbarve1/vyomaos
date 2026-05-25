@@ -6,6 +6,7 @@ wasm    = "music-theory.wasm"
 [capabilities]
 stdio   = true
 display = true
+mouse   = true
 
 [window]
 x = 60
