@@ -4,6 +4,7 @@ out/
 # Rust build artifacts
 supervisor/target/
 apps/*/target/
+tools/*/target/
 
 # WASM binaries (built into out/ by make)
 **/*.wasm
