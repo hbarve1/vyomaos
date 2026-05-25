@@ -1,6 +1,18 @@
-# VyomaOS boot configuration
-# Minimal startup: desktop + dock + background HTTP server.
-# All other apps are launched on-demand via the desktop icon grid.
+# VyomaOS boot configuration — demo scene
+#
+# Layer order (z-index): desktop(0) < apps(10) < dock(100) < menu-bar(200)
+#
+# Auto-started on boot:
+#   desktop       — wallpaper + app launcher grid (z=0, permanent background)
+#   dock          — always-visible launcher strip  (z=100, permanent foreground)
+#   clock         — live uptime display, top-right (z=10)
+#   shell         — interactive prompt, left-top   (z=10)
+#   system-monitor— live process table, right-top  (z=10)
+#   notes         — editable notepad, left-bottom  (z=10)
+#   http-server   — REST API endpoint (headless)
+#
+# On-demand (launched from desktop icon grid):
+#   spotlight, music-viz, fractal, settings, and all other apps
 
 [[apps]]
 manifest = "/apps/desktop/vyoma.toml"
@@ -8,6 +20,22 @@ restart  = "always"
 
 [[apps]]
 manifest = "/apps/dock/vyoma.toml"
+restart  = "always"
+
+[[apps]]
+manifest = "/apps/clock/vyoma.toml"
+restart  = "always"
+
+[[apps]]
+manifest = "/apps/shell/vyoma.toml"
+restart  = "always"
+
+[[apps]]
+manifest = "/apps/system-monitor/vyoma.toml"
+restart  = "always"
+
+[[apps]]
+manifest = "/apps/notes/vyoma.toml"
 restart  = "always"
 
 [[apps]]
