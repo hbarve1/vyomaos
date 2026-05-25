@@ -163,15 +163,17 @@ pub fn dispatch_mouse(
 
             if !to_redraw.is_empty() {
                 if let Some(fb_lock) = display::get() {
-                    let mut fb = fb_lock.lock().unwrap();
-                    for (name, wx, wy, ww) in &to_redraw {
-                        let is_focused = focused_name.as_deref() == Some(name.as_str());
-                        let is_hovered = new_hover.as_deref() == Some(name.as_str());
-                        draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, is_hovered, name);
+                    {
+                        let mut fb = fb_lock.lock().unwrap();
+                        for (name, wx, wy, ww) in &to_redraw {
+                            let is_focused = focused_name.as_deref() == Some(name.as_str());
+                            let is_hovered = new_hover.as_deref() == Some(name.as_str());
+                            draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, is_hovered, name);
+                        }
                     }
                     // Cursor-only blit: dirty title-bar rows are picked up by the next
                     // app flush(). Avoids a 5 MB blit on every title-bar hover crossing.
-                    fb.flush_cursor_only();
+                    display::flush_cursor_only();
                 }
             }
         }

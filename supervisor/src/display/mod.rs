@@ -103,7 +103,6 @@ pub fn enable_cursor() {
     }
 }
 /// Blit only the cursor sprite region (fast path for mouse motion).
-#[allow(dead_code)]
 pub fn flush_cursor_only() {
     if let Some(m) = FB.get() { m.lock().unwrap().flush_cursor_only(); }
 }
