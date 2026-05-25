@@ -169,7 +169,9 @@ pub fn dispatch_mouse(
                         let is_hovered = new_hover.as_deref() == Some(name.as_str());
                         draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, is_hovered, name);
                     }
-                    fb.flush();
+                    // Cursor-only blit: dirty title-bar rows are picked up by the next
+                    // app flush(). Avoids a 5 MB blit on every title-bar hover crossing.
+                    fb.flush_cursor_only();
                 }
             }
         }

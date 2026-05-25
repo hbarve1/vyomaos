@@ -419,7 +419,6 @@ impl Framebuffer {
     /// Blit cursor sprite region only; does not consume the dirty rect.
     /// Fast path for mouse motion when no app content changed — avoids the full
     /// 5 MB blit for every cursor move event.
-    #[allow(dead_code)]
     pub fn flush_cursor_only(&mut self) {
         if !self.cursor.visible || self.bpp != 32 { return; }
         if self.cursor.cx < 0 || self.cursor.cy < 0 { return; }
