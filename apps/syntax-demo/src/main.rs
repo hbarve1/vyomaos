@@ -159,6 +159,10 @@ fn main() {
 
     for line in stdin.lock().lines() {
         let raw = match line { Ok(l) => l, Err(_) => break };
+
+        // Ignore supervisor system notifications (screen resize etc.)
+        if raw.starts_with("VYOMA_SYSTEM:") { continue; }
+
         let all_count = a.lines.len() + 1;
         let vis_lines = ((CONTENT_H - 21) / LINE_H) as usize;
 

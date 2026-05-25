@@ -417,6 +417,41 @@ fn main() {
             .expect("spawn mgmt-server thread");
     }
 
+    // ── T018 [US2]: screen-resize poll thread — detects framebuffer size changes ──
+    #[cfg(target_os = "linux")]
+    {
+        let inbox_resize   = Arc::clone(&inbox);
+        let registry_resize = Arc::clone(&app_registry);
+        thread::Builder::new()
+            .name("screen-poll".into())
+            .spawn(move || {
+                let mut last = display::screen_size().unwrap_or((1440, 900)); // DEFAULT_SCREEN_W/H fallback
+                loop {
+                    thread::sleep(std::time::Duration::from_secs(1));
+                    if let Some((w, h)) = display::screen_size() {
+                        if (w, h) != last {
+                            log_info!(Subsystem::Display, None,
+                                "screen resize detected: {}×{} → {}×{}", last.0, last.1, w, h);
+                            last = (w, h);
+                            // Broadcast new dimensions to all running display apps.
+                            let msg = format!("VYOMA_SYSTEM:screen:{},{}", w, h);
+                            let reg = registry_resize.lock().unwrap();
+                            let inb = inbox_resize.lock().unwrap();
+                            for (name, state_arc) in reg.iter() {
+                                let st = state_arc.lock().unwrap();
+                                if st.has_display && matches!(st.status, AppStatus::Running) {
+                                    if let Some(tx) = inb.get(name) {
+                                        let _ = tx.send(msg.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+            .expect("spawn screen-poll thread");
+    }
+
     // ── Pass 2: start IO threads for each spawned app ─────────────────────────
     let mut waiter_handles = vec![];
     for app in spawned {
