@@ -97,6 +97,7 @@ struct AppState {
     has_mouse:   bool,
     has_display: bool,
     win_region:  Option<(u32, u32, u32, u32)>,  // supervisor-assigned; updated by apply_tiling_layout
+    win_z:       u32,  // z-layer; 0=desktop, 10=default, 100=dock, 200+=system
     min_size:    (u32, u32),                     // (min_w, min_h) hint from manifest [window]
     draw_ticks:      u64,           // incremented each time the app issues a VYOMA_DRAW command
     last_cpu_reset:  std::time::Instant, // when draw_ticks was last zeroed
@@ -494,7 +495,5 @@ fn route_or_print(
     router::route_or_print(line, sender, inbox, has_display, win_region, focused, app_registry);
 }
 
-fn send_reply(target: &str, msg: &str, inbox: &Inbox) {
-    router::send_reply(target, msg, inbox);
-}
+fn send_reply(target: &str, msg: &str, inbox: &Inbox) { router::send_reply(target, msg, inbox); }
 

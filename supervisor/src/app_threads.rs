@@ -279,6 +279,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         has_mouse:        caps.mouse,
         has_display:      caps.display,
         win_region:       None,
+        win_z:            manifest.window.as_ref().map(|w| w.z).unwrap_or(10),
         min_size,
         draw_ticks:       0,
         last_cpu_reset:   Instant::now(),
