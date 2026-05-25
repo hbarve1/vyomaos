@@ -1,0 +1,10 @@
+[package]
+name    = "path-planner"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "path-planner"
+path = "src/main.rs"
+
+[dependencies]

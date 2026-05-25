@@ -1,0 +1,11 @@
+[app]
+name    = "sensor-reader"
+version = "0.1.0"
+wasm    = "sensor-reader.wasm"
+
+[capabilities]
+stdio  = true
+
+[capabilities.i2c]
+bus     = 0
+address = 0x48

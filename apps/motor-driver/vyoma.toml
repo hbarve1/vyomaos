@@ -1,0 +1,11 @@
+[app]
+name    = "motor-driver"
+version = "0.1.0"
+wasm    = "motor-driver.wasm"
+
+[capabilities]
+stdio  = true
+
+[capabilities.gpio]
+pins      = [5, 6]
+direction = "output"
