@@ -1,162 +1,150 @@
 // Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
+//! Spotlight — full-screen app launcher overlay.
+//! Type to filter app names. Enter launches. Escape exits.
+
+mod search;
+
 use std::io::{self, BufRead, Write};
 
-const W: u32 = 600;
-const H: u32 = 400;
-const C_BG: u32     = 0x1C2128F0;
-const C_BORDER: u32 = 0x58A6FFFF;
-const C_ACCENT: u32 = 0x58A6FFFF;
-const C_TEXT: u32   = 0xE6EDF3FF;
-const C_DIM: u32    = 0x8B949EFF;
-const C_SEL: u32    = 0x1F4068FF;
-const C_HINT: u32   = 0x6E7681FF;
-const C_FIELD: u32  = 0x0D1117FF;
+const W: u32 = 1440;
+const H: u32 = 876;
 
-const SEARCH_Y: u32 = 20;
-const SEARCH_H: u32 = 44;
-const RESULTS_Y: u32 = SEARCH_Y + SEARCH_H + 8;
-const ROW_H: u32    = 36;
-const VIS: usize    = ((H - RESULTS_Y - 20) / ROW_H) as usize;
+// Search box geometry (centered)
+const BOX_W: u32   = 800;
+const BOX_X: u32   = (W - BOX_W) / 2; // 320
+const BOX_Y: u32   = 300;
+const BOX_H: u32   = 56;
+
+// Results list
+const RESULTS_Y: u32 = BOX_Y + BOX_H + 12;
+const ROW_H: u32     = 50;
+const MAX_VISIBLE: usize = 10;
+
+// Colors
+const C_OVERLAY: u32 = 0x1C1C2EFF; // solid dark overlay
+const C_BOX: u32     = 0x2D2D3EFF; // search box bg
+const C_SEL: u32     = 0x3B4EE8FF; // selection highlight blue
+const C_TEXT: u32    = 0xE6EDF3FF; // white text
+const C_HINT: u32    = 0x8B949EFF; // gray hint
+const C_DIM: u32     = 0x6E7681FF; // dim text
 
 fn fill(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
-    println!("VYOMA_DRAW:fill_rect:{x},{y},{w},{h},{rgba:#010x}");
+    println!("VYOMA_DRAW:fill_rect:{x},{y},{w},{h},{rgba}");
 }
-fn text(x: u32, y: u32, rgba: u32, s: &str) {
-    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba:#010x},m,{s}");
+
+fn text_m(x: u32, y: u32, rgba: u32, s: &str) {
+    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},m,{s}");
 }
-fn border(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
-    println!("VYOMA_DRAW:rect_border:{x},{y},{w},{h},{rgba:#010x}");
+
+fn text_l(x: u32, y: u32, rgba: u32, s: &str) {
+    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},l,{s}");
 }
+
 fn flush() {
     println!("VYOMA_DRAW:flush");
     let _ = io::stdout().flush();
 }
 
-// All known apps
-const ALL_APPS: &[(&str, &str)] = &[
-    ("File Manager",       "file-manager"),
-    ("Text Editor",        "text-editor"),
-    ("Browser",            "browser"),
-    ("System Monitor",     "system-monitor"),
-    ("Calendar",           "calendar"),
-    ("Task Manager",       "task-manager"),
-    ("Settings",           "settings"),
-    ("App Store",          "app-store"),
-    ("Shell",              "shell"),
-    ("Clock",              "clock"),
-    ("Weather",            "weather"),
-    ("Calculator",         "sci-calculator"),
-    ("Password Manager",   "password-manager"),
-    ("Image Viewer",       "image-viewer"),
-    ("Hex Editor",         "hex-editor"),
-    ("Markdown Viewer",    "markdown-viewer"),
-    ("CSV Viewer",         "csv-viewer"),
-    ("JSON Viewer",        "json-viewer"),
-    ("Log Viewer",         "log-viewer"),
-    ("Diff Viewer",        "diff-viewer"),
-    ("Color Picker",       "color-picker"),
-    ("Process Inspector",  "process-inspector"),
-    ("Font Chooser",       "font-chooser"),
-    ("SSH Client",         "ssh-client"),
-    ("DNS Resolver",       "dns-resolver"),
-    ("Network Config",     "network-config"),
-    ("Audio Player",       "audio-player"),
-    ("Pomodoro",           "pomodoro"),
-    ("Virtual Keyboard",   "virtual-keyboard"),
-    ("Dock",               "dock"),
-    ("Menu Bar",           "menu-bar"),
-];
+fn draw(query: &str, results: &[(&str, &str)], cursor: usize) {
+    // Full-screen dark overlay
+    fill(0, 0, W, H, C_OVERLAY);
 
-fn filtered<'a>(query: &str) -> Vec<&'a (&'a str, &'a str)> {
-    let q = query.to_ascii_lowercase();
-    ALL_APPS.iter()
-        .filter(|(name, cmd)| {
-            q.is_empty()
-                || name.to_ascii_lowercase().contains(&q)
-                || cmd.to_ascii_lowercase().contains(&q)
-        })
-        .collect()
-}
+    // Title at top center
+    let title = "Spotlight";
+    let title_w = title.len() as u32 * 16;
+    let title_x = (W - title_w) / 2;
+    text_l(title_x, 220, C_TEXT, title);
 
-fn draw(query: &str, results: &[&(&str, &str)], cursor: usize) {
-    fill(0, 0, W, H, C_BG);
-    border(0, 0, W, H, C_BORDER);
+    // Search box background
+    fill(BOX_X, BOX_Y, BOX_W, BOX_H, C_BOX);
 
-    // Search icon + field
-    text(18, SEARCH_Y + 14, C_ACCENT, "⌕");
-    fill(44, SEARCH_Y, W - 64, SEARCH_H, C_FIELD);
-    border(44, SEARCH_Y, W - 64, SEARCH_H, C_BORDER);
-    let disp = if query.is_empty() { "Search apps…" } else { query };
-    let tc   = if query.is_empty() { C_HINT } else { C_TEXT };
-    text(54, SEARCH_Y + 14, tc, disp);
-
-    // Divider
-    fill(20, RESULTS_Y - 4, W - 40, 1, 0x30363DFF);
+    // Search box text (show placeholder when empty, or query with cursor)
+    let text_color = if query.is_empty() { C_HINT } else { C_TEXT };
+    let show_text = if query.is_empty() {
+        "Search apps...".to_string()
+    } else {
+        format!("{query}_")
+    };
+    text_m(BOX_X + 20, BOX_Y + 20, text_color, &show_text);
 
     // Results
-    for (i, &&(name, cmd)) in results.iter().take(VIS).enumerate() {
+    let visible = results.len().min(MAX_VISIBLE);
+    for (i, (name, cmd)) in results.iter().take(visible).enumerate() {
         let ry = RESULTS_Y + i as u32 * ROW_H;
         let is_sel = i == cursor;
-        if is_sel { fill(0, ry, W, ROW_H, C_SEL); }
-        let tc = if is_sel { C_TEXT } else { C_DIM };
-        text(54, ry + 10, tc, name);
-        let cw = cmd.len() as u32 * 8;
-        text(W - cw - 20, ry + 10, C_HINT, cmd);
+        if is_sel {
+            fill(BOX_X, ry, BOX_W, ROW_H, C_SEL);
+        }
+        let name_color = if is_sel { C_TEXT } else { C_HINT };
+        text_m(BOX_X + 20, ry + 17, name_color, name);
+        // Right-align the cmd slug
+        let cmd_w = cmd.len() as u32 * 8;
+        let cmd_x = BOX_X + BOX_W - cmd_w - 20;
+        text_m(cmd_x, ry + 17, C_DIM, cmd);
     }
 
     if results.is_empty() {
-        text(54, RESULTS_Y + 10, C_HINT, "No apps match");
+        text_m(BOX_X + 20, RESULTS_Y + 17, C_HINT, "No matching apps");
     }
 
-    // Footer
-    fill(0, H - 22, W, 1, 0x30363DFF);
-    let count = format!("{} apps", results.len());
-    text(20, H - 14, C_HINT, &count);
-    text(W - 140, H - 14, C_HINT, "Enter: launch  Esc: close");
+    // Footer hint
+    let hint = "Enter: Launch  |  Esc: Cancel";
+    let hint_w = hint.len() as u32 * 8;
+    let hint_x = (W - hint_w) / 2;
+    text_m(hint_x, H - 40, C_DIM, hint);
+
+    // Result count
+    let count_str = format!("{} apps", results.len());
+    text_m(BOX_X, H - 40, C_DIM, &count_str);
 
     flush();
 }
 
 fn main() {
-    let stdin = io::stdin();
+    let stdin  = io::stdin();
     let mut query  = String::new();
     let mut cursor = 0usize;
 
-    let init_results = filtered(&query);
-    draw(&query, &init_results, cursor);
-
-    // Raise to front
+    // Raise spotlight to front
     println!("@supervisor: raise spotlight");
     let _ = io::stdout().flush();
 
+    let init_results = search::filter(&query);
+    draw(&query, &init_results, cursor);
+
     for line in stdin.lock().lines() {
         let raw = match line { Ok(l) => l, Err(_) => break };
+
+        // Skip supervisor replies
         if raw.starts_with("REPLY:") { continue; }
 
-        let results = filtered(&query);
-
         match raw.as_str() {
-            "\x03" | "\x1b" => {
+            // Escape or Ctrl+C — exit
+            "\x1b" | "\x03" => {
                 fill(0, 0, W, H, 0x0D1117FF);
                 flush();
                 std::process::exit(0);
             }
+            // Backspace
             "\x7f" => {
                 query.pop();
                 cursor = 0;
             }
+            // Up arrow
             "\x1b[A" => {
                 if cursor > 0 { cursor -= 1; }
             }
+            // Down arrow
             "\x1b[B" => {
-                let r = filtered(&query);
-                if cursor + 1 < r.len().min(VIS) { cursor += 1; }
+                let n = search::filter(&query).len().min(MAX_VISIBLE);
+                if cursor + 1 < n { cursor += 1; }
             }
+            // Enter — launch selected app
             "" => {
-                let r = filtered(&query);
-                if let Some(&&(_, cmd)) = r.get(cursor) {
+                let r = search::filter(&query);
+                if let Some((_, cmd)) = r.get(cursor) {
                     println!("@supervisor: run {cmd}");
                     let _ = io::stdout().flush();
                     fill(0, 0, W, H, 0x0D1117FF);
@@ -164,6 +152,7 @@ fn main() {
                     std::process::exit(0);
                 }
             }
+            // Printable character — append to query
             ch if ch.len() == 1 => {
                 let c = ch.chars().next().unwrap();
                 if c.is_ascii_graphic() || c == ' ' {
@@ -174,7 +163,10 @@ fn main() {
             _ => {}
         }
 
-        let results = filtered(&query);
+        let results = search::filter(&query);
+        // Clamp cursor
+        let max_cur = results.len().min(MAX_VISIBLE).saturating_sub(1);
+        if cursor > max_cur { cursor = max_cur; }
         draw(&query, &results, cursor);
     }
 }

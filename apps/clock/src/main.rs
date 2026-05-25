@@ -1,181 +1,131 @@
 // Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
+//! Clock — digital uptime clock showing HH:MM:SS with blinking colons.
+
 use std::io::{self, BufRead, Write};
 use std::time::Instant;
 
-const W: u32 = 320;
-const H: u32 = 360;
-const C_BG: u32     = 0x0D1117FF;
-const C_ACCENT: u32 = 0x58A6FFFF;
-const C_DIM: u32    = 0x8B949EFF;
-const C_TITLE: u32  = 0xFFFFFFFF;
-const C_BORDER: u32 = 0x30363DFF;
-const C_HINT: u32   = 0x6E7681FF;
+const W: u32 = 360;
+const H: u32 = 200;
 
-// Start epoch: 2026-05-20 00:00:00 (Wednesday)
-const START_HOUR:   u32 = 0;
-const START_MIN:    u32 = 0;
-const START_SEC:    u32 = 0;
-const START_DAY:    u32 = 20;
-const START_MONTH:  u32 = 5;
-const START_YEAR:   u32 = 2026;
-const START_WDAY:   u32 = 3; // 0=Sun, 3=Wed
-
-const MONTH_NAMES: [&str; 12] = [
-    "January","February","March","April","May","June",
-    "July","August","September","October","November","December",
-];
-const DAY_NAMES: [&str; 7] = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const C_BG: u32    = 0x0D1117FF; // GitHub dark
+const C_TIME: u32  = 0x00F5FFFF; // bright cyan
+const C_DIM: u32   = 0x334155FF; // dim (colon off-state)
+const C_GRAY: u32  = 0x8B949EFF; // subtitle gray
+const C_HINT: u32  = 0x6E7681FF; // dim hint
 
 fn fill(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
-    println!("VYOMA_DRAW:fill_rect:{x},{y},{w},{h},{rgba:#010x}");
+    println!("VYOMA_DRAW:fill_rect:{x},{y},{w},{h},{rgba}");
 }
-fn text(x: u32, y: u32, rgba: u32, s: &str) {
-    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba:#010x},m,{s}");
+
+fn draw_text_l(x: u32, y: u32, rgba: u32, s: &str) {
+    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},l,{s}");
 }
+
+fn draw_text_m(x: u32, y: u32, rgba: u32, s: &str) {
+    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},m,{s}");
+}
+
+fn draw_text_s(x: u32, y: u32, rgba: u32, s: &str) {
+    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba},s,{s}");
+}
+
 fn flush() {
     println!("VYOMA_DRAW:flush");
     let _ = io::stdout().flush();
 }
 
-fn is_leap(y: u32) -> bool {
-    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
-}
+/// Draw one frame: HH:MM:SS centered, subtitle, and status line.
+fn draw_frame(elapsed_secs: u64, blink_on: bool) {
+    let h = elapsed_secs / 3600;
+    let m = (elapsed_secs % 3600) / 60;
+    let s = elapsed_secs % 60;
 
-fn days_in_month(y: u32, m: u32) -> u32 {
-    match m {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 => if is_leap(y) { 29 } else { 28 },
-        _ => 30,
-    }
-}
+    let colon_color = if blink_on { C_TIME } else { C_DIM };
 
-struct DateTime {
-    year: u32, month: u32, day: u32,
-    hour: u32, min: u32, sec: u32,
-    wday: u32, // 0=Sun
-}
-
-impl DateTime {
-    fn start() -> Self {
-        DateTime {
-            year: START_YEAR, month: START_MONTH, day: START_DAY,
-            hour: START_HOUR, min: START_MIN, sec: START_SEC,
-            wday: START_WDAY,
-        }
-    }
-
-    fn from_elapsed(elapsed_secs: u64) -> Self {
-        let mut dt = DateTime::start();
-        let mut remaining = elapsed_secs;
-
-        // Add full days
-        let full_days = remaining / 86400;
-        remaining %= 86400;
-
-        dt.hour = (remaining / 3600) as u32;
-        remaining %= 3600;
-        dt.min  = (remaining / 60)   as u32;
-        dt.sec  = (remaining % 60)   as u32;
-
-        // Advance date by full_days
-        let mut days_left = full_days;
-        while days_left > 0 {
-            let dim = days_in_month(dt.year, dt.month);
-            let remaining_in_month = dim - dt.day;
-            if days_left <= remaining_in_month as u64 {
-                dt.day += days_left as u32;
-                days_left = 0;
-            } else {
-                days_left -= (remaining_in_month + 1) as u64;
-                dt.month += 1;
-                if dt.month > 12 { dt.month = 1; dt.year += 1; }
-                dt.day = 1;
-            }
-        }
-        // Recalculate weekday (simple: START_WDAY + total_days mod 7)
-        dt.wday = ((START_WDAY as u64 + elapsed_secs / 86400) % 7) as u32;
-        dt
-    }
-}
-
-fn draw(dt: &DateTime) {
+    // Background
     fill(0, 0, W, H, C_BG);
-    fill(0, 34, W, 1, C_BORDER);
-    text(20, 14, C_ACCENT, "Clock");
 
-    // Large time display — centered
-    let time_str = format!("{:02}:{:02}:{:02}", dt.hour, dt.min, dt.sec);
-    // Each large char is ~16px wide (size l = 16x32), time_str is 8 chars
-    let time_w = time_str.len() as u32 * 16;
-    let time_x = (W - time_w) / 2;
-    println!("VYOMA_DRAW:draw_text:{time_x},100,{C_TITLE:#010x},l,{time_str}");
+    // --- Large HH:MM:SS centered ---
+    // Large font: 16px wide × 32px tall per char
+    // "HH:MM:SS" = 8 chars = 128px wide
+    // Center in 360px: x = (360 - 128) / 2 = 116
+    let time_y = 44u32;
 
-    // Date line — centered
-    let date_str = format!("{} {} {} {}",
-        DAY_NAMES[dt.wday as usize],
-        dt.day,
-        MONTH_NAMES[(dt.month - 1) as usize],
-        dt.year
-    );
-    let date_w = date_str.len() as u32 * 8;
-    let date_x = if date_w < W { (W - date_w) / 2 } else { 4 };
-    text(date_x, 160, C_DIM, &date_str);
+    // Draw HH
+    let hh = format!("{h:02}");
+    draw_text_l(116, time_y, C_TIME, &hh);
 
-    // Divider
-    fill(40, 195, W - 80, 1, C_BORDER);
+    // Draw first colon (at x = 116 + 2*16 = 148)
+    draw_text_l(148, time_y, colon_color, ":");
 
-    // AM/PM
-    let ampm = if dt.hour < 12 { "AM" } else { "PM" };
-    let h12  = match dt.hour % 12 { 0 => 12, h => h };
-    let ampm_str = format!("{h12}:{:02} {ampm}", dt.min);
-    let ampm_w = ampm_str.len() as u32 * 8;
-    let ampm_x = (W - ampm_w) / 2;
-    text(ampm_x, 210, C_ACCENT, &ampm_str);
+    // Draw MM (at x = 148 + 16 = 164)
+    let mm = format!("{m:02}");
+    draw_text_l(164, time_y, C_TIME, &mm);
 
-    fill(0, H - 30, W, 1, C_BORDER);
-    text(20, H - 18, C_HINT, "any key: tick 1s   Ctrl+C: quit");
+    // Draw second colon (at x = 164 + 2*16 = 196)
+    draw_text_l(196, time_y, colon_color, ":");
+
+    // Draw SS (at x = 196 + 16 = 212)
+    let ss = format!("{s:02}");
+    draw_text_l(212, time_y, C_TIME, &ss);
+
+    // --- Subtitle: "VyomaOS Uptime" centered in medium font ---
+    // medium font: 8px wide × 16px tall
+    let sub1 = "VyomaOS Uptime";
+    let sub1_w = sub1.len() as u32 * 8;
+    let sub1_x = (W - sub1_w) / 2;
+    draw_text_m(sub1_x, time_y + 40, C_GRAY, sub1);
+
+    // --- Third line: "WASM * Ready" in small font ---
+    // Use ASCII asterisk to avoid multi-byte char width confusion
+    let sub2 = "WASM * Ready";
+    let sub2_w = sub2.len() as u32 * 4; // small font: 4px wide per char
+    let sub2_x = if sub2_w < W { (W - sub2_w) / 2 } else { 4 };
+    draw_text_s(sub2_x, time_y + 64, C_HINT, sub2);
+
     flush();
 }
 
 fn main() {
-    let stdin = io::stdin();
-    let boot = Instant::now();
-    let mut manual_ticks: u64 = 0;
+    let start = Instant::now();
 
-    let dt = DateTime::from_elapsed(0);
-    draw(&dt);
+    // Initial draw
+    draw_frame(0, true);
 
-    // Request periodic ticks via supervisor ping
-    println!("@supervisor: ping");
-    let _ = io::stdout().flush();
+    // Use a separate thread to handle stdin so we don't block the draw loop.
+    // The draw loop uses thread::sleep(500ms) and re-draws every half second.
+    // stdin lines are handled by a reader thread that sends a flag via channel.
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
 
-    for line in stdin.lock().lines() {
-        let raw = match line { Ok(l) => l, Err(_) => break };
-
-        if raw.starts_with("REPLY:pong") || raw.starts_with("REPLY:ping") {
-            // Re-ping for continuous ticks
-            println!("@supervisor: ping");
-            let _ = io::stdout().flush();
-        }
-
-        match raw.as_str() {
-            "\x03" => {
-                fill(0, 0, W, H, C_BG);
-                flush();
-                std::process::exit(0);
+    std::thread::spawn(move || {
+        let stdin = io::stdin();
+        for line in stdin.lock().lines() {
+            let raw = match line { Ok(l) => l, Err(_) => break };
+            // Handle VYOMA_SYSTEM:screen updates or exit signals
+            if raw == "\x03" {
+                let _ = tx.send(());
+                break;
             }
-            _ => {}
+        }
+    });
+
+    loop {
+        // Check for exit signal
+        if rx.try_recv().is_ok() {
+            fill(0, 0, W, H, C_BG);
+            flush();
+            std::process::exit(0);
         }
 
-        // Use real elapsed time from boot + manual ticks as fallback
-        let elapsed = boot.elapsed().as_secs() + manual_ticks;
-        if raw.len() == 1 && raw.as_bytes().first() != Some(&b'\x03') {
-            manual_ticks += 1;
-        }
-        let dt = DateTime::from_elapsed(elapsed);
-        draw(&dt);
+        let elapsed = start.elapsed();
+        let secs = elapsed.as_secs();
+        // blink_on: alternate every 500ms
+        let blink_on = (elapsed.as_millis() / 500) % 2 == 0;
+
+        draw_frame(secs, blink_on);
+
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 }
