@@ -11,10 +11,10 @@
 
 use std::{io::Write, thread, time::Duration};
 
-const X: u32 = 1140;  // right side of 1440px screen
-const Y: u32 = 8;    // just below top edge
-const W: u32 = 292;
-const H: u32 = 36;
+const X: u32 = 0;
+const Y: u32 = 0;
+const W: u32 = 720;  // fills the assigned tile (supervisor clips to window bounds)
+const H: u32 = 52;
 
 const C_BG:     u32 = 0x21262DFF;
 const C_BORDER: u32 = 0x58A6FFFF;
@@ -32,16 +32,16 @@ fn main() {
 
         // Background + border
         fill(X, Y, W, H, C_BG);
-        fill(X, Y, W, 2, C_BORDER);      // top border
-        fill(X, Y + H - 2, W, 2, C_BORDER); // bottom border
+        fill(X, Y, W, 2, C_BORDER);          // top border
+        fill(X, Y + H - 2, W, 2, C_BORDER);  // bottom border
 
         // Spinner dot
-        fill(X + 6, Y + 12, 10, 10, C_GREEN);
+        fill(X + 8, Y + 20, 12, 12, C_GREEN);
 
         // Labels
-        text(X + 20, Y + 10, C_TEXT,  spinner);
-        text(X + 36, Y + 10, C_DIM,   "ticker");
-        text(X + 108, Y + 10, C_TEXT, &uptime);
+        text(X + 24, Y + 18, C_TEXT, spinner);
+        text(X + 40, Y + 18, C_DIM,  "ticker");
+        text(X + 120, Y + 18, C_TEXT, &uptime);
 
         flush();
 

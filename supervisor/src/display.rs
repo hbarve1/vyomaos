@@ -24,6 +24,47 @@ use std::{
     time::Duration,
 };
 
+// ── Cursor sprite constants ───────────────────────────────────────────────────
+
+pub const CURSOR_W: u32 = 12;
+pub const CURSOR_H: u32 = 19;
+
+// Standard arrow cursor bitmask: each u16 is one row, MSB = leftmost pixel.
+// 12 columns wide, 19 rows tall.
+const CURSOR_MASK: [u16; 19] = [
+    0b1000_0000_0000_0000, // row 0
+    0b1100_0000_0000_0000,
+    0b1110_0000_0000_0000,
+    0b1111_0000_0000_0000,
+    0b1111_1000_0000_0000,
+    0b1111_1100_0000_0000,
+    0b1111_1110_0000_0000,
+    0b1111_1111_0000_0000,
+    0b1111_1111_1000_0000,
+    0b1111_1111_1100_0000,
+    0b1111_1111_0000_0000, // row 10
+    0b1111_0110_0000_0000,
+    0b1110_0110_0000_0000,
+    0b1100_0011_0000_0000,
+    0b1000_0011_0000_0000,
+    0b0000_0001_1000_0000,
+    0b0000_0001_1000_0000,
+    0b0000_0000_0000_0000,
+    0b0000_0000_0000_0000, // row 18
+];
+
+// ── Cursor state ──────────────────────────────────────────────────────────────
+
+pub struct CursorState {
+    pub cx:          i32,
+    pub cy:          i32,
+    pub visible:     bool,
+    // Pixels saved from the back-buffer before the cursor was drawn.
+    // CURSOR_W * CURSOR_H * 4 bytes (BGRA).
+    pub saved_under: Vec<u8>,
+    pub drawn:       bool,
+}
+
 // ── Linux framebuffer ioctl ───────────────────────────────────────────────────
 
 const FBIOGET_VSCREENINFO: libc::Ioctl = 0x4600;
@@ -80,7 +121,9 @@ pub struct Framebuffer {
     bpp: u32,
     buf: *mut u8,
     buf_len: usize,
-    back: Vec<u8>,        // back-buffer; blitted to buf on flush()
+    pub back: Vec<u8>,    // back-buffer; blitted to buf on flush()
+    pub cursor: CursorState,
+    mmaped: bool,         // false for test-only heap-allocated instances
 }
 
 // All mutable access is serialised through `Mutex<Framebuffer>`.
@@ -126,6 +169,27 @@ pub fn screen_size() -> Option<(u32, u32)> {
     })
 }
 
+/// Update cursor position (clamped to screen bounds).
+pub fn set_cursor_pos(cx: i32, cy: i32) {
+    if let Some(m) = FB.get() {
+        let mut fb = m.lock().unwrap();
+        let max_x = fb.width  as i32 - 1;
+        let max_y = fb.height as i32 - 1;
+        fb.cursor.cx = cx.clamp(0, max_x);
+        fb.cursor.cy = cy.clamp(0, max_y);
+    }
+}
+
+/// Enable cursor visibility (called once a mouse device is found).
+pub fn enable_cursor() {
+    if let Some(m) = FB.get() {
+        let mut fb = m.lock().unwrap();
+        fb.cursor.visible = true;
+        let (cx, cy) = (fb.cursor.cx, fb.cursor.cy);
+        eprintln!("cursor: sprite enabled at ({cx},{cy})");
+    }
+}
+
 // ── Framebuffer open + mmap ───────────────────────────────────────────────────
 
 fn open_fb() -> io::Result<Framebuffer> {
@@ -169,12 +233,28 @@ fn open_fb() -> io::Result<Framebuffer> {
     );
 
     let back = vec![0u8; buf_len];
-    Ok(Framebuffer { _file: file, width, height, stride, bpp, buf: buf as *mut u8, buf_len, back })
+    let cursor = CursorState {
+        cx:          (width / 2) as i32,
+        cy:          (height / 2) as i32,
+        visible:     false,
+        saved_under: vec![0u8; (CURSOR_W * CURSOR_H * 4) as usize],
+        drawn:       false,
+    };
+    Ok(Framebuffer { _file: file, width, height, stride, bpp, buf: buf as *mut u8, buf_len, back, cursor, mmaped: true })
 }
 
 impl Drop for Framebuffer {
     fn drop(&mut self) {
-        unsafe { libc::munmap(self.buf as *mut libc::c_void, self.buf_len); }
+        if self.mmaped {
+            unsafe { libc::munmap(self.buf as *mut libc::c_void, self.buf_len); }
+        } else {
+            // Heap-allocated (test instance): free with the allocator.
+            use std::alloc::{dealloc, Layout};
+            if self.buf_len > 0 {
+                let layout = Layout::from_size_align(self.buf_len, 4).unwrap();
+                unsafe { dealloc(self.buf, layout); }
+            }
+        }
     }
 }
 
@@ -293,13 +373,113 @@ impl Framebuffer {
         }
     }
 
+    /// Save pixels under the cursor hotspot into `cursor.saved_under`, then
+    /// paint the arrow sprite (white fill with 1px black outline) at `cursor.cx/cy`.
+    /// No-op when `!cursor.visible` or bpp != 32.
+    pub fn draw_cursor(&mut self) {
+        if !self.cursor.visible || self.bpp != 32 {
+            return;
+        }
+        let cx = self.cursor.cx as u32;
+        let cy = self.cursor.cy as u32;
+
+        // Save pixels that will be under the cursor.
+        let mut saved_idx = 0usize;
+        for row in 0..CURSOR_H {
+            let py = cy + row;
+            if py >= self.height {
+                break;
+            }
+            for col in 0..CURSOR_W {
+                let px = cx + col;
+                if px >= self.width {
+                    break;
+                }
+                let off = (py * self.stride + px * 4) as usize;
+                if off + 4 <= self.buf_len && saved_idx + 4 <= self.cursor.saved_under.len() {
+                    self.cursor.saved_under[saved_idx..saved_idx + 4]
+                        .copy_from_slice(&self.back[off..off + 4]);
+                }
+                saved_idx += 4;
+            }
+        }
+        self.cursor.drawn = true;
+
+        // Paint cursor sprite using CURSOR_MASK.
+        for row in 0..CURSOR_H as usize {
+            let py = cy + row as u32;
+            if py >= self.height {
+                break;
+            }
+            let mask = CURSOR_MASK[row];
+            for col in 0..CURSOR_W as usize {
+                if mask & (0x8000 >> col) == 0 {
+                    continue;
+                }
+                let px = cx + col as u32;
+                if px >= self.width {
+                    break;
+                }
+                let off = (py * self.stride + px * 4) as usize;
+                if off + 4 > self.buf_len {
+                    continue;
+                }
+                // Outline: pixels adjacent to a transparent (0) bit get black; sprite body white
+                let is_edge = col == 0 || row == 0
+                    || (col > 0 && CURSOR_MASK[row] & (0x8000 >> (col - 1)) == 0)
+                    || (row > 0 && CURSOR_MASK[row - 1] & (0x8000 >> col) == 0)
+                    || (col + 1 < CURSOR_W as usize && CURSOR_MASK[row] & (0x8000 >> (col + 1)) == 0)
+                    || (row + 1 < CURSOR_H as usize && CURSOR_MASK[row + 1] & (0x8000 >> col) == 0);
+                let pixel: [u8; 4] = if is_edge {
+                    [0x00, 0x00, 0x00, 0xFF] // black outline (BGRA)
+                } else {
+                    [0xFF, 0xFF, 0xFF, 0xFF] // white fill
+                };
+                self.back[off..off + 4].copy_from_slice(&pixel);
+            }
+        }
+    }
+
+    /// Restore pixels that were saved by the most recent `draw_cursor()` call.
+    /// No-op when `cursor.drawn` is false.
+    pub fn restore_under_cursor(&mut self) {
+        if !self.cursor.drawn {
+            return;
+        }
+        let cx = self.cursor.cx as u32;
+        let cy = self.cursor.cy as u32;
+        let mut saved_idx = 0usize;
+        for row in 0..CURSOR_H {
+            let py = cy + row;
+            if py >= self.height {
+                break;
+            }
+            for col in 0..CURSOR_W {
+                let px = cx + col;
+                if px >= self.width {
+                    break;
+                }
+                let off = (py * self.stride + px * 4) as usize;
+                if off + 4 <= self.buf_len && saved_idx + 4 <= self.cursor.saved_under.len() {
+                    self.back[off..off + 4]
+                        .copy_from_slice(&self.cursor.saved_under[saved_idx..saved_idx + 4]);
+                }
+                saved_idx += 4;
+            }
+        }
+        self.cursor.drawn = false;
+    }
+
     /// Blit back-buffer to the mmap'd framebuffer (front-buffer).
-    /// All draw ops write to `self.back`; only this call makes them visible,
-    /// eliminating partial-frame tearing.
-    pub fn flush(&self) {
+    /// Composites the cursor sprite on top before blitting, then restores the
+    /// back-buffer so subsequent draw ops see a clean canvas.
+    pub fn flush(&mut self) {
+        self.restore_under_cursor();
+        self.draw_cursor();
         unsafe {
             std::ptr::copy_nonoverlapping(self.back.as_ptr(), self.buf, self.buf_len);
         }
+        self.restore_under_cursor();
     }
 
     /// Draw a 1-pixel border rectangle (no fill).
@@ -316,6 +496,32 @@ impl Framebuffer {
     /// Fill a region with solid black (clear).
     pub fn clear_region(&mut self, x: u32, y: u32, w: u32, h: u32) {
         self.fill_rect(x, y, w, h, 0x000000FF);
+    }
+
+    /// Construct a Framebuffer backed by heap memory (no /dev/fb0 required).
+    /// Used by integration tests.
+    #[doc(hidden)]
+    #[allow(dead_code)]
+    pub fn new_for_test(width: u32, height: u32) -> (Self, Vec<u8>) {
+        use std::alloc::{alloc_zeroed, Layout};
+        let bpp = 32u32;
+        let stride = width * 4;
+        let buf_len = (stride * height) as usize;
+        let layout = Layout::from_size_align(buf_len, 4).unwrap();
+        // SAFETY: we own this allocation for the lifetime of the test Framebuffer.
+        let buf = unsafe { alloc_zeroed(layout) };
+        let back = vec![0u8; buf_len];
+        let cursor = CursorState {
+            cx:          (width / 2) as i32,
+            cy:          (height / 2) as i32,
+            visible:     true,
+            saved_under: vec![0u8; (CURSOR_W * CURSOR_H * 4) as usize],
+            drawn:       false,
+        };
+        // We pass a dummy File using /dev/null so the struct is valid.
+        let file = std::fs::File::open("/dev/null").unwrap();
+        let fb = Self { _file: file, width, height, stride, bpp, buf, buf_len, back, cursor, mmaped: false };
+        (fb, vec![0u8; buf_len])
     }
 
     /// Write the current back-buffer as a raw PPM (P6) file to `path`.
@@ -373,6 +579,77 @@ impl Framebuffer {
         }
     }
 }
+
+/// Alpha-blend `fg` over `bg` using the given alpha value `a` (0 = fully transparent, 255 = fully opaque).
+///
+/// Both `fg` and `bg` are packed RGBA `u32` values (`0xRRGGBBAA`).  The output
+/// alpha byte is always `0xFF` (the result is fully opaque).  This is a pure
+/// function with no global state.
+#[allow(dead_code)]
+pub fn blend_alpha(fg: u32, bg: u32, a: u8) -> u32 {
+    let af = a as u32;
+    let blend = |f: u32, b: u32| ((f * af + b * (255 - af)) / 255) & 0xFF;
+    let r = blend((fg >> 24) & 0xFF, (bg >> 24) & 0xFF);
+    let g = blend((fg >> 16) & 0xFF, (bg >> 16) & 0xFF);
+    let b = blend((fg >>  8) & 0xFF, (bg >>  8) & 0xFF);
+    (r << 24) | (g << 16) | (b << 8) | 0xFF
+}
+
+/// Return the RGBA title-bar background colour for a window.
+///
+/// - `focused = true`  → bright blue accent  (`0x388BFDFF`)
+/// - `focused = false` → dark grey           (`0x30363DFF`)
+///
+/// Pure function: no I/O, no side-effects.
+#[allow(dead_code)]
+pub fn titlebar_color(focused: bool) -> u32 {
+    if focused { 0x388BFDFF } else { 0x30363DFF }
+}
+
+/// Return the 2px focus-border color for a window.
+///
+/// Focused windows get a bright blue accent (`0x388BFDFF`).
+/// Unfocused windows get a dim gray (`0x30363DFF`).
+/// This is a pure function — no I/O, no side effects.
+pub fn border_color(focused: bool) -> u32 {
+    if focused { 0x388BFDFF } else { 0x30363DFF }
+}
+
+/// Return a deterministic accent color for an app based on its name.
+///
+/// The color is derived from a djb2 hash of the app name, then mapped to one
+/// of six palette entries.  The function is pure — no randomness, no global state.
+pub fn app_accent_color(name: &str) -> u32 {
+    const PALETTE: [u32; 6] = [
+        0xFF6B6BFF, // red-ish
+        0xFFD93DFF, // yellow
+        0x6BCB77FF, // green
+        0x4D96FFFF, // blue
+        0xC77DFFFF, // purple
+        0xFF9F43FF, // orange
+    ];
+    let hash = name
+        .bytes()
+        .fold(5381u32, |h, b| h.wrapping_mul(33).wrapping_add(b as u32));
+    PALETTE[(hash % 6) as usize]
+}
+
+/// Compute a display string for flush rate from raw counters.
+///
+/// `flushes` is the number of `VYOMA_DRAW:flush` calls recorded in
+/// `elapsed_ms` milliseconds.  Returns `"0fps"` when `elapsed_ms == 0`
+/// to avoid a divide-by-zero.
+///
+/// This function is **pure**: it has no side-effects and does not
+/// touch any global state.
+pub fn format_fps(flushes: u64, elapsed_ms: u64) -> String {
+    if elapsed_ms == 0 {
+        return "0fps".to_string();
+    }
+    let fps = (flushes * 1000) / elapsed_ms;
+    format!("{fps}fps")
+}
+
 
 /// Word-wrap `text` so each line is at most `max_chars` wide.
 /// Long single words are placed on their own line without truncation.

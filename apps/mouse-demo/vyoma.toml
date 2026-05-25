@@ -1,0 +1,13 @@
+[app]
+name    = "mouse-demo"
+version = "0.1.0"
+wasm    = "mouse-demo.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+mouse   = true
+
+[window]
+width  = 480
+height = 400

@@ -9,6 +9,9 @@
 //!   ""       — Enter key   → execute current_input as a command
 //!   "\x7f"   — Backspace   → remove last character from current_input
 //!   "\x03"   — Ctrl+C      → clear current_input
+//!   "\x01"   — Ctrl+A      → move cursor to start of line
+//!   "\x05"   — Ctrl+E      → move cursor to end of line
+//!   "\x0C"   — Ctrl+L      → clear screen output and redraw prompt
 //!   one char — printable   → append to current_input
 //!   multi-ch — legacy line mode (headless / non-raw fallback)
 //!
@@ -20,6 +23,43 @@
 //! via VYOMA_DRAW.  Redraws on every keypress to show the live input buffer.
 
 use std::io::{BufRead, Write};
+use std::fs::OpenOptions;
+
+// ── Tab-completion command list ───────────────────────────────────────────────
+
+const COMPLETIONS: &[&str] = &[
+    "ls", "ps", "kill", "log", "logf", "restart", "clear", "help", "exit",
+    "status", "list", "reload", "logs", "run", "focus", "raise", "lower",
+    "update", "notify", "resize", "wallpaper", "shutdown", "reboot",
+    "session-save", "session-restore", "monitors", "dns", "tls-info",
+    "download", "clip-set", "clip-get", "screenshot", "pkg",
+];
+
+/// Returns the unique completion for `input` if exactly one command starts with
+/// it, or `None` when there are zero or multiple matches.
+fn tab_complete(input: &str) -> Option<&'static str> {
+    let matches: Vec<&str> = COMPLETIONS
+        .iter()
+        .copied()
+        .filter(|c| c.starts_with(input))
+        .collect();
+    if matches.len() == 1 { Some(matches[0]) } else { None }
+}
+
+// ── Soft-wrap helper ──────────────────────────────────────────────────────────
+
+/// Split `text` into chunks of at most `cols` chars.
+/// Pure function with no side effects — safe to unit-test.
+fn wrap_line(text: &str, cols: usize) -> Vec<String> {
+    if cols == 0 || text.is_empty() {
+        return vec![text.to_string()];
+    }
+    text.chars()
+        .collect::<Vec<_>>()
+        .chunks(cols)
+        .map(|c| c.iter().collect())
+        .collect()
+}
 
 // ── Panel geometry (local window coords; window declared at y=440 in vyoma.toml) ──────
 
@@ -48,11 +88,12 @@ const C_PROMPT:  u32 = 0x58A6FFFF; // prompt colour
 fn main() {
     let mut lines: Vec<String> = Vec::new();
     let mut current_input = String::new();
-    let mut history: Vec<String> = Vec::new(); // up to 50 entries
-    let mut hist_idx: usize = 0;               // 0 = not browsing history
-    let mut saved_input = String::new();       // input saved when ↑ is first pressed
+    let mut cursor_pos: usize = 0;                 // byte position within current_input
+    let mut history: Vec<String> = load_history(); // populated from /data/shell_history
+    let mut hist_idx: usize = 0;                   // 0 = not browsing history
+    let mut saved_input = String::new();           // input saved when ↑ is first pressed
 
-    draw_panel(&lines, &current_input);
+    draw_panel(&lines, &current_input, cursor_pos);
 
     let stdin = std::io::stdin();
     for raw in stdin.lock().lines() {
@@ -66,7 +107,7 @@ fn main() {
                     push_line(&mut lines, item.to_string());
                 }
             }
-            draw_panel(&lines, &current_input);
+            draw_panel(&lines, &current_input, cursor_pos);
             continue;
         }
 
@@ -75,33 +116,55 @@ fn main() {
             "\x03" => {
                 // Ctrl+C — clear the input line and reset history navigation
                 current_input.clear();
+                cursor_pos = 0;
                 hist_idx = 0;
                 saved_input.clear();
-                draw_panel(&lines, &current_input);
+                draw_panel(&lines, &current_input, cursor_pos);
+            }
+            "\x01" => {
+                // Ctrl+A — move cursor to start of line
+                cursor_pos = 0;
+                draw_panel(&lines, &current_input, cursor_pos);
+            }
+            "\x05" => {
+                // Ctrl+E — move cursor to end of line
+                cursor_pos = current_input.len();
+                draw_panel(&lines, &current_input, cursor_pos);
+            }
+            "\x0C" => {
+                // Ctrl+L — clear screen and redraw prompt with current input
+                lines.clear();
+                draw_panel(&lines, &current_input, cursor_pos);
             }
             "\x7f" => {
                 // Backspace — remove last character
                 current_input.pop();
-                draw_panel(&lines, &current_input);
+                cursor_pos = current_input.len();
+                draw_panel(&lines, &current_input, cursor_pos);
             }
             "" => {
                 // Enter — execute whatever is in the input buffer
                 let cmd = current_input.trim().to_string();
                 current_input.clear();
+                cursor_pos = 0;
                 hist_idx = 0; // reset history navigation
                 // Push non-empty, non-consecutive-duplicate commands to history
                 if !cmd.is_empty() {
                     if history.last().map(|s| s.as_str()) != Some(cmd.as_str()) {
                         if history.len() >= 50 { history.remove(0); }
                         history.push(cmd.clone());
+                        append_history(&cmd);
                     }
                 }
                 if cmd.is_empty() {
-                    draw_panel(&lines, &current_input);
+                    draw_panel(&lines, &current_input, cursor_pos);
+                } else if is_clear_cmd(&cmd) {
+                    lines.clear();
+                    draw_panel(&lines, &current_input, cursor_pos);
                 } else {
                     push_line(&mut lines, format!("> {cmd}"));
                     handle_command(&cmd, &mut lines);
-                    draw_panel(&lines, &current_input);
+                    draw_panel(&lines, &current_input, cursor_pos);
                 }
             }
             "\x1b[A" => {
@@ -110,7 +173,8 @@ fn main() {
                     if hist_idx == 0 { saved_input = current_input.clone(); }
                     hist_idx = (hist_idx + 1).min(history.len());
                     current_input = history[history.len() - hist_idx].clone();
-                    draw_panel(&lines, &current_input);
+                    cursor_pos = current_input.len();
+                    draw_panel(&lines, &current_input, cursor_pos);
                 }
             }
             "\x1b[B" => {
@@ -122,39 +186,152 @@ fn main() {
                     } else {
                         history[history.len() - hist_idx].clone()
                     };
-                    draw_panel(&lines, &current_input);
+                    cursor_pos = current_input.len();
+                    draw_panel(&lines, &current_input, cursor_pos);
                 }
+            }
+            "\x09" => {
+                // Tab — /data/ path completion takes priority, then command completion
+                const DATA_PREFIX: &str = "/data/";
+                if let Some(suffix) = current_input.strip_prefix(DATA_PREFIX) {
+                    let matches = path_completions(suffix, DATA_ENTRIES);
+                    if matches.len() == 1 {
+                        current_input = format!("{}{}", DATA_PREFIX, matches[0]);
+                    } else if matches.is_empty() {
+                        push_line(&mut lines, format!("no /data/ match for '{suffix}'"));
+                    } else {
+                        let hint = matches.join("  ");
+                        push_line(&mut lines, format!("candidates: {hint}"));
+                    }
+                } else if let Some(completed) = tab_complete(&current_input) {
+                    current_input = completed.to_string();
+                }
+                draw_panel(&lines, &current_input, cursor_pos);
             }
             s if s.len() == 1
                 && s.bytes().next().map(|b| (0x20..=0x7E).contains(&b)).unwrap_or(false) =>
             {
                 // Single printable ASCII char — append to input buffer
                 current_input.push_str(s);
-                draw_panel(&lines, &current_input);
+                cursor_pos = current_input.len();
+                draw_panel(&lines, &current_input, cursor_pos);
             }
             // ── Legacy / line mode: complete command string (non-raw fallback) ─
             other => {
                 let cmd = other.trim().to_string();
                 if cmd.is_empty() {
-                    draw_panel(&lines, &current_input);
+                    draw_panel(&lines, &current_input, cursor_pos);
+                } else if is_clear_cmd(&cmd) {
+                    current_input.clear();
+                    cursor_pos = 0;
+                    lines.clear();
+                    draw_panel(&lines, &current_input, cursor_pos);
                 } else {
                     current_input.clear();
+                    cursor_pos = 0;
                     push_line(&mut lines, format!("> {cmd}"));
                     handle_command(&cmd, &mut lines);
-                    draw_panel(&lines, &current_input);
+                    draw_panel(&lines, &current_input, cursor_pos);
                 }
             }
         }
     }
 }
 
+// ── Persistent history helpers ────────────────────────────────────────────────
+
+const HISTORY_PATH: &str = "/data/shell_history";
+const HISTORY_CAP: usize = 100;
+
+/// Load up to HISTORY_CAP lines from /data/shell_history.
+/// Returns an empty Vec on any I/O error (silent failure).
+fn load_history() -> Vec<String> {
+    let content = match std::fs::read_to_string(HISTORY_PATH) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let all: Vec<String> = content
+        .lines()
+        .map(|l| l.to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    if all.len() > HISTORY_CAP {
+        all[all.len() - HISTORY_CAP..].to_vec()
+    } else {
+        all
+    }
+}
+
+/// Append a single command to /data/shell_history.
+/// Silently ignores any I/O error.
+fn append_history(cmd: &str) {
+    if let Ok(mut f) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(HISTORY_PATH)
+    {
+        let _ = writeln!(f, "{cmd}");
+    }
+}
+
+// ── Clear-command helper ──────────────────────────────────────────────────────
+
+/// Returns `true` if `input` (after trimming) is exactly the word "clear".
+fn is_clear_cmd(input: &str) -> bool {
+    input.trim() == "clear"
+}
+
+// ── Pure echo helper ─────────────────────────────────────────────────────────
+
+/// Returns `Some(text)` when `input` is an `echo` command, `None` otherwise.
+/// `echo` (no args) returns `Some("")`; `echo <text>` returns `Some("<text>")`.
+fn parse_echo_cmd(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    if trimmed == "echo" {
+        Some(String::new())
+    } else if let Some(rest) = trimmed.strip_prefix("echo ") {
+        Some(rest.to_string())
+    } else {
+        None
+    }
+}
+
+
+// ── Pure command helpers ──────────────────────────────────────────────────────
+
+fn is_pwd_cmd(input: &str) -> bool { input.trim() == "pwd" }
+
+fn format_date_output(secs: u64) -> String { format!("Unix time: {secs}s") }
+
+const ENV_PAIRS: &[(&str, &str)] = &[
+    ("PATH", "/data/bin"),
+    ("HOME", "/data"),
+    ("SHELL", "vyomash"),
+];
+
+fn format_env_output(pairs: &[(&str, &str)]) -> String {
+    pairs.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("\n")
+}
+
+fn is_whoami_cmd(input: &str) -> bool { input.trim() == "whoami" }
+
 // ── Command dispatcher ────────────────────────────────────────────────────────
 
 fn handle_command(cmd: &str, lines: &mut Vec<String>) {
+    // echo is handled locally — no IPC needed
+    if let Some(text) = parse_echo_cmd(cmd) {
+        push_line(lines, text);
+        return;
+    }
+
     match cmd {
         "help" => {
             push_line(lines, "commands:".into());
             push_line(lines, "  help              — this text".into());
+            push_line(lines, "  Ctrl+L            — clear screen".into());
+            push_line(lines, "  Ctrl+A            — move cursor to line start".into());
+            push_line(lines, "  Ctrl+E            — move cursor to line end".into());
+            push_line(lines, "  echo [text]       — print text to output".into());
             push_line(lines, "  ps                — list all apps + status".into());
             push_line(lines, "  status            — running app count".into());
             push_line(lines, "  list              — list app names".into());
@@ -188,9 +365,10 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             push_line(lines, "  clip-get           — paste text from supervisor clipboard".into());
             push_line(lines, "  screenshot [path]  — save framebuffer PPM to /data/screenshot.ppm".into());
             push_line(lines, "  clear             — clear shell output".into());
-        }
-        "clear" => {
-            lines.clear();
+            push_line(lines, "  pwd               — print working directory".into());
+            push_line(lines, "  date              — print current Unix timestamp".into());
+            push_line(lines, "  env               — print environment variables".into());
+            push_line(lines, "  whoami            — print current user name".into());
         }
         "ps" => {
             println!("@supervisor: ps");
@@ -406,10 +584,38 @@ fn handle_command(cmd: &str, lines: &mut Vec<String>) {
             println!("@supervisor: screenshot {dest}");
             push_line(lines, format!("saving screenshot to {dest}..."));
         }
+        _ if is_pwd_cmd(cmd) => {
+            push_line(lines, "/data".into());
+        }
+        "date" => {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            push_line(lines, format_date_output(secs));
+        }
+        "env" => {
+            let out = format_env_output(ENV_PAIRS);
+            for line in out.lines() {
+                push_line(lines, line.to_string());
+            }
+        }
+        _ if is_whoami_cmd(cmd) => {
+            push_line(lines, "vyoma".to_string());
+        }
         other => {
             push_line(lines, format!("unknown: {other}"));
         }
     }
+}
+
+// ── /data/ path completion ────────────────────────────────────────────────────
+
+const DATA_ENTRIES: &[&str] = &["shell_history", "boot_count.txt", "boot_log.txt"];
+
+/// Return every entry whose name starts with `prefix`.  Pure: no I/O, no global state.
+fn path_completions<'a>(prefix: &str, entries: &'a [&'a str]) -> Vec<&'a str> {
+    entries.iter().copied().filter(|e| e.starts_with(prefix)).collect()
 }
 
 // ── Keep lines buffer bounded ─────────────────────────────────────────────────
@@ -423,7 +629,7 @@ fn push_line(lines: &mut Vec<String>, s: String) {
 
 // ── Draw the full shell panel ─────────────────────────────────────────────────
 
-fn draw_panel(lines: &[String], input: &str) {
+fn draw_panel(lines: &[String], input: &str, cursor_pos: usize) {
     // Panel background + border
     fill(PX, PY, PW, PH, C_PANEL);
 
@@ -437,12 +643,15 @@ fn draw_panel(lines: &[String], input: &str) {
     // Clear output area
     clear_region(INNER_X, INNER_Y, PW - 16, PROMPT_Y - INNER_Y);
 
-    // Output lines (word-wrapped)
-    for (i, line) in lines.iter().enumerate() {
-        let ly = INNER_Y + i as u32 * LINE_H;
-        if ly + LINE_H > PROMPT_Y { break; }
+    // Output lines — each logical line is soft-wrapped at 90 chars
+    let mut ly = INNER_Y;
+    'outer: for line in lines.iter() {
         let colour = if line.starts_with("> ") { C_DIM } else { C_WHITE };
-        text_wrap(INNER_X, ly, PW - 16, colour, line);
+        for wrapped in wrap_line(line, 90) {
+            if ly + LINE_H > PROMPT_Y { break 'outer; }
+            text(INNER_X, ly, colour, &wrapped);
+            ly += LINE_H;
+        }
     }
 
     // Prompt + cursor
@@ -451,8 +660,8 @@ fn draw_panel(lines: &[String], input: &str) {
     if !input.is_empty() {
         text(INNER_X + 16, PROMPT_Y, C_WHITE, input);
     }
-    // Blinking cursor block (toggled on each redraw — always shown here)
-    let cursor_x = INNER_X + 16 + input.len() as u32 * 8;
+    // Cursor block positioned at cursor_pos (chars * 8px per glyph)
+    let cursor_x = INNER_X + 16 + cursor_pos as u32 * 8;
     fill(cursor_x, PROMPT_Y, 8, 14, C_GREEN);
 
     flush();
@@ -481,14 +690,163 @@ fn clear_region(x: u32, y: u32, w: u32, h: u32) {
 }
 
 #[inline]
-fn text_wrap(x: u32, y: u32, max_w: u32, rgba: u32, s: &str) {
-    println!("VYOMA_DRAW:draw_text_wrap:{x},{y},{max_w},{rgba},m,{s}");
-}
-
-#[inline]
 fn flush() {
     println!("VYOMA_DRAW:flush");
     // Pipe stdout is block-buffered — must flush explicitly so VYOMA_DRAW
     // commands reach the supervisor without waiting for the buffer to fill.
     let _ = std::io::stdout().flush();
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::{wrap_line, path_completions, is_clear_cmd, parse_echo_cmd,
+                is_pwd_cmd, format_date_output, format_env_output, is_whoami_cmd};
+
+    #[test]
+    fn wrap_line_short_fits_one_chunk() {
+        assert_eq!(wrap_line("hello", 90), vec!["hello"]);
+    }
+
+    #[test]
+    fn wrap_line_exact_boundary() {
+        let s = "a".repeat(90);
+        assert_eq!(wrap_line(&s, 90), vec![s]);
+    }
+
+    #[test]
+    fn wrap_line_splits_long_line() {
+        let s = "a".repeat(91);
+        let result = wrap_line(&s, 90);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].len(), 90);
+        assert_eq!(result[1].len(), 1);
+    }
+
+    #[test]
+    fn wrap_line_empty_returns_one() {
+        assert_eq!(wrap_line("", 90), vec![""]);
+    }
+
+    #[test]
+    fn wrap_line_zero_cols_no_panic() {
+        let result = wrap_line("hello", 0);
+        assert_eq!(result, vec!["hello"]);
+    }
+
+    #[test]
+    fn path_completions_exact_match() {
+        let entries = &["shell_history", "boot_count.txt", "boot_log.txt"];
+        assert_eq!(path_completions("shell", entries), vec!["shell_history"]);
+    }
+
+    #[test]
+    fn path_completions_prefix_match_multiple() {
+        let entries = &["boot_count.txt", "boot_log.txt", "shell_history"];
+        assert_eq!(path_completions("boot", entries).len(), 2);
+    }
+
+    #[test]
+    fn path_completions_no_match() {
+        let entries = &["shell_history", "boot_count.txt"];
+        assert!(path_completions("xyz", entries).is_empty());
+    }
+
+    #[test]
+    fn path_completions_empty_prefix_returns_all() {
+        let entries = &["a", "b", "c"];
+        assert_eq!(path_completions("", entries).len(), 3);
+    }
+
+    #[test]
+    fn is_clear_cmd_basic() {
+        assert!(is_clear_cmd("clear"));
+    }
+
+    #[test]
+    fn is_clear_cmd_with_space() {
+        assert!(is_clear_cmd("  clear  "));
+    }
+
+    #[test]
+    fn is_clear_cmd_not_clear() {
+        assert!(!is_clear_cmd("cls"));
+    }
+
+    #[test]
+    fn is_clear_cmd_empty() {
+        assert!(!is_clear_cmd(""));
+    }
+
+    #[test]
+    fn is_clear_cmd_partial() {
+        assert!(!is_clear_cmd("clear all"));
+    }
+
+    #[test]
+    fn parse_echo_cmd_basic() {
+        assert_eq!(parse_echo_cmd("echo hello"), Some("hello".to_string()));
+    }
+
+    #[test]
+    fn parse_echo_cmd_no_args() {
+        assert_eq!(parse_echo_cmd("echo"), Some(String::new()));
+    }
+
+    #[test]
+    fn parse_echo_cmd_not_echo() {
+        assert_eq!(parse_echo_cmd("ls"), None);
+    }
+
+    #[test]
+    fn parse_echo_cmd_empty() {
+        assert_eq!(parse_echo_cmd(""), None);
+    }
+
+    #[test]
+    fn parse_echo_cmd_with_spaces() {
+        assert_eq!(
+            parse_echo_cmd("echo  hello world"),
+            Some(" hello world".to_string())
+        );
+    }
+
+    #[test]
+    fn is_pwd_cmd_basic() { assert!(is_pwd_cmd("pwd")); }
+    #[test]
+    fn is_pwd_cmd_spaces() { assert!(is_pwd_cmd("  pwd  ")); }
+    #[test]
+    fn is_pwd_cmd_not_pwd() { assert!(!is_pwd_cmd("ls")); }
+    #[test]
+    fn is_pwd_cmd_empty() { assert!(!is_pwd_cmd("")); }
+    #[test]
+    fn is_pwd_cmd_partial() { assert!(!is_pwd_cmd("pwd /")); }
+
+    #[test]
+    fn format_date_output_zero() { assert_eq!(format_date_output(0), "Unix time: 0s"); }
+    #[test]
+    fn format_date_output_nonzero() { assert_eq!(format_date_output(1000), "Unix time: 1000s"); }
+    #[test]
+    fn format_date_output_prefix() { assert!(format_date_output(42).starts_with("Unix time:")); }
+
+    #[test]
+    fn format_env_output_empty() { assert_eq!(format_env_output(&[]), ""); }
+    #[test]
+    fn format_env_output_one() { assert_eq!(format_env_output(&[("K", "V")]), "K=V"); }
+    #[test]
+    fn format_env_output_multiple() {
+        assert_eq!(format_env_output(&[("A", "1"), ("B", "2")]), "A=1\nB=2");
+    }
+    #[test]
+    fn format_env_no_trailing_newline() { assert!(!format_env_output(&[("X", "y")]).ends_with('\n')); }
+
+    #[test]
+    fn is_whoami_cmd_basic() { assert!(is_whoami_cmd("whoami")); }
+    #[test]
+    fn is_whoami_cmd_spaces() { assert!(is_whoami_cmd("  whoami  ")); }
+    #[test]
+    fn is_whoami_cmd_not_who() { assert!(!is_whoami_cmd("who")); }
+    #[test]
+    fn is_whoami_cmd_empty() { assert!(!is_whoami_cmd("")); }
 }
