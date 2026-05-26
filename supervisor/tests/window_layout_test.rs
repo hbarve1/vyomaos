@@ -263,3 +263,52 @@ fn test_snap_three_apps_focused_middle() {
     assert_eq!(r[2].3, usable_h - slot_h, "r[2].h (remainder)");
     assert_eq!(r[0].3 + r[2].3, usable_h, "right-column heights must sum to usable_h");
 }
+
+// ── Dock-aware tiling tests ───────────────────────────────────────────────────
+
+#[test]
+fn test_dock_excluded_from_tile_pool() {
+    // Pure math test: 1 tiled app should fill the height between menubar and dock strip.
+    // The supervisor's apply_tiling_layout is tested via smoke test; this validates math.
+    use supervisor::windows::compute_tiling_with_hints;
+    const MENUBAR_H: u32 = 24;
+    const DOCK_STRIP_H: u32 = 64;
+    let sw = 1440u32;
+    let sh = 900u32;
+
+    // Only 1 tiled app (desktop); dock excluded before compute_tiling call.
+    let usable_h = sh - MENUBAR_H - DOCK_STRIP_H;
+    let regions = compute_tiling_with_hints(1, sw, usable_h, &[]);
+    assert_eq!(regions.len(), 1);
+    let (x, y, w, h) = regions[0];
+    let (_x, y, w, h) = (x, y + MENUBAR_H, w, h);
+    assert_eq!(y, MENUBAR_H);
+    assert_eq!(w, sw);
+    assert_eq!(h, usable_h, "desktop should fill height between menubar and dock");
+
+    // Dock strip region (computed separately in apply_tiling_layout)
+    let dock_region = (0u32, sh - DOCK_STRIP_H, sw, DOCK_STRIP_H);
+    assert_eq!(dock_region.1, 836, "dock top y should be sh - DOCK_STRIP_H");
+    assert_eq!(dock_region.1 + dock_region.3, sh, "dock must reach screen bottom");
+}
+
+#[test]
+fn test_two_regular_apps_with_dock() {
+    use supervisor::windows::compute_tiling_with_hints;
+    const MENUBAR_H: u32 = 24;
+    const DOCK_STRIP_H: u32 = 64;
+    let sw = 1440u32;
+    let sh = 900u32;
+    let usable_h = sh - MENUBAR_H - DOCK_STRIP_H;
+
+    // 2 tiled apps should not extend into the dock strip
+    let regions = compute_tiling_with_hints(2, sw, usable_h, &[]);
+    assert_eq!(regions.len(), 2);
+    for (_, y, _, h) in &regions {
+        let bottom = y + MENUBAR_H + h;
+        assert!(
+            bottom <= sh - DOCK_STRIP_H,
+            "tiled app bottom {bottom} must not reach dock at {}", sh - DOCK_STRIP_H
+        );
+    }
+}
