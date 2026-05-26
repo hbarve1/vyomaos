@@ -20,7 +20,7 @@ pub use helpers::{blend_alpha, titlebar_color, border_color, app_accent_color, f
 use fb_ioctl::{FBIOGET_VSCREENINFO, FbVarScreeninfo};
 
 use super::font;
-pub use compositor::composite_glyph;
+pub use compositor::{composite_glyph, blit_image};
 use compositor::{blend_over, read_bgra, write_bgra};
 
 use std::{

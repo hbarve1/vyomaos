@@ -36,37 +36,38 @@ struct AppDef {
     name:   &'static str,
     symbol: &'static str,
     color:  u32,
+    icon:   Option<&'static str>,
 }
 
 const APPS: &[AppDef] = &[
     // Productivity
-    AppDef { label: "Notes",     name: "notes",         symbol: "N",  color: 0x1A6B4AFF },
-    AppDef { label: "Text Edit", name: "text-editor",   symbol: "Te", color: 0x1C4F8AFF },
-    AppDef { label: "Calendar",  name: "calendar",      symbol: "Ca", color: 0x6B2A8AFF },
-    AppDef { label: "Kanban",    name: "kanban",        symbol: "Kb", color: 0x8A4B1AFF },
-    AppDef { label: "Sheets",    name: "spreadsheet",   symbol: "Sh", color: 0x1A7A3AFF },
-    AppDef { label: "Tasks",     name: "task-manager",  symbol: "Tk", color: 0x4A2A8AFF },
+    AppDef { label: "Notes",     name: "notes",         symbol: "N",  color: 0x1A6B4AFF, icon: Some("/apps/notes/icon.png") },
+    AppDef { label: "Text Edit", name: "text-editor",   symbol: "Te", color: 0x1C4F8AFF, icon: None },
+    AppDef { label: "Calendar",  name: "calendar",      symbol: "Ca", color: 0x6B2A8AFF, icon: None },
+    AppDef { label: "Kanban",    name: "kanban",        symbol: "Kb", color: 0x8A4B1AFF, icon: None },
+    AppDef { label: "Sheets",    name: "spreadsheet",   symbol: "Sh", color: 0x1A7A3AFF, icon: None },
+    AppDef { label: "Tasks",     name: "task-manager",  symbol: "Tk", color: 0x4A2A8AFF, icon: None },
     // Media
-    AppDef { label: "Music",     name: "music-player",  symbol: "Mu", color: 0x8A1A4AFF },
-    AppDef { label: "Photos",    name: "photo-editor",  symbol: "Ph", color: 0x1A4A8AFF },
-    AppDef { label: "Paint",     name: "paint",         symbol: "Pa", color: 0x7A2A1AFF },
-    AppDef { label: "Fractal",   name: "fractal",       symbol: "Fr", color: 0x2A1A7AFF },
-    AppDef { label: "Colors",    name: "color-picker",  symbol: "Co", color: 0x7A5A1AFF },
-    AppDef { label: "Theory",    name: "music-theory",  symbol: "Mt", color: 0x4A6A2AFF },
+    AppDef { label: "Music",     name: "music-player",  symbol: "Mu", color: 0x8A1A4AFF, icon: None },
+    AppDef { label: "Photos",    name: "photo-editor",  symbol: "Ph", color: 0x1A4A8AFF, icon: None },
+    AppDef { label: "Paint",     name: "paint",         symbol: "Pa", color: 0x7A2A1AFF, icon: None },
+    AppDef { label: "Fractal",   name: "fractal",       symbol: "Fr", color: 0x2A1A7AFF, icon: None },
+    AppDef { label: "Colors",    name: "color-picker",  symbol: "Co", color: 0x7A5A1AFF, icon: None },
+    AppDef { label: "Theory",    name: "music-theory",  symbol: "Mt", color: 0x4A6A2AFF, icon: None },
     // Developer
-    AppDef { label: "Shell",     name: "shell",         symbol: ">_", color: 0x1A3A1AFF },
-    AppDef { label: "JSON",      name: "json-viewer",   symbol: "Js", color: 0x5A3A1AFF },
-    AppDef { label: "Hex Edit",  name: "hex-editor",    symbol: "Hx", color: 0x2A4A2AFF },
-    AppDef { label: "Monitor",   name: "system-monitor",symbol: "Sm", color: 0x1A5A6AFF },
-    AppDef { label: "Logs",      name: "log-viewer",    symbol: "Lg", color: 0x6A4A1AFF },
-    AppDef { label: "Settings",  name: "settings",      symbol: "St", color: 0x4A4A4AFF },
+    AppDef { label: "Shell",     name: "shell",         symbol: ">_", color: 0x1A3A1AFF, icon: Some("/apps/shell/icon.png") },
+    AppDef { label: "JSON",      name: "json-viewer",   symbol: "Js", color: 0x5A3A1AFF, icon: None },
+    AppDef { label: "Hex Edit",  name: "hex-editor",    symbol: "Hx", color: 0x2A4A2AFF, icon: None },
+    AppDef { label: "Monitor",   name: "system-monitor",symbol: "Sm", color: 0x1A5A6AFF, icon: None },
+    AppDef { label: "Logs",      name: "log-viewer",    symbol: "Lg", color: 0x6A4A1AFF, icon: None },
+    AppDef { label: "Settings",  name: "settings",      symbol: "St", color: 0x4A4A4AFF, icon: Some("/apps/settings/icon.png") },
     // Games
-    AppDef { label: "Snake",     name: "snake",         symbol: "Sn", color: 0x1A6A1AFF },
-    AppDef { label: "Tetris",    name: "tetris",        symbol: "Tt", color: 0x6A1A6AFF },
-    AppDef { label: "Maze",      name: "maze",          symbol: "Mz", color: 0x6A4A1AFF },
-    AppDef { label: "Chess",     name: "chess",         symbol: "Ch", color: 0x3A3A1AFF },
-    AppDef { label: "Sudoku",    name: "sudoku",        symbol: "Su", color: 0x1A4A6AFF },
-    AppDef { label: "Pong",      name: "pong",          symbol: "Po", color: 0x6A1A3AFF },
+    AppDef { label: "Snake",     name: "snake",         symbol: "Sn", color: 0x1A6A1AFF, icon: None },
+    AppDef { label: "Tetris",    name: "tetris",        symbol: "Tt", color: 0x6A1A6AFF, icon: None },
+    AppDef { label: "Maze",      name: "maze",          symbol: "Mz", color: 0x6A4A1AFF, icon: None },
+    AppDef { label: "Chess",     name: "chess",         symbol: "Ch", color: 0x3A3A1AFF, icon: None },
+    AppDef { label: "Sudoku",    name: "sudoku",        symbol: "Su", color: 0x1A4A6AFF, icon: None },
+    AppDef { label: "Pong",      name: "pong",          symbol: "Po", color: 0x6A1A3AFF, icon: None },
 ];
 
 #[inline]
@@ -237,12 +238,17 @@ fn draw_icon(cx: u32, cy: u32, app: &AppDef, hover: bool) {
         fill(ix + ICON_W, iy,       2, ICON_H,    C_HOVER);
     }
 
-    // Symbol centred in icon (16×32 'l' font)
-    let sym = app.symbol;
-    let sym_w = sym.len() as u32 * 16;
-    let sx = ix + ICON_W.saturating_sub(sym_w) / 2;
-    let sy = iy + (ICON_H - 32) / 2;
-    text_l(sx, sy, 0xFFFFFFFF, sym);
+    // PNG icon or symbol fallback
+    if let Some(path) = app.icon {
+        println!("VYOMA_DRAW:draw_image:{ix},{iy},{ICON_W},{ICON_H},{path}");
+    } else {
+        // Symbol centred in icon (16×32 'l' font)
+        let sym = app.symbol;
+        let sym_w = sym.len() as u32 * 16;
+        let sx = ix + ICON_W.saturating_sub(sym_w) / 2;
+        let sy = iy + (ICON_H - 32) / 2;
+        text_l(sx, sy, 0xFFFFFFFF, sym);
+    }
 
     // Label below icon
     let label = if app.label.len() > 10 { &app.label[..10] } else { app.label };

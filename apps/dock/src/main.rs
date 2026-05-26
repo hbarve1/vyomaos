@@ -35,21 +35,22 @@ struct DockItem {
     name:  &'static str,
     color: u32,
     key:   &'static str,
+    icon:  Option<&'static str>,
 }
 
 const ITEMS: &[DockItem] = &[
-    DockItem { label: "Finder",  name: "file-manager",   color: 0x1F6FEBFF, key: "1" },
-    DockItem { label: "Shell",   name: "shell",          color: 0x3FB950FF, key: "2" },
-    DockItem { label: "Browser", name: "browser",        color: 0x58A6FFFF, key: "3" },
-    DockItem { label: "Editor",  name: "text-editor",    color: 0x79C0FFFF, key: "4" },
-    DockItem { label: "Notes",   name: "notes",          color: 0xA5D6A7FF, key: "5" },
-    DockItem { label: "Music",   name: "music-player",   color: 0xF48FB1FF, key: "6" },
-    DockItem { label: "Monitor", name: "system-monitor", color: 0xFFA657FF, key: "7" },
-    DockItem { label: "Calendar",name: "calendar",       color: 0xBC8CFFFF, key: "8" },
-    DockItem { label: "Settings",name: "settings",       color: 0x8B949EFF, key: "9" },
-    DockItem { label: "Photos",  name: "photo-editor",   color: 0xFF7B72FF, key: "0" },
-    DockItem { label: "Store",   name: "app-store",      color: 0x56D364FF, key: "q" },
-    DockItem { label: "Chess",   name: "chess",          color: 0xE3B341FF, key: "w" },
+    DockItem { label: "Finder",  name: "file-manager",   color: 0x1F6FEBFF, key: "1", icon: None },
+    DockItem { label: "Shell",   name: "shell",          color: 0x3FB950FF, key: "2", icon: Some("/apps/shell/icon.png") },
+    DockItem { label: "Browser", name: "browser",        color: 0x58A6FFFF, key: "3", icon: None },
+    DockItem { label: "Editor",  name: "text-editor",    color: 0x79C0FFFF, key: "4", icon: None },
+    DockItem { label: "Notes",   name: "notes",          color: 0xA5D6A7FF, key: "5", icon: Some("/apps/notes/icon.png") },
+    DockItem { label: "Music",   name: "music-player",   color: 0xF48FB1FF, key: "6", icon: None },
+    DockItem { label: "Monitor", name: "system-monitor", color: 0xFFA657FF, key: "7", icon: None },
+    DockItem { label: "Calendar",name: "calendar",       color: 0xBC8CFFFF, key: "8", icon: None },
+    DockItem { label: "Settings",name: "settings",       color: 0x8B949EFF, key: "9", icon: Some("/apps/settings/icon.png") },
+    DockItem { label: "Photos",  name: "photo-editor",   color: 0xFF7B72FF, key: "0", icon: None },
+    DockItem { label: "Store",   name: "app-store",      color: 0x56D364FF, key: "q", icon: None },
+    DockItem { label: "Chess",   name: "chess",          color: 0xE3B341FF, key: "w", icon: None },
 ];
 
 #[inline]
@@ -106,12 +107,16 @@ fn draw_icon(ix: u32, item: &DockItem, running: bool, hover: bool) {
         fill(ix + ICON_W, ICON_Y,     1, ICON_H,    C_HOVER);
     }
 
-    // Label centred
-    let label = if item.label.len() > 7 { &item.label[..7] } else { item.label };
-    let lw = label.len() as u32 * 8;
-    let lx = ix + (ICON_W - lw.min(ICON_W)) / 2;
-    let lc = if hover { C_LABEL } else { C_DIM };
-    text(lx, ICON_Y + (ICON_H - 14) / 2, lc, label);
+    // PNG icon or label fallback
+    if let Some(path) = item.icon {
+        println!("VYOMA_DRAW:draw_image:{ix},{ICON_Y},32,32,{path}");
+    } else {
+        let label = if item.label.len() > 7 { &item.label[..7] } else { item.label };
+        let lw = label.len() as u32 * 8;
+        let lx = ix + (ICON_W - lw.min(ICON_W)) / 2;
+        let lc = if hover { C_LABEL } else { C_DIM };
+        text(lx, ICON_Y + (ICON_H - 14) / 2, lc, label);
+    }
 
     // Running indicator dot
     if running {

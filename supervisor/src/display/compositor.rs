@@ -90,6 +90,62 @@ pub fn write_bgra(back: &mut [u8], off: usize, rgba: u32) {
     back[off + 3] = 0xFF; // framebuffer X channel always opaque
 }
 
+/// Blit an RGBA image onto the framebuffer using nearest-neighbor scaling.
+/// `img_rgba`: raw RGBA bytes (4 bytes per pixel).
+/// `img_w`, `img_h`: source image dimensions.
+/// `dst_x`, `dst_y`: destination top-left on screen.
+/// `dst_w`, `dst_h`: target dimensions (image is scaled to fit).
+pub fn blit_image(
+    back: &mut Vec<u8>,
+    img_rgba: &[u8],
+    img_w: u32,
+    img_h: u32,
+    dst_x: u32,
+    dst_y: u32,
+    dst_w: u32,
+    dst_h: u32,
+    fb_stride: u32,
+    fb_width: u32,
+    fb_height: u32,
+) {
+    if img_w == 0 || img_h == 0 || dst_w == 0 || dst_h == 0 { return; }
+
+    for dy in 0..dst_h {
+        let fy = dy * img_h / dst_h;
+        let screen_y = dst_y + dy;
+        if screen_y >= fb_height { break; }
+
+        for dx in 0..dst_w {
+            let fx = dx * img_w / dst_w;
+            let screen_x = dst_x + dx;
+            if screen_x >= fb_width { continue; }
+
+            let src_off = ((fy * img_w + fx) * 4) as usize;
+            if src_off + 4 > img_rgba.len() { continue; }
+
+            let src_r = img_rgba[src_off];
+            let src_g = img_rgba[src_off + 1];
+            let src_b = img_rgba[src_off + 2];
+            let src_a = img_rgba[src_off + 3];
+
+            let fb_off = (screen_y * fb_stride + screen_x * 4) as usize;
+            if fb_off + 4 > back.len() { continue; }
+
+            if src_a == 255 {
+                back[fb_off]     = src_b;
+                back[fb_off + 1] = src_g;
+                back[fb_off + 2] = src_r;
+                back[fb_off + 3] = 0xFF;
+            } else if src_a > 0 {
+                let src = pack(src_r, src_g, src_b, src_a);
+                let dst = read_bgra(back, fb_off);
+                let blended = blend_over(src, dst);
+                write_bgra(back, fb_off, blended);
+            }
+        }
+    }
+}
+
 /// Composite a fontdue glyph bitmap onto the framebuffer back-buffer.
 ///
 /// `coverage`: alpha mask from fontdue (one byte per pixel, row-major).

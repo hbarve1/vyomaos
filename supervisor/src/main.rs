@@ -162,6 +162,13 @@ pub fn font_cache() -> &'static Mutex<font::cache::FontCache> {
     })
 }
 
+// ── T030/T031: PNG image cache ────────────────────────────────────────────────
+static IMAGE_CACHE: OnceLock<Mutex<image::ImageCache>> = OnceLock::new();
+
+pub fn image_cache() -> &'static Mutex<image::ImageCache> {
+    IMAGE_CACHE.get_or_init(|| Mutex::new(image::ImageCache::new()))
+}
+
 // ── Spawned app descriptor ────────────────────────────────────────────────────
 
 struct SpawnedApp {

@@ -71,6 +71,9 @@ pub struct AppMeta {
     /// Optional SHA-256 hex digest of the .wasm binary.
     #[serde(default)]
     pub wasm_sha256: Option<String>,
+    /// Optional relative path to a PNG icon (e.g. "icon.png"), resolved from the manifest directory.
+    #[serde(default)]
+    pub icon: Option<String>,
 }
 
 // deny_unknown_fields ensures manifests cannot declare undocumented capabilities.

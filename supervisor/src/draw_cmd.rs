@@ -419,22 +419,28 @@ pub fn handle_draw_command(
         // Format: x,y,w,h,path  (splitn 5)
         let parts: Vec<&str> = args.splitn(5, ',').collect();
         if parts.len() == 5 {
-            if let (Ok(lx), Ok(ly), Ok(iw), Ok(ih)) = (
-                parts[0].parse::<u32>(),
-                parts[1].parse::<u32>(),
-                parts[2].parse::<u32>(),
-                parts[3].parse::<u32>(),
-            ) {
+            if let (Ok(lx), Ok(ly), Ok(iw), Ok(ih)) = (parts[0].parse::<u32>(),
+                parts[1].parse::<u32>(), parts[2].parse::<u32>(), parts[3].parse::<u32>()) {
                 let path = parts[4];
-                // TODO US2: call image cache blit
-                let _ = (lx, ly, iw, ih);
-                log_info!(Subsystem::Display, Some(sender), "draw_image: path={path:?} (stub)");
-            } else {
-                log_error!(Subsystem::Display, Some(sender), "bad draw_image args: {args}");
-            }
-        } else {
-            log_error!(Subsystem::Display, Some(sender), "bad draw_image args: {args}");
-        }
+                let (ax, ay) = match win {
+                    None => (lx, ly),
+                    Some((wx, wy, _, _)) => (wx + lx, wy + TITLEBAR_H + ly),
+                };
+                #[cfg(target_os = "linux")]
+                {
+                    let mut fb = fb_lock.lock().unwrap();
+                    let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
+                    let mut ic = crate::image_cache().lock().unwrap();
+                    if let Some(img) = ic.get(path) {
+                        let (iw2, ih2, rgba) = (img.width, img.height, img.rgba.clone());
+                        drop(ic);
+                        display::blit_image(&mut fb.back, &rgba, iw2, ih2, ax, ay, iw, ih, fs, fw, fh);
+                    }
+                }
+                #[cfg(not(target_os = "linux"))]
+                let _ = (ax, ay, iw, ih, path);
+            } else { log_error!(Subsystem::Display, Some(sender), "bad draw_image args: {args}"); }
+        } else { log_error!(Subsystem::Display, Some(sender), "bad draw_image args: {args}"); }
         return;
     }
 
@@ -491,7 +497,4 @@ pub fn handle_draw_command(
 
 // Satisfy unused-import warnings on non-Linux builds.
 #[cfg(not(target_os = "linux"))]
-fn _dummy_non_linux() {
-    let _ = STATUS_H;
-    let _ = TITLEBAR_H;
-}
+fn _dummy_non_linux() { let _ = (STATUS_H, TITLEBAR_H); }

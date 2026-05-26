@@ -2,6 +2,7 @@
 name    = "shell"
 version = "0.1.0"
 wasm    = "shell.wasm"
+icon    = "icon.png"
 
 [capabilities]
 stdio      = true
