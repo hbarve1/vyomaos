@@ -12,10 +12,13 @@ use supervisor::logging::Subsystem;
 use crate::display;
 
 // ── Z-layer constants ─────────────────────────────────────────────────────────
-
+#[allow(dead_code)]
 pub const Z_DESKTOP:  u32 = 0;    // desktop wallpaper — always background
+#[allow(dead_code)]
 pub const Z_APP:      u32 = 10;   // default app window layer
+#[allow(dead_code)]
 pub const Z_DOCK:     u32 = 100;  // dock — always above app windows
+#[allow(dead_code)]
 pub const Z_OVERLAY:  u32 = 255;  // notifications, system overlays
 
 // ── macOS-inspired chrome constants ──────────────────────────────────────────
@@ -134,6 +137,23 @@ fn draw_glyph_str(
 
 // ── Chrome drawing ────────────────────────────────────────────────────────────
 
+/// Draw a simple drop shadow for a window by compositing two semi-transparent
+/// dark rounded rects slightly offset below and around the window frame.
+#[cfg(target_os = "linux")]
+fn draw_window_shadow(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, wh: u32) {
+    use crate::display::draw_rounded_rect;
+    let shadow_rgba = 0x00000078_u32; // black at ~47% alpha
+    let (sw, sh) = (fb.width, fb.height);
+    let fs = fb.stride;
+    let sx = wx.saturating_sub(2);
+    let sy = wy.saturating_add(4);
+    let sw2 = ww + 4;
+    let sh2 = wh + 4;
+    if sx + sw2 <= sw && sy + sh2 <= sh {
+        draw_rounded_rect(&mut fb.back, sx, sy, sw2, sh2, shadow_rgba, 12, fs, sw, sh);
+    }
+}
+
 /// Return the title bar background colour for the given window state.
 ///
 /// Priority: hovered > focused > inactive; `hovered` wins regardless of focus.
@@ -156,6 +176,8 @@ pub fn draw_titlebar(
     is_focused: bool, is_hovered: bool,
     name: &str,
 ) {
+    // Drop shadow rendered behind the window chrome
+    draw_window_shadow(fb, wx, wy, ww, TITLEBAR_H);
     let bg = titlebar_color_for_state(is_focused, is_hovered);
     fb.fill_rect(wx, wy, ww, TITLEBAR_H, bg);
     fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);

@@ -146,6 +146,133 @@ pub fn blit_image(
     }
 }
 
+/// Compute per-pixel coverage for a rounded rectangle using signed-distance field.
+/// Returns a value in 0–255: 255 = fully inside, 0 = fully outside.
+/// `px`, `py`: pixel coordinates relative to rect origin (0,0).
+/// `w`, `h`: rectangle dimensions. `radius`: corner radius in pixels.
+#[inline]
+pub fn rounded_rect_coverage(px: i32, py: i32, w: u32, h: u32, radius: u32) -> u8 {
+    let r = radius as i32;
+    let w = w as i32;
+    let h = h as i32;
+    if px < 0 || py < 0 || px >= w || py >= h { return 0; }
+
+    // Distance to the nearest corner arc center
+    let cx = if px < r { r } else if px >= w - r { w - r - 1 } else { px };
+    let cy = if py < r { r } else if py >= h - r { h - r - 1 } else { py };
+
+    let is_corner = (px < r || px >= w - r) && (py < r || py >= h - r);
+    if !is_corner { return 255; }
+
+    let dx = px - cx;
+    let dy = py - cy;
+    let dist_sq = dx * dx + dy * dy;
+    let r_sq = r * r;
+
+    if dist_sq <= r_sq {
+        255
+    } else {
+        // Anti-alias: one pixel feather at the edge
+        let dist = (dist_sq as f32).sqrt();
+        let edge = r as f32;
+        let cov = (edge + 1.0 - dist).max(0.0).min(1.0);
+        (cov * 255.0) as u8
+    }
+}
+
+/// Draw a rounded rectangle with alpha compositing.
+pub fn draw_rounded_rect(
+    back: &mut Vec<u8>,
+    x: u32, y: u32, w: u32, h: u32,
+    rgba: u32, radius: u32,
+    fb_stride: u32, fb_width: u32, fb_height: u32,
+) {
+    let (r, g, b, a) = unpack(rgba);
+    for row in 0..h {
+        let screen_y = y + row;
+        if screen_y >= fb_height { break; }
+        for col in 0..w {
+            let screen_x = x + col;
+            if screen_x >= fb_width { continue; }
+            let cov = rounded_rect_coverage(col as i32, row as i32, w, h, radius);
+            if cov == 0 { continue; }
+            let eff_alpha = (a as u32 * cov as u32 / 255) as u8;
+            let src = pack(r, g, b, eff_alpha);
+            let fb_off = (screen_y * fb_stride + screen_x * 4) as usize;
+            if fb_off + 4 > back.len() { continue; }
+            let dst = read_bgra(back, fb_off);
+            let blended = blend_over(src, dst);
+            write_bgra(back, fb_off, blended);
+        }
+    }
+}
+
+/// Generate a drop shadow alpha mask using 2-pass separable box blur.
+/// Returns a Vec<u8> of `w × h` bytes, where 255 = fully shadowed.
+/// `shape_w`, `shape_h`: size of the window casting the shadow.
+/// `blur_r`: box blur radius in pixels.
+#[allow(dead_code)]
+pub fn generate_shadow_mask(shape_w: u32, shape_h: u32, blur_r: u32) -> Vec<u8> {
+    let bw = shape_w + blur_r * 2;
+    let bh = shape_h + blur_r * 2;
+    let n = (bw * bh) as usize;
+    let mut mask = vec![0u8; n];
+
+    // Fill the window shape as 255 in the centre
+    for row in 0..shape_h {
+        let base = ((row + blur_r) * bw + blur_r) as usize;
+        for col in 0..shape_w {
+            mask[base + col as usize] = 255;
+        }
+    }
+
+    // Horizontal pass
+    let mut tmp = vec![0u8; n];
+    let k = blur_r * 2 + 1;
+    for row in 0..bh {
+        let mut sum: u32 = 0;
+        for col in 0..k.min(bw) {
+            sum += mask[(row * bw + col) as usize] as u32;
+        }
+        for col in 0..bw {
+            tmp[(row * bw + col) as usize] = (sum / k) as u8;
+            let add_col = col + k;
+            if add_col < bw {
+                sum += mask[(row * bw + add_col) as usize] as u32;
+            }
+            if col >= 1 {
+                let sub_col = col - 1;
+                if sub_col < bw {
+                    sum = sum.saturating_sub(mask[(row * bw + sub_col) as usize] as u32);
+                }
+            }
+        }
+    }
+
+    // Vertical pass
+    let mut out = vec![0u8; n];
+    for col in 0..bw {
+        let mut sum: u32 = 0;
+        for row in 0..k.min(bh) {
+            sum += tmp[(row * bw + col) as usize] as u32;
+        }
+        for row in 0..bh {
+            out[(row * bw + col) as usize] = (sum / k) as u8;
+            let add_row = row + k;
+            if add_row < bh {
+                sum += tmp[(add_row * bw + col) as usize] as u32;
+            }
+            if row >= 1 {
+                let sub_row = row - 1;
+                if sub_row < bh {
+                    sum = sum.saturating_sub(tmp[(sub_row * bw + col) as usize] as u32);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Composite a fontdue glyph bitmap onto the framebuffer back-buffer.
 ///
 /// `coverage`: alpha mask from fontdue (one byte per pixel, row-major).

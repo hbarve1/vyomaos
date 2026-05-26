@@ -23,7 +23,7 @@ const ROW_H: u32     = 50;
 const MAX_VISIBLE: usize = 10;
 
 // Colors
-const C_OVERLAY: u32 = 0x1C1C2EFF; // solid dark overlay
+const C_OVERLAY: u32 = 0x1E1E2ECC; // frosted dark overlay at ~80% alpha
 const C_BOX: u32     = 0x2D2D3EFF; // search box bg
 const C_SEL: u32     = 0x3B4EE8FF; // selection highlight blue
 const C_TEXT: u32    = 0xE6EDF3FF; // white text
@@ -32,6 +32,10 @@ const C_DIM: u32     = 0x6E7681FF; // dim text
 
 fn fill(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
     println!("VYOMA_DRAW:fill_rect:{x},{y},{w},{h},{rgba}");
+}
+
+fn fill_r(x: u32, y: u32, w: u32, h: u32, rgba: u32, radius: u32) {
+    println!("VYOMA_DRAW:fill_rect_r:{x},{y},{w},{h},{rgba},{radius}");
 }
 
 fn text_m(x: u32, y: u32, rgba: u32, s: &str) {
@@ -48,8 +52,8 @@ fn flush() {
 }
 
 fn draw(query: &str, results: &[(&str, &str)], cursor: usize) {
-    // Full-screen dark overlay
-    fill(0, 0, W, H, C_OVERLAY);
+    // Full-screen frosted dark overlay (semi-transparent)
+    fill_r(0, 0, W, H, C_OVERLAY, 0);
 
     // Title at top center
     let title = "Spotlight";

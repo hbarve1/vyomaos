@@ -471,10 +471,11 @@ pub fn handle_draw_command(
                         (ax, ay, aw, ah)
                     }
                 };
-                // TODO US3: call rounded-rect renderer
-                // For now fall back to plain fill_rect
-                fb_lock.lock().unwrap().fill_rect(ax, ay, aw, ah, rgba);
-                let _ = radius;
+                #[cfg(target_os = "linux")] {
+                    let mut fb = fb_lock.lock().unwrap();
+                    let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
+                    display::draw_rounded_rect(&mut fb.back, ax, ay, aw, ah, rgba, radius, fs, fw, fh);
+                }
             } else {
                 log_error!(Subsystem::Display, Some(sender), "bad fill_rect_r args: {args}");
             }
@@ -496,5 +497,4 @@ pub fn handle_draw_command(
 }
 
 // Satisfy unused-import warnings on non-Linux builds.
-#[cfg(not(target_os = "linux"))]
-fn _dummy_non_linux() { let _ = (STATUS_H, TITLEBAR_H); }
+#[cfg(not(target_os = "linux"))] fn _dummy_non_linux() { let _ = (STATUS_H, TITLEBAR_H); }
