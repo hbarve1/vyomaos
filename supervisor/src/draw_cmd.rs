@@ -361,7 +361,7 @@ pub fn handle_draw_command(
         // Format: x,y,rgba,pt,weight,text  (splitn 6)
         let parts: Vec<&str> = args.splitn(6, ',').collect();
         if parts.len() == 6 {
-            if let (Ok(_lx), Ok(_ly), Some(_rgba), Ok(pt)) = (
+            if let (Ok(lx), Ok(ly), Some(rgba), Ok(pt)) = (
                 parts[0].parse::<u32>(),
                 parts[1].parse::<u32>(),
                 parse_color(parts[2]),
@@ -369,10 +369,43 @@ pub fn handle_draw_command(
             ) {
                 let weight = parts[4];
                 let text = parts[5];
-                let _bold = weight == "bold";
-                let _mono = weight == "mono";
-                // TODO US1: call font cache glyph renderer
-                log_info!(Subsystem::Display, Some(sender), "draw_glyph: pt={pt} weight={weight} text={text:?} (stub)");
+                let bold = weight == "bold";
+                let mono = weight == "mono";
+
+                let (ax, ay) = match win {
+                    None => (lx as i32, ly as i32),
+                    Some((wx, wy, ww, wh)) => {
+                        let content_wy = wy + TITLEBAR_H;
+                        let ax = wx as i32 + lx as i32;
+                        let ay = content_wy as i32 + ly as i32;
+                        if ax >= (wx + ww) as i32 || ay >= (wy + wh) as i32 { return; }
+                        (ax, ay)
+                    }
+                };
+
+                #[cfg(target_os = "linux")]
+                {
+                    let mut fb = fb_lock.lock().unwrap();
+                    let fb_stride = fb.stride;
+                    let fb_width  = fb.width;
+                    let fb_height = fb.height;
+                    let mut cursor_x = ax;
+                    for ch in text.chars() {
+                        let (gw, gh, adv, bear_y, cov) = {
+                            let mut fc = crate::font_cache().lock().unwrap();
+                            let g = fc.rasterize(ch, pt, bold, mono);
+                            (g.width, g.height, g.advance_x, g.bearing_y, g.coverage.clone())
+                        };
+                        let glyph_y = ay - bear_y as i32;
+                        display::composite_glyph(
+                            &mut fb.back, &cov, gw, gh,
+                            cursor_x, glyph_y, rgba,
+                            fb_stride, fb_width, fb_height,
+                        );
+                        cursor_x += adv as i32;
+                        if cursor_x >= fb_width as i32 { break; }
+                    }
+                }
             } else {
                 log_error!(Subsystem::Display, Some(sender), "bad draw_glyph args: {args}");
             }

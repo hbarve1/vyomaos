@@ -9,7 +9,7 @@ use crate::{AppRegistry, AppStatus, FocusedApp, HOVERED_APP, Z_ORDER, BOOT_INSTA
 use supervisor::logging::Subsystem;
 
 #[cfg(target_os = "linux")]
-use crate::{display, font};
+use crate::display;
 
 // ── Z-layer constants ─────────────────────────────────────────────────────────
 
@@ -97,6 +97,41 @@ pub fn z_order_push_back(name: &str) {
     }
 }
 
+// ── Scalable font helper ──────────────────────────────────────────────────────
+
+/// Render a string using the scalable font cache onto the framebuffer back-buffer.
+/// Falls back silently if no font is loaded (glyphs are blank).
+#[cfg(target_os = "linux")]
+fn draw_glyph_str(
+    fb: &mut display::Framebuffer,
+    text: &str,
+    x: i32,
+    y: i32,
+    rgba: u32,
+    pt: u32,
+    bold: bool,
+    mono: bool,
+) {
+    let fb_stride = fb.stride;
+    let fb_width  = fb.width;
+    let fb_height = fb.height;
+    let mut cx = x;
+    for ch in text.chars() {
+        let (gw, gh, adv, bear_y, cov) = {
+            let mut fc = crate::font_cache().lock().unwrap();
+            let g = fc.rasterize(ch, pt, bold, mono);
+            (g.width, g.height, g.advance_x, g.bearing_y, g.coverage.clone())
+        };
+        display::composite_glyph(
+            &mut fb.back, &cov, gw, gh,
+            cx, y - bear_y as i32, rgba,
+            fb_stride, fb_width, fb_height,
+        );
+        cx += adv as i32;
+        if cx >= fb_width as i32 { break; }
+    }
+}
+
 // ── Chrome drawing ────────────────────────────────────────────────────────────
 
 /// Return the title bar background colour for the given window state.
@@ -144,14 +179,16 @@ pub fn draw_titlebar(
     let accent = display::app_accent_color(name);
     fb.fill_rect(wx + 60, tl_y, TL_DOT, TL_DOT, accent);
 
-    // App name centered (medium font = 8 px/char, 16 px tall)
-    let nlen = name.len().min(20) as u32;  // cap to avoid overflow
-    let name_w = nlen * 8;
-    if ww > name_w + 60 {
-        let nx = wx + (ww - name_w) / 2;
-        let ny = wy + (TITLEBAR_H - 16) / 2;
+    // App name centered — 13pt bold Inter
+    let nlen = name.len().min(20);
+    let display_name = &name[..nlen];
+    // Estimate width: ~7px per char at 13pt for centering heuristic
+    let name_w_est = nlen as u32 * 7;
+    if ww > name_w_est + 60 {
+        let nx = (wx + (ww - name_w_est) / 2) as i32;
+        let ny = (wy + TITLEBAR_H / 2) as i32;
         let col = if is_focused { MAC_LABEL } else { MAC_LABEL2 };
-        fb.draw_text(nx, ny, &name[..name.len().min(20)], col, font::FontSize::Medium);
+        draw_glyph_str(fb, display_name, nx, ny, col, 13, true, false);
     }
 }
 
@@ -175,36 +212,38 @@ pub fn draw_menubar(
     fb.fill_rect(0, 0, sw, MENUBAR_H, MAC_MENUBAR);
     fb.fill_rect(0, MENUBAR_H - 1, sw, 1, MAC_SEP);
 
-    let ty = (MENUBAR_H - 16) / 2; // vertical center of 16-px font in 24-px bar
+    let ty = (MENUBAR_H / 2) as i32; // vertical center baseline for 12pt font
 
-    // Left: brand
-    fb.draw_text(12, ty, "VyomaOS", MAC_LABEL, font::FontSize::Medium);
+    // Left: brand — 12pt regular
+    draw_glyph_str(fb, "VyomaOS", 12, ty, MAC_LABEL, 12, false, false);
 
     // App-switcher labels: drawn immediately after the brand name.
     // Highlighted (white) when focused, dimmed otherwise.
-    let mut lx = MENUBAR_APPS_START_X as u32;
+    let mut lx = MENUBAR_APPS_START_X as i32;
     for app in apps {
         let is_focused = focused.map_or(false, |f| f == app.as_str());
         let color = if is_focused { MAC_LABEL } else { MAC_LABEL2 };
-        fb.draw_text(lx + 8, ty, app, color, font::FontSize::Medium);
-        lx += menubar_label_width(app.len()) as u32;
+        draw_glyph_str(fb, app, lx + 8, ty, color, 12, false, false);
+        lx += menubar_label_width(app.len()) as i32;
     }
 
-    // Center: focused app name
+    // Center: focused app name — 12pt regular
     if let Some(name) = focused {
-        let nlen = name.len().min(20) as u32;
-        let nx = sw.saturating_sub(nlen * 8) / 2;
-        fb.draw_text(nx, ty, &name[..name.len().min(20)], MAC_LABEL, font::FontSize::Medium);
+        let nlen = name.len().min(20);
+        let display_name = &name[..nlen];
+        let name_w_est = nlen as u32 * 7;
+        let nx = sw.saturating_sub(name_w_est) / 2;
+        draw_glyph_str(fb, display_name, nx as i32, ty, MAC_LABEL, 12, false, false);
     }
 
-    // Right: elapsed clock HH:MM:SS
+    // Right: elapsed clock HH:MM:SS — 12pt regular
     let h = elapsed_secs / 3600;
     let m = (elapsed_secs % 3600) / 60;
     let s = elapsed_secs % 60;
     let clock = format!("{h:02}:{m:02}:{s:02}");
-    let cw = clock.len() as u32 * 8;
+    let cw = clock.len() as u32 * 7; // ~7px/char at 12pt
     if sw > cw + 20 {
-        fb.draw_text(sw - cw - 12, ty, &clock, MAC_LABEL2, font::FontSize::Medium);
+        draw_glyph_str(fb, &clock, (sw - cw - 12) as i32, ty, MAC_LABEL2, 12, false, false);
     }
 }
 
@@ -228,10 +267,10 @@ pub fn draw_statusbar(
     let sy = wy + wh - STATUS_H;
     fb.fill_rect(wx, sy, ww, STATUS_H, STATUS_BG);
 
-    // Build and draw the label using the public helper
+    // Build and draw the label — 11pt regular Inter, vertically centered
     let label = supervisor::statusbar::format_status_text(name, uptime_secs);
-    // Vertically center 8px small font in the 16px strip: (16 - 8) / 2 = 4
-    fb.draw_text(wx + 4, sy + 4, &label, STATUS_FG, font::FontSize::Small);
+    let text_y = (sy + STATUS_H / 2) as i32;
+    draw_glyph_str(fb, &label, (wx + 4) as i32, text_y, STATUS_FG, 11, false, false);
 }
 
 /// Immediately repaint title bars for all windowed apps (called on focus changes).

@@ -89,3 +89,43 @@ pub fn write_bgra(back: &mut [u8], off: usize, rgba: u32) {
     back[off + 2] = r;
     back[off + 3] = 0xFF; // framebuffer X channel always opaque
 }
+
+/// Composite a fontdue glyph bitmap onto the framebuffer back-buffer.
+///
+/// `coverage`: alpha mask from fontdue (one byte per pixel, row-major).
+/// `text_rgba`: text color as RGBA u32 (R<<24|G<<16|B<<8|A).
+/// `fb_stride`: framebuffer stride in bytes per row.
+/// `fb_width`, `fb_height`: framebuffer dimensions.
+pub fn composite_glyph(
+    back: &mut Vec<u8>,
+    coverage: &[u8],
+    glyph_w: u32,
+    glyph_h: u32,
+    x: i32,
+    y: i32,
+    text_rgba: u32,
+    fb_stride: u32,
+    fb_width: u32,
+    fb_height: u32,
+) {
+    let (tr, tg, tb, ta) = unpack(text_rgba);
+    for row in 0..glyph_h {
+        let dst_y = y + row as i32;
+        if dst_y < 0 || dst_y >= fb_height as i32 { continue; }
+        for col in 0..glyph_w {
+            let dst_x = x + col as i32;
+            if dst_x < 0 || dst_x >= fb_width as i32 { continue; }
+            let cov_idx = (row * glyph_w + col) as usize;
+            let cov = *coverage.get(cov_idx).unwrap_or(&0);
+            if cov == 0 { continue; }
+            // Modulate text alpha by coverage
+            let eff_alpha = (ta as u32 * cov as u32 / 255) as u8;
+            let src = pack(tr, tg, tb, eff_alpha);
+            let fb_off = (dst_y as u32 * fb_stride + dst_x as u32 * 4) as usize;
+            if fb_off + 4 > back.len() { continue; }
+            let dst = read_bgra(back, fb_off);
+            let blended = blend_over(src, dst);
+            write_bgra(back, fb_off, blended);
+        }
+    }
+}

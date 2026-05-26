@@ -20,6 +20,7 @@ pub use helpers::{blend_alpha, titlebar_color, border_color, app_accent_color, f
 use fb_ioctl::{FBIOGET_VSCREENINFO, FbVarScreeninfo};
 
 use super::font;
+pub use compositor::composite_glyph;
 use compositor::{blend_over, read_bgra, write_bgra};
 
 use std::{
@@ -37,7 +38,7 @@ pub struct Framebuffer {
     _file: std::fs::File, // keeps the fd alive
     pub width: u32,
     pub height: u32,
-    stride: u32,          // bytes per scanline
+    pub stride: u32,      // bytes per scanline
     bpp: u32,
     buf: *mut u8,
     buf_len: usize,
