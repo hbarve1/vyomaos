@@ -1,0 +1,15 @@
+[platform]
+name = "phone"
+arch = "aarch64"
+runtime = "wasmtime"
+min_ram_kb = 262144
+
+[supervisor]
+modules = ["lifecycle", "capability", "display", "input"]
+
+[display]
+profile = "phone"
+show_dock = false
+show_menu_bar = false
+windowed_mode = false
+home_gesture = true

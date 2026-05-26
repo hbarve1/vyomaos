@@ -243,6 +243,7 @@ pub fn draw_menubar(
     focused: Option<&str>,
     apps: &[String],
 ) {
+    if !crate::SHOW_MENU_BAR.get().copied().unwrap_or(true) { return; }
     use supervisor::windows::{MENUBAR_APPS_START_X, menubar_label_width};
 
     fb.fill_rect(0, 0, sw, MENUBAR_H, MAC_MENUBAR);

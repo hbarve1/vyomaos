@@ -124,6 +124,39 @@ pub struct BuildConfig {
     pub rootfs_script: Option<String>,
 }
 
+// ── DisplayConfig ─────────────────────────────────────────────────────────────
+
+/// Display / form-factor layout configuration.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct DisplayConfig {
+    /// Named display profile: "desktop", "phone", "tablet", "watch", "tv", "vision".
+    #[serde(default = "default_display_profile")]
+    pub profile: String,
+    /// Show dock strip at bottom.
+    #[serde(default = "default_true")]
+    pub show_dock: bool,
+    /// Show menu bar at top.
+    #[serde(default = "default_true")]
+    pub show_menu_bar: bool,
+    /// Apps run in windows (true) or full-screen single-app (false).
+    #[serde(default = "default_true")]
+    pub windowed_mode: bool,
+    /// Show keyboard focus ring around focused element (TV/Vision).
+    #[serde(default)]
+    pub focus_ring: bool,
+    /// Swipe-up gesture returns to home screen (Phone/Tablet).
+    #[serde(default)]
+    pub home_gesture: bool,
+    /// Digital crown input maps to scroll (Watch).
+    #[serde(default)]
+    pub crown_scroll: bool,
+    /// Spatial floating panel layout (Vision Pro).
+    #[serde(default)]
+    pub spatial_layout: bool,
+}
+
+fn default_display_profile() -> String { "desktop".to_string() }
+
 // ── PlatformProfile ───────────────────────────────────────────────────────────
 
 /// Top-level platform profile, loaded from a TOML file.
@@ -141,6 +174,8 @@ pub struct PlatformProfile {
     pub ota: OtaConfig,
     #[serde(default)]
     pub build: BuildConfig,
+    #[serde(default)]
+    pub display: DisplayConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -167,6 +167,11 @@ pub fn launch_app_threads(
                 let _ = tx.send(format!("VYOMA_SYSTEM:screen:{w},{h}"));
             }
         }
+        // T079: broadcast active display profile to every display app at spawn.
+        let profile_kind = crate::DISPLAY_PROFILE.get().map(|s| s.as_str()).unwrap_or("desktop");
+        if let Some(tx) = inbox.lock().unwrap().get(&name) {
+            let _ = tx.send(format!("VYOMA_SYSTEM:display_profile:{profile_kind}"));
+        }
     }
 
     if has_display {

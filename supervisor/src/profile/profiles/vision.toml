@@ -1,0 +1,16 @@
+[platform]
+name = "vision"
+arch = "aarch64"
+runtime = "wasmtime"
+min_ram_kb = 524288
+
+[supervisor]
+modules = ["lifecycle", "capability", "display", "input"]
+
+[display]
+profile = "vision"
+show_dock = false
+show_menu_bar = false
+windowed_mode = true
+spatial_layout = true
+focus_ring = true
