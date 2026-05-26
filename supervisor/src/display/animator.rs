@@ -57,6 +57,7 @@ impl Animation {
 
     /// Sample the animation state at `elapsed_ms` milliseconds since start.
     /// Snaps to final state if elapsed >= duration.
+    /// Uses ease-out cubic for motion matching macOS animations.
     #[allow(dead_code)]
     pub fn sample(&self, elapsed_ms: u64) -> AnimState {
         let t = if elapsed_ms >= self.duration_ms as u64 {
@@ -65,6 +66,7 @@ impl Animation {
             elapsed_ms as f32 / self.duration_ms as f32
         };
         let t = t.clamp(0.0, 1.0);
+        let t = 1.0 - (1.0 - t).powi(3); // ease-out cubic
         let scale = self.from_scale
             + (self.to_scale - self.from_scale) * t;
         let alpha = (self.from_alpha as f32
