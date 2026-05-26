@@ -6,7 +6,7 @@
 use std::sync::Mutex;
 
 use crate::{log_error, log_info, log_warn, AppRegistry, FocusedApp};
-use crate::chrome::{draw_menubar, draw_statusbar, draw_titlebar, STATUS_H, TITLEBAR_H};
+use crate::chrome::{draw_menubar, draw_statusbar, draw_titlebar, STATUS_H, TITLEBAR_H, Z_DOCK};
 use crate::{BOOT_INSTANT, LAST_MENUBAR_DRAW, APP_DIRTY, HOVERED_APP};
 use crate::flush_counts;
 use supervisor::logging::Subsystem;
@@ -43,6 +43,10 @@ pub fn handle_draw_command(
     }
 
     let Some(fb_lock) = display::get() else { return };
+    let win_z = app_registry.lock().unwrap().get(sender)
+        .map(|st| st.lock().unwrap().win_z).unwrap_or(10u32);
+    let is_system = win_z >= Z_DOCK;
+    let chrome_h = if is_system { 0u32 } else { TITLEBAR_H };
 
     // Mark this app dirty for any draw command other than flush/present.
     // The flush handler checks and clears this flag before repainting the title bar.
@@ -73,7 +77,7 @@ pub fn handle_draw_command(
             dirty
         };
 
-        if is_dirty {
+        if is_dirty && !is_system {
             if let Some((wx, wy, ww, wh)) = win {
                 if ww >= 60 {
                     let is_hovered = HOVERED_APP
@@ -140,19 +144,14 @@ pub fn handle_draw_command(
 
         fb.flush();
 
-        // ── FPS tracking ─────────────────────────────────────────────────────
         {
-            const FPS_WINDOW_MS: u64 = 5_000;
             let mut map = flush_counts().lock().unwrap();
-            let entry = map
-                .entry(sender.to_string())
-                .or_insert_with(|| (0, std::time::Instant::now()));
-            entry.0 += 1;
-            let elapsed_ms = entry.1.elapsed().as_millis() as u64;
-            if elapsed_ms >= FPS_WINDOW_MS {
-                let fps_str = display::format_fps(entry.0, elapsed_ms);
-                log_info!(Subsystem::Display, Some(sender), "fps: {fps_str}");
-                *entry = (0, std::time::Instant::now());
+            let e = map.entry(sender.to_string()).or_insert((0u64, std::time::Instant::now()));
+            e.0 += 1;
+            let ms = e.1.elapsed().as_millis() as u64;
+            if ms >= 5_000 {
+                log_info!(Subsystem::Display, Some(sender), "fps: {}", display::format_fps(e.0, ms));
+                *e = (0, std::time::Instant::now());
             }
         }
 
@@ -170,12 +169,11 @@ pub fn handle_draw_command(
                 let (ax, ay, aw, ah) = match win {
                     None => (lx, ly, w, h),
                     Some((wx, wy, ww, wh)) => {
-                        let content_wy = wy + TITLEBAR_H;
+                        let content_wy = wy + chrome_h;
                         let ax = wx + lx;
                         let ay = content_wy + ly;
                         let win_right  = wx + ww;
-                        // Clip content bottom to exclude the status strip.
-                        let win_bottom = (wy + wh).saturating_sub(STATUS_H);
+                        let win_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
                         if ax >= win_right || ay >= win_bottom { return; }
                         let aw = w.min(win_right  - ax);
                         let ah = h.min(win_bottom - ay);
@@ -234,11 +232,10 @@ pub fn handle_draw_command(
             let (ax, ay) = match win {
                 None => (lx, ly),
                 Some((wx, wy, ww, wh)) => {
-                    let content_wy = wy + TITLEBAR_H;
+                    let content_wy = wy + chrome_h;
                     let ax = wx + lx;
                     let ay = content_wy + ly;
-                    // Clip content bottom to exclude the status strip.
-                    let content_bottom = (wy + wh).saturating_sub(STATUS_H);
+                    let content_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
                     if ax >= wx + ww || ay >= content_bottom { return; }
                     (ax, ay)
                 }
@@ -263,12 +260,11 @@ pub fn handle_draw_command(
                 let (ax, ay, aw, ah) = match win {
                     None => (lx, ly, w, h),
                     Some((wx, wy, ww, wh)) => {
-                        let content_wy = wy + TITLEBAR_H;
+                        let content_wy = wy + chrome_h;
                         let ax = wx + lx;
                         let ay = content_wy + ly;
                         let win_right  = wx + ww;
-                        // Clip content bottom to exclude the status strip.
-                        let win_bottom = (wy + wh).saturating_sub(STATUS_H);
+                        let win_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
                         if ax >= win_right || ay >= win_bottom { return; }
                         let aw = w.min(win_right  - ax);
                         let ah = h.min(win_bottom - ay);
@@ -298,12 +294,11 @@ pub fn handle_draw_command(
                 let (ax, ay, aw, ah) = match win {
                     None => (lx, ly, w, h),
                     Some((wx, wy, ww, wh)) => {
-                        let content_wy = wy + TITLEBAR_H;
+                        let content_wy = wy + chrome_h;
                         let ax = wx + lx;
                         let ay = content_wy + ly;
                         let win_right  = wx + ww;
-                        // Clip content bottom to exclude the status strip.
-                        let win_bottom = (wy + wh).saturating_sub(STATUS_H);
+                        let win_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
                         if ax >= win_right || ay >= win_bottom { return; }
                         let aw = w.min(win_right  - ax);
                         let ah = h.min(win_bottom - ay);
@@ -336,11 +331,10 @@ pub fn handle_draw_command(
                 let (ax, ay, effective_max_w) = match win {
                     None => (lx, ly, max_w),
                     Some((wx, wy, ww, wh)) => {
-                        let content_wy = wy + TITLEBAR_H;
+                        let content_wy = wy + chrome_h;
                         let ax = wx + lx;
                         let ay = content_wy + ly;
-                        // Clip content bottom to exclude the status strip.
-                        let content_bottom = (wy + wh).saturating_sub(STATUS_H);
+                        let content_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
                         if ax >= wx + ww || ay >= content_bottom { return; }
                         let effective_max_w = max_w.min(ww.saturating_sub(lx));
                         if effective_max_w == 0 { return; }
@@ -375,7 +369,7 @@ pub fn handle_draw_command(
                 let (ax, ay) = match win {
                     None => (lx as i32, ly as i32),
                     Some((wx, wy, ww, wh)) => {
-                        let content_wy = wy + TITLEBAR_H;
+                        let content_wy = wy + chrome_h;
                         let ax = wx as i32 + lx as i32;
                         let ay = content_wy as i32 + ly as i32;
                         if ax >= (wx + ww) as i32 || ay >= (wy + wh) as i32 { return; }
@@ -424,7 +418,7 @@ pub fn handle_draw_command(
                 let path = parts[4];
                 let (ax, ay) = match win {
                     None => (lx, ly),
-                    Some((wx, wy, _, _)) => (wx + lx, wy + TITLEBAR_H + ly),
+                    Some((wx, wy, _, _)) => (wx + lx, wy + chrome_h + ly),
                 };
                 #[cfg(target_os = "linux")]
                 {
@@ -459,11 +453,11 @@ pub fn handle_draw_command(
                 let (ax, ay, aw, ah) = match win {
                     None => (lx, ly, rw, rh),
                     Some((wx, wy, ww, wh)) => {
-                        let content_wy = wy + TITLEBAR_H;
+                        let content_wy = wy + chrome_h;
                         let ax = wx + lx;
                         let ay = content_wy + ly;
                         let win_right  = wx + ww;
-                        let win_bottom = (wy + wh).saturating_sub(STATUS_H);
+                        let win_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
                         if ax >= win_right || ay >= win_bottom { return; }
                         let aw = rw.min(win_right  - ax);
                         let ah = rh.min(win_bottom - ay);
