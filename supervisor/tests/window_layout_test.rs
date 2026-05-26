@@ -281,8 +281,8 @@ fn test_dock_excluded_from_tile_pool() {
     let regions = compute_tiling_with_hints(1, sw, usable_h, &[]);
     assert_eq!(regions.len(), 1);
     let (x, y, w, h) = regions[0];
-    let (_x, y, w, h) = (x, y + MENUBAR_H, w, h);
-    assert_eq!(y, MENUBAR_H);
+    let y_mapped = y + MENUBAR_H;
+    assert_eq!(y_mapped, MENUBAR_H);
     assert_eq!(w, sw);
     assert_eq!(h, usable_h, "desktop should fill height between menubar and dock");
 
