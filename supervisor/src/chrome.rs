@@ -6,7 +6,6 @@
 use std::sync::Mutex;
 
 use crate::{AppRegistry, AppStatus, FocusedApp, HOVERED_APP, Z_ORDER, BOOT_INSTANT};
-use supervisor::logging::Subsystem;
 
 #[cfg(target_os = "linux")]
 use crate::display;
@@ -206,7 +205,7 @@ pub fn draw_titlebar(
         draw_rounded_rect(&mut fb.back, wx + 54, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
     }
 
-    // Accent color dot — circle, deterministic per-app identity marker (12×12 at x+60)
+    // Accent color dot — circle, deterministic per-app identity marker (12×12 at x+74)
     let accent = display::app_accent_color(name);
     {
         use crate::display::draw_rounded_rect;
