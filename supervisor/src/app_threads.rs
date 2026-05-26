@@ -29,24 +29,14 @@ use supervisor::manifest::BootEntry;
 
 /// Recompute tiled regions for all running display apps and write them into
 /// the registry.  Called on every display-app spawn or exit.
+///
+/// Apps with `win_z >= Z_DOCK (100)` are pinned to a bottom strip of height
+/// `DOCK_STRIP_H`.  All other display apps tile in the remaining usable area.
 pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
     use supervisor::windows::compute_tiling_with_hints;
-    use crate::chrome::MENUBAR_H;
+    use crate::chrome::{MENUBAR_H, Z_DOCK};
 
-    let apps: Vec<(String, u32, u32)> = {
-        let reg = registry.lock().unwrap();
-        let mut v: Vec<(String, u32, u32)> = reg.iter()
-            .filter_map(|(name, st)| {
-                let st = st.lock().unwrap();
-                if st.has_display && matches!(st.status, AppStatus::Running) {
-                    Some((name.clone(), st.min_size.0, st.min_size.1))
-                } else { None }
-            })
-            .collect();
-        v.sort_by(|a, b| a.0.cmp(&b.0));
-        v
-    };
-    if apps.is_empty() { return; }
+    const DOCK_STRIP_H: u32 = 64;
 
     const DEFAULT_SCREEN_W: u32 = 1440;
     const DEFAULT_SCREEN_H: u32 = 900;
@@ -55,24 +45,64 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
     #[cfg(not(target_os = "linux"))]
     let (sw, sh) = (DEFAULT_SCREEN_W, DEFAULT_SCREEN_H);
 
-    let min_sizes: Vec<(u32, u32)> = apps.iter().map(|(_, mw, mh)| (*mw, *mh)).collect();
-    let usable_h = sh.saturating_sub(MENUBAR_H);
-    let regions: Vec<(u32, u32, u32, u32)> = compute_tiling_with_hints(apps.len(), sw, usable_h, &min_sizes)
-        .into_iter().map(|(x, y, w, h)| (x, y + MENUBAR_H, w, h)).collect();
+    // Collect all running display apps with z-layer and min-size hints.
+    let apps: Vec<(String, u32, u32, u32)> = {
+        let reg = registry.lock().unwrap();
+        let mut v: Vec<(String, u32, u32, u32)> = reg.iter()
+            .filter_map(|(name, st)| {
+                let st = st.lock().unwrap();
+                if st.has_display && matches!(st.status, AppStatus::Running) {
+                    Some((name.clone(), st.win_z, st.min_size.0, st.min_size.1))
+                } else { None }
+            })
+            .collect();
+        v.sort_by(|a, b| a.0.cmp(&b.0));
+        v
+    };
+    if apps.is_empty() { return; }
 
+    // Partition: system-layer (dock, overlay) vs. regular tiled apps.
+    let (pinned, tiled): (Vec<_>, Vec<_>) = apps.iter().partition(|(_, z, _, _)| *z >= Z_DOCK);
+
+    // Assign pinned apps to the reserved bottom strip.
+    let dock_h_reserved: u32 = if pinned.is_empty() { 0 } else { DOCK_STRIP_H };
     {
         let reg = registry.lock().unwrap();
-        for (i, (name, _, _)) in apps.iter().enumerate() {
-            if let Some(st) = reg.get(name) {
-                if let Some(&region) = regions.get(i) {
+        for (name, _, _, _) in &pinned {
+            if let Some(st) = reg.get(name.as_str()) {
+                let region = (0, sh.saturating_sub(DOCK_STRIP_H), sw, DOCK_STRIP_H);
+                st.lock().unwrap().win_region = Some(region);
+                log_info!(Subsystem::Display, Some(name.as_str()),
+                    "tiling: pinned dock strip ({},{},{},{})",
+                    region.0, region.1, region.2, region.3);
+            }
+        }
+    }
+
+    // Tile remaining apps in usable area above the dock strip.
+    if tiled.is_empty() { return; }
+    let usable_h = sh.saturating_sub(MENUBAR_H).saturating_sub(dock_h_reserved);
+    let min_sizes: Vec<(u32, u32)> = tiled.iter().map(|(_, _, mw, mh)| (*mw, *mh)).collect();
+    let regions: Vec<(u32, u32, u32, u32)> =
+        compute_tiling_with_hints(tiled.len(), sw, usable_h, &min_sizes)
+            .into_iter()
+            .map(|(x, y, w, h)| (x, y + MENUBAR_H, w, h))
+            .collect();
+    {
+        let reg = registry.lock().unwrap();
+        for (i, (name, _, _, _)) in tiled.iter().enumerate() {
+            if let Some(&region) = regions.get(i) {
+                if let Some(st) = reg.get(name.as_str()) {
                     st.lock().unwrap().win_region = Some(region);
                     log_info!(Subsystem::Display, Some(name.as_str()),
-                        "tiling: assigned ({},{},{},{})", region.0, region.1, region.2, region.3);
+                        "tiling: assigned ({},{},{},{})",
+                        region.0, region.1, region.2, region.3);
                 }
             }
         }
     }
-    log_info!(Subsystem::Display, None, "layout reflow: {} display app(s) tiled", apps.len());
+    log_info!(Subsystem::Display, None, "layout reflow: {} tiled + {} pinned display app(s)",
+        tiled.len(), pinned.len());
 }
 
 // ── spawn_io_threads ──────────────────────────────────────────────────────────
