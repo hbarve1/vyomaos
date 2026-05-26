@@ -142,8 +142,9 @@ pub fn blit_surface(
                 fb_back[fb_off..fb_off + 4].copy_from_slice(&surface.buf[src_off..src_off + 4]);
             } else {
                 let src = read_bgra(&surface.buf, src_off);
-                let (sr, sg, sb, _) = super::compositor::unpack(src);
-                let attenuated = super::compositor::pack(sr, sg, sb, global_alpha);
+                let (sr, sg, sb, sa) = super::compositor::unpack(src);
+                let eff_a = (sa as u32 * global_alpha as u32 / 255) as u8;
+                let attenuated = super::compositor::pack(sr, sg, sb, eff_a);
                 let dst = read_bgra(fb_back, fb_off);
                 write_bgra(fb_back, fb_off, blend_over(attenuated, dst));
             }
