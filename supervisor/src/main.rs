@@ -140,6 +140,7 @@ static MGMT_INBOX: OnceLock<Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>> =
 static EXEC_REPLY_CHANNELS: OnceLock<Mutex<HashMap<String, mpsc::Sender<String>>>> =
     OnceLock::new();
 static BOOT_INSTANT: OnceLock<std::time::Instant> = OnceLock::new();
+#[allow(dead_code)]
 static LAST_MENUBAR_DRAW: OnceLock<Mutex<(std::time::Instant, Option<String>)>> = OnceLock::new();
 static APP_DIRTY: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
 static HOVERED_APP: OnceLock<Mutex<Option<String>>> = OnceLock::new();

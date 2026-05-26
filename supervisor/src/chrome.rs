@@ -289,6 +289,7 @@ pub fn draw_menubar(
 /// Background: `0x161B22FF` (dark).  Text: `0x8B949EFF` (grey).
 /// Shows `[name]  up <uptime_secs>s` in small font, left-aligned with 4px inset.
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 pub fn draw_statusbar(
     fb:          &mut display::Framebuffer,
     name:        &str,
@@ -367,6 +368,57 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
         let _ = focused_name;
         let _ = hovered_name;
     }
+}
+
+/// Draw chrome (title bars + menu bar) onto a framebuffer that is already locked.
+/// Call from within code that holds the `fb_lock` — avoids deadlock with repaint_all_borders.
+#[cfg(target_os = "linux")]
+pub fn draw_chrome_onto(
+    fb: &mut display::Framebuffer,
+    registry: &AppRegistry,
+    focused: &FocusedApp,
+) {
+    let focused_name = focused.lock().unwrap().clone();
+    let hovered_name = HOVERED_APP
+        .get_or_init(|| Mutex::new(None))
+        .lock().unwrap().clone();
+    let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
+        let reg = registry.lock().unwrap();
+        let mut regions_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = Vec::new();
+        let mut display_apps: Vec<String> = reg.iter()
+            .filter_map(|(name, st)| {
+                let st = st.lock().unwrap();
+                if st.has_display && matches!(st.status, AppStatus::Running) {
+                    Some(name.clone())
+                } else { None }
+            })
+            .collect();
+        display_apps.sort();
+        for (name, st) in reg.iter() {
+            let st = st.lock().unwrap();
+            if let Some(r) = st.win_region {
+                regions_with_z.push((st.win_z, name.clone(), r));
+            }
+        }
+        regions_with_z.sort_by_key(|(z, _, _)| *z);
+        let regions = regions_with_z.into_iter().map(|(_, n, r)| (n, r)).collect();
+        (regions, display_apps)
+    };
+    for (name, (wx, wy, ww, _wh)) in &regions {
+        if *ww < 60 { continue; }
+        let is_focused = focused_name.as_deref() == Some(name.as_str());
+        let is_hovered = hovered_name.as_deref() == Some(name.as_str());
+        let is_system = {
+            let reg = registry.lock().unwrap();
+            reg.get(name.as_str()).map(|st| st.lock().unwrap().win_z >= Z_DOCK).unwrap_or(false)
+        };
+        if !is_system {
+            draw_titlebar(fb, *wx, *wy, *ww, is_focused, is_hovered, name);
+        }
+    }
+    let sw = fb.width;
+    let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
+    draw_menubar(fb, sw, elapsed, focused_name.as_deref(), &display_apps);
 }
 
 // ── T056: Animation alpha stub ────────────────────────────────────────────────
