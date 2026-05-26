@@ -203,6 +203,7 @@ pub fn dispatch_mouse(
             *focused.lock().unwrap() = Some(name.clone());
             log_info!(Subsystem::Input, Some(name.as_str()), "menubar click: focus → {name}");
             repaint_all_borders(app_registry, focused);
+            crate::chrome::open_dropdown(&name, vec![], cx as u32, crate::chrome::MENUBAR_H);
             return;
         }
     }

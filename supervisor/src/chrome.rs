@@ -440,3 +440,52 @@ pub fn sample_anim_alpha(anim: &Option<crate::display::animator::Animation>) -> 
         }
     }
 }
+
+// ── T059–T064: Dropdown menu state ───────────────────────────────────────────
+
+struct DropdownState { open: bool, selected: usize, items: Vec<(String, String)>, anchor_x: u32, anchor_y: u32, app_name: String }
+static DROPDOWN_STATE: std::sync::OnceLock<Mutex<DropdownState>> = std::sync::OnceLock::new();
+fn dropdown_state() -> &'static Mutex<DropdownState> {
+    DROPDOWN_STATE.get_or_init(|| Mutex::new(DropdownState { open: false, selected: 0, items: vec![], anchor_x: 0, anchor_y: 0, app_name: String::new() }))
+}
+
+/// Open the app-name dropdown at anchor position.
+pub fn open_dropdown(app: &str, items: Vec<(String, String)>, ax: u32, ay: u32) {
+    let mut s = dropdown_state().lock().unwrap();
+    s.open = true; s.selected = 0; s.items = items; s.anchor_x = ax; s.anchor_y = ay; s.app_name = app.to_string();
+}
+/// Close the dropdown.
+pub fn close_dropdown() { dropdown_state().lock().unwrap().open = false; }
+
+/// Handle keyboard navigation within the dropdown.
+pub fn handle_dropdown_key(key: u8) {
+    let mut s = match dropdown_state().try_lock() { Ok(s) => s, Err(_) => return };
+    if !s.open { return; }
+    match key {
+        b'\r' | b'\n' | 27 => { s.open = false; }
+        b'j' => { if s.selected + 1 < s.items.len() { s.selected += 1; } }
+        b'k' => { if s.selected > 0 { s.selected -= 1; } }
+        _ => {}
+    }
+}
+/// Public wrapper for draw_glyph_str (used by toast.rs banner renderer).
+#[cfg(target_os = "linux")]
+pub fn draw_glyph_str_pub(fb: &mut display::Framebuffer, text: &str, x: i32, y: i32, rgba: u32, pt: u32, bold: bool, mono: bool) {
+    draw_glyph_str(fb, text, x, y, rgba, pt, bold, mono);
+}
+/// Render the dropdown menu if open.
+#[cfg(target_os = "linux")]
+pub fn render_dropdown_if_open(fb: &mut display::Framebuffer) {
+    let s = dropdown_state().lock().unwrap();
+    if !s.open || s.items.is_empty() { return; }
+    let (ax, ay, items, selected) = (s.anchor_x, s.anchor_y, s.items.clone(), s.selected);
+    drop(s);
+    use crate::display::draw_rounded_rect;
+    let row_h: u32 = 22; let (pw, fs, fw, fh) = (200u32, fb.stride, fb.width, fb.height);
+    draw_rounded_rect(&mut fb.back, ax, ay, pw, row_h * items.len() as u32 + 8, 0x1C1C1EE8_u32, 8, fs, fw, fh);
+    for (i, (label, _)) in items.iter().enumerate() {
+        let ry = ay + 4 + i as u32 * row_h;
+        if i == selected { draw_rounded_rect(&mut fb.back, ax + 4, ry, pw - 8, row_h - 2, 0x0A84FFFF_u32, 4, fs, fw, fh); }
+        draw_glyph_str(fb, label, (ax + 12) as i32, (ry + row_h / 2) as i32, 0xFFFFFFFF, 13, false, false);
+    }
+}

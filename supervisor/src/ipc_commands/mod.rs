@@ -196,13 +196,14 @@ pub fn handle_extended_command(
             });
         }
 
-        // P39: notify <title> <msg> — draw toast overlay, auto-clear after 3s
+        // P39: notify <title>|<body> — enqueue banner + legacy toast overlay
         "notify" => {
             let rest = parts.get(1).unwrap_or(&"").trim().to_string();
-            let (title, msg) = rest
-                .split_once(' ')
+            let (title, msg) = rest.split_once('|')
                 .map(|(a, b)| (a.to_string(), b.to_string()))
+                .or_else(|| rest.split_once(' ').map(|(a, b)| (a.to_string(), b.to_string())))
                 .unwrap_or_else(|| (rest.clone(), String::new()));
+            crate::toast::enqueue_banner(sender, &title, &msg);
             #[cfg(target_os = "linux")]
             {
                 use crate::font;
