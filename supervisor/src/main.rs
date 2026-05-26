@@ -20,6 +20,7 @@
 #[cfg(target_os = "linux")]
 mod display;
 mod font;
+mod image;
 
 mod app_threads;
 mod chrome;
