@@ -88,19 +88,14 @@ pub fn handle_draw_command(
         let mut apps_sorted = apps_with_z;
         apps_sorted.sort_by_key(|(z, _, _)| *z);
         let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
-        for (_, name, (wx, wy, ww, _wh)) in &apps_sorted {
+        for (z, name, (wx, wy, ww, _wh)) in &apps_sorted {
             let surface_arc = {
                 let reg = app_registry.lock().unwrap();
                 reg.get(name.as_str()).and_then(|st| st.lock().unwrap().surface.clone())
             };
             if let Some(arc) = surface_arc {
                 let surface = arc.lock().unwrap();
-                let is_sys = {
-                    let reg = app_registry.lock().unwrap();
-                    reg.get(name.as_str())
-                        .map(|st| st.lock().unwrap().win_z >= Z_DOCK)
-                        .unwrap_or(false)
-                };
+                let is_sys = *z >= Z_DOCK;
                 let blit_y = if is_sys { *wy } else { wy + TITLEBAR_H };
                 if *ww > 0 {
                     display::blit_surface(&mut fb.back, &surface, *wx, blit_y, 255, fs, fw, fh);
