@@ -179,27 +179,41 @@ pub fn draw_titlebar(
     // Drop shadow rendered behind the window chrome
     draw_window_shadow(fb, wx, wy, ww, TITLEBAR_H);
     let bg = titlebar_color_for_state(is_focused, is_hovered);
-    fb.fill_rect(wx, wy, ww, TITLEBAR_H, bg);
+    {
+        use crate::display::draw_rounded_rect;
+        let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
+        draw_rounded_rect(&mut fb.back, wx, wy, ww, TITLEBAR_H, bg, 12, fs, sw, sh);
+    }
     fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
 
     // 2px focus border — top edge only (full frame drawn at flush time when wh is known)
     let bc = display::border_color(is_focused);
     fb.fill_rect(wx, wy, ww, 2, bc);
 
-    // Traffic lights — 12×12, left-aligned, vertically centered
+    // Traffic lights — circles (radius = TL_DOT/2), left-aligned, vertically centered
     let tl_y = wy + (TITLEBAR_H - TL_DOT) / 2;
     let (c1, c2, c3) = if is_focused {
         (TL_CLOSE, TL_MINIMIZE, TL_MAXIMIZE)
     } else {
         (TL_GRAY, TL_GRAY, TL_GRAY)
     };
-    fb.fill_rect(wx + 8,  tl_y, TL_DOT, TL_DOT, c1);
-    fb.fill_rect(wx + 24, tl_y, TL_DOT, TL_DOT, c2);
-    fb.fill_rect(wx + 40, tl_y, TL_DOT, TL_DOT, c3);
+    {
+        use crate::display::draw_rounded_rect;
+        let r = TL_DOT / 2;
+        let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
+        draw_rounded_rect(&mut fb.back, wx + 8,  tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 24, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 40, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
+    }
 
-    // Accent color dot — deterministic per-app identity marker (12×12 at x+60)
+    // Accent color dot — circle, deterministic per-app identity marker (12×12 at x+60)
     let accent = display::app_accent_color(name);
-    fb.fill_rect(wx + 60, tl_y, TL_DOT, TL_DOT, accent);
+    {
+        use crate::display::draw_rounded_rect;
+        let r = TL_DOT / 2;
+        let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
+        draw_rounded_rect(&mut fb.back, wx + 60, tl_y, TL_DOT, TL_DOT, accent, r, fs, sw, sh);
+    }
 
     // App name centered — 13pt bold Inter
     let nlen = name.len().min(20);
@@ -407,4 +421,21 @@ pub fn apply_tiling_layout(registry: &AppRegistry) {
 
     let n = apps.len();
     crate::log_info!(Subsystem::Display, None, "layout reflow: {n} display app(s) tiled");
+}
+
+// ── T056: Animation alpha stub ────────────────────────────────────────────────
+
+/// Sample the current animation alpha for an app state.
+/// Returns 255 (fully opaque) when no animation is active.
+/// Full layer-alpha blending requires a compositor not yet built;
+/// this helper is the integration point for future frame-tick use.
+pub fn sample_anim_alpha(anim: &Option<crate::display::animator::Animation>) -> u8 {
+    match anim {
+        None => 255,
+        Some(a) => {
+            let elapsed = crate::display::animator::now_ms()
+                .saturating_sub(a.start_ms);
+            a.sample(elapsed).alpha
+        }
+    }
 }

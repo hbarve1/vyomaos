@@ -285,8 +285,16 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         last_cpu_reset:   Instant::now(),
         minimized:           false,
         pre_minimize_region: None,
+        // T053: pending_anim set below after construction
+        pending_anim:        None,
         log_subscribers:     Vec::new(),
     }));
+    // T053: enqueue Open animation so the window fades in on spawn
+    {
+        use crate::display::animator::{Animation, AnimKind, now_ms};
+        state.lock().unwrap().pending_anim =
+            Some(Animation::new(AnimKind::Open, now_ms()));
+    }
     app_registry.lock().unwrap().insert(name.clone(), state);
 
     Some(SpawnedApp { entry: entry.clone(), name, child, msg_rx, child_stdin, child_stdout,

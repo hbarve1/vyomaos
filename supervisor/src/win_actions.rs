@@ -143,6 +143,11 @@ pub fn do_minimize(
             st.pre_minimize_region = st.win_region;
             st.minimized = true;
             st.win_region = Some((col_x, strip_y, 240, 28));
+            // T055: enqueue Minimize animation
+            {
+                use crate::display::animator::{Animation, AnimKind, now_ms};
+                st.pending_anim = Some(Animation::new(AnimKind::Minimize, now_ms()));
+            }
             (col_x, strip_y)
         })
     };

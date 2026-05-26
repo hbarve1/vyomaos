@@ -105,6 +105,8 @@ struct AppState {
     // spec-042: minimize/restore state
     minimized:           bool,
     pre_minimize_region: Option<(u32, u32, u32, u32)>,
+    // T052: pending window animation (Open/Close/Minimize)
+    pub pending_anim: Option<crate::display::animator::Animation>,
     // spec-044: management server live log subscribers
     log_subscribers: Vec<mpsc::Sender<String>>,
 }

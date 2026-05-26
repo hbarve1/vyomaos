@@ -12,7 +12,7 @@ mod cursor;
 mod fb_ioctl;
 mod helpers;
 mod compositor;
-mod animator;
+pub mod animator;
 
 pub use cursor::{CursorState, CURSOR_W, CURSOR_H, CURSOR_MASK};
 #[allow(unused_imports)]
