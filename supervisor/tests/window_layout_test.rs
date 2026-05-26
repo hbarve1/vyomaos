@@ -280,7 +280,7 @@ fn test_dock_excluded_from_tile_pool() {
     let usable_h = sh - MENUBAR_H - DOCK_STRIP_H;
     let regions = compute_tiling_with_hints(1, sw, usable_h, &[]);
     assert_eq!(regions.len(), 1);
-    let (x, y, w, h) = regions[0];
+    let (_x, y, w, h) = regions[0];
     let y_mapped = y + MENUBAR_H;
     assert_eq!(y_mapped, MENUBAR_H);
     assert_eq!(w, sw);
