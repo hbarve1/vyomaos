@@ -201,9 +201,9 @@ pub fn draw_titlebar(
         use crate::display::draw_rounded_rect;
         let r = TL_DOT / 2;
         let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-        draw_rounded_rect(&mut fb.back, wx + 8,  tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
-        draw_rounded_rect(&mut fb.back, wx + 24, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
-        draw_rounded_rect(&mut fb.back, wx + 40, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 14, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 34, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 54, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
     }
 
     // Accent color dot — circle, deterministic per-app identity marker (12×12 at x+60)
@@ -212,14 +212,14 @@ pub fn draw_titlebar(
         use crate::display::draw_rounded_rect;
         let r = TL_DOT / 2;
         let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-        draw_rounded_rect(&mut fb.back, wx + 60, tl_y, TL_DOT, TL_DOT, accent, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 74, tl_y, TL_DOT, TL_DOT, accent, r, fs, sw, sh);
     }
 
     // App name centered — 13pt bold Inter
     let nlen = name.len().min(20);
     let display_name = &name[..nlen];
-    // Estimate width: ~7px per char at 13pt for centering heuristic
-    let name_w_est = nlen as u32 * 7;
+    let name_w_est = crate::font_cache().lock().unwrap()
+        .measure_str(display_name, 13, true, false);
     if ww > name_w_est + 60 {
         let nx = (wx + (ww - name_w_est) / 2) as i32;
         let ny = (wy + TITLEBAR_H / 2) as i32;
@@ -268,7 +268,8 @@ pub fn draw_menubar(
     if let Some(name) = focused {
         let nlen = name.len().min(20);
         let display_name = &name[..nlen];
-        let name_w_est = nlen as u32 * 7;
+        let name_w_est = crate::font_cache().lock().unwrap()
+            .measure_str(display_name, 12, false, false);
         let nx = sw.saturating_sub(name_w_est) / 2;
         draw_glyph_str(fb, display_name, nx as i32, ty, MAC_LABEL, 12, false, false);
     }
@@ -278,7 +279,8 @@ pub fn draw_menubar(
     let m = (elapsed_secs % 3600) / 60;
     let s = elapsed_secs % 60;
     let clock = format!("{h:02}:{m:02}:{s:02}");
-    let cw = clock.len() as u32 * 7; // ~7px/char at 12pt
+    let cw = crate::font_cache().lock().unwrap()
+        .measure_str(&clock, 12, false, false);
     if sw > cw + 20 {
         draw_glyph_str(fb, &clock, (sw - cw - 12) as i32, ty, MAC_LABEL2, 12, false, false);
     }
@@ -366,62 +368,6 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
         let _ = focused_name;
         let _ = hovered_name;
     }
-}
-
-/// Recompute tiled regions for all running display apps and write them into
-/// the registry. Called on every display-app spawn or exit.
-#[allow(dead_code)]
-pub fn apply_tiling_layout(registry: &AppRegistry) {
-    use supervisor::windows::compute_tiling_with_hints;
-
-    let apps: Vec<(String, u32, u32)> = {
-        let reg = registry.lock().unwrap();
-        let mut v: Vec<(String, u32, u32)> = reg.iter()
-            .filter_map(|(name, st)| {
-                let st = st.lock().unwrap();
-                if st.has_display && matches!(st.status, AppStatus::Running) {
-                    Some((name.clone(), st.min_size.0, st.min_size.1))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        v.sort_by(|a, b| a.0.cmp(&b.0));
-        v
-    };
-
-    if apps.is_empty() { return; }
-
-    const DEFAULT_SCREEN_W: u32 = 1440;
-    const DEFAULT_SCREEN_H: u32 = 900;
-    #[cfg(target_os = "linux")]
-    let (sw, sh) = crate::display::screen_size().unwrap_or((DEFAULT_SCREEN_W, DEFAULT_SCREEN_H));
-    #[cfg(not(target_os = "linux"))]
-    let (sw, sh) = (DEFAULT_SCREEN_W, DEFAULT_SCREEN_H);
-
-    let min_sizes: Vec<(u32, u32)> = apps.iter().map(|(_, mw, mh)| (*mw, *mh)).collect();
-    let usable_h = sh.saturating_sub(MENUBAR_H);
-    let regions: Vec<(u32, u32, u32, u32)> = compute_tiling_with_hints(apps.len(), sw, usable_h, &min_sizes)
-        .into_iter()
-        .map(|(x, y, w, h)| (x, y + MENUBAR_H, w, h))
-        .collect();
-
-    {
-        let reg = registry.lock().unwrap();
-        for (i, (name, _, _)) in apps.iter().enumerate() {
-            if let Some(st) = reg.get(name) {
-                if let Some(&region) = regions.get(i) {
-                    let mut st = st.lock().unwrap();
-                    st.win_region = Some(region);
-                    crate::log_info!(Subsystem::Display, Some(name.as_str()),
-                        "tiling: assigned ({},{},{},{})", region.0, region.1, region.2, region.3);
-                }
-            }
-        }
-    }
-
-    let n = apps.len();
-    crate::log_info!(Subsystem::Display, None, "layout reflow: {n} display app(s) tiled");
 }
 
 // ── T056: Animation alpha stub ────────────────────────────────────────────────
