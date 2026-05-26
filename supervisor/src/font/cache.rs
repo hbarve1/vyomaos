@@ -71,6 +71,14 @@ impl FontCache {
         &self.cache[&key]
     }
 
+    /// Sum the advance widths of all characters in `text` at the given size.
+    /// Returns total pixel width as `u32` (truncated from `f32`).
+    pub fn measure_str(&mut self, text: &str, pt: u32, bold: bool, mono: bool) -> u32 {
+        text.chars()
+            .map(|ch| self.rasterize(ch, pt, bold, mono).advance_x)
+            .sum::<f32>() as u32
+    }
+
     fn compute_glyph(
         ui: &Option<fontdue::Font>,
         ui_bold: &Option<fontdue::Font>,
