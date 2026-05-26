@@ -107,6 +107,9 @@ struct AppState {
     pre_minimize_region: Option<(u32, u32, u32, u32)>,
     // T052: pending window animation (Open/Close/Minimize)
     pub pending_anim: Option<crate::display::animator::Animation>,
+    /// Per-window pixel surface buffer (content area only, no chrome).
+    /// None until the first tiling layout assigns a win_region.
+    pub surface: Option<std::sync::Arc<std::sync::Mutex<crate::display::Surface>>>,
     // spec-044: management server live log subscribers
     log_subscribers: Vec<mpsc::Sender<String>>,
 }
