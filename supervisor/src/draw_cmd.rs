@@ -357,6 +357,102 @@ pub fn handle_draw_command(
         return;
     }
 
+    if let Some(args) = cmd.strip_prefix("draw_glyph:") {
+        // Format: x,y,rgba,pt,weight,text  (splitn 6)
+        let parts: Vec<&str> = args.splitn(6, ',').collect();
+        if parts.len() == 6 {
+            if let (Ok(_lx), Ok(_ly), Some(_rgba), Ok(pt)) = (
+                parts[0].parse::<u32>(),
+                parts[1].parse::<u32>(),
+                parse_color(parts[2]),
+                parts[3].parse::<u32>(),
+            ) {
+                let weight = parts[4];
+                let text = parts[5];
+                let _bold = weight == "bold";
+                let _mono = weight == "mono";
+                // TODO US1: call font cache glyph renderer
+                log_info!(Subsystem::Display, Some(sender), "draw_glyph: pt={pt} weight={weight} text={text:?} (stub)");
+            } else {
+                log_error!(Subsystem::Display, Some(sender), "bad draw_glyph args: {args}");
+            }
+        } else {
+            log_error!(Subsystem::Display, Some(sender), "bad draw_glyph args: {args}");
+        }
+        return;
+    }
+
+    if let Some(args) = cmd.strip_prefix("draw_image:") {
+        // Format: x,y,w,h,path  (splitn 5)
+        let parts: Vec<&str> = args.splitn(5, ',').collect();
+        if parts.len() == 5 {
+            if let (Ok(lx), Ok(ly), Ok(iw), Ok(ih)) = (
+                parts[0].parse::<u32>(),
+                parts[1].parse::<u32>(),
+                parts[2].parse::<u32>(),
+                parts[3].parse::<u32>(),
+            ) {
+                let path = parts[4];
+                // TODO US2: call image cache blit
+                let _ = (lx, ly, iw, ih);
+                log_info!(Subsystem::Display, Some(sender), "draw_image: path={path:?} (stub)");
+            } else {
+                log_error!(Subsystem::Display, Some(sender), "bad draw_image args: {args}");
+            }
+        } else {
+            log_error!(Subsystem::Display, Some(sender), "bad draw_image args: {args}");
+        }
+        return;
+    }
+
+    if let Some(args) = cmd.strip_prefix("fill_rect_r:") {
+        // Format: x,y,w,h,rgba,radius  (splitn 6)
+        let parts: Vec<&str> = args.splitn(6, ',').collect();
+        if parts.len() == 6 {
+            if let (Ok(lx), Ok(ly), Ok(rw), Ok(rh), Some(rgba), Ok(radius)) = (
+                parts[0].parse::<u32>(),
+                parts[1].parse::<u32>(),
+                parts[2].parse::<u32>(),
+                parts[3].parse::<u32>(),
+                parse_color(parts[4]),
+                parts[5].parse::<u32>(),
+            ) {
+                let (ax, ay, aw, ah) = match win {
+                    None => (lx, ly, rw, rh),
+                    Some((wx, wy, ww, wh)) => {
+                        let content_wy = wy + TITLEBAR_H;
+                        let ax = wx + lx;
+                        let ay = content_wy + ly;
+                        let win_right  = wx + ww;
+                        let win_bottom = (wy + wh).saturating_sub(STATUS_H);
+                        if ax >= win_right || ay >= win_bottom { return; }
+                        let aw = rw.min(win_right  - ax);
+                        let ah = rh.min(win_bottom - ay);
+                        if aw == 0 || ah == 0 { return; }
+                        (ax, ay, aw, ah)
+                    }
+                };
+                // TODO US3: call rounded-rect renderer
+                // For now fall back to plain fill_rect
+                fb_lock.lock().unwrap().fill_rect(ax, ay, aw, ah, rgba);
+                let _ = radius;
+            } else {
+                log_error!(Subsystem::Display, Some(sender), "bad fill_rect_r args: {args}");
+            }
+        } else {
+            log_error!(Subsystem::Display, Some(sender), "bad fill_rect_r args: {args}");
+        }
+        return;
+    }
+
+    if let Some(args) = cmd.strip_prefix("set_layer_alpha:") {
+        if let Ok(alpha) = args.trim().parse::<u8>() {
+            // TODO US4: apply animation alpha to compositor layer
+            let _ = alpha;
+        }
+        return;
+    }
+
     log_warn!(Subsystem::Display, Some(sender), "unknown command: {cmd}");
 }
 
