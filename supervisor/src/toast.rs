@@ -80,6 +80,7 @@ use std::collections::VecDeque;
 use std::sync::OnceLock;
 
 /// A notification banner displayed in the top-right corner.
+#[allow(dead_code)]
 pub struct NotificationBanner {
     pub app_name: String,
     pub icon_path: Option<String>,
@@ -119,6 +120,7 @@ pub fn enqueue_banner(app_name: &str, title: &str, body: &str) {
 /// Draw and auto-dismiss all pending notification banners.
 /// Call this from the display flush path.
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 pub fn render_banners(fb: &mut crate::display::Framebuffer) {
     use crate::display::draw_rounded_rect;
     let now = now_ms();

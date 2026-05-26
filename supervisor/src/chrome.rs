@@ -430,6 +430,7 @@ pub fn apply_tiling_layout(registry: &AppRegistry) {
 /// Returns 255 (fully opaque) when no animation is active.
 /// Full layer-alpha blending requires a compositor not yet built;
 /// this helper is the integration point for future frame-tick use.
+#[allow(dead_code)]
 pub fn sample_anim_alpha(anim: &Option<crate::display::animator::Animation>) -> u8 {
     match anim {
         None => 255,
@@ -455,9 +456,11 @@ pub fn open_dropdown(app: &str, items: Vec<(String, String)>, ax: u32, ay: u32) 
     s.open = true; s.selected = 0; s.items = items; s.anchor_x = ax; s.anchor_y = ay; s.app_name = app.to_string();
 }
 /// Close the dropdown.
+#[allow(dead_code)]
 pub fn close_dropdown() { dropdown_state().lock().unwrap().open = false; }
 
 /// Handle keyboard navigation within the dropdown.
+#[allow(dead_code)]
 pub fn handle_dropdown_key(key: u8) {
     let mut s = match dropdown_state().try_lock() { Ok(s) => s, Err(_) => return };
     if !s.open { return; }
@@ -470,11 +473,13 @@ pub fn handle_dropdown_key(key: u8) {
 }
 /// Public wrapper for draw_glyph_str (used by toast.rs banner renderer).
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 pub fn draw_glyph_str_pub(fb: &mut display::Framebuffer, text: &str, x: i32, y: i32, rgba: u32, pt: u32, bold: bool, mono: bool) {
     draw_glyph_str(fb, text, x, y, rgba, pt, bold, mono);
 }
 /// Render the dropdown menu if open.
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 pub fn render_dropdown_if_open(fb: &mut display::Framebuffer) {
     let s = dropdown_state().lock().unwrap();
     if !s.open || s.items.is_empty() { return; }

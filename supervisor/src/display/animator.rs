@@ -4,6 +4,7 @@
 //! Window animation state machine.
 
 /// The type of window animation.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnimKind {
     Open,
@@ -12,6 +13,7 @@ pub enum AnimKind {
 }
 
 /// Interpolated animation state at a given point in time.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct AnimState {
     /// Scale factor for the window layer (1.0 = full size).
@@ -23,6 +25,7 @@ pub struct AnimState {
 }
 
 /// A wall-clock bounded animation between two visual states.
+#[allow(dead_code)]
 pub struct Animation {
     pub kind:        AnimKind,
     pub start_ms:    u64,
@@ -54,6 +57,7 @@ impl Animation {
 
     /// Sample the animation state at `elapsed_ms` milliseconds since start.
     /// Snaps to final state if elapsed >= duration.
+    #[allow(dead_code)]
     pub fn sample(&self, elapsed_ms: u64) -> AnimState {
         let t = if elapsed_ms >= self.duration_ms as u64 {
             1.0_f32
