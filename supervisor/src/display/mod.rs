@@ -6,16 +6,13 @@
 //! Opened once at supervisor startup.  Reader threads call `fill_rect` /
 //! `flush` when they detect `VYOMA_DRAW:` protocol lines from display-capable
 //! apps.  If `/dev/fb0` is absent (headless boot) every call is a silent
-//! no-op.
-//!
-//! Protocol (one command per stdout line from a display-capable WASM app):
-//!   VYOMA_DRAW:fill_rect:<x>,<y>,<w>,<h>,<rgba_decimal>
-//!   VYOMA_DRAW:draw_text:<x>,<y>,<rgba_decimal>,<text>
-//!   VYOMA_DRAW:flush
+//! no-op.  See `docs/vyoma-draw-protocol.md` for the full command reference.
 
 mod cursor;
 mod fb_ioctl;
 mod helpers;
+mod compositor;
+pub mod animator;
 
 pub use cursor::{CursorState, CURSOR_W, CURSOR_H, CURSOR_MASK};
 #[allow(unused_imports)]
@@ -23,6 +20,8 @@ pub use helpers::{blend_alpha, titlebar_color, border_color, app_accent_color, f
 use fb_ioctl::{FBIOGET_VSCREENINFO, FbVarScreeninfo};
 
 use super::font;
+#[allow(unused_imports)] pub use compositor::{composite_glyph, blit_image, draw_rounded_rect, rounded_rect_coverage};
+use compositor::{blend_over, read_bgra, write_bgra};
 
 use std::{
     fs::OpenOptions,
@@ -39,7 +38,7 @@ pub struct Framebuffer {
     _file: std::fs::File, // keeps the fd alive
     pub width: u32,
     pub height: u32,
-    stride: u32,          // bytes per scanline
+    pub stride: u32,      // bytes per scanline
     bpp: u32,
     buf: *mut u8,
     buf_len: usize,
@@ -181,30 +180,40 @@ impl Drop for Framebuffer {
 }
 
 // ── Drawing primitives ────────────────────────────────────────────────────────
-
 impl Framebuffer {
-    /// Fill a rectangle with an RGBA colour (0xRRGGBBAA, big-endian).
-    /// virtio-gpu framebuffer is XRGB8888 little-endian → stored as [B, G, R, X].
+    /// Fill a rectangle with an RGBA colour (packed 0xRRGGBBAA).
+    /// Alpha < 255 composites via Porter-Duff "over"; alpha == 255 uses a fast path.
     pub fn fill_rect(&mut self, x: u32, y: u32, w: u32, h: u32, rgba: u32) {
-        if self.bpp != 32 {
-            return;
-        }
-        let r = ((rgba >> 24) & 0xFF) as u8;
-        let g = ((rgba >> 16) & 0xFF) as u8;
-        let b = ((rgba >>  8) & 0xFF) as u8;
-        let pixel = [b, g, r, 0xFF_u8]; // BGRA on-disk
-
+        if self.bpp != 32 { return; }
+        let a = (rgba & 0xFF) as u8;
         let x1 = (x + w).min(self.width);
         let y1 = (y + h).min(self.height);
 
-        for row in y..y1 {
-            let base = (row * self.stride + x * 4) as usize;
-            let end  = (row * self.stride + x1 * 4) as usize;
-            if end > self.buf_len {
-                break;
+        // Fast path: fully opaque fill — no blending needed
+        if a == 255 {
+            let r = ((rgba >> 24) & 0xFF) as u8;
+            let g = ((rgba >> 16) & 0xFF) as u8;
+            let b = ((rgba >>  8) & 0xFF) as u8;
+            let pixel = [b, g, r, 0xFF_u8];
+            for row in y..y1 {
+                let base = (row * self.stride + x * 4) as usize;
+                let end  = (row * self.stride + x1 * 4) as usize;
+                if end > self.buf_len { break; }
+                for off in (base..end).step_by(4) {
+                    self.back[off..off + 4].copy_from_slice(&pixel);
+                }
             }
-            for off in (base..end).step_by(4) {
-                self.back[off..off + 4].copy_from_slice(&pixel);
+        } else {
+            // Alpha-blended fill using Porter-Duff "over"
+            for row in y..y1 {
+                let base = (row * self.stride + x * 4) as usize;
+                let end  = (row * self.stride + x1 * 4) as usize;
+                if end > self.buf_len { break; }
+                for off in (base..end).step_by(4) {
+                    let dst = read_bgra(&self.back, off);
+                    let blended = blend_over(rgba, dst);
+                    write_bgra(&mut self.back, off, blended);
+                }
             }
         }
 
@@ -214,10 +223,8 @@ impl Framebuffer {
         }
     }
 
-    /// Render a string at pixel position (x, y) using the embedded bitmap font.
-    /// Supports three sizes: Small (8×8), Medium (8×16), Large (16×32).
-    /// Characters outside printable ASCII (0x20–0x7E) are drawn as blank glyphs.
-    /// Text is clipped at the right and bottom framebuffer edges.
+    /// Render a string at (x, y) using the embedded bitmap font.
+    /// Sizes: Small (8×8), Medium (8×16), Large (16×32). Clips at screen edges.
     pub fn draw_text(&mut self, x: u32, y: u32, text: &str, rgba: u32, size: font::FontSize) {
         if self.bpp != 32 { return; }
         let r = ((rgba >> 24) & 0xFF) as u8;
@@ -306,13 +313,9 @@ impl Framebuffer {
         }
     }
 
-    /// Save pixels under the cursor hotspot into `cursor.saved_under`, then
-    /// paint the arrow sprite (white fill with 1px black outline) at `cursor.cx/cy`.
-    /// No-op when `!cursor.visible` or bpp != 32.
+    /// Save pixels under cursor hotspot then paint the arrow sprite. No-op when not visible.
     pub fn draw_cursor(&mut self) {
-        if !self.cursor.visible || self.bpp != 32 {
-            return;
-        }
+        if !self.cursor.visible || self.bpp != 32 { return; }
         let cx = self.cursor.cx as u32;
         let cy = self.cursor.cy as u32;
 
@@ -358,8 +361,7 @@ impl Framebuffer {
         }
     }
 
-    /// Restore pixels that were saved by the most recent `draw_cursor()` call.
-    /// No-op when `cursor.drawn` is false.
+    /// Restore pixels saved by the most recent `draw_cursor()` call. No-op if not drawn.
     pub fn restore_under_cursor(&mut self) {
         if !self.cursor.drawn { return; }
         let cx = self.cursor.cx as u32;

@@ -24,6 +24,19 @@ pub fn default_restart() -> String {
 
 // ── App manifest structs ──────────────────────────────────────────────────────
 
+/// A single entry in an app's declarative menu.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct MenuItem {
+    pub label: String,
+    pub action: String,
+    #[serde(default = "default_menu_item_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub shortcut: Option<String>,
+}
+
+fn default_menu_item_enabled() -> bool { true }
+
 #[derive(Debug, Default, Deserialize, Clone)]
 pub struct WindowRegion {
     // Screen coordinates used by supervisor for hit-testing and z-ordering.
@@ -61,6 +74,9 @@ pub struct AppManifest {
     /// Populated by `parse_manifest`; not from serde directly.
     #[serde(skip)]
     pub peripherals: Option<PeripheralEnforcer>,
+    /// Declarative menu items shown in the global menu bar when this app is focused.
+    #[serde(default)]
+    pub menu_items: Vec<MenuItem>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,6 +87,9 @@ pub struct AppMeta {
     /// Optional SHA-256 hex digest of the .wasm binary.
     #[serde(default)]
     pub wasm_sha256: Option<String>,
+    /// Optional relative path to a PNG icon (e.g. "icon.png"), resolved from the manifest directory.
+    #[serde(default)]
+    pub icon: Option<String>,
 }
 
 // deny_unknown_fields ensures manifests cannot declare undocumented capabilities.

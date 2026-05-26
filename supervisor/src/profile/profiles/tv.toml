@@ -1,0 +1,15 @@
+[platform]
+name = "tv"
+arch = "aarch64"
+runtime = "wasmtime"
+min_ram_kb = 65536
+
+[supervisor]
+modules = ["lifecycle", "capability", "display", "input"]
+
+[display]
+profile = "tv"
+show_dock = false
+show_menu_bar = false
+windowed_mode = false
+focus_ring = true

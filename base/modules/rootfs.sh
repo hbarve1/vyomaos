@@ -144,6 +144,10 @@ INIT_EOF
         log_info "  Included: ${app_name} ($(du -h "$wasm_file" | cut -f1))"
     done
 
+    # ── Font files for scalable rendering ────────────────────────────────────
+    mkdir -p "$ROOTFS/fonts"
+    cp -r base/fonts/*.ttf "$ROOTFS/fonts/" 2>/dev/null || true
+
     # ── Pack initramfs ────────────────────────────────────────────────────────
     log_info "Packing initramfs -> $INITRAMFS_FILE"
     (

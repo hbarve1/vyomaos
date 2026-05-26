@@ -20,6 +20,7 @@
 #[cfg(target_os = "linux")]
 mod display;
 mod font;
+mod image;
 
 mod app_threads;
 mod chrome;
@@ -104,6 +105,8 @@ struct AppState {
     // spec-042: minimize/restore state
     minimized:           bool,
     pre_minimize_region: Option<(u32, u32, u32, u32)>,
+    // T052: pending window animation (Open/Close/Minimize)
+    pub pending_anim: Option<crate::display::animator::Animation>,
     // spec-044: management server live log subscribers
     log_subscribers: Vec<mpsc::Sender<String>>,
 }
@@ -115,75 +118,62 @@ type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
 type Inbox = Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>;
 type FocusedApp = Arc<Mutex<Option<String>>>;
 
-// ── P33: Global Z-order stack (index 0 = topmost / frontmost window) ─────────
+// ── Global statics ────────────────────────────────────────────────────────────
 
 static Z_ORDER: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
-
-// ── IPC reply routing: maps recipient_app → last sender_app ──────────────────
-
 static LAST_SENDER: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
-
-// ── P47: Raw TCP connection pool ──────────────────────────────────────────────
-
 static TCP_CONNS: OnceLock<Mutex<std::collections::HashMap<u32, std::net::TcpStream>>> =
     OnceLock::new();
-static TCP_NEXT_ID: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(1);
-
-// ── P50: Clipboard ────────────────────────────────────────────────────────────
-
+static TCP_NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 static CLIPBOARD: OnceLock<Mutex<String>> = OnceLock::new();
-
-// ── P55: Global font size preference ─────────────────────────────────────────
-
 static FONT_SIZE: OnceLock<Mutex<String>> = OnceLock::new();
-
-// Drag-start state: Some((x, y)) while the left button is held, None otherwise.
-// Used by the drag-delta logging stub (P031).
 static MOUSE_DRAG_START: OnceLock<Mutex<Option<(i32, i32)>>> = OnceLock::new();
 fn mouse_drag_start() -> &'static Mutex<Option<(i32, i32)>> {
     MOUSE_DRAG_START.get_or_init(|| Mutex::new(None))
 }
-
-// ── spec-044: management server global state ──────────────────────────────────
-
 /// Shared inbox Arc reference for the exec handler (set once after inbox is created).
 static MGMT_INBOX: OnceLock<Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>> = OnceLock::new();
-
 /// One-shot reply channels registered by the exec handler, keyed by app name.
 static EXEC_REPLY_CHANNELS: OnceLock<Mutex<HashMap<String, mpsc::Sender<String>>>> =
     OnceLock::new();
-
-// Boot timestamp — used to render the elapsed clock in the menu bar.
 static BOOT_INSTANT: OnceLock<std::time::Instant> = OnceLock::new();
-
-// Rate-limit: tracks (last_draw_instant, last_focused_name) for the menu bar.
-// Menu bar is only repainted when ≥1 second has elapsed OR focused app changes.
 static LAST_MENUBAR_DRAW: OnceLock<Mutex<(std::time::Instant, Option<String>)>> = OnceLock::new();
-
-// Dirty-flag map: true if the app has issued at least one draw command since its
-// last flush.  Avoids repainting the title bar for windows with no new content.
 static APP_DIRTY: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
-
-// Currently hovered app name (title bar hover, no button press).
-// Updated on every mouse-motion event; None when cursor is not over any title bar.
 static HOVERED_APP: OnceLock<Mutex<Option<String>>> = OnceLock::new();
-
-// Per-app log level filter — set via @supervisor: loglevel <name> <level>.
 static APP_LOG_LEVELS: OnceLock<Mutex<HashMap<String, supervisor::ipc::LogLevel>>> = OnceLock::new();
 fn app_log_levels() -> &'static Mutex<HashMap<String, supervisor::ipc::LogLevel>> {
     APP_LOG_LEVELS.get_or_init(|| Mutex::new(HashMap::new()))
 }
-
-// Per-app flush rate tracking: maps app name → (flush_count, window_start).
-// Logged every 5 seconds via `display::format_fps`.
-static FLUSH_COUNTS: OnceLock<Mutex<HashMap<String, (u64, std::time::Instant)>>> =
-    OnceLock::new();
-
+static FLUSH_COUNTS: OnceLock<Mutex<HashMap<String, (u64, std::time::Instant)>>> = OnceLock::new();
 fn flush_counts() -> &'static Mutex<HashMap<String, (u64, std::time::Instant)>> {
     FLUSH_COUNTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
+/// Gate: false = suppress menu bar rendering on non-desktop profiles.
+pub static SHOW_MENU_BAR: OnceLock<bool> = OnceLock::new();
+/// Active display profile name broadcast to apps via VYOMA_SYSTEM:display_profile.
+pub static DISPLAY_PROFILE: OnceLock<String> = OnceLock::new();
 
+// ── T023: Scalable font cache (Linux-only) ────────────────────────────────────
+#[cfg(target_os = "linux")]
+static FONT_CACHE: OnceLock<Mutex<font::cache::FontCache>> = OnceLock::new();
+
+#[cfg(target_os = "linux")]
+pub fn font_cache() -> &'static Mutex<font::cache::FontCache> {
+    FONT_CACHE.get_or_init(|| {
+        Mutex::new(font::cache::FontCache::load(
+            "/fonts/Inter-Regular.ttf",
+            "/fonts/Inter-Bold.ttf",
+            "/fonts/IBMPlexMono-Regular.ttf",
+        ))
+    })
+}
+
+// ── T030/T031: PNG image cache ────────────────────────────────────────────────
+static IMAGE_CACHE: OnceLock<Mutex<image::ImageCache>> = OnceLock::new();
+
+pub fn image_cache() -> &'static Mutex<image::ImageCache> {
+    IMAGE_CACHE.get_or_init(|| Mutex::new(image::ImageCache::new()))
+}
 
 // ── Spawned app descriptor ────────────────────────────────────────────────────
 
@@ -270,6 +260,10 @@ fn main() {
 
     // ── T017: Load platform profile (PLATFORM env var or default) ────────────
     let _active_profile = load_platform_profile();
+    if let Some(ref p) = _active_profile {
+        let _ = SHOW_MENU_BAR.set(p.display.show_menu_bar);
+        let _ = DISPLAY_PROFILE.set(p.display.profile.clone());
+    }
 
     #[cfg(target_os = "linux")]
     if display::init() {
@@ -284,6 +278,9 @@ fn main() {
             fb.flush();
         }
     }
+    // T023: Initialize scalable font cache (warm-up; graceful if fonts missing)
+    #[cfg(target_os = "linux")]
+    { let _ = font_cache(); }
 
     let boot_raw = match fs::read_to_string(BOOT_CONFIG_PATH) {
         Ok(s) => s,
