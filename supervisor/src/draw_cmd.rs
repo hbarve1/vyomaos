@@ -73,7 +73,7 @@ pub fn handle_draw_command(
 
         // ── Compositor pass ──────────────────────────────────────────────
         // 1. Clear to desktop background
-        fb.fill_rect(0, 0, fb_w, fb_h, 0x0D1117FF);
+        fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
 
         // 2. Blit all app surfaces in Z-order
         let apps_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = {

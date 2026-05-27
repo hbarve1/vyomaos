@@ -395,7 +395,7 @@ pub fn wait_app(
         if let (true, Some((wx, wy, ww, wh))) = (had_display, old_win_region) {
             if let Some(fb_lock) = crate::display::get() {
                 let mut fb = fb_lock.lock().unwrap();
-                fb.fill_rect(wx, wy, ww, wh, 0x0D1117FF);
+                fb.fill_rect(wx, wy, ww, wh, 0x1C1C1EFF);
                 fb.flush();
             }
         }

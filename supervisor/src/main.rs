@@ -276,7 +276,7 @@ fn main() {
         if let Some(fb_lock) = display::get() {
             let mut fb = fb_lock.lock().unwrap();
             let (w, h) = (fb.width, fb.height);
-            fb.fill_rect(0, 0, w, h, 0x0D1117FF);
+            fb.fill_rect(0, 0, w, h, 0x1C1C1EFF);
             // Draw initial menu bar (no focused app yet, no apps yet)
             chrome::draw_menubar(&mut *fb, w, 0, None, &[]);
             fb.flush();

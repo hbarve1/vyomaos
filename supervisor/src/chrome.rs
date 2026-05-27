@@ -27,16 +27,16 @@ pub const TITLEBAR_H:   u32 = 28;   // per-window title bar height
 pub const STATUS_H:     u32 = 16;   // per-window status strip height (bottom of window)
 const TL_DOT:           u32 = 12;   // traffic-light dot size (px)
 
-const MAC_MENUBAR:      u32 = 0x1C1C1EFF; // system background (menubar)
-const MAC_TITLE_ACT:    u32 = 0x3A3A3CFF; // active window title bar
-const MAC_TITLE_INACT:  u32 = 0x2C2C2EFF; // inactive window title bar
-const MAC_TITLE_HOVER:  u32 = 0x444C56FF; // hovered title bar (midpoint between active and inactive)
-const MAC_SEP:          u32 = 0x48484AFF; // separator line
-const MAC_LABEL:        u32 = 0xFFFFFFFF; // primary label (white)
+const MAC_MENUBAR:      u32 = 0x2A2A2AFF; // system background (menubar)
+const MAC_TITLE_ACT:    u32 = 0x323232FF; // active window title bar
+const MAC_TITLE_INACT:  u32 = 0x282828FF; // inactive window title bar
+const MAC_TITLE_HOVER:  u32 = 0x383838FF; // hovered title bar (slightly lighter than active)
+const MAC_SEP:          u32 = 0x3A3A3CFF; // separator line
+const MAC_LABEL:        u32 = 0xEBEBEBFF; // primary label (near-white)
 const MAC_LABEL2:       u32 = 0x8E8E93FF; // secondary label (gray)
-const TL_CLOSE:         u32 = 0xFF5F57FF; // traffic light red
-const TL_MINIMIZE:      u32 = 0xFEBC2EFF; // traffic light yellow
-const TL_MAXIMIZE:      u32 = 0x28C840FF; // traffic light green
+const TL_CLOSE:         u32 = 0xFF6159FF; // traffic light red
+const TL_MINIMIZE:      u32 = 0xFFBD2EFF; // traffic light yellow
+const TL_MAXIMIZE:      u32 = 0x28C941FF; // traffic light green
 const TL_GRAY:          u32 = 0x4D4D4DFF; // inactive traffic lights
 
 // Kept for repaint compat; unused after chrome redesign.
