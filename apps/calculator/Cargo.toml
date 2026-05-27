@@ -8,3 +8,5 @@ name = "calculator"
 path = "src/main.rs"
 
 [dependencies]
+
+[workspace]

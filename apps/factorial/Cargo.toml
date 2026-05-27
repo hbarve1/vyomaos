@@ -8,3 +8,5 @@ name = "factorial"
 path = "src/main.rs"
 
 [dependencies]
+
+[workspace]

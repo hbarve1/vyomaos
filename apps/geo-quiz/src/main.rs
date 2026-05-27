@@ -44,6 +44,8 @@ fn main() {
 
     for line in stdin.lock().lines() {
         let line = match line { Ok(l) => l, Err(_) => break };
+        // Ignore supervisor system notifications (screen resize etc.)
+        if line.starts_with("VYOMA_SYSTEM:") { continue; }
         app.handle(&line);
         let _ = io::stdout().flush();
     }

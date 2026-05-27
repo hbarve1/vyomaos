@@ -6,10 +6,10 @@ wasm    = "music-viz.wasm"
 [capabilities]
 stdio   = true
 display = true
-shell   = true
 
 [window]
-x = 240
-y = 60
-w = 800
-h = 560
+x = 0
+y = 24
+w = 1440
+h = 876
+z = 10

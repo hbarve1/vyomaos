@@ -196,13 +196,14 @@ pub fn handle_extended_command(
             });
         }
 
-        // P39: notify <title> <msg> — draw toast overlay, auto-clear after 3s
+        // P39: notify <title>|<body> — enqueue banner + legacy toast overlay
         "notify" => {
             let rest = parts.get(1).unwrap_or(&"").trim().to_string();
-            let (title, msg) = rest
-                .split_once(' ')
+            let (title, msg) = rest.split_once('|')
                 .map(|(a, b)| (a.to_string(), b.to_string()))
+                .or_else(|| rest.split_once(' ').map(|(a, b)| (a.to_string(), b.to_string())))
                 .unwrap_or_else(|| (rest.clone(), String::new()));
+            crate::toast::enqueue_banner(sender, &title, &msg);
             #[cfg(target_os = "linux")]
             {
                 use crate::font;
@@ -474,6 +475,19 @@ pub fn handle_extended_command(
             let v = supervisor::ipc::format_version(0, 19, 0);
             send_reply(sender, &format!("REPLY:{v}"), inbox);
             log_info!(Subsystem::Ipc, None, "version query from {sender}: {v}");
+        }
+
+        // T017 [US2]: screen-size — reply with current framebuffer dimensions
+        "screen-size" => {
+            const DEFAULT_SCREEN_W: u32 = 1440;
+            const DEFAULT_SCREEN_H: u32 = 900;
+            #[cfg(target_os = "linux")]
+            let (w, h) = crate::display::screen_size().unwrap_or((DEFAULT_SCREEN_W, DEFAULT_SCREEN_H));
+            #[cfg(not(target_os = "linux"))]
+            let (w, h) = (DEFAULT_SCREEN_W, DEFAULT_SCREEN_H);
+            let reply = format!("REPLY:{}x{}", w, h);
+            log_info!(Subsystem::Display, None, "screen-size query from {sender}: {w}x{h}");
+            send_reply(sender, &reply, inbox);
         }
 
         _ => return false,

@@ -34,6 +34,9 @@ fn main() {
     for line in stdin.lock().lines() {
         let raw = match line { Ok(l) => l, Err(_) => break };
 
+        // Ignore supervisor system notifications (screen resize etc.)
+        if raw.starts_with("VYOMA_SYSTEM:") { continue; }
+
         // Search mode
         if app.mode == Mode::Search {
             match raw.as_str() {

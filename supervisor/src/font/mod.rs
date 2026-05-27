@@ -231,3 +231,5 @@ pub fn glyph_dims(size: FontSize) -> (u32, u32) {
         FontSize::Large  => (GLYPH_W * 2, GLYPH_H * 2),
     }
 }
+
+pub mod cache;

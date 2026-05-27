@@ -1,6 +1,6 @@
 [app]
 name    = "desktop"
-version = "0.1.0"
+version = "0.2.0"
 wasm    = "desktop.wasm"
 
 [capabilities]
@@ -8,9 +8,11 @@ stdio      = true
 display    = true
 shell      = true
 filesystem = true
+mouse      = true
 
 [window]
 x = 0
-y = 28
+y = 24
 w = 1440
-h = 832
+h = 844
+z = 0

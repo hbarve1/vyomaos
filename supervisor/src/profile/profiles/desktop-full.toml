@@ -1,0 +1,27 @@
+[platform]
+name = "desktop-full"
+arch = "x86-64"
+runtime = "wasmtime"
+min_ram_kb = 524288
+
+[supervisor]
+modules = ["lifecycle", "capability", "ipc", "display", "input", "chrome", "net", "packages", "observability", "hal", "ota"]
+
+[hal]
+drivers = []
+
+[boot]
+apps = []
+
+[observability]
+tier = "full"
+heartbeat_interval_s = 30
+
+[ota]
+enabled = true
+health_check_secs = 60
+ab_slots = true
+
+[build]
+kernel_config = "kernel.config"
+rootfs_script = "rootfs.sh"

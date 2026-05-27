@@ -2,6 +2,8 @@
 
 use serde::Deserialize;
 
+use crate::capability::peripheral::PeripheralEnforcer;
+
 // ── Boot config structs ───────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -22,6 +24,19 @@ pub fn default_restart() -> String {
 
 // ── App manifest structs ──────────────────────────────────────────────────────
 
+/// A single entry in an app's declarative menu.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct MenuItem {
+    pub label: String,
+    pub action: String,
+    #[serde(default = "default_menu_item_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub shortcut: Option<String>,
+}
+
+fn default_menu_item_enabled() -> bool { true }
+
 #[derive(Debug, Default, Deserialize, Clone)]
 pub struct WindowRegion {
     // Screen coordinates used by supervisor for hit-testing and z-ordering.
@@ -33,6 +48,10 @@ pub struct WindowRegion {
     pub w: u32,
     #[serde(default)]
     pub h: u32,
+    /// Z-layer for window stacking order.
+    /// 0=desktop background, 10=default app, 100=dock, 200=menu bar, 255=overlay.
+    #[serde(default = "default_win_z")]
+    pub z: u32,
     // App-declared display metadata (optional; ignored by supervisor layout engine).
     #[serde(default)]
     pub title: Option<String>,
@@ -42,6 +61,8 @@ pub struct WindowRegion {
     pub height: Option<u32>,
 }
 
+fn default_win_z() -> u32 { 10 }  // default app layer
+
 #[derive(Debug, Deserialize)]
 pub struct AppManifest {
     pub app: AppMeta,
@@ -49,6 +70,13 @@ pub struct AppManifest {
     pub capabilities: Capabilities,
     #[serde(default)]
     pub window: Option<WindowRegion>,
+    /// Peripheral capability enforcer derived from `[capabilities.gpio]` etc.
+    /// Populated by `parse_manifest`; not from serde directly.
+    #[serde(skip)]
+    pub peripherals: Option<PeripheralEnforcer>,
+    /// Declarative menu items shown in the global menu bar when this app is focused.
+    #[serde(default)]
+    pub menu_items: Vec<MenuItem>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,6 +87,9 @@ pub struct AppMeta {
     /// Optional SHA-256 hex digest of the .wasm binary.
     #[serde(default)]
     pub wasm_sha256: Option<String>,
+    /// Optional relative path to a PNG icon (e.g. "icon.png"), resolved from the manifest directory.
+    #[serde(default)]
+    pub icon: Option<String>,
 }
 
 // deny_unknown_fields ensures manifests cannot declare undocumented capabilities.
@@ -86,12 +117,70 @@ pub struct Capabilities {
 // ── Parse + validate functions ────────────────────────────────────────────────
 
 /// Read and deserialize a `vyoma.toml` manifest file.
+///
 /// Returns `Err` for I/O failures, TOML parse errors, or unknown capability fields.
+///
+/// T018: Also extracts `[capabilities.gpio]`, `[capabilities.i2c]` etc. into
+/// `AppManifest::peripherals` as a `PeripheralEnforcer`.  The peripheral
+/// sub-tables are stripped before the normal serde deserialization so the
+/// `deny_unknown_fields` on `Capabilities` is not triggered.
 pub fn parse_manifest(path: &std::path::Path) -> Result<AppManifest, String> {
     let raw = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    toml::from_str::<AppManifest>(&raw)
-        .map_err(|e| format!("invalid manifest {}: {e}", path.display()))
+
+    // Parse as a generic TOML value first to extract peripheral sub-tables.
+    let mut doc: toml::Value = toml::from_str(&raw)
+        .map_err(|e| format!("invalid manifest {}: {e}", path.display()))?;
+
+    // Extract [capabilities.gpio/i2c/spi/uart/adc] before strict struct parse.
+    let peripheral_toml = extract_peripheral_toml(&mut doc);
+
+    // Now re-serialise the sanitised doc and parse into AppManifest.
+    let sanitised = toml::to_string(&doc)
+        .map_err(|e| format!("manifest re-serialise error: {e}"))?;
+    let mut manifest: AppManifest = toml::from_str(&sanitised)
+        .map_err(|e| format!("invalid manifest {}: {e}", path.display()))?;
+
+    // Parse peripheral capabilities (may be empty if no sub-tables declared).
+    manifest.peripherals = match PeripheralEnforcer::from_toml(&peripheral_toml) {
+        Ok(enforcer) => Some(enforcer),
+        Err(e) => return Err(format!("peripheral capability error in {}: {e}", path.display())),
+    };
+
+    Ok(manifest)
+}
+
+/// Extract peripheral sub-tables from the `[capabilities]` table in a TOML value.
+///
+/// Removes `gpio`, `i2c`, `spi`, `uart`, `adc` keys from `[capabilities]` and
+/// returns them as a TOML string suitable for `PeripheralEnforcer::from_toml`.
+fn extract_peripheral_toml(doc: &mut toml::Value) -> String {
+    const PERIPHERAL_KEYS: &[&str] = &["gpio", "i2c", "spi", "uart", "adc"];
+
+    let caps_table = match doc
+        .as_table_mut()
+        .and_then(|t| t.get_mut("capabilities"))
+        .and_then(|v| v.as_table_mut())
+    {
+        Some(t) => t,
+        None => return String::new(),
+    };
+
+    let mut peripheral_entries = Vec::new();
+    for key in PERIPHERAL_KEYS {
+        if let Some(val) = caps_table.remove(*key) {
+            // Serialise each peripheral sub-table back to TOML.
+            if let Ok(s) = toml::to_string(&toml::Value::Table({
+                let mut t = toml::value::Table::new();
+                t.insert((*key).to_string(), val);
+                t
+            })) {
+                peripheral_entries.push(s);
+            }
+        }
+    }
+
+    peripheral_entries.join("\n")
 }
 
 /// Validate a parsed manifest against already-registered app names.

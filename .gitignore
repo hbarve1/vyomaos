@@ -1,9 +1,11 @@
 # Build outputs
 out/
+out/screenshots/
 
 # Rust build artifacts
 supervisor/target/
 apps/*/target/
+tools/*/target/
 
 # WASM binaries (built into out/ by make)
 **/*.wasm
@@ -20,3 +22,6 @@ apps/*/target/
 
 # PowerPoint temporary/lock files
 ~$*.pptx
+
+# Local git worktrees
+.worktrees/

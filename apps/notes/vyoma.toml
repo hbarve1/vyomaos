@@ -2,14 +2,16 @@
 name    = "notes"
 version = "0.1.0"
 wasm    = "notes.wasm"
+icon    = "icon.png"
 
 [capabilities]
 stdio      = true
 display    = true
 filesystem = true
+mouse      = true
 
 [window]
-x = 80
-y = 40
-w = 1100
-h = 760
+x = 20
+y = 460
+w = 680
+h = 380

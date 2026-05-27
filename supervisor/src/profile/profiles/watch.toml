@@ -1,0 +1,15 @@
+[platform]
+name = "watch"
+arch = "aarch64"
+runtime = "wasmtime"
+min_ram_kb = 4096
+
+[supervisor]
+modules = ["lifecycle", "capability", "display", "input"]
+
+[display]
+profile = "watch"
+show_dock = false
+show_menu_bar = false
+windowed_mode = false
+crown_scroll = true

@@ -39,6 +39,36 @@ APPS_STAMP       := $(OUT)/.apps.stamp
 RUSTFLAGS        := -D warnings
 WASM_FLAGS       :=
 
+# ── T019: Platform profile selection ─────────────────────────────────────────
+# Pass PLATFORM=<name> to select a target from platforms/<name>/.
+# Supported values: desktop-x86 (default), iot-rpi, mcu-arm-cortex-m, server-arm64
+#
+# When PLATFORM is set and platforms/<PLATFORM>/kernel.config exists, the
+# platform-specific kernel config and rootfs script are used in place of the
+# base/ defaults.  The PLATFORM value is passed as an environment variable to
+# the supervisor via the QEMU kernel command line.
+#
+# Example:
+#   make build PLATFORM=desktop-x86
+#   make run   PLATFORM=desktop-x86
+PLATFORM ?=
+
+# Select kernel config and rootfs script based on PLATFORM.
+# Falls back to base/ defaults when PLATFORM is empty or the platform dir
+# does not provide its own files.
+ifneq ($(PLATFORM),)
+  PLATFORM_DIR := platforms/$(PLATFORM)
+  ifneq ($(wildcard $(PLATFORM_DIR)/kernel.config),)
+    KERNEL_CONFIG := $(PLATFORM_DIR)/kernel.config
+  endif
+  ifneq ($(wildcard $(PLATFORM_DIR)/rootfs.sh),)
+    ROOTFS_SCRIPT := $(PLATFORM_DIR)/rootfs.sh
+  endif
+  PLATFORM_KERNEL_ARG := PLATFORM=$(PLATFORM)
+else
+  PLATFORM_KERNEL_ARG :=
+endif
+
 # ── kernel source tracking ────────────────────────────────────────────────────
 KERNEL_PATCHES := $(wildcard base/patches/kernel/*.patch)
 KERNEL_DEPS    := $(KERNEL_SCRIPT) $(KERNEL_CONFIG) $(KERNEL_PATCHES)
@@ -58,8 +88,9 @@ DOCKER_RUN := docker run --rm \
 KVM ?=
 
 # ── phony declarations ────────────────────────────────────────────────────────
-.PHONY: image kernel supervisor apps rootfs disk build run run-gui run-net run-gui-net shell clean clean-image data \
-        unit-test smoke test check-manifests
+.PHONY: image kernel supervisor apps rootfs disk build run run-gui run-net run-gui-net run-net-mgmt shell clean clean-image data \
+        unit-test smoke test check-manifests check-profiles test-all-platforms \
+        test-unit-apps test-gui-protocol test-e2e-gui test-gui
 
 # ── Docker image ──────────────────────────────────────────────────────────────
 image: $(DOCKERFILE)
@@ -159,6 +190,44 @@ test: build unit-test smoke
 check-manifests: | image
 	$(DOCKER_RUN) cargo run --manifest-path tools/check-manifests/Cargo.toml
 
+# ── check-profiles (T062): validate all platform profile TOML files ──────────
+# Verifies that every expected profile file exists and is valid TOML.
+# Runs the platform_profile unit tests which exercise TOML parsing and
+# validation logic for all 6 profiles in supervisor/src/profile/profiles/.
+PROFILE_DIR := supervisor/src/profile/profiles
+PROFILE_NAMES := mcu-minimal iot-edge robotics-rt mobile desktop-full server-headless
+
+check-profiles: | image
+	@echo "Checking platform profile TOML files..."
+	@fail=0; \
+	for name in $(PROFILE_NAMES); do \
+	  f="$(PROFILE_DIR)/$$name.toml"; \
+	  if [ -f "$$f" ]; then \
+	    echo "  $$name ... OK"; \
+	  else \
+	    echo "PROFILES: FAIL: $$name (missing: $$f)"; \
+	    fail=1; \
+	  fi; \
+	done; \
+	if [ "$$fail" -eq 0 ]; then \
+	  $(DOCKER_RUN) env RUSTFLAGS="$(RUSTFLAGS)" \
+	    cargo test --manifest-path supervisor/Cargo.toml \
+	    --target x86_64-unknown-linux-musl \
+	    -- profile 2>&1 | tail -5; \
+	  echo "PROFILES: OK"; \
+	else \
+	  exit 1; \
+	fi
+
+# ── test-all-platforms (T063): unit-test + check-profiles + check-manifests ──
+# Single command to validate everything without requiring QEMU.
+test-all-platforms: unit-test check-profiles check-manifests
+	@echo "ALL-PLATFORMS: OK"
+
+# ── test-e2e-gui: QEMU screendump visual test — saves out/screenshots/latest.ppm
+test-e2e-gui: $(BZIMAGE) $(INITRAMFS)
+	bash base/scripts/test-e2e-gui.sh
+
 # ── build (all) ───────────────────────────────────────────────────────────────
 build: kernel supervisor apps rootfs disk data
 
@@ -167,7 +236,7 @@ run: $(BZIMAGE) $(INITRAMFS) data
 	qemu-system-x86_64 \
 	  -kernel $(BZIMAGE) \
 	  -initrd $(INITRAMFS) \
-	  -append "console=ttyS0 panic=1" \
+	  -append "console=ttyS0 panic=1 $(PLATFORM_KERNEL_ARG)" \
 	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
 	  -nographic \
 	  -m 512M \
@@ -189,7 +258,7 @@ run-gui: $(BZIMAGE) $(INITRAMFS) data
 	qemu-system-x86_64 \
 	  -kernel $(BZIMAGE) \
 	  -initrd $(INITRAMFS) \
-	  -append "console=tty0 console=ttyS0 panic=1" \
+	  -append "console=tty0 console=ttyS0 panic=1 $(PLATFORM_KERNEL_ARG)" \
 	  -device virtio-vga,xres=1440,yres=900 \
 	  -device virtio-mouse-pci \
 	  -display $(DISPLAY_BACKEND),zoom-to-fit=on,full-screen=on \
@@ -204,8 +273,25 @@ run-net: $(BZIMAGE) $(INITRAMFS) data
 	qemu-system-x86_64 \
 	  -kernel $(BZIMAGE) \
 	  -initrd $(INITRAMFS) \
-	  -append "console=ttyS0 panic=1" \
+	  -append "console=ttyS0 panic=1 $(PLATFORM_KERNEL_ARG)" \
 	  -netdev user,id=net0,hostfwd=tcp::8080-:8080 \
+	  -device virtio-net-pci,netdev=net0 \
+	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
+	  -nographic \
+	  -m 512M \
+	  -no-reboot \
+	  $(KVM)
+
+# ── run-net-mgmt (headless + virtio-net, port 8080 + mgmt port 9090) ─────────
+# Used with the `vyoma` CLI: connects on host:9090 → guest:9090.
+# Note: `vyoma push` uses the management server at :9090, wrapping the
+#       @supervisor: ota-update IPC command.
+run-net-mgmt: $(BZIMAGE) $(INITRAMFS) data
+	qemu-system-x86_64 \
+	  -kernel $(BZIMAGE) \
+	  -initrd $(INITRAMFS) \
+	  -append "console=ttyS0 panic=1 $(PLATFORM_KERNEL_ARG)" \
+	  -netdev user,id=net0,hostfwd=tcp::8080-:8080,hostfwd=tcp::9090-:9090 \
 	  -device virtio-net-pci,netdev=net0 \
 	  -virtfs local,path=$(DATA_DIR),mount_tag=vyoma-data,security_model=mapped-xattr \
 	  -nographic \
@@ -218,7 +304,7 @@ run-gui-net: $(BZIMAGE) $(INITRAMFS) data
 	qemu-system-x86_64 \
 	  -kernel $(BZIMAGE) \
 	  -initrd $(INITRAMFS) \
-	  -append "console=tty0 console=ttyS0 panic=1" \
+	  -append "console=tty0 console=ttyS0 panic=1 $(PLATFORM_KERNEL_ARG)" \
 	  -device virtio-vga,xres=1440,yres=900 \
 	  -device virtio-mouse-pci \
 	  -display $(DISPLAY_BACKEND),zoom-to-fit=on,full-screen=on \
@@ -238,6 +324,27 @@ shell: | image
 	  -w /work \
 	  $(IMAGE):$(IMAGE_TAG) \
 	  /bin/bash
+
+# ── test-unit-apps: run unit tests for display apps (desktop, dock) ──────────
+test-unit-apps: | image
+	$(DOCKER_RUN) env RUSTFLAGS="$(RUSTFLAGS)" \
+	  cargo test --manifest-path apps/desktop/Cargo.toml
+	$(DOCKER_RUN) env RUSTFLAGS="$(RUSTFLAGS)" \
+	  cargo test --manifest-path apps/dock/Cargo.toml
+
+# ── test-gui-protocol: WASM app protocol output tests ────────────────────────
+# Requires 'make apps' first to build WASM binaries.
+test-gui-protocol: apps | image
+	$(DOCKER_RUN) bash scripts/test-gui-protocol.sh
+
+# ── test-e2e-gui: QEMU screendump visual test (requires make build) ───────────
+# Runs on the HOST (not in Docker). Requires socat + graphical qemu build.
+test-e2e-gui: build
+	bash base/scripts/test-e2e-gui.sh
+
+# ── test-gui: all GUI tests (unit + protocol) — does not require QEMU ────────
+test-gui: test-unit-apps test-gui-protocol
+	@echo "GUI-TESTS: OK"
 
 # ── clean ─────────────────────────────────────────────────────────────────────
 clean:

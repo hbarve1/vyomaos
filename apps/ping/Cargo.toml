@@ -8,3 +8,5 @@ name = "ping"
 path = "src/main.rs"
 
 [dependencies]
+
+[workspace]

@@ -6,28 +6,39 @@
 use std::sync::Mutex;
 
 use crate::{AppRegistry, AppStatus, FocusedApp, HOVERED_APP, Z_ORDER, BOOT_INSTANT};
-use supervisor::logging::Subsystem;
 
 #[cfg(target_os = "linux")]
-use crate::{display, font};
+use crate::display;
+
+// ── Z-layer constants ─────────────────────────────────────────────────────────
+#[allow(dead_code)]
+pub const Z_DESKTOP:  u32 = 0;    // desktop wallpaper — always background
+#[allow(dead_code)]
+pub const Z_APP:      u32 = 10;   // default app window layer
+#[allow(dead_code)]
+pub const Z_DOCK:     u32 = 100;  // dock — always above app windows
+#[allow(dead_code)]
+pub const Z_OVERLAY:  u32 = 255;  // notifications, system overlays
+
+// Ordering invariant: background < apps < dock < overlay
+const _: () = assert!(Z_DESKTOP < Z_APP && Z_APP < Z_DOCK && Z_DOCK < Z_OVERLAY);
 
 // ── macOS-inspired chrome constants ──────────────────────────────────────────
 
 pub const MENUBAR_H:    u32 = 24;   // global menu bar height
 pub const TITLEBAR_H:   u32 = 28;   // per-window title bar height
-pub const STATUS_H:     u32 = 16;   // per-window status strip height (bottom of window)
-const TL_DOT:           u32 = 12;   // traffic-light dot size (px)
+const TL_DOT:           u32 = 13;   // traffic-light dot size (px) — Apple spec
 
-const MAC_MENUBAR:      u32 = 0x1C1C1EFF; // system background (menubar)
-const MAC_TITLE_ACT:    u32 = 0x3A3A3CFF; // active window title bar
-const MAC_TITLE_INACT:  u32 = 0x2C2C2EFF; // inactive window title bar
-const MAC_TITLE_HOVER:  u32 = 0x444C56FF; // hovered title bar (midpoint between active and inactive)
-const MAC_SEP:          u32 = 0x48484AFF; // separator line
-const MAC_LABEL:        u32 = 0xFFFFFFFF; // primary label (white)
+const MAC_MENUBAR:      u32 = 0x2A2A2AFF; // system background (menubar)
+const MAC_TITLE_ACT:    u32 = 0x323232FF; // active window title bar
+const MAC_TITLE_INACT:  u32 = 0x282828FF; // inactive window title bar
+const MAC_TITLE_HOVER:  u32 = 0x383838FF; // hovered title bar (slightly lighter than active)
+const MAC_SEP:          u32 = 0x3A3A3CFF; // separator line
+const MAC_LABEL:        u32 = 0xEBEBEBFF; // primary label (near-white)
 const MAC_LABEL2:       u32 = 0x8E8E93FF; // secondary label (gray)
-const TL_CLOSE:         u32 = 0xFF5F57FF; // traffic light red
-const TL_MINIMIZE:      u32 = 0xFEBC2EFF; // traffic light yellow
-const TL_MAXIMIZE:      u32 = 0x28C840FF; // traffic light green
+const TL_CLOSE:         u32 = 0xFF6159FF; // traffic light red
+const TL_MINIMIZE:      u32 = 0xFFBD2EFF; // traffic light yellow
+const TL_MAXIMIZE:      u32 = 0x28C941FF; // traffic light green
 const TL_GRAY:          u32 = 0x4D4D4DFF; // inactive traffic lights
 
 // Kept for repaint compat; unused after chrome redesign.
@@ -90,7 +101,59 @@ pub fn z_order_push_back(name: &str) {
     }
 }
 
+// ── Scalable font helper ──────────────────────────────────────────────────────
+
+/// Render a string using the scalable font cache onto the framebuffer back-buffer.
+/// Falls back silently if no font is loaded (glyphs are blank).
+#[cfg(target_os = "linux")]
+fn draw_glyph_str(
+    fb: &mut display::Framebuffer,
+    text: &str,
+    x: i32,
+    y: i32,
+    rgba: u32,
+    pt: u32,
+    bold: bool,
+    mono: bool,
+) {
+    let fb_stride = fb.stride;
+    let fb_width  = fb.width;
+    let fb_height = fb.height;
+    let mut cx = x;
+    for ch in text.chars() {
+        let (gw, gh, adv, bear_y, cov) = {
+            let mut fc = crate::font_cache().lock().unwrap();
+            let g = fc.rasterize(ch, pt, bold, mono);
+            (g.width, g.height, g.advance_x, g.bearing_y, g.coverage.clone())
+        };
+        display::composite_glyph(
+            &mut fb.back, &cov, gw, gh,
+            cx, y - bear_y as i32, rgba,
+            fb_stride, fb_width, fb_height,
+        );
+        cx += adv as i32;
+        if cx >= fb_width as i32 { break; }
+    }
+}
+
 // ── Chrome drawing ────────────────────────────────────────────────────────────
+
+/// Draw a simple drop shadow for a window by compositing two semi-transparent
+/// dark rounded rects slightly offset below and around the window frame.
+#[cfg(target_os = "linux")]
+fn draw_window_shadow(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, wh: u32) {
+    use crate::display::draw_rounded_rect;
+    let shadow_rgba = 0x00000078_u32; // black at ~47% alpha
+    let (sw, sh) = (fb.width, fb.height);
+    let fs = fb.stride;
+    let sx = wx.saturating_sub(2);
+    let sy = wy.saturating_add(4);
+    let sw2 = ww + 4;
+    let sh2 = wh + 4;
+    if sx + sw2 <= sw && sy + sh2 <= sh {
+        draw_rounded_rect(&mut fb.back, sx, sy, sw2, sh2, shadow_rgba, 12, fs, sw, sh);
+    }
+}
 
 /// Return the title bar background colour for the given window state.
 ///
@@ -114,37 +177,42 @@ pub fn draw_titlebar(
     is_focused: bool, is_hovered: bool,
     name: &str,
 ) {
+    // Drop shadow rendered behind the window chrome
+    draw_window_shadow(fb, wx, wy, ww, TITLEBAR_H);
     let bg = titlebar_color_for_state(is_focused, is_hovered);
-    fb.fill_rect(wx, wy, ww, TITLEBAR_H, bg);
+    {
+        use crate::display::draw_rounded_rect;
+        let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
+        draw_rounded_rect(&mut fb.back, wx, wy, ww, TITLEBAR_H, bg, 10, fs, sw, sh);
+    }
     fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
 
-    // 2px focus border — top edge only (full frame drawn at flush time when wh is known)
-    let bc = display::border_color(is_focused);
-    fb.fill_rect(wx, wy, ww, 2, bc);
-
-    // Traffic lights — 12×12, left-aligned, vertically centered
+    // Traffic lights — circles (radius = TL_DOT/2), left-aligned, vertically centered
     let tl_y = wy + (TITLEBAR_H - TL_DOT) / 2;
     let (c1, c2, c3) = if is_focused {
         (TL_CLOSE, TL_MINIMIZE, TL_MAXIMIZE)
     } else {
         (TL_GRAY, TL_GRAY, TL_GRAY)
     };
-    fb.fill_rect(wx + 8,  tl_y, TL_DOT, TL_DOT, c1);
-    fb.fill_rect(wx + 24, tl_y, TL_DOT, TL_DOT, c2);
-    fb.fill_rect(wx + 40, tl_y, TL_DOT, TL_DOT, c3);
+    {
+        use crate::display::draw_rounded_rect;
+        let r = TL_DOT / 2;
+        let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
+        draw_rounded_rect(&mut fb.back, wx +  9, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 30, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 51, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
+    }
 
-    // Accent color dot — deterministic per-app identity marker (12×12 at x+60)
-    let accent = display::app_accent_color(name);
-    fb.fill_rect(wx + 60, tl_y, TL_DOT, TL_DOT, accent);
-
-    // App name centered (medium font = 8 px/char, 16 px tall)
-    let nlen = name.len().min(20) as u32;  // cap to avoid overflow
-    let name_w = nlen * 8;
-    if ww > name_w + 60 {
-        let nx = wx + (ww - name_w) / 2;
-        let ny = wy + (TITLEBAR_H - 16) / 2;
+    // App name centered — 13pt regular Inter
+    let nlen = name.len().min(20);
+    let display_name = &name[..nlen];
+    let name_w_est = crate::font_cache().lock().unwrap()
+        .measure_str(display_name, 13, false, false);
+    if ww > name_w_est + 60 {
+        let nx = (wx + (ww - name_w_est) / 2) as i32;
+        let ny = (wy + TITLEBAR_H / 2) as i32;
         let col = if is_focused { MAC_LABEL } else { MAC_LABEL2 };
-        fb.draw_text(nx, ny, &name[..name.len().min(20)], col, font::FontSize::Medium);
+        draw_glyph_str(fb, display_name, nx, ny, col, 13, false, false);
     }
 }
 
@@ -163,68 +231,47 @@ pub fn draw_menubar(
     focused: Option<&str>,
     apps: &[String],
 ) {
+    if !crate::SHOW_MENU_BAR.get().copied().unwrap_or(true) { return; }
     use supervisor::windows::{MENUBAR_APPS_START_X, menubar_label_width};
 
     fb.fill_rect(0, 0, sw, MENUBAR_H, MAC_MENUBAR);
     fb.fill_rect(0, MENUBAR_H - 1, sw, 1, MAC_SEP);
 
-    let ty = (MENUBAR_H - 16) / 2; // vertical center of 16-px font in 24-px bar
+    let ty = (MENUBAR_H / 2) as i32; // vertical center baseline for 12pt font
 
-    // Left: brand
-    fb.draw_text(12, ty, "VyomaOS", MAC_LABEL, font::FontSize::Medium);
+    // Left: brand — 12pt regular
+    draw_glyph_str(fb, "VyomaOS", 12, ty, MAC_LABEL, 12, false, false);
 
     // App-switcher labels: drawn immediately after the brand name.
     // Highlighted (white) when focused, dimmed otherwise.
-    let mut lx = MENUBAR_APPS_START_X as u32;
+    let mut lx = MENUBAR_APPS_START_X as i32;
     for app in apps {
         let is_focused = focused.map_or(false, |f| f == app.as_str());
         let color = if is_focused { MAC_LABEL } else { MAC_LABEL2 };
-        fb.draw_text(lx + 8, ty, app, color, font::FontSize::Medium);
-        lx += menubar_label_width(app.len()) as u32;
+        draw_glyph_str(fb, app, lx + 8, ty, color, 12, false, false);
+        lx += menubar_label_width(app.len()) as i32;
     }
 
-    // Center: focused app name
+    // Center: focused app name — 12pt regular
     if let Some(name) = focused {
-        let nlen = name.len().min(20) as u32;
-        let nx = sw.saturating_sub(nlen * 8) / 2;
-        fb.draw_text(nx, ty, &name[..name.len().min(20)], MAC_LABEL, font::FontSize::Medium);
+        let nlen = name.len().min(20);
+        let display_name = &name[..nlen];
+        let name_w_est = crate::font_cache().lock().unwrap()
+            .measure_str(display_name, 12, false, false);
+        let nx = sw.saturating_sub(name_w_est) / 2;
+        draw_glyph_str(fb, display_name, nx as i32, ty, MAC_LABEL, 12, false, false);
     }
 
-    // Right: elapsed clock HH:MM:SS
+    // Right: elapsed clock HH:MM:SS — 12pt regular
     let h = elapsed_secs / 3600;
     let m = (elapsed_secs % 3600) / 60;
     let s = elapsed_secs % 60;
     let clock = format!("{h:02}:{m:02}:{s:02}");
-    let cw = clock.len() as u32 * 8;
+    let cw = crate::font_cache().lock().unwrap()
+        .measure_str(&clock, 12, false, false);
     if sw > cw + 20 {
-        fb.draw_text(sw - cw - 12, ty, &clock, MAC_LABEL2, font::FontSize::Medium);
+        draw_glyph_str(fb, &clock, (sw - cw - 12) as i32, ty, MAC_LABEL2, 12, false, false);
     }
-}
-
-/// Draw a 16px status strip at the very bottom of a window's chrome.
-/// Background: `0x161B22FF` (dark).  Text: `0x8B949EFF` (grey).
-/// Shows `[name]  up <uptime_secs>s` in small font, left-aligned with 4px inset.
-#[cfg(target_os = "linux")]
-pub fn draw_statusbar(
-    fb:          &mut display::Framebuffer,
-    name:        &str,
-    uptime_secs: u64,
-    wx:          u32,
-    wy:          u32,
-    ww:          u32,
-    wh:          u32,
-) {
-    const STATUS_BG: u32 = 0x161B22FF; // very dark navy background
-    const STATUS_FG: u32 = 0x8B949EFF; // muted grey text
-
-    // Fill the status strip
-    let sy = wy + wh - STATUS_H;
-    fb.fill_rect(wx, sy, ww, STATUS_H, STATUS_BG);
-
-    // Build and draw the label using the public helper
-    let label = supervisor::statusbar::format_status_text(name, uptime_secs);
-    // Vertically center 8px small font in the 16px strip: (16 - 8) / 2 = 4
-    fb.draw_text(wx + 4, sy + 4, &label, STATUS_FG, font::FontSize::Small);
 }
 
 /// Immediately repaint title bars for all windowed apps (called on focus changes).
@@ -235,9 +282,11 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
         .lock()
         .unwrap()
         .clone();
+    // Collect (win_z, name, region) then sort by win_z ascending so lower-z
+    // windows are painted first (appear behind higher-z windows).
     let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
         let reg = registry.lock().unwrap();
-        let mut regions = Vec::new();
+        let mut regions_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = Vec::new();
         let mut display_apps: Vec<String> = reg.iter()
             .filter_map(|(name, st)| {
                 let st = st.lock().unwrap();
@@ -252,9 +301,12 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
         for (name, st) in reg.iter() {
             let st = st.lock().unwrap();
             if let Some(r) = st.win_region {
-                regions.push((name.clone(), r));
+                regions_with_z.push((st.win_z, name.clone(), r));
             }
         }
+        // Sort ascending by z so lowest-z windows are painted first (background first).
+        regions_with_z.sort_by_key(|(z, _, _)| *z);
+        let regions = regions_with_z.into_iter().map(|(_, n, r)| (n, r)).collect();
         (regions, display_apps)
     };
     #[cfg(target_os = "linux")]
@@ -280,56 +332,124 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     }
 }
 
-/// Recompute tiled regions for all running display apps and write them into
-/// the registry. Called on every display-app spawn or exit.
-#[allow(dead_code)]
-pub fn apply_tiling_layout(registry: &AppRegistry) {
-    use supervisor::windows::compute_tiling_with_hints;
-
-    let apps: Vec<(String, u32, u32)> = {
+/// Draw chrome (title bars + menu bar) onto a framebuffer that is already locked.
+/// Call from within code that holds the `fb_lock` — avoids deadlock with repaint_all_borders.
+#[cfg(target_os = "linux")]
+pub fn draw_chrome_onto(
+    fb: &mut display::Framebuffer,
+    registry: &AppRegistry,
+    focused: &FocusedApp,
+) {
+    let focused_name = focused.lock().unwrap().clone();
+    let hovered_name = HOVERED_APP
+        .get_or_init(|| Mutex::new(None))
+        .lock().unwrap().clone();
+    let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
         let reg = registry.lock().unwrap();
-        let mut v: Vec<(String, u32, u32)> = reg.iter()
+        let mut regions_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = Vec::new();
+        let mut display_apps: Vec<String> = reg.iter()
             .filter_map(|(name, st)| {
                 let st = st.lock().unwrap();
                 if st.has_display && matches!(st.status, AppStatus::Running) {
-                    Some((name.clone(), st.min_size.0, st.min_size.1))
-                } else {
-                    None
-                }
+                    Some(name.clone())
+                } else { None }
             })
             .collect();
-        v.sort_by(|a, b| a.0.cmp(&b.0));
-        v
-    };
-
-    if apps.is_empty() { return; }
-
-    #[cfg(target_os = "linux")]
-    let (sw, sh) = crate::display::screen_size().unwrap_or((1440, 900));
-    #[cfg(not(target_os = "linux"))]
-    let (sw, sh) = (1440u32, 900u32);
-
-    let min_sizes: Vec<(u32, u32)> = apps.iter().map(|(_, mw, mh)| (*mw, *mh)).collect();
-    let usable_h = sh.saturating_sub(MENUBAR_H);
-    let regions: Vec<(u32, u32, u32, u32)> = compute_tiling_with_hints(apps.len(), sw, usable_h, &min_sizes)
-        .into_iter()
-        .map(|(x, y, w, h)| (x, y + MENUBAR_H, w, h))
-        .collect();
-
-    {
-        let reg = registry.lock().unwrap();
-        for (i, (name, _, _)) in apps.iter().enumerate() {
-            if let Some(st) = reg.get(name) {
-                if let Some(&region) = regions.get(i) {
-                    let mut st = st.lock().unwrap();
-                    st.win_region = Some(region);
-                    crate::log_info!(Subsystem::Display, Some(name.as_str()),
-                        "tiling: assigned ({},{},{},{})", region.0, region.1, region.2, region.3);
-                }
+        display_apps.sort();
+        for (name, st) in reg.iter() {
+            let st = st.lock().unwrap();
+            if let Some(r) = st.win_region {
+                regions_with_z.push((st.win_z, name.clone(), r));
             }
         }
+        regions_with_z.sort_by_key(|(z, _, _)| *z);
+        let regions = regions_with_z.into_iter().map(|(_, n, r)| (n, r)).collect();
+        (regions, display_apps)
+    };
+    for (name, (wx, wy, ww, _wh)) in &regions {
+        if *ww < 60 { continue; }
+        let is_focused = focused_name.as_deref() == Some(name.as_str());
+        let is_hovered = hovered_name.as_deref() == Some(name.as_str());
+        let is_system = {
+            let reg = registry.lock().unwrap();
+            reg.get(name.as_str()).map(|st| st.lock().unwrap().win_z >= Z_DOCK).unwrap_or(false)
+        };
+        if !is_system {
+            draw_titlebar(fb, *wx, *wy, *ww, is_focused, is_hovered, name);
+        }
     }
+    let sw = fb.width;
+    let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
+    draw_menubar(fb, sw, elapsed, focused_name.as_deref(), &display_apps);
+}
 
-    let n = apps.len();
-    crate::log_info!(Subsystem::Display, None, "layout reflow: {n} display app(s) tiled");
+// ── T056: Animation alpha stub ────────────────────────────────────────────────
+
+/// Sample the current animation alpha for an app state.
+/// Returns 255 (fully opaque) when no animation is active.
+/// Full layer-alpha blending requires a compositor not yet built;
+/// this helper is the integration point for future frame-tick use.
+#[allow(dead_code)]
+pub fn sample_anim_alpha(anim: &Option<crate::display::animator::Animation>) -> u8 {
+    match anim {
+        None => 255,
+        Some(a) => {
+            let elapsed = crate::display::animator::now_ms()
+                .saturating_sub(a.start_ms);
+            a.sample(elapsed).alpha
+        }
+    }
+}
+
+// ── T059–T064: Dropdown menu state ───────────────────────────────────────────
+
+struct DropdownState { open: bool, selected: usize, items: Vec<(String, String)>, anchor_x: u32, anchor_y: u32, app_name: String }
+static DROPDOWN_STATE: std::sync::OnceLock<Mutex<DropdownState>> = std::sync::OnceLock::new();
+fn dropdown_state() -> &'static Mutex<DropdownState> {
+    DROPDOWN_STATE.get_or_init(|| Mutex::new(DropdownState { open: false, selected: 0, items: vec![], anchor_x: 0, anchor_y: 0, app_name: String::new() }))
+}
+
+/// Open the app-name dropdown at anchor position.
+pub fn open_dropdown(app: &str, items: Vec<(String, String)>, ax: u32, ay: u32) {
+    let mut s = dropdown_state().lock().unwrap();
+    s.open = true; s.selected = 0; s.items = items; s.anchor_x = ax; s.anchor_y = ay; s.app_name = app.to_string();
+}
+/// Close the dropdown.
+#[allow(dead_code)]
+pub fn close_dropdown() { dropdown_state().lock().unwrap().open = false; }
+
+/// Handle keyboard navigation within the dropdown.
+#[allow(dead_code)]
+pub fn handle_dropdown_key(key: u8) {
+    let mut s = match dropdown_state().try_lock() { Ok(s) => s, Err(_) => return };
+    if !s.open { return; }
+    match key {
+        b'\r' | b'\n' | 27 => { s.open = false; }
+        b'j' => { if s.selected + 1 < s.items.len() { s.selected += 1; } }
+        b'k' => { if s.selected > 0 { s.selected -= 1; } }
+        _ => {}
+    }
+}
+/// Public wrapper for draw_glyph_str (used by toast.rs banner renderer).
+#[cfg(target_os = "linux")]
+#[allow(dead_code)]
+pub fn draw_glyph_str_pub(fb: &mut display::Framebuffer, text: &str, x: i32, y: i32, rgba: u32, pt: u32, bold: bool, mono: bool) {
+    draw_glyph_str(fb, text, x, y, rgba, pt, bold, mono);
+}
+/// Render the dropdown menu if open.
+#[cfg(target_os = "linux")]
+#[allow(dead_code)]
+pub fn render_dropdown_if_open(fb: &mut display::Framebuffer) {
+    let s = dropdown_state().lock().unwrap();
+    if !s.open || s.items.is_empty() { return; }
+    let (ax, ay, items, selected) = (s.anchor_x, s.anchor_y, s.items.clone(), s.selected);
+    drop(s);
+    use crate::display::draw_rounded_rect;
+    let row_h: u32 = 22; let (pw, fs, fw, fh) = (200u32, fb.stride, fb.width, fb.height);
+    draw_rounded_rect(&mut fb.back, ax, ay, pw, row_h * items.len() as u32 + 8, 0x1C1C1EE8_u32, 8, fs, fw, fh);
+    for (i, (label, _)) in items.iter().enumerate() {
+        let ry = ay + 4 + i as u32 * row_h;
+        if i == selected { draw_rounded_rect(&mut fb.back, ax + 4, ry, pw - 8, row_h - 2, 0x0A84FFFF_u32, 4, fs, fw, fh); }
+        draw_glyph_str(fb, label, (ax + 12) as i32, (ry + row_h / 2) as i32, 0xFFFFFFFF, 13, false, false);
+    }
 }

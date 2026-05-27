@@ -195,7 +195,7 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                                         v.sort(); v
                                     };
                                     if let Some(idx) = apps.iter().position(|n| n == name) {
-                                        let (sw, sh) = display::screen_size().unwrap_or((1440, 900));
+                                        let (sw, sh) = display::screen_size().unwrap_or((1440, 900)); // DEFAULT_SCREEN_W/H
                                         let snap = compute_snap_layout(sw, sh, MENUBAR_H, idx, apps.len());
                                         {
                                             let reg = registry.lock().unwrap();

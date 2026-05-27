@@ -2,15 +2,17 @@
 name    = "settings"
 version = "0.1.0"
 wasm    = "settings.wasm"
+icon    = "icon.png"
 
 [capabilities]
 stdio      = true
 display    = true
 shell      = true
 filesystem = true
+mouse      = true
 
 [window]
-x = 0
-y = 20
-w = 1440
-h = 880
+x = 720
+y = 580
+w = 700
+h = 280

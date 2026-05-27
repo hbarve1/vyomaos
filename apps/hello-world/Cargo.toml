@@ -8,3 +8,5 @@ name = "hello-world"
 path = "src/main.rs"
 
 [dependencies]
+
+[workspace]

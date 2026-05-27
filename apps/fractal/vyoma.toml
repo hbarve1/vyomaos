@@ -4,10 +4,12 @@ version = "0.1.0"
 wasm    = "fractal.wasm"
 
 [window]
-title  = "Fractal Explorer"
-width  = 960
-height = 720
+x = 0
+y = 52
+w = 1440
+h = 816
 
 [capabilities]
 stdio   = true
 display = true
+mouse   = true

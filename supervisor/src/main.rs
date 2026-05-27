@@ -20,6 +20,7 @@
 #[cfg(target_os = "linux")]
 mod display;
 mod font;
+mod image;
 
 mod app_threads;
 mod chrome;
@@ -34,6 +35,11 @@ mod packages;
 #[cfg(target_os = "linux")]
 mod seccomp;
 mod toast;
+mod mgmt_protocol;
+mod mgmt_server;
+mod mgmt_handlers;
+mod router;
+mod win_actions;
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -47,6 +53,7 @@ use std::{
 
 use supervisor::logging::Subsystem;
 use supervisor::manifest::{BootConfig, BootEntry};
+use supervisor::profile;
 
 #[macro_export]
 macro_rules! log_info {
@@ -91,9 +98,20 @@ struct AppState {
     has_mouse:   bool,
     has_display: bool,
     win_region:  Option<(u32, u32, u32, u32)>,  // supervisor-assigned; updated by apply_tiling_layout
+    win_z:       u32,  // z-layer; 0=desktop, 10=default, 100=dock, 200+=system
     min_size:    (u32, u32),                     // (min_w, min_h) hint from manifest [window]
     draw_ticks:      u64,           // incremented each time the app issues a VYOMA_DRAW command
     last_cpu_reset:  std::time::Instant, // when draw_ticks was last zeroed
+    // spec-042: minimize/restore state
+    minimized:           bool,
+    pre_minimize_region: Option<(u32, u32, u32, u32)>,
+    // T052: pending window animation (Open/Close/Minimize)
+    pub pending_anim: Option<crate::display::animator::Animation>,
+    /// Per-window pixel surface buffer (content area only, no chrome).
+    /// None until the first tiling layout assigns a win_region.
+    pub surface: Option<std::sync::Arc<std::sync::Mutex<crate::display::Surface>>>,
+    // spec-044: management server live log subscribers
+    log_subscribers: Vec<mpsc::Sender<String>>,
 }
 
 type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
@@ -103,66 +121,63 @@ type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
 type Inbox = Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>;
 type FocusedApp = Arc<Mutex<Option<String>>>;
 
-// ── P33: Global Z-order stack (index 0 = topmost / frontmost window) ─────────
+// ── Global statics ────────────────────────────────────────────────────────────
 
 static Z_ORDER: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
-
-// ── IPC reply routing: maps recipient_app → last sender_app ──────────────────
-
 static LAST_SENDER: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
-
-// ── P47: Raw TCP connection pool ──────────────────────────────────────────────
-
 static TCP_CONNS: OnceLock<Mutex<std::collections::HashMap<u32, std::net::TcpStream>>> =
     OnceLock::new();
-static TCP_NEXT_ID: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(1);
-
-// ── P50: Clipboard ────────────────────────────────────────────────────────────
-
+static TCP_NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 static CLIPBOARD: OnceLock<Mutex<String>> = OnceLock::new();
-
-// ── P55: Global font size preference ─────────────────────────────────────────
-
 static FONT_SIZE: OnceLock<Mutex<String>> = OnceLock::new();
-
-// Drag-start state: Some((x, y)) while the left button is held, None otherwise.
-// Used by the drag-delta logging stub (P031).
 static MOUSE_DRAG_START: OnceLock<Mutex<Option<(i32, i32)>>> = OnceLock::new();
 fn mouse_drag_start() -> &'static Mutex<Option<(i32, i32)>> {
     MOUSE_DRAG_START.get_or_init(|| Mutex::new(None))
 }
-
-// Boot timestamp — used to render the elapsed clock in the menu bar.
+/// Shared inbox Arc reference for the exec handler (set once after inbox is created).
+static MGMT_INBOX: OnceLock<Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>> = OnceLock::new();
+/// One-shot reply channels registered by the exec handler, keyed by app name.
+static EXEC_REPLY_CHANNELS: OnceLock<Mutex<HashMap<String, mpsc::Sender<String>>>> =
+    OnceLock::new();
 static BOOT_INSTANT: OnceLock<std::time::Instant> = OnceLock::new();
-
-// Rate-limit: tracks (last_draw_instant, last_focused_name) for the menu bar.
-// Menu bar is only repainted when ≥1 second has elapsed OR focused app changes.
+#[allow(dead_code)]
 static LAST_MENUBAR_DRAW: OnceLock<Mutex<(std::time::Instant, Option<String>)>> = OnceLock::new();
-
-// Dirty-flag map: true if the app has issued at least one draw command since its
-// last flush.  Avoids repainting the title bar for windows with no new content.
 static APP_DIRTY: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
-
-// Currently hovered app name (title bar hover, no button press).
-// Updated on every mouse-motion event; None when cursor is not over any title bar.
 static HOVERED_APP: OnceLock<Mutex<Option<String>>> = OnceLock::new();
-
-// Per-app log level filter — set via @supervisor: loglevel <name> <level>.
 static APP_LOG_LEVELS: OnceLock<Mutex<HashMap<String, supervisor::ipc::LogLevel>>> = OnceLock::new();
 fn app_log_levels() -> &'static Mutex<HashMap<String, supervisor::ipc::LogLevel>> {
     APP_LOG_LEVELS.get_or_init(|| Mutex::new(HashMap::new()))
 }
-
-// Per-app flush rate tracking: maps app name → (flush_count, window_start).
-// Logged every 5 seconds via `display::format_fps`.
-static FLUSH_COUNTS: OnceLock<Mutex<HashMap<String, (u64, std::time::Instant)>>> =
-    OnceLock::new();
-
+static FLUSH_COUNTS: OnceLock<Mutex<HashMap<String, (u64, std::time::Instant)>>> = OnceLock::new();
 fn flush_counts() -> &'static Mutex<HashMap<String, (u64, std::time::Instant)>> {
     FLUSH_COUNTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
+/// Gate: false = suppress menu bar rendering on non-desktop profiles.
+pub static SHOW_MENU_BAR: OnceLock<bool> = OnceLock::new();
+/// Active display profile name broadcast to apps via VYOMA_SYSTEM:display_profile.
+pub static DISPLAY_PROFILE: OnceLock<String> = OnceLock::new();
 
+// ── T023: Scalable font cache (Linux-only) ────────────────────────────────────
+#[cfg(target_os = "linux")]
+static FONT_CACHE: OnceLock<Mutex<font::cache::FontCache>> = OnceLock::new();
+
+#[cfg(target_os = "linux")]
+pub fn font_cache() -> &'static Mutex<font::cache::FontCache> {
+    FONT_CACHE.get_or_init(|| {
+        Mutex::new(font::cache::FontCache::load(
+            "/fonts/Inter-Regular.ttf",
+            "/fonts/Inter-Bold.ttf",
+            "/fonts/IBMPlexMono-Regular.ttf",
+        ))
+    })
+}
+
+// ── T030/T031: PNG image cache ────────────────────────────────────────────────
+static IMAGE_CACHE: OnceLock<Mutex<image::ImageCache>> = OnceLock::new();
+
+pub fn image_cache() -> &'static Mutex<image::ImageCache> {
+    IMAGE_CACHE.get_or_init(|| Mutex::new(image::ImageCache::new()))
+}
 
 // ── Spawned app descriptor ────────────────────────────────────────────────────
 
@@ -186,6 +201,52 @@ const LOG_DIR:           &str = "/data/logs";
 const LOG_TAIL_LINES:    usize = 30;
 
 
+// ── T017: Platform profile loader ────────────────────────────────────────────
+
+const PLATFORM_PROFILE_DIR: &str = "/etc/vyoma/profiles";
+const DEFAULT_PROFILE_NAME: &str = "desktop-full";
+
+/// Load the active platform profile from disk.
+///
+/// Resolution order:
+/// 1. `PLATFORM` environment variable (e.g. `PLATFORM=iot-edge`)
+/// 2. Default: `desktop-full`
+///
+/// Profile file is looked up at `PLATFORM_PROFILE_DIR/<name>.toml`.
+/// If the file does not exist, logs a warning and returns `None`
+/// (system continues with defaults).
+fn load_platform_profile() -> Option<profile::PlatformProfile> {
+    let name = std::env::var("PLATFORM")
+        .unwrap_or_else(|_| DEFAULT_PROFILE_NAME.to_string());
+    let path = format!("{PLATFORM_PROFILE_DIR}/{name}.toml");
+    match profile::load_profile(std::path::Path::new(&path)) {
+        Ok(p) => {
+            log_info!(
+                Subsystem::Lifecycle,
+                None,
+                "platform profile loaded: {} (runtime={:?}, ram={}KB)",
+                p.platform.name,
+                p.platform.runtime,
+                p.platform.min_ram_kb
+            );
+            Some(p)
+        }
+        Err(profile::ProfileError::Io(_)) => {
+            // Profile file absent — acceptable on desktop where no profile is deployed.
+            log_info!(
+                Subsystem::Lifecycle,
+                None,
+                "no platform profile at {path}, using defaults"
+            );
+            None
+        }
+        Err(e) => {
+            log_warn!(Subsystem::Lifecycle, None, "platform profile error: {e}");
+            None
+        }
+    }
+}
+
 // ── P19: watchdog backoff helper ─────────────────────────────────────────────
 
 fn watchdog_next_backoff(watchdog_secs: u32, restarts: u32) -> u64 {
@@ -201,6 +262,13 @@ fn main() {
     mount::mount_filesystems();
     log_info!(Subsystem::Lifecycle, None, "filesystems mounted");
 
+    // ── T017: Load platform profile (PLATFORM env var or default) ────────────
+    let _active_profile = load_platform_profile();
+    if let Some(ref p) = _active_profile {
+        let _ = SHOW_MENU_BAR.set(p.display.show_menu_bar);
+        let _ = DISPLAY_PROFILE.set(p.display.profile.clone());
+    }
+
     #[cfg(target_os = "linux")]
     if display::init() {
         log_info!(Subsystem::Display, None, "display ready");
@@ -208,12 +276,15 @@ fn main() {
         if let Some(fb_lock) = display::get() {
             let mut fb = fb_lock.lock().unwrap();
             let (w, h) = (fb.width, fb.height);
-            fb.fill_rect(0, 0, w, h, 0x0D1117FF);
+            fb.fill_rect(0, 0, w, h, 0x1C1C1EFF);
             // Draw initial menu bar (no focused app yet, no apps yet)
             chrome::draw_menubar(&mut *fb, w, 0, None, &[]);
             fb.flush();
         }
     }
+    // T023: Initialize scalable font cache (warm-up; graceful if fonts missing)
+    #[cfg(target_os = "linux")]
+    { let _ = font_cache(); }
 
     let boot_raw = match fs::read_to_string(BOOT_CONFIG_PATH) {
         Ok(s) => s,
@@ -266,6 +337,7 @@ fn main() {
     let _ = CLIPBOARD.set(Mutex::new(String::new()));
     let _ = FONT_SIZE.set(Mutex::new("m".to_string()));
     let _ = LAST_SENDER.set(Mutex::new(HashMap::new()));
+    let _ = EXEC_REPLY_CHANNELS.set(Mutex::new(HashMap::new()));
 
     let inbox:        Inbox       = Arc::new(Mutex::new(HashMap::new()));
     let focused:      FocusedApp  = Arc::new(Mutex::new(None));
@@ -332,6 +404,56 @@ fn main() {
             .expect("spawn mouse-input thread");
     }
 
+    // ── spec-044: share inbox Arc with mgmt exec handler ────────────────────
+    let _ = MGMT_INBOX.set(Arc::clone(&inbox));
+
+    // ── spec-044: management server thread — binds 0.0.0.0:9090 ─────────────
+    {
+        let registry_mgmt = Arc::clone(&app_registry);
+        thread::Builder::new()
+            .name("mgmt-server".into())
+            .spawn(move || {
+                let addr: std::net::SocketAddr = "0.0.0.0:9090".parse().unwrap();
+                mgmt_server::MgmtServer::new(registry_mgmt).start(addr);
+            })
+            .expect("spawn mgmt-server thread");
+    }
+
+    // ── T018 [US2]: screen-resize poll thread — detects framebuffer size changes ──
+    #[cfg(target_os = "linux")]
+    {
+        let inbox_resize   = Arc::clone(&inbox);
+        let registry_resize = Arc::clone(&app_registry);
+        thread::Builder::new()
+            .name("screen-poll".into())
+            .spawn(move || {
+                let mut last = display::screen_size().unwrap_or((1440, 900)); // DEFAULT_SCREEN_W/H fallback
+                loop {
+                    thread::sleep(std::time::Duration::from_secs(1));
+                    if let Some((w, h)) = display::screen_size() {
+                        if (w, h) != last {
+                            log_info!(Subsystem::Display, None,
+                                "screen resize detected: {}×{} → {}×{}", last.0, last.1, w, h);
+                            last = (w, h);
+                            // Broadcast new dimensions to all running display apps.
+                            let msg = format!("VYOMA_SYSTEM:screen:{},{}", w, h);
+                            let reg = registry_resize.lock().unwrap();
+                            let inb = inbox_resize.lock().unwrap();
+                            for (name, state_arc) in reg.iter() {
+                                let st = state_arc.lock().unwrap();
+                                if st.has_display && matches!(st.status, AppStatus::Running) {
+                                    if let Some(tx) = inb.get(name) {
+                                        let _ = tx.send(msg.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+            .expect("spawn screen-poll thread");
+    }
+
     // ── Pass 2: start IO threads for each spawned app ─────────────────────────
     let mut waiter_handles = vec![];
     for app in spawned {
@@ -360,94 +482,19 @@ fn main() {
     loop { thread::park(); }
 }
 
-// ── IPC router + display dispatcher ──────────────────────────────────────────
+// ── IPC router + display dispatcher — delegated to router.rs ──────────────────
 
 fn route_or_print(
     line:         &str,
     sender:       &str,
     inbox:        &Inbox,
     has_display:  bool,
-    win_region:   Option<(u32, u32, u32, u32)>,  // P21
+    win_region:   Option<(u32, u32, u32, u32)>,
     focused:      &FocusedApp,
     app_registry: &AppRegistry,
 ) {
-    if has_display {
-        if let Some(cmd) = line.strip_prefix("VYOMA_DRAW:") {
-            // Increment draw_ticks for CPU% tracking
-            {
-                let reg = app_registry.lock().unwrap();
-                if let Some(st) = reg.get(sender) {
-                    st.lock().unwrap().draw_ticks += 1;
-                }
-            }
-            #[cfg(target_os = "linux")]
-            {
-                draw_cmd::handle_draw_command(cmd, sender, win_region, focused, app_registry);
-            }
-            #[cfg(not(target_os = "linux"))]
-            let _ = cmd;
-            return;
-        }
-    }
-    let _ = has_display;
-    let _ = win_region;
-
-    if let Some(rest) = line.strip_prefix('@') {
-        if let Some((target, msg)) = rest.split_once(": ") {
-            if target == "supervisor" {
-                ipc_handlers::handle_supervisor_command(msg, sender, inbox, focused, app_registry);
-                return;
-            }
-            if supervisor::ipc::is_broadcast_target(target) {
-                // Deliver message to every running app (including the sender).
-                let map = inbox.lock().unwrap();
-                for tx in map.values() {
-                    let _ = tx.send(msg.to_string());
-                }
-                log_info!(Subsystem::Ipc, Some(sender), "broadcast: \"{}\" → {} app(s)", msg, map.len());
-                return;
-            }
-            // @reply: routes message back to whichever app last sent an IPC message
-            // to the current sender (i.e. LAST_SENDER[sender]).
-            if supervisor::ipc::is_reply_target(target) {
-                let reply_target = LAST_SENDER
-                    .get()
-                    .and_then(|m| m.lock().ok())
-                    .and_then(|map| map.get(sender).cloned());
-                match reply_target {
-                    Some(orig) => {
-                        let map = inbox.lock().unwrap();
-                        if let Some(tx) = map.get(&orig) {
-                            let _ = tx.send(msg.to_string());
-                        }
-                    }
-                    None => {
-                        log_warn!(Subsystem::Ipc, Some(sender),
-                            "@reply: no last sender recorded for {sender}, message dropped");
-                    }
-                }
-                return;
-            }
-            // Record that `sender` sent a message to `target` so `target` can @reply:.
-            if let Some(ls) = LAST_SENDER.get() {
-                if let Ok(mut map) = ls.lock() {
-                    map.insert(target.to_string(), sender.to_string());
-                }
-            }
-            let map = inbox.lock().unwrap();
-            if let Some(tx) = map.get(target) {
-                if tx.send(msg.to_string()).is_ok() {
-                    return;
-                }
-            }
-        }
-    }
-    println!("[{sender}] {line}");
+    router::route_or_print(line, sender, inbox, has_display, win_region, focused, app_registry);
 }
 
-fn send_reply(target: &str, msg: &str, inbox: &Inbox) {
-    if let Some(tx) = inbox.lock().unwrap().get(target) {
-        let _ = tx.send(msg.to_string());
-    }
-}
+fn send_reply(target: &str, msg: &str, inbox: &Inbox) { router::send_reply(target, msg, inbox); }
 

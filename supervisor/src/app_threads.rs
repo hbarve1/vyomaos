@@ -21,25 +21,60 @@ use crate::{
     AppRegistry, AppState, AppStatus, FocusedApp, Inbox, SpawnedApp,
     LAST_SENDER, LOG_BUF_SIZE, LOG_DIR,
 };
-use crate::{route_or_print, watchdog_next_backoff};
+use crate::{chrome, route_or_print, watchdog_next_backoff};
 use supervisor::logging::Subsystem;
 use supervisor::manifest::BootEntry;
+
+// ── init_surface_for_region ───────────────────────────────────────────────────
+
+/// Create or resize the per-window Surface for `st` to match the content area
+/// implied by `region`.  Content area = region height minus chrome (title bar +
+/// status strip) unless this is a system-layer window (z >= Z_DOCK).
+fn init_surface_for_region(st: &mut AppState, region: (u32, u32, u32, u32)) {
+    use crate::chrome::{TITLEBAR_H, Z_DOCK};
+    let (_, _, ww, wh) = region;
+    let is_system = st.win_z >= Z_DOCK;
+    let chrome_h = if is_system { 0u32 } else { TITLEBAR_H };
+    let content_h = wh.saturating_sub(chrome_h);
+    if ww == 0 || content_h == 0 { return; }
+    let needs_new = st.surface.as_ref()
+        .map(|s| { let s = s.lock().unwrap(); s.width != ww || s.height != content_h })
+        .unwrap_or(true);
+    if needs_new {
+        st.surface = Some(std::sync::Arc::new(std::sync::Mutex::new(
+            crate::display::Surface::new(ww, content_h)
+        )));
+    }
+}
 
 // ── apply_tiling_layout ───────────────────────────────────────────────────────
 
 /// Recompute tiled regions for all running display apps and write them into
 /// the registry.  Called on every display-app spawn or exit.
+///
+/// Apps with `win_z >= Z_DOCK (100)` are pinned to a bottom strip of height
+/// `DOCK_STRIP_H`.  All other display apps tile in the remaining usable area.
 pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
     use supervisor::windows::compute_tiling_with_hints;
-    use crate::chrome::MENUBAR_H;
+    use crate::chrome::{MENUBAR_H, Z_DOCK};
 
-    let apps: Vec<(String, u32, u32)> = {
+    const DOCK_STRIP_H: u32 = 64;
+
+    const DEFAULT_SCREEN_W: u32 = 1440;
+    const DEFAULT_SCREEN_H: u32 = 900;
+    #[cfg(target_os = "linux")]
+    let (sw, sh) = crate::display::screen_size().unwrap_or((DEFAULT_SCREEN_W, DEFAULT_SCREEN_H));
+    #[cfg(not(target_os = "linux"))]
+    let (sw, sh) = (DEFAULT_SCREEN_W, DEFAULT_SCREEN_H);
+
+    // Collect all running display apps with z-layer and min-size hints.
+    let apps: Vec<(String, u32, u32, u32)> = {
         let reg = registry.lock().unwrap();
-        let mut v: Vec<(String, u32, u32)> = reg.iter()
+        let mut v: Vec<(String, u32, u32, u32)> = reg.iter()
             .filter_map(|(name, st)| {
                 let st = st.lock().unwrap();
                 if st.has_display && matches!(st.status, AppStatus::Running) {
-                    Some((name.clone(), st.min_size.0, st.min_size.1))
+                    Some((name.clone(), st.win_z, st.min_size.0, st.min_size.1))
                 } else { None }
             })
             .collect();
@@ -48,29 +83,52 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
     };
     if apps.is_empty() { return; }
 
-    #[cfg(target_os = "linux")]
-    let (sw, sh) = crate::display::screen_size().unwrap_or((1440, 900));
-    #[cfg(not(target_os = "linux"))]
-    let (sw, sh) = (1440u32, 900u32);
+    // Partition: system-layer (dock, overlay) vs. regular tiled apps.
+    let (pinned, tiled): (Vec<_>, Vec<_>) = apps.iter().partition(|(_, z, _, _)| *z >= Z_DOCK);
 
-    let min_sizes: Vec<(u32, u32)> = apps.iter().map(|(_, mw, mh)| (*mw, *mh)).collect();
-    let usable_h = sh.saturating_sub(MENUBAR_H);
-    let regions: Vec<(u32, u32, u32, u32)> = compute_tiling_with_hints(apps.len(), sw, usable_h, &min_sizes)
-        .into_iter().map(|(x, y, w, h)| (x, y + MENUBAR_H, w, h)).collect();
-
+    // Assign pinned apps to the reserved bottom strip.
+    let dock_h_reserved: u32 = if pinned.is_empty() { 0 } else { DOCK_STRIP_H };
     {
         let reg = registry.lock().unwrap();
-        for (i, (name, _, _)) in apps.iter().enumerate() {
-            if let Some(st) = reg.get(name) {
-                if let Some(&region) = regions.get(i) {
-                    st.lock().unwrap().win_region = Some(region);
+        for (name, _, _, _) in &pinned {
+            if let Some(st) = reg.get(name.as_str()) {
+                let region = (0, sh.saturating_sub(DOCK_STRIP_H), sw, DOCK_STRIP_H);
+                let mut st_guard = st.lock().unwrap();
+                st_guard.win_region = Some(region);
+                init_surface_for_region(&mut st_guard, region);
+                log_info!(Subsystem::Display, Some(name.as_str()),
+                    "tiling: pinned dock strip ({},{},{},{})",
+                    region.0, region.1, region.2, region.3);
+            }
+        }
+    }
+
+    // Tile remaining apps in usable area above the dock strip.
+    if tiled.is_empty() { return; }
+    let usable_h = sh.saturating_sub(MENUBAR_H).saturating_sub(dock_h_reserved);
+    let min_sizes: Vec<(u32, u32)> = tiled.iter().map(|(_, _, mw, mh)| (*mw, *mh)).collect();
+    let regions: Vec<(u32, u32, u32, u32)> =
+        compute_tiling_with_hints(tiled.len(), sw, usable_h, &min_sizes)
+            .into_iter()
+            .map(|(x, y, w, h)| (x, y + MENUBAR_H, w, h))
+            .collect();
+    {
+        let reg = registry.lock().unwrap();
+        for (i, (name, _, _, _)) in tiled.iter().enumerate() {
+            if let Some(&region) = regions.get(i) {
+                if let Some(st) = reg.get(name.as_str()) {
+                    let mut st_guard = st.lock().unwrap();
+                    st_guard.win_region = Some(region);
+                    init_surface_for_region(&mut st_guard, region);
                     log_info!(Subsystem::Display, Some(name.as_str()),
-                        "tiling: assigned ({},{},{},{})", region.0, region.1, region.2, region.3);
+                        "tiling: assigned ({},{},{},{})",
+                        region.0, region.1, region.2, region.3);
                 }
             }
         }
     }
-    log_info!(Subsystem::Display, None, "layout reflow: {} display app(s) tiled", apps.len());
+    log_info!(Subsystem::Display, None, "layout reflow: {} tiled + {} pinned display app(s)",
+        tiled.len(), pinned.len());
 }
 
 // ── spawn_io_threads ──────────────────────────────────────────────────────────
@@ -125,6 +183,8 @@ pub fn spawn_io_threads(
                         let mut st = st.lock().unwrap();
                         st.log_buf.push_back(line.clone());
                         if st.log_buf.len() > LOG_BUF_SIZE { st.log_buf.pop_front(); }
+                        // Broadcast to live log subscribers (spec-044 management server).
+                        st.log_subscribers.retain(|tx| tx.send(line.clone()).is_ok());
                     }
                 }
                 let win_region = if has_display {
@@ -162,6 +222,11 @@ pub fn launch_app_threads(
             if let Some(tx) = inbox.lock().unwrap().get(&name) {
                 let _ = tx.send(format!("VYOMA_SYSTEM:screen:{w},{h}"));
             }
+        }
+        // T079: broadcast active display profile to every display app at spawn.
+        let profile_kind = crate::DISPLAY_PROFILE.get().map(|s| s.as_str()).unwrap_or("desktop");
+        if let Some(tx) = inbox.lock().unwrap().get(&name) {
+            let _ = tx.send(format!("VYOMA_SYSTEM:display_profile:{profile_kind}"));
         }
     }
 
@@ -275,10 +340,23 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         has_mouse:        caps.mouse,
         has_display:      caps.display,
         win_region:       None,
+        win_z:            manifest.window.as_ref().map(|w| w.z).unwrap_or(chrome::Z_APP),
         min_size,
         draw_ticks:       0,
         last_cpu_reset:   Instant::now(),
+        minimized:           false,
+        pre_minimize_region: None,
+        // T053: pending_anim set below after construction
+        pending_anim:        None,
+        surface:             None,
+        log_subscribers:     Vec::new(),
     }));
+    // T053: enqueue Open animation so the window fades in on spawn
+    {
+        use crate::display::animator::{Animation, AnimKind, now_ms};
+        state.lock().unwrap().pending_anim =
+            Some(Animation::new(AnimKind::Open, now_ms()));
+    }
     app_registry.lock().unwrap().insert(name.clone(), state);
 
     Some(SpawnedApp { entry: entry.clone(), name, child, msg_rx, child_stdin, child_stdout,
@@ -316,7 +394,7 @@ pub fn wait_app(
         if let (true, Some((wx, wy, ww, wh))) = (had_display, old_win_region) {
             if let Some(fb_lock) = crate::display::get() {
                 let mut fb = fb_lock.lock().unwrap();
-                fb.fill_rect(wx, wy, ww, wh, 0x0D1117FF);
+                fb.fill_rect(wx, wy, ww, wh, 0x1C1C1EFF);
                 fb.flush();
             }
         }

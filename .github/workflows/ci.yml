@@ -1,15 +1,81 @@
-name: CI
+# VyomaOS CI — https://github.com/hbarve1/vyomaos/actions/workflows/ci.yml
+# Badge: ![CI](https://github.com/hbarve1/vyomaos/actions/workflows/ci.yml/badge.svg)
+name: VyomaOS CI
 
 on:
-  pull_request:
-    branches: [main, develop]
   push:
-    branches: [main, develop]
+    branches: ["**"]
+  pull_request:
+    branches: [develop, main]
+
+env:
+  RUSTFLAGS: "-D warnings"
 
 jobs:
-  unit-tests:
+  # ── check: cargo check + 500-line limit (no Docker, fast) ──────────────────
+  check:
+    name: Cargo check (supervisor + WASM apps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable with required targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2,x86_64-unknown-linux-musl
+
+      - name: Install musl-tools (linker for x86_64-unknown-linux-musl)
+        run: sudo apt-get update -qq && sudo apt-get install -y musl-tools
+
+      - name: Cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            supervisor/target
+          key: ${{ runner.os }}-cargo-check-${{ hashFiles('supervisor/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-check-
+
+      - name: cargo check — supervisor (x86_64-unknown-linux-musl)
+        run: |
+          RUSTFLAGS="-D warnings" cargo check \
+            --manifest-path supervisor/Cargo.toml \
+            --target x86_64-unknown-linux-musl
+
+      - name: cargo check — all WASM apps (wasm32-wasip2)
+        env:
+          RUSTFLAGS: ""
+        run: |
+          for cargo_toml in apps/*/Cargo.toml; do
+            app=$(dirname "$cargo_toml")
+            echo "Checking $app ..."
+            cargo check \
+              --manifest-path "$cargo_toml" \
+              --target wasm32-wasip2
+          done
+
+      - name: 500-line file limit check
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            lines=$(wc -l < "$f")
+            if [ "$lines" -gt 500 ]; then
+              echo "FAIL: $f has $lines lines (limit: 500)"
+              fail=1
+            fi
+          done < <(find supervisor/src apps -name '*.rs' 2>/dev/null)
+          exit $fail
+
+  # ── unit-test: supervisor cargo test inside Docker ──────────────────────────
+  unit-test:
     name: Supervisor unit tests
     runs-on: ubuntu-latest
+    needs: check
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -25,38 +91,182 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
 
-      - name: Build builder image
+      - name: Build builder Docker image
         run: make image
 
-      - name: Run supervisor unit tests
+      - name: Cache cargo registry inside container mount
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-unit-${{ hashFiles('supervisor/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-unit-
+
+      - name: Run supervisor unit tests (make unit-test)
         run: make unit-test
 
-  manifest-check:
+  # ── check-manifests: validate all apps/*/vyoma.toml ────────────────────────
+  check-manifests:
     name: Manifest validation
     runs-on: ubuntu-latest
+    needs: check
+    timeout-minutes: 5
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build builder image
+      - name: Install Rust stable with wasm32-wasip2 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - name: Cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-manifests-${{ hashFiles('tools/check-manifests/Cargo.lock', 'tools/check-manifests/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-manifests-
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build builder Docker image
         run: make image
 
-      - name: Validate app manifests
+      - name: Validate app manifests (make check-manifests)
         run: make check-manifests
 
-  smoke-test:
-    name: Smoke test (headless boot)
+  # ── check-profiles: validate platform TOML profiles (Phase 8) ──────────────
+  check-profiles:
+    name: Platform profile validation
     runs-on: ubuntu-latest
-    needs: [unit-tests, manifest-check]
+    needs: unit-test
+    timeout-minutes: 5
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build builder image
+      - name: Install Rust stable with x86_64-unknown-linux-musl target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Install musl-tools
+        run: sudo apt-get update -qq && sudo apt-get install -y musl-tools
+
+      - name: Cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            supervisor/target
+          key: ${{ runner.os }}-cargo-profiles-${{ hashFiles('supervisor/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-profiles-
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build builder Docker image
         run: make image
 
-      - name: Full build
+      - name: Validate platform profiles (make check-profiles)
+        run: make check-profiles
+
+  # ── smoke: full build + headless QEMU boot (develop/main only) ─────────────
+  smoke:
+    name: Smoke test (headless QEMU boot)
+    runs-on: ubuntu-latest
+    needs: [unit-test, check-manifests]
+    timeout-minutes: 20
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install QEMU (x86)
+        run: sudo apt-get update -qq && sudo apt-get install -y qemu-system-x86
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-smoke-${{ hashFiles('docker/Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build builder Docker image
+        run: make image
+
+      - name: Full build (kernel + supervisor + apps + rootfs + disk)
         run: make build
 
-      - name: Smoke test
+      - name: Smoke test (headless QEMU, 30 s timeout)
         run: make smoke
+
+      - name: Upload build artifacts on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-artifacts-${{ github.sha }}
+          path: |
+            out/bzImage
+            out/initramfs.cpio.gz
+          retention-days: 7
+
+  # ── cross-arch-unit: ARM64 supervisor unit tests via QEMU user-mode ─────────
+  cross-arch-unit:
+    name: Cross-arch unit tests (aarch64-unknown-linux-musl)
+    runs-on: ubuntu-latest
+    needs: check
+    timeout-minutes: 10
+    continue-on-error: true  # advisory: aarch64 musl linker may need extra setup
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install QEMU user-mode static binaries + aarch64 cross-compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y qemu-user-static gcc-aarch64-linux-gnu
+
+      - name: Install Rust stable with aarch64-unknown-linux-musl target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+
+      - name: Configure aarch64 musl linker
+        run: |
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml <<'EOF'
+          [target.aarch64-unknown-linux-musl]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+
+      - name: Cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            supervisor/target
+          key: ${{ runner.os }}-cargo-aarch64-${{ hashFiles('supervisor/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-aarch64-
+
+      - name: Run portable supervisor tests on aarch64
+        run: |
+          RUSTFLAGS="-D warnings" cargo test \
+            --manifest-path supervisor/Cargo.toml \
+            --target aarch64-unknown-linux-musl \
+            -p supervisor \
+            -- runtime profile

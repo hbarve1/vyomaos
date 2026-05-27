@@ -1,0 +1,27 @@
+[platform]
+name = "mcu-minimal"
+arch = "arm-cortex-m4"
+runtime = "wasm3"
+min_ram_kb = 128
+
+[supervisor]
+modules = ["lifecycle", "capability", "ipc", "hal", "observability"]
+
+[hal]
+drivers = ["gpio", "i2c", "uart"]
+
+[boot]
+apps = []
+
+[observability]
+tier = "baseline"
+heartbeat_interval_s = 60
+
+[ota]
+enabled = false
+health_check_secs = 60
+ab_slots = false
+
+[build]
+kernel_config = "kernel.config"
+rootfs_script = "rootfs.sh"
