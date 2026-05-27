@@ -24,7 +24,7 @@ pub const Z_OVERLAY:  u32 = 255;  // notifications, system overlays
 
 pub const MENUBAR_H:    u32 = 24;   // global menu bar height
 pub const TITLEBAR_H:   u32 = 28;   // per-window title bar height
-const TL_DOT:           u32 = 12;   // traffic-light dot size (px)
+const TL_DOT:           u32 = 13;   // traffic-light dot size (px) — Apple spec
 
 const MAC_MENUBAR:      u32 = 0x2A2A2AFF; // system background (menubar)
 const MAC_TITLE_ACT:    u32 = 0x323232FF; // active window title bar
@@ -180,7 +180,7 @@ pub fn draw_titlebar(
     {
         use crate::display::draw_rounded_rect;
         let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-        draw_rounded_rect(&mut fb.back, wx, wy, ww, TITLEBAR_H, bg, 12, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx, wy, ww, TITLEBAR_H, bg, 10, fs, sw, sh);
     }
     fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
 
@@ -195,21 +195,21 @@ pub fn draw_titlebar(
         use crate::display::draw_rounded_rect;
         let r = TL_DOT / 2;
         let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-        draw_rounded_rect(&mut fb.back, wx + 14, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
-        draw_rounded_rect(&mut fb.back, wx + 34, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
-        draw_rounded_rect(&mut fb.back, wx + 54, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx +  9, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 30, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 51, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
     }
 
-    // App name centered — 13pt bold Inter
+    // App name centered — 13pt regular Inter
     let nlen = name.len().min(20);
     let display_name = &name[..nlen];
     let name_w_est = crate::font_cache().lock().unwrap()
-        .measure_str(display_name, 13, true, false);
+        .measure_str(display_name, 13, false, false);
     if ww > name_w_est + 60 {
         let nx = (wx + (ww - name_w_est) / 2) as i32;
         let ny = (wy + TITLEBAR_H / 2) as i32;
         let col = if is_focused { MAC_LABEL } else { MAC_LABEL2 };
-        draw_glyph_str(fb, display_name, nx, ny, col, 13, true, false);
+        draw_glyph_str(fb, display_name, nx, ny, col, 13, false, false);
     }
 }
 
