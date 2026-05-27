@@ -6,7 +6,7 @@
 use std::sync::Mutex;
 
 use crate::{log_error, log_info, log_warn, AppRegistry, FocusedApp};
-use crate::chrome::{draw_chrome_onto, STATUS_H, TITLEBAR_H, Z_DOCK};
+use crate::chrome::{draw_chrome_onto, TITLEBAR_H, Z_DOCK};
 use crate::APP_DIRTY;
 use crate::flush_counts;
 use supervisor::logging::Subsystem;
@@ -136,7 +136,7 @@ pub fn handle_draw_command(
                     let content_wy = wy + chrome_h;
                     let ax = wx + lx; let ay = content_wy + ly;
                     let win_right  = wx + ww;
-                    let win_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
+                    let win_bottom = wy + wh;
                     if ax < win_right && ay < win_bottom {
                         let aw = w.min(win_right - ax); let ah = h.min(win_bottom - ay);
                         if aw > 0 && ah > 0 { fb_lock.lock().unwrap().fill_rect(ax, ay, aw, ah, rgba); }
@@ -218,7 +218,7 @@ pub fn handle_draw_command(
                     let content_wy = wy + chrome_h;
                     let ax = wx + lx; let ay = content_wy + ly;
                     let win_right  = wx + ww;
-                    let win_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
+                    let win_bottom = wy + wh;
                     if ax < win_right && ay < win_bottom {
                         let aw = w.min(win_right - ax); let ah = h.min(win_bottom - ay);
                         if aw > 0 && ah > 0 { fb_lock.lock().unwrap().rect_border(ax, ay, aw, ah, rgba); }
@@ -247,7 +247,7 @@ pub fn handle_draw_command(
                 } else if let Some((wx, wy, ww, wh)) = win {
                     let content_wy = wy + chrome_h;
                     let ax = wx + lx; let ay = content_wy + ly;
-                    let win_right  = wx + ww; let win_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
+                    let win_right  = wx + ww; let win_bottom = wy + wh;
                     if ax < win_right && ay < win_bottom {
                         let aw = w.min(win_right - ax); let ah = h.min(win_bottom - ay);
                         if aw > 0 && ah > 0 { fb_lock.lock().unwrap().clear_region(ax, ay, aw, ah); }
@@ -280,7 +280,7 @@ pub fn handle_draw_command(
                         let content_wy = wy + chrome_h;
                         let ax = wx + lx;
                         let ay = content_wy + ly;
-                        let content_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
+                        let content_bottom = wy + wh;
                         if ax >= wx + ww || ay >= content_bottom { return; }
                         let effective_max_w = max_w.min(ww.saturating_sub(lx));
                         if effective_max_w == 0 { return; }
@@ -412,7 +412,7 @@ pub fn handle_draw_command(
                                 let content_wy = wy + chrome_h;
                                 let ax = wx + lx; let ay = content_wy + ly;
                                 let win_right  = wx + ww;
-                                let win_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
+                                let win_bottom = wy + wh;
                                 if ax >= win_right || ay >= win_bottom { return; }
                                 (ax, ay, rw.min(win_right - ax), rh.min(win_bottom - ay))
                             }
@@ -443,4 +443,4 @@ pub fn handle_draw_command(
 }
 
 // Satisfy unused-import warnings on non-Linux builds.
-#[cfg(not(target_os = "linux"))] fn _dummy_non_linux() { let _ = (STATUS_H, TITLEBAR_H); }
+#[cfg(not(target_os = "linux"))] fn _dummy_non_linux() { let _ = (TITLEBAR_H, Z_DOCK); }

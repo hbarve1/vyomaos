@@ -24,7 +24,6 @@ pub const Z_OVERLAY:  u32 = 255;  // notifications, system overlays
 
 pub const MENUBAR_H:    u32 = 24;   // global menu bar height
 pub const TITLEBAR_H:   u32 = 28;   // per-window title bar height
-pub const STATUS_H:     u32 = 16;   // per-window status strip height (bottom of window)
 const TL_DOT:           u32 = 12;   // traffic-light dot size (px)
 
 const MAC_MENUBAR:      u32 = 0x2A2A2AFF; // system background (menubar)
@@ -185,10 +184,6 @@ pub fn draw_titlebar(
     }
     fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
 
-    // 2px focus border — top edge only (full frame drawn at flush time when wh is known)
-    let bc = display::border_color(is_focused);
-    fb.fill_rect(wx, wy, ww, 2, bc);
-
     // Traffic lights — circles (radius = TL_DOT/2), left-aligned, vertically centered
     let tl_y = wy + (TITLEBAR_H - TL_DOT) / 2;
     let (c1, c2, c3) = if is_focused {
@@ -203,15 +198,6 @@ pub fn draw_titlebar(
         draw_rounded_rect(&mut fb.back, wx + 14, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
         draw_rounded_rect(&mut fb.back, wx + 34, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
         draw_rounded_rect(&mut fb.back, wx + 54, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
-    }
-
-    // Accent color dot — circle, deterministic per-app identity marker (12×12 at x+74)
-    let accent = display::app_accent_color(name);
-    {
-        use crate::display::draw_rounded_rect;
-        let r = TL_DOT / 2;
-        let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-        draw_rounded_rect(&mut fb.back, wx + 74, tl_y, TL_DOT, TL_DOT, accent, r, fs, sw, sh);
     }
 
     // App name centered — 13pt bold Inter
@@ -283,33 +269,6 @@ pub fn draw_menubar(
     if sw > cw + 20 {
         draw_glyph_str(fb, &clock, (sw - cw - 12) as i32, ty, MAC_LABEL2, 12, false, false);
     }
-}
-
-/// Draw a 16px status strip at the very bottom of a window's chrome.
-/// Background: `0x161B22FF` (dark).  Text: `0x8B949EFF` (grey).
-/// Shows `[name]  up <uptime_secs>s` in small font, left-aligned with 4px inset.
-#[cfg(target_os = "linux")]
-#[allow(dead_code)]
-pub fn draw_statusbar(
-    fb:          &mut display::Framebuffer,
-    name:        &str,
-    uptime_secs: u64,
-    wx:          u32,
-    wy:          u32,
-    ww:          u32,
-    wh:          u32,
-) {
-    const STATUS_BG: u32 = 0x161B22FF; // very dark navy background
-    const STATUS_FG: u32 = 0x8B949EFF; // muted grey text
-
-    // Fill the status strip
-    let sy = wy + wh - STATUS_H;
-    fb.fill_rect(wx, sy, ww, STATUS_H, STATUS_BG);
-
-    // Build and draw the label — 11pt regular Inter, vertically centered
-    let label = supervisor::statusbar::format_status_text(name, uptime_secs);
-    let text_y = (sy + STATUS_H / 2) as i32;
-    draw_glyph_str(fb, &label, (wx + 4) as i32, text_y, STATUS_FG, 11, false, false);
 }
 
 /// Immediately repaint title bars for all windowed apps (called on focus changes).

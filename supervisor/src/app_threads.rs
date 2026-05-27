@@ -31,12 +31,11 @@ use supervisor::manifest::BootEntry;
 /// implied by `region`.  Content area = region height minus chrome (title bar +
 /// status strip) unless this is a system-layer window (z >= Z_DOCK).
 fn init_surface_for_region(st: &mut AppState, region: (u32, u32, u32, u32)) {
-    use crate::chrome::{TITLEBAR_H, STATUS_H, Z_DOCK};
+    use crate::chrome::{TITLEBAR_H, Z_DOCK};
     let (_, _, ww, wh) = region;
     let is_system = st.win_z >= Z_DOCK;
     let chrome_h = if is_system { 0u32 } else { TITLEBAR_H };
-    let status_h = if is_system { 0u32 } else { STATUS_H };
-    let content_h = wh.saturating_sub(chrome_h + status_h);
+    let content_h = wh.saturating_sub(chrome_h);
     if ww == 0 || content_h == 0 { return; }
     let needs_new = st.surface.as_ref()
         .map(|s| { let s = s.lock().unwrap(); s.width != ww || s.height != content_h })
