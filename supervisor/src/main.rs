@@ -107,6 +107,9 @@ struct AppState {
     pre_minimize_region: Option<(u32, u32, u32, u32)>,
     // T052: pending window animation (Open/Close/Minimize)
     pub pending_anim: Option<crate::display::animator::Animation>,
+    /// Per-window pixel surface buffer (content area only, no chrome).
+    /// None until the first tiling layout assigns a win_region.
+    pub surface: Option<std::sync::Arc<std::sync::Mutex<crate::display::Surface>>>,
     // spec-044: management server live log subscribers
     log_subscribers: Vec<mpsc::Sender<String>>,
 }
@@ -137,6 +140,7 @@ static MGMT_INBOX: OnceLock<Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>> =
 static EXEC_REPLY_CHANNELS: OnceLock<Mutex<HashMap<String, mpsc::Sender<String>>>> =
     OnceLock::new();
 static BOOT_INSTANT: OnceLock<std::time::Instant> = OnceLock::new();
+#[allow(dead_code)]
 static LAST_MENUBAR_DRAW: OnceLock<Mutex<(std::time::Instant, Option<String>)>> = OnceLock::new();
 static APP_DIRTY: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
 static HOVERED_APP: OnceLock<Mutex<Option<String>>> = OnceLock::new();
@@ -272,7 +276,7 @@ fn main() {
         if let Some(fb_lock) = display::get() {
             let mut fb = fb_lock.lock().unwrap();
             let (w, h) = (fb.width, fb.height);
-            fb.fill_rect(0, 0, w, h, 0x0D1117FF);
+            fb.fill_rect(0, 0, w, h, 0x1C1C1EFF);
             // Draw initial menu bar (no focused app yet, no apps yet)
             chrome::draw_menubar(&mut *fb, w, 0, None, &[]);
             fb.flush();

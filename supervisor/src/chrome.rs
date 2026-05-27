@@ -6,7 +6,6 @@
 use std::sync::Mutex;
 
 use crate::{AppRegistry, AppStatus, FocusedApp, HOVERED_APP, Z_ORDER, BOOT_INSTANT};
-use supervisor::logging::Subsystem;
 
 #[cfg(target_os = "linux")]
 use crate::display;
@@ -28,19 +27,18 @@ const _: () = assert!(Z_DESKTOP < Z_APP && Z_APP < Z_DOCK && Z_DOCK < Z_OVERLAY)
 
 pub const MENUBAR_H:    u32 = 24;   // global menu bar height
 pub const TITLEBAR_H:   u32 = 28;   // per-window title bar height
-pub const STATUS_H:     u32 = 16;   // per-window status strip height (bottom of window)
-const TL_DOT:           u32 = 12;   // traffic-light dot size (px)
+const TL_DOT:           u32 = 13;   // traffic-light dot size (px) — Apple spec
 
-const MAC_MENUBAR:      u32 = 0x1C1C1EFF; // system background (menubar)
-const MAC_TITLE_ACT:    u32 = 0x3A3A3CFF; // active window title bar
-const MAC_TITLE_INACT:  u32 = 0x2C2C2EFF; // inactive window title bar
-const MAC_TITLE_HOVER:  u32 = 0x444C56FF; // hovered title bar (midpoint between active and inactive)
-const MAC_SEP:          u32 = 0x48484AFF; // separator line
-const MAC_LABEL:        u32 = 0xFFFFFFFF; // primary label (white)
+const MAC_MENUBAR:      u32 = 0x2A2A2AFF; // system background (menubar)
+const MAC_TITLE_ACT:    u32 = 0x323232FF; // active window title bar
+const MAC_TITLE_INACT:  u32 = 0x282828FF; // inactive window title bar
+const MAC_TITLE_HOVER:  u32 = 0x383838FF; // hovered title bar (slightly lighter than active)
+const MAC_SEP:          u32 = 0x3A3A3CFF; // separator line
+const MAC_LABEL:        u32 = 0xEBEBEBFF; // primary label (near-white)
 const MAC_LABEL2:       u32 = 0x8E8E93FF; // secondary label (gray)
-const TL_CLOSE:         u32 = 0xFF5F57FF; // traffic light red
-const TL_MINIMIZE:      u32 = 0xFEBC2EFF; // traffic light yellow
-const TL_MAXIMIZE:      u32 = 0x28C840FF; // traffic light green
+const TL_CLOSE:         u32 = 0xFF6159FF; // traffic light red
+const TL_MINIMIZE:      u32 = 0xFFBD2EFF; // traffic light yellow
+const TL_MAXIMIZE:      u32 = 0x28C941FF; // traffic light green
 const TL_GRAY:          u32 = 0x4D4D4DFF; // inactive traffic lights
 
 // Kept for repaint compat; unused after chrome redesign.
@@ -185,13 +183,9 @@ pub fn draw_titlebar(
     {
         use crate::display::draw_rounded_rect;
         let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-        draw_rounded_rect(&mut fb.back, wx, wy, ww, TITLEBAR_H, bg, 12, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx, wy, ww, TITLEBAR_H, bg, 10, fs, sw, sh);
     }
     fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
-
-    // 2px focus border — top edge only (full frame drawn at flush time when wh is known)
-    let bc = display::border_color(is_focused);
-    fb.fill_rect(wx, wy, ww, 2, bc);
 
     // Traffic lights — circles (radius = TL_DOT/2), left-aligned, vertically centered
     let tl_y = wy + (TITLEBAR_H - TL_DOT) / 2;
@@ -204,30 +198,21 @@ pub fn draw_titlebar(
         use crate::display::draw_rounded_rect;
         let r = TL_DOT / 2;
         let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-        draw_rounded_rect(&mut fb.back, wx + 8,  tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
-        draw_rounded_rect(&mut fb.back, wx + 24, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
-        draw_rounded_rect(&mut fb.back, wx + 40, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx +  9, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 30, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 51, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
     }
 
-    // Accent color dot — circle, deterministic per-app identity marker (12×12 at x+60)
-    let accent = display::app_accent_color(name);
-    {
-        use crate::display::draw_rounded_rect;
-        let r = TL_DOT / 2;
-        let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-        draw_rounded_rect(&mut fb.back, wx + 60, tl_y, TL_DOT, TL_DOT, accent, r, fs, sw, sh);
-    }
-
-    // App name centered — 13pt bold Inter
+    // App name centered — 13pt regular Inter
     let nlen = name.len().min(20);
     let display_name = &name[..nlen];
-    // Estimate width: ~7px per char at 13pt for centering heuristic
-    let name_w_est = nlen as u32 * 7;
+    let name_w_est = crate::font_cache().lock().unwrap()
+        .measure_str(display_name, 13, false, false);
     if ww > name_w_est + 60 {
         let nx = (wx + (ww - name_w_est) / 2) as i32;
         let ny = (wy + TITLEBAR_H / 2) as i32;
         let col = if is_focused { MAC_LABEL } else { MAC_LABEL2 };
-        draw_glyph_str(fb, display_name, nx, ny, col, 13, true, false);
+        draw_glyph_str(fb, display_name, nx, ny, col, 13, false, false);
     }
 }
 
@@ -271,7 +256,8 @@ pub fn draw_menubar(
     if let Some(name) = focused {
         let nlen = name.len().min(20);
         let display_name = &name[..nlen];
-        let name_w_est = nlen as u32 * 7;
+        let name_w_est = crate::font_cache().lock().unwrap()
+            .measure_str(display_name, 12, false, false);
         let nx = sw.saturating_sub(name_w_est) / 2;
         draw_glyph_str(fb, display_name, nx as i32, ty, MAC_LABEL, 12, false, false);
     }
@@ -281,36 +267,11 @@ pub fn draw_menubar(
     let m = (elapsed_secs % 3600) / 60;
     let s = elapsed_secs % 60;
     let clock = format!("{h:02}:{m:02}:{s:02}");
-    let cw = clock.len() as u32 * 7; // ~7px/char at 12pt
+    let cw = crate::font_cache().lock().unwrap()
+        .measure_str(&clock, 12, false, false);
     if sw > cw + 20 {
         draw_glyph_str(fb, &clock, (sw - cw - 12) as i32, ty, MAC_LABEL2, 12, false, false);
     }
-}
-
-/// Draw a 16px status strip at the very bottom of a window's chrome.
-/// Background: `0x161B22FF` (dark).  Text: `0x8B949EFF` (grey).
-/// Shows `[name]  up <uptime_secs>s` in small font, left-aligned with 4px inset.
-#[cfg(target_os = "linux")]
-pub fn draw_statusbar(
-    fb:          &mut display::Framebuffer,
-    name:        &str,
-    uptime_secs: u64,
-    wx:          u32,
-    wy:          u32,
-    ww:          u32,
-    wh:          u32,
-) {
-    const STATUS_BG: u32 = 0x161B22FF; // very dark navy background
-    const STATUS_FG: u32 = 0x8B949EFF; // muted grey text
-
-    // Fill the status strip
-    let sy = wy + wh - STATUS_H;
-    fb.fill_rect(wx, sy, ww, STATUS_H, STATUS_BG);
-
-    // Build and draw the label — 11pt regular Inter, vertically centered
-    let label = supervisor::statusbar::format_status_text(name, uptime_secs);
-    let text_y = (sy + STATUS_H / 2) as i32;
-    draw_glyph_str(fb, &label, (wx + 4) as i32, text_y, STATUS_FG, 11, false, false);
 }
 
 /// Immediately repaint title bars for all windowed apps (called on focus changes).
@@ -371,60 +332,55 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     }
 }
 
-/// Recompute tiled regions for all running display apps and write them into
-/// the registry. Called on every display-app spawn or exit.
-#[allow(dead_code)]
-pub fn apply_tiling_layout(registry: &AppRegistry) {
-    use supervisor::windows::compute_tiling_with_hints;
-
-    let apps: Vec<(String, u32, u32)> = {
+/// Draw chrome (title bars + menu bar) onto a framebuffer that is already locked.
+/// Call from within code that holds the `fb_lock` — avoids deadlock with repaint_all_borders.
+#[cfg(target_os = "linux")]
+pub fn draw_chrome_onto(
+    fb: &mut display::Framebuffer,
+    registry: &AppRegistry,
+    focused: &FocusedApp,
+) {
+    let focused_name = focused.lock().unwrap().clone();
+    let hovered_name = HOVERED_APP
+        .get_or_init(|| Mutex::new(None))
+        .lock().unwrap().clone();
+    let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
         let reg = registry.lock().unwrap();
-        let mut v: Vec<(String, u32, u32)> = reg.iter()
+        let mut regions_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = Vec::new();
+        let mut display_apps: Vec<String> = reg.iter()
             .filter_map(|(name, st)| {
                 let st = st.lock().unwrap();
                 if st.has_display && matches!(st.status, AppStatus::Running) {
-                    Some((name.clone(), st.min_size.0, st.min_size.1))
-                } else {
-                    None
-                }
+                    Some(name.clone())
+                } else { None }
             })
             .collect();
-        v.sort_by(|a, b| a.0.cmp(&b.0));
-        v
-    };
-
-    if apps.is_empty() { return; }
-
-    const DEFAULT_SCREEN_W: u32 = 1440;
-    const DEFAULT_SCREEN_H: u32 = 900;
-    #[cfg(target_os = "linux")]
-    let (sw, sh) = crate::display::screen_size().unwrap_or((DEFAULT_SCREEN_W, DEFAULT_SCREEN_H));
-    #[cfg(not(target_os = "linux"))]
-    let (sw, sh) = (DEFAULT_SCREEN_W, DEFAULT_SCREEN_H);
-
-    let min_sizes: Vec<(u32, u32)> = apps.iter().map(|(_, mw, mh)| (*mw, *mh)).collect();
-    let usable_h = sh.saturating_sub(MENUBAR_H);
-    let regions: Vec<(u32, u32, u32, u32)> = compute_tiling_with_hints(apps.len(), sw, usable_h, &min_sizes)
-        .into_iter()
-        .map(|(x, y, w, h)| (x, y + MENUBAR_H, w, h))
-        .collect();
-
-    {
-        let reg = registry.lock().unwrap();
-        for (i, (name, _, _)) in apps.iter().enumerate() {
-            if let Some(st) = reg.get(name) {
-                if let Some(&region) = regions.get(i) {
-                    let mut st = st.lock().unwrap();
-                    st.win_region = Some(region);
-                    crate::log_info!(Subsystem::Display, Some(name.as_str()),
-                        "tiling: assigned ({},{},{},{})", region.0, region.1, region.2, region.3);
-                }
+        display_apps.sort();
+        for (name, st) in reg.iter() {
+            let st = st.lock().unwrap();
+            if let Some(r) = st.win_region {
+                regions_with_z.push((st.win_z, name.clone(), r));
             }
         }
+        regions_with_z.sort_by_key(|(z, _, _)| *z);
+        let regions = regions_with_z.into_iter().map(|(_, n, r)| (n, r)).collect();
+        (regions, display_apps)
+    };
+    for (name, (wx, wy, ww, _wh)) in &regions {
+        if *ww < 60 { continue; }
+        let is_focused = focused_name.as_deref() == Some(name.as_str());
+        let is_hovered = hovered_name.as_deref() == Some(name.as_str());
+        let is_system = {
+            let reg = registry.lock().unwrap();
+            reg.get(name.as_str()).map(|st| st.lock().unwrap().win_z >= Z_DOCK).unwrap_or(false)
+        };
+        if !is_system {
+            draw_titlebar(fb, *wx, *wy, *ww, is_focused, is_hovered, name);
+        }
     }
-
-    let n = apps.len();
-    crate::log_info!(Subsystem::Display, None, "layout reflow: {n} display app(s) tiled");
+    let sw = fb.width;
+    let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
+    draw_menubar(fb, sw, elapsed, focused_name.as_deref(), &display_apps);
 }
 
 // ── T056: Animation alpha stub ────────────────────────────────────────────────

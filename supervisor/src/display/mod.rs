@@ -13,12 +13,12 @@ mod fb_ioctl;
 mod helpers;
 mod compositor;
 pub mod animator;
+pub mod surface;
+#[allow(unused_imports)] pub use surface::{Surface, blit_surface};
 
 pub use cursor::{CursorState, CURSOR_W, CURSOR_H, CURSOR_MASK};
-#[allow(unused_imports)]
-pub use helpers::{blend_alpha, titlebar_color, border_color, app_accent_color, format_fps, wrap_words};
+#[allow(unused_imports)] pub use helpers::{blend_alpha, titlebar_color, border_color, app_accent_color, format_fps, wrap_words};
 use fb_ioctl::{FBIOGET_VSCREENINFO, FbVarScreeninfo};
-
 use super::font;
 #[allow(unused_imports)] pub use compositor::{composite_glyph, blit_image, draw_rounded_rect, rounded_rect_coverage};
 use compositor::{blend_over, read_bgra, write_bgra};

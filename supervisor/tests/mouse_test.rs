@@ -200,9 +200,9 @@ fn move_event_zero_coords() {
 // ── titlebar_color_for_state ──────────────────────────────────────────────────
 
 /// Mirror of the title-bar colour constants from main.rs.
-const MAC_TITLE_ACT:   u32 = 0x3A3A3CFF; // active / focused
-const MAC_TITLE_INACT: u32 = 0x2C2C2EFF; // inactive / unfocused
-const MAC_TITLE_HOVER: u32 = 0x444C56FF; // hovered (midpoint, slightly lighter)
+const MAC_TITLE_ACT:   u32 = 0x323232FF; // active / focused
+const MAC_TITLE_INACT: u32 = 0x282828FF; // inactive / unfocused
+const MAC_TITLE_HOVER: u32 = 0x383838FF; // hovered (slightly lighter than active)
 
 /// Mirror of `titlebar_color_for_state` from main.rs.
 ///

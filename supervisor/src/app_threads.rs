@@ -25,6 +25,28 @@ use crate::{chrome, route_or_print, watchdog_next_backoff};
 use supervisor::logging::Subsystem;
 use supervisor::manifest::BootEntry;
 
+// ── init_surface_for_region ───────────────────────────────────────────────────
+
+/// Create or resize the per-window Surface for `st` to match the content area
+/// implied by `region`.  Content area = region height minus chrome (title bar +
+/// status strip) unless this is a system-layer window (z >= Z_DOCK).
+fn init_surface_for_region(st: &mut AppState, region: (u32, u32, u32, u32)) {
+    use crate::chrome::{TITLEBAR_H, Z_DOCK};
+    let (_, _, ww, wh) = region;
+    let is_system = st.win_z >= Z_DOCK;
+    let chrome_h = if is_system { 0u32 } else { TITLEBAR_H };
+    let content_h = wh.saturating_sub(chrome_h);
+    if ww == 0 || content_h == 0 { return; }
+    let needs_new = st.surface.as_ref()
+        .map(|s| { let s = s.lock().unwrap(); s.width != ww || s.height != content_h })
+        .unwrap_or(true);
+    if needs_new {
+        st.surface = Some(std::sync::Arc::new(std::sync::Mutex::new(
+            crate::display::Surface::new(ww, content_h)
+        )));
+    }
+}
+
 // ── apply_tiling_layout ───────────────────────────────────────────────────────
 
 /// Recompute tiled regions for all running display apps and write them into
@@ -71,7 +93,9 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
         for (name, _, _, _) in &pinned {
             if let Some(st) = reg.get(name.as_str()) {
                 let region = (0, sh.saturating_sub(DOCK_STRIP_H), sw, DOCK_STRIP_H);
-                st.lock().unwrap().win_region = Some(region);
+                let mut st_guard = st.lock().unwrap();
+                st_guard.win_region = Some(region);
+                init_surface_for_region(&mut st_guard, region);
                 log_info!(Subsystem::Display, Some(name.as_str()),
                     "tiling: pinned dock strip ({},{},{},{})",
                     region.0, region.1, region.2, region.3);
@@ -93,7 +117,9 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
         for (i, (name, _, _, _)) in tiled.iter().enumerate() {
             if let Some(&region) = regions.get(i) {
                 if let Some(st) = reg.get(name.as_str()) {
-                    st.lock().unwrap().win_region = Some(region);
+                    let mut st_guard = st.lock().unwrap();
+                    st_guard.win_region = Some(region);
+                    init_surface_for_region(&mut st_guard, region);
                     log_info!(Subsystem::Display, Some(name.as_str()),
                         "tiling: assigned ({},{},{},{})",
                         region.0, region.1, region.2, region.3);
@@ -322,6 +348,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         pre_minimize_region: None,
         // T053: pending_anim set below after construction
         pending_anim:        None,
+        surface:             None,
         log_subscribers:     Vec::new(),
     }));
     // T053: enqueue Open animation so the window fades in on spawn
@@ -367,7 +394,7 @@ pub fn wait_app(
         if let (true, Some((wx, wy, ww, wh))) = (had_display, old_win_region) {
             if let Some(fb_lock) = crate::display::get() {
                 let mut fb = fb_lock.lock().unwrap();
-                fb.fill_rect(wx, wy, ww, wh, 0x0D1117FF);
+                fb.fill_rect(wx, wy, ww, wh, 0x1C1C1EFF);
                 fb.flush();
             }
         }

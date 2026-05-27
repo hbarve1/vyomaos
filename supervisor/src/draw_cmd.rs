@@ -6,13 +6,22 @@
 use std::sync::Mutex;
 
 use crate::{log_error, log_info, log_warn, AppRegistry, FocusedApp};
-use crate::chrome::{draw_menubar, draw_statusbar, draw_titlebar, STATUS_H, TITLEBAR_H, Z_DOCK};
-use crate::{BOOT_INSTANT, LAST_MENUBAR_DRAW, APP_DIRTY, HOVERED_APP};
+use crate::chrome::{draw_chrome_onto, TITLEBAR_H, Z_DOCK};
+use crate::APP_DIRTY;
 use crate::flush_counts;
 use supervisor::logging::Subsystem;
 
 #[cfg(target_os = "linux")]
 use crate::{display, font};
+
+/// Get the Surface Arc for `sender` if initialized.
+#[cfg(target_os = "linux")]
+fn get_surface(sender: &str, app_registry: &AppRegistry)
+    -> Option<std::sync::Arc<std::sync::Mutex<crate::display::Surface>>>
+{
+    app_registry.lock().unwrap().get(sender)
+        .and_then(|st| st.lock().unwrap().surface.clone())
+}
 
 /// Parse a u32 that may be decimal ("218169855") or hex ("0x0d1117ff" / "0X0D1117FF").
 #[cfg(target_os = "linux")]
@@ -59,91 +68,47 @@ pub fn handle_draw_command(
     }
 
     if cmd == "flush" || cmd == "present" {
-        let focused_name = focused.lock().unwrap().clone();
-        let is_focused = focused_name.as_deref() == Some(sender);
         let mut fb = fb_lock.lock().unwrap();
+        let (fb_w, fb_h) = (fb.width, fb.height);
 
-        // Per-window macOS-style title bar — only repaint if this app has
-        // issued draw commands since its last flush (dirty flag).
-        let is_dirty = {
-            let mut dirty_map = APP_DIRTY
-                .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
-                .lock()
-                .unwrap();
-            let dirty = dirty_map.get(sender).copied().unwrap_or(false);
-            if dirty {
-                dirty_map.insert(sender.to_string(), false);
-            }
-            dirty
-        };
+        // ── Compositor pass ──────────────────────────────────────────────
+        // 1. Clear to desktop background
+        fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
 
-        if is_dirty && !is_system {
-            if let Some((wx, wy, ww, wh)) = win {
-                if ww >= 60 {
-                    let is_hovered = HOVERED_APP
-                        .get_or_init(|| Mutex::new(None))
-                        .lock()
-                        .unwrap()
-                        .as_deref() == Some(sender);
-                    draw_titlebar(&mut *fb, wx, wy, ww, is_focused, is_hovered, sender);
-                }
-                // Per-window status strip — redrawn on every flush so uptime advances.
-                if ww > 0 && wh > STATUS_H {
-                    let uptime_secs: u64 = {
-                        let reg = app_registry.lock().unwrap();
-                        reg.get(sender)
-                            .map(|st| st.lock().unwrap().start_time.elapsed().as_secs())
-                            .unwrap_or(0)
-                    };
-                    draw_statusbar(&mut *fb, sender, uptime_secs, wx, wy, ww, wh);
-                }
-            }
-        }
-
-        // Global menu bar — only repaint when ≥1 second has elapsed since the
-        // last draw OR the focused app name has changed.
-        let sw = fb.width;
-        let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
-        let should_draw_menubar = {
-            let mut last = LAST_MENUBAR_DRAW
-                .get_or_init(|| {
-                    Mutex::new((std::time::Instant::now() - std::time::Duration::from_secs(2), None))
+        // 2. Blit all app surfaces in Z-order
+        let apps_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = {
+            let reg = app_registry.lock().unwrap();
+            reg.iter()
+                .filter_map(|(name, st)| {
+                    let st = st.lock().unwrap();
+                    st.win_region.map(|r| (st.win_z, name.clone(), r))
                 })
-                .lock()
-                .unwrap();
-            let (ref mut last_instant, ref mut last_focused) = *last;
-            let time_elapsed = last_instant.elapsed() >= std::time::Duration::from_secs(1);
-            let focus_changed = last_focused.as_deref() != focused_name.as_deref();
-            if time_elapsed || focus_changed {
-                *last_instant = std::time::Instant::now();
-                *last_focused = focused_name.clone();
-                true
-            } else {
-                false
-            }
+                .collect()
         };
-
-        if should_draw_menubar {
-            let display_apps: Vec<String> = {
+        let mut apps_sorted = apps_with_z;
+        apps_sorted.sort_by_key(|(z, _, _)| *z);
+        let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
+        for (z, name, (wx, wy, ww, _wh)) in &apps_sorted {
+            let surface_arc = {
                 let reg = app_registry.lock().unwrap();
-                let mut v: Vec<String> = reg.iter()
-                    .filter_map(|(name, st)| {
-                        let st = st.lock().unwrap();
-                        if st.has_display && matches!(st.status, crate::AppStatus::Running) {
-                            Some(name.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                v.sort();
-                v
+                reg.get(name.as_str()).and_then(|st| st.lock().unwrap().surface.clone())
             };
-            draw_menubar(&mut *fb, sw, elapsed, focused_name.as_deref(), &display_apps);
+            if let Some(arc) = surface_arc {
+                let surface = arc.lock().unwrap();
+                let is_sys = *z >= Z_DOCK;
+                let blit_y = if is_sys { *wy } else { wy + TITLEBAR_H };
+                if *ww > 0 {
+                    display::blit_surface(&mut fb.back, &surface, *wx, blit_y, 255, fs, fw, fh);
+                }
+            }
         }
+
+        // 3. Draw chrome on top of composited surfaces
+        draw_chrome_onto(&mut *fb, app_registry, focused);
 
         fb.flush();
 
+        // FPS tracking
         {
             let mut map = flush_counts().lock().unwrap();
             let e = map.entry(sender.to_string()).or_insert((0u64, std::time::Instant::now()));
@@ -154,7 +119,6 @@ pub fn handle_draw_command(
                 *e = (0, std::time::Instant::now());
             }
         }
-
         return;
     }
 
@@ -166,22 +130,18 @@ pub fn handle_draw_command(
                 w_s.parse::<u32>(),  h_s.parse::<u32>(),
                 parse_color(rgba_s),
             ) {
-                let (ax, ay, aw, ah) = match win {
-                    None => (lx, ly, w, h),
-                    Some((wx, wy, ww, wh)) => {
-                        let content_wy = wy + chrome_h;
-                        let ax = wx + lx;
-                        let ay = content_wy + ly;
-                        let win_right  = wx + ww;
-                        let win_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
-                        if ax >= win_right || ay >= win_bottom { return; }
-                        let aw = w.min(win_right  - ax);
-                        let ah = h.min(win_bottom - ay);
-                        if aw == 0 || ah == 0 { return; }
-                        (ax, ay, aw, ah)
+                if let Some(surface_arc) = get_surface(sender, app_registry) {
+                    surface_arc.lock().unwrap().fill_rect(lx, ly, w, h, rgba);
+                } else if let Some((wx, wy, ww, wh)) = win {
+                    let content_wy = wy + chrome_h;
+                    let ax = wx + lx; let ay = content_wy + ly;
+                    let win_right  = wx + ww;
+                    let win_bottom = wy + wh;
+                    if ax < win_right && ay < win_bottom {
+                        let aw = w.min(win_right - ax); let ah = h.min(win_bottom - ay);
+                        if aw > 0 && ah > 0 { fb_lock.lock().unwrap().fill_rect(ax, ay, aw, ah, rgba); }
                     }
-                };
-                fb_lock.lock().unwrap().fill_rect(ax, ay, aw, ah, rgba);
+                } else { fb_lock.lock().unwrap().fill_rect(lx, ly, w, h, rgba); }
             } else {
                 log_error!(Subsystem::Display, Some(sender), "bad fill_rect args: {args}");
             }
@@ -229,18 +189,13 @@ pub fn handle_draw_command(
         });
 
         if let Some((lx, ly, rgba, size, text)) = parsed {
-            let (ax, ay) = match win {
-                None => (lx, ly),
-                Some((wx, wy, ww, wh)) => {
-                    let content_wy = wy + chrome_h;
-                    let ax = wx + lx;
-                    let ay = content_wy + ly;
-                    let content_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
-                    if ax >= wx + ww || ay >= content_bottom { return; }
-                    (ax, ay)
-                }
-            };
-            fb_lock.lock().unwrap().draw_text(ax, ay, text, rgba, size);
+            if let Some(surface_arc) = get_surface(sender, app_registry) {
+                surface_arc.lock().unwrap().draw_text_bitmap(lx, ly, text, rgba);
+            } else if let Some((wx, wy, _, _)) = win {
+                fb_lock.lock().unwrap().draw_text(wx + lx, wy + chrome_h + ly, text, rgba, size);
+            } else {
+                fb_lock.lock().unwrap().draw_text(lx, ly, text, rgba, size);
+            }
         } else {
             log_error!(Subsystem::Display, Some(sender), "bad draw_text args: {args}");
         }
@@ -257,22 +212,18 @@ pub fn handle_draw_command(
                 parts[3].parse::<u32>(),
                 parse_color(parts[4]),
             ) {
-                let (ax, ay, aw, ah) = match win {
-                    None => (lx, ly, w, h),
-                    Some((wx, wy, ww, wh)) => {
-                        let content_wy = wy + chrome_h;
-                        let ax = wx + lx;
-                        let ay = content_wy + ly;
-                        let win_right  = wx + ww;
-                        let win_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
-                        if ax >= win_right || ay >= win_bottom { return; }
-                        let aw = w.min(win_right  - ax);
-                        let ah = h.min(win_bottom - ay);
-                        if aw == 0 || ah == 0 { return; }
-                        (ax, ay, aw, ah)
+                if let Some(surface_arc) = get_surface(sender, app_registry) {
+                    surface_arc.lock().unwrap().rect_border(lx, ly, w, h, rgba);
+                } else if let Some((wx, wy, ww, wh)) = win {
+                    let content_wy = wy + chrome_h;
+                    let ax = wx + lx; let ay = content_wy + ly;
+                    let win_right  = wx + ww;
+                    let win_bottom = wy + wh;
+                    if ax < win_right && ay < win_bottom {
+                        let aw = w.min(win_right - ax); let ah = h.min(win_bottom - ay);
+                        if aw > 0 && ah > 0 { fb_lock.lock().unwrap().rect_border(ax, ay, aw, ah, rgba); }
                     }
-                };
-                fb_lock.lock().unwrap().rect_border(ax, ay, aw, ah, rgba);
+                } else { fb_lock.lock().unwrap().rect_border(lx, ly, w, h, rgba); }
             } else {
                 log_error!(Subsystem::Display, Some(sender), "bad rect_border args: {args}");
             }
@@ -291,22 +242,17 @@ pub fn handle_draw_command(
                 parts[2].parse::<u32>(),
                 parts[3].parse::<u32>(),
             ) {
-                let (ax, ay, aw, ah) = match win {
-                    None => (lx, ly, w, h),
-                    Some((wx, wy, ww, wh)) => {
-                        let content_wy = wy + chrome_h;
-                        let ax = wx + lx;
-                        let ay = content_wy + ly;
-                        let win_right  = wx + ww;
-                        let win_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
-                        if ax >= win_right || ay >= win_bottom { return; }
-                        let aw = w.min(win_right  - ax);
-                        let ah = h.min(win_bottom - ay);
-                        if aw == 0 || ah == 0 { return; }
-                        (ax, ay, aw, ah)
+                if let Some(surface_arc) = get_surface(sender, app_registry) {
+                    surface_arc.lock().unwrap().clear_region(lx, ly, w, h);
+                } else if let Some((wx, wy, ww, wh)) = win {
+                    let content_wy = wy + chrome_h;
+                    let ax = wx + lx; let ay = content_wy + ly;
+                    let win_right  = wx + ww; let win_bottom = wy + wh;
+                    if ax < win_right && ay < win_bottom {
+                        let aw = w.min(win_right - ax); let ah = h.min(win_bottom - ay);
+                        if aw > 0 && ah > 0 { fb_lock.lock().unwrap().clear_region(ax, ay, aw, ah); }
                     }
-                };
-                fb_lock.lock().unwrap().clear_region(ax, ay, aw, ah);
+                } else { fb_lock.lock().unwrap().clear_region(lx, ly, w, h); }
             } else {
                 log_error!(Subsystem::Display, Some(sender), "bad clear_region args: {args}");
             }
@@ -334,7 +280,7 @@ pub fn handle_draw_command(
                         let content_wy = wy + chrome_h;
                         let ax = wx + lx;
                         let ay = content_wy + ly;
-                        let content_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
+                        let content_bottom = wy + wh;
                         if ax >= wx + ww || ay >= content_bottom { return; }
                         let effective_max_w = max_w.min(ww.saturating_sub(lx));
                         if effective_max_w == 0 { return; }
@@ -366,23 +312,29 @@ pub fn handle_draw_command(
                 let bold = weight == "bold";
                 let mono = weight == "mono";
 
-                let (ax, ay) = match win {
-                    None => (lx as i32, ly as i32),
-                    Some((wx, wy, ww, wh)) => {
-                        let content_wy = wy + chrome_h;
-                        let ax = wx as i32 + lx as i32;
-                        let ay = content_wy as i32 + ly as i32;
-                        if ax >= (wx + ww) as i32 || ay >= (wy + wh) as i32 { return; }
-                        (ax, ay)
-                    }
-                };
-
                 #[cfg(target_os = "linux")]
-                {
+                if let Some(surface_arc) = get_surface(sender, app_registry) {
+                    let mut surface = surface_arc.lock().unwrap();
+                    let (sw, sh, ss) = (surface.width, surface.height, surface.stride);
+                    let mut cursor_x = lx as i32;
+                    for ch in text.chars() {
+                        let (gw, gh, adv, bear_y, cov) = {
+                            let mut fc = crate::font_cache().lock().unwrap();
+                            let g = fc.rasterize(ch, pt, bold, mono);
+                            (g.width, g.height, g.advance_x, g.bearing_y, g.coverage.clone())
+                        };
+                        let glyph_y = ly as i32 - bear_y as i32;
+                        display::composite_glyph(&mut surface.buf, &cov, gw, gh, cursor_x, glyph_y, rgba, ss, sw, sh);
+                        cursor_x += adv as i32;
+                        if cursor_x >= sw as i32 { break; }
+                    }
+                } else {
+                    let (ax, ay) = match win {
+                        None => (lx as i32, ly as i32),
+                        Some((wx, wy, _, _)) => ((wx as i32 + lx as i32), (wy as i32 + chrome_h as i32 + ly as i32)),
+                    };
                     let mut fb = fb_lock.lock().unwrap();
-                    let fb_stride = fb.stride;
-                    let fb_width  = fb.width;
-                    let fb_height = fb.height;
+                    let (fb_stride, fb_width, fb_height) = (fb.stride, fb.width, fb.height);
                     let mut cursor_x = ax;
                     for ch in text.chars() {
                         let (gw, gh, adv, bear_y, cov) = {
@@ -390,12 +342,7 @@ pub fn handle_draw_command(
                             let g = fc.rasterize(ch, pt, bold, mono);
                             (g.width, g.height, g.advance_x, g.bearing_y, g.coverage.clone())
                         };
-                        let glyph_y = ay - bear_y as i32;
-                        display::composite_glyph(
-                            &mut fb.back, &cov, gw, gh,
-                            cursor_x, glyph_y, rgba,
-                            fb_stride, fb_width, fb_height,
-                        );
+                        display::composite_glyph(&mut fb.back, &cov, gw, gh, cursor_x, ay - bear_y as i32, rgba, fb_stride, fb_width, fb_height);
                         cursor_x += adv as i32;
                         if cursor_x >= fb_width as i32 { break; }
                     }
@@ -416,23 +363,26 @@ pub fn handle_draw_command(
             if let (Ok(lx), Ok(ly), Ok(iw), Ok(ih)) = (parts[0].parse::<u32>(),
                 parts[1].parse::<u32>(), parts[2].parse::<u32>(), parts[3].parse::<u32>()) {
                 let path = parts[4];
-                let (ax, ay) = match win {
-                    None => (lx, ly),
-                    Some((wx, wy, _, _)) => (wx + lx, wy + chrome_h + ly),
-                };
                 #[cfg(target_os = "linux")]
                 {
-                    let mut fb = fb_lock.lock().unwrap();
-                    let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
                     let mut ic = crate::image_cache().lock().unwrap();
                     if let Some(img) = ic.get(path) {
-                        let (iw2, ih2, rgba) = (img.width, img.height, img.rgba.clone());
+                        let (iw2, ih2, img_rgba) = (img.width, img.height, img.rgba.clone());
                         drop(ic);
-                        display::blit_image(&mut fb.back, &rgba, iw2, ih2, ax, ay, iw, ih, fs, fw, fh);
+                        if let Some(surface_arc) = get_surface(sender, app_registry) {
+                            let mut surface = surface_arc.lock().unwrap();
+                            let (sw, sh, ss) = (surface.width, surface.height, surface.stride);
+                            display::blit_image(&mut surface.buf, &img_rgba, iw2, ih2, lx, ly, iw, ih, ss, sw, sh);
+                        } else {
+                            let (ax, ay) = win.map(|(wx, wy, _, _)| (wx + lx, wy + chrome_h + ly)).unwrap_or((lx, ly));
+                            let mut fb = fb_lock.lock().unwrap();
+                            let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
+                            display::blit_image(&mut fb.back, &img_rgba, iw2, ih2, ax, ay, iw, ih, fs, fw, fh);
+                        }
                     }
                 }
                 #[cfg(not(target_os = "linux"))]
-                let _ = (ax, ay, iw, ih, path);
+                let _ = (lx, ly, iw, ih, path);
             } else { log_error!(Subsystem::Display, Some(sender), "bad draw_image args: {args}"); }
         } else { log_error!(Subsystem::Display, Some(sender), "bad draw_image args: {args}"); }
         return;
@@ -450,25 +400,27 @@ pub fn handle_draw_command(
                 parse_color(parts[4]),
                 parts[5].parse::<u32>(),
             ) {
-                let (ax, ay, aw, ah) = match win {
-                    None => (lx, ly, rw, rh),
-                    Some((wx, wy, ww, wh)) => {
-                        let content_wy = wy + chrome_h;
-                        let ax = wx + lx;
-                        let ay = content_wy + ly;
-                        let win_right  = wx + ww;
-                        let win_bottom = if is_system { wy + wh } else { (wy + wh).saturating_sub(STATUS_H) };
-                        if ax >= win_right || ay >= win_bottom { return; }
-                        let aw = rw.min(win_right  - ax);
-                        let ah = rh.min(win_bottom - ay);
-                        if aw == 0 || ah == 0 { return; }
-                        (ax, ay, aw, ah)
-                    }
-                };
                 #[cfg(target_os = "linux")] {
-                    let mut fb = fb_lock.lock().unwrap();
-                    let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
-                    display::draw_rounded_rect(&mut fb.back, ax, ay, aw, ah, rgba, radius, fs, fw, fh);
+                    if let Some(surface_arc) = get_surface(sender, app_registry) {
+                        let mut surface = surface_arc.lock().unwrap();
+                        let (sw, sh, ss) = (surface.width, surface.height, surface.stride);
+                        display::draw_rounded_rect(&mut surface.buf, lx, ly, rw, rh, rgba, radius, ss, sw, sh);
+                    } else {
+                        let (ax, ay, aw, ah) = match win {
+                            None => (lx, ly, rw, rh),
+                            Some((wx, wy, ww, wh)) => {
+                                let content_wy = wy + chrome_h;
+                                let ax = wx + lx; let ay = content_wy + ly;
+                                let win_right  = wx + ww;
+                                let win_bottom = wy + wh;
+                                if ax >= win_right || ay >= win_bottom { return; }
+                                (ax, ay, rw.min(win_right - ax), rh.min(win_bottom - ay))
+                            }
+                        };
+                        let mut fb = fb_lock.lock().unwrap();
+                        let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
+                        display::draw_rounded_rect(&mut fb.back, ax, ay, aw, ah, rgba, radius, fs, fw, fh);
+                    }
                 }
             } else {
                 log_error!(Subsystem::Display, Some(sender), "bad fill_rect_r args: {args}");
@@ -491,4 +443,4 @@ pub fn handle_draw_command(
 }
 
 // Satisfy unused-import warnings on non-Linux builds.
-#[cfg(not(target_os = "linux"))] fn _dummy_non_linux() { let _ = (STATUS_H, TITLEBAR_H); }
+#[cfg(not(target_os = "linux"))] fn _dummy_non_linux() { let _ = (TITLEBAR_H, Z_DOCK); }
