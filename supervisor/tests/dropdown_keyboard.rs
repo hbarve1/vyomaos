@@ -26,6 +26,9 @@
 // here; the real implementation must match these contracts.  Separately, the
 // integration of handle_dropdown_key into input_keys is verified by reading
 // code (static analysis obligation stated in the task spec).
+//
+// TODO: Once the supervisor is refactored to expose a library crate, replace DropdownSim
+// with direct calls to `crate::chrome::handle_dropdown_key` to test the real implementation.
 
 // ── Minimal local dropdown state machine (mirrors chrome.rs logic) ───────────
 

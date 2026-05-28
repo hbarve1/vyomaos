@@ -125,6 +125,9 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
 
                     // T062: Escape key closes the dropdown (must drain b1 first to
                     // avoid blocking the TTY; only intercept when b1 is not '[').
+                    // While the dropdown is open, suppress all ESC-prefixed sequences
+                    // (Alt+key shortcuts etc.) to prevent background actions. Only bare
+                    // ESC and CSI arrow sequences are meaningful; all others are discarded.
                     if dropdown_is_open() && b1[0] != 0x5B {
                         handle_dropdown_key(0x1B);
                         continue;
