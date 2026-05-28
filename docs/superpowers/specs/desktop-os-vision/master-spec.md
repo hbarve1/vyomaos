@@ -779,3 +779,122 @@ observability/heartbeat.rs +50, mgmt_handlers.rs +140, memory/jetsam.rs +30).
 
 ---
 
+## 7. Power Management & Energy
+
+**Status:** ✅ Debated & synthesized (2026-05-29)
+**Debate:** [Architect: 2094 lines] [Critic: 1392 lines] [Final: 2561 lines]
+**Files:** `debates/07-power.md`, `debates/07-power-critique.md`, `debates/07-power-FINAL.md`
+
+### Key decisions
+
+- **Platform-honest seven-state ladder.** `FullyAwake`, `UserIdle`, `DisplaySleep`, `AppSuspended`, `SystemSleep` (feature-flagged `platform_s3` only), `HibernateReady`, `PoweredOff`. On QEMU and developer builds, `SystemSleep` variant is compile-gated *out*; the chrome retargets to `AppSuspended` and the supervisor never claims hardware S3 it cannot deliver. Per-platform power feature matrix is normative.
+- **Unified `AssertionKind` algebra.** R5 `ActivityAssertion` is folded into a single `AssertionRegistry` with five kinds (`PreventAppNap`, `PreventCpuThrottle`, `PreventDisplaySleep`, `PreventUserIdleSleep`, `PreventSystemSleep`). Holding a higher kind implies the ones below it. RAII handles; leak-on-panic impossible because the Wasmtime resource-table drop releases the assertion.
+- **Five-phase ordered suspend barrier.** Phase 1 STOP_ACCEPTING (instant flag flip); Phase 2 QUIESCE_USERSPACE (parallel `on-prepare-suspend` ack, per-app 2 s); Phase 3 QUIESCE_KERNEL (VFS `fsync_all_buckets` mandatory, IPC + virtio-net TX + audio + device drains best-effort with 500 ms total each); Phase 4 CAPTURE (sequential `on-suspend` returning StateBlob, per-app 5 s); Phase 5 TEAR_DOWN (drop stores, DPMS off, attempt kernel S3 if feature on). Uncommitted VFS txn aborts the entire suspend.
+- **Three-tier thermal response.** Tier 1 (`Warm`/`Hot` 70–89 °C): R5 cgroup throttle for Background/Maintenance. Tier 2 (`CriticalSoft` 90–94 °C): immediate `SIGSTOP` to all Background/Maintenance apps in < 50 ms, bypassing on-suspend. Tier 3 (`CriticalHard` ≥ 95 °C): `SIGKILL` all + `sync(2)` + `disk` to `/sys/power/state`, or `o` to `/proc/sysrq-trigger` as fallback. No assertion can veto Tier 3. Adaptive polling 25 ms–5 s.
+- **Power Nap security: consent + budget + isolation + audit.** Manifest `background_fetch = true` is necessary but never sufficient. First-launch user consent dialog persists answer (`Denied`/`AcOnly`/`Always`) in Round 60 Keychain. Per-app per-window budget: 30 s CPU + 50 MiB egress + 50 MiB ingress, hard-enforced by supervisor (kill on overrun). Each fetch runs in its own `CLONE_NEWNET` namespace. Audit log at `/data/.system/power_audit.log`, append-only (`chattr +a`), 30-day retention, surfaced in Battery → Background Activity UI.
+- **Hibernate `restorable` contract.** Manifest field `power.restorable = bool` (default `false`). Install-time validation: `restorable = true` requires WASM module to export `vyoma:power/events.on-suspend`. Hibernate enumerates running apps; if any are `restorable = false`, chrome blocks with a modal listing them (default = Cancel). Image header v2 (`VYOMHIB2`) carries machine-id, kernel-cmdline-hash, kernel-version-hash, supervisor-SHA, per-app blob SHA, per-app wasm SHA. Resume validates all; mismatch → cold-start with toast. Stale-hibernate 7 day default.
+- **Battery via netlink uevent.** Primary source is `NETLINK_KOBJECT_UEVENT` filtered on `subsystem=power_supply` (same R6 listener). 5-minute poll only as sanity fallback. No DBus, no upower, no userspace udev daemon. EWMA smoothing (alpha 0.1 power, 0.3 capacity); threshold crossings at 20/10/5 %; AC plug-unplug debounced 5 s before policy switch fires.
+- **First post-wake input consumed.** `WakeInputGate` swallows the first input event after a `DisplaySleep → FullyAwake` transition; holds the input queue until KMS reports `CRTC.active = 1` AND a full frame has been flipped. Matches macOS; prevents passphrase characters going to the wrong focused app.
+- **Audio output implicitly asserts `PreventSystemSleep`.** R6 `AudioSubsystem` calls `registry.audio_implicit(app)` on stream open; releases on close or 30 s of silence. Music keeps playing through display sleep without the app having to know about power management.
+- **`UserAction` is privileged to chrome.** Only the supervisor's signed chrome (manifest hash matching `chrome_manifest_sha256` in trust config) may submit `TransitionRequest { reason: UserAction }`. All other apps' requests are subject to assertion checks. Critical-Hard thermal and Emergency battery cannot be vetoed even by `UserAction`.
+- **Hibernate refuses cross-update resume.** Supervisor-SHA mismatch, kernel-cmdline mismatch, or kernel-version-hash mismatch → image discarded with chrome toast. No attempt to upgrade hibernate state across an update boundary.
+- **Inactivity is event-driven, not pre-armed.** R6 input dispatcher writes `last_input: ArcSwap<Instant>` synchronously on every event. The policy task reads atomically every 1 s; late input wins because the read is from `ArcSwap`. Dim → display-off ramps are interruptible at 60 fps.
+- **Three-layer module split.** `power::linux_pm` (pure sysfs/cgroup writers), `power::state` (pure FSM logic), `power::wit_contract` (WIT marshaling). Each layer independently auditable. The remaining modules (`battery`, `display_power`, `thermal`, `power_nap`, `suspend`, `hibernate`, `assertions`) compose these three.
+- **`caffeinate` chrome shell builtin.** `@supervisor: assert <kind> <reason>`, `@supervisor: list-assertions`, `@supervisor: release-assertion <id>` map onto the assertion algebra, enabling users to debug "what is keeping the system awake" without an app.
+- **Per-platform `[power]` profile TOML.** desktop-full / desktop-full-S3 / mobile / iot-edge / robotics-rt / server-headless / mcu-minimal each declare `supports_s3`, `supports_hibernate`, `supports_dpms`, `supports_backlight`, `has_battery`, `has_thermal_zones`, `has_cpufreq`, `has_acpi_lid`. `mcu-minimal` does not compile the power module at all.
+
+### Critical v1 requirements
+
+- Seven-state FSM with platform-gated `SystemSleep` variant (compile-time flag)
+- Unified `AssertionKind` with five kinds and documented precedence; R5 shim for backward compatibility
+- Five-phase suspend barrier with per-phase timeouts (Phase 2 parallel, Phase 4 sequential)
+- Separate WIT callbacks `on-prepare-suspend` (Phase 2) and `on-suspend` (Phase 4); `on-resume` idempotent against prepare-without-suspend
+- Three-tier thermal response: cgroup / SIGSTOP / SIGKILL+sync+sysrq
+- Battery via `NETLINK_KOBJECT_UEVENT` (subsystem=power_supply); 5-min poll fallback only
+- Power Nap requires manifest field AND first-launch Keychain consent AND per-app budget AND net-namespace isolation AND audit log
+- Manifest `power.restorable = bool` with install-time validation against WASM exports
+- Hibernate image header v2 with per-app blob SHA + per-app wasm SHA + supervisor SHA + kernel cmdline hash
+- `WakeInputGate` consumes first post-wake event
+- Audio output implicitly acquires `PreventSystemSleep`
+- `UserAction` reason gated to chrome by signed manifest hash
+- Critical-Hard thermal and Emergency battery bypass all vetos
+- AC debounce 5 s; lid debounce 500 ms
+- Three-layer split (`linux_pm` / `state` / `wit_contract`)
+- `caffeinate` chrome shell builtin
+- WIT package `vyoma:power@0.1.0` (assert + events + fetch)
+- All files ≤ 500 LOC
+
+### Deferred to v2
+
+- Bare-metal S3 platform validation on real hardware
+- Encrypted hibernate image (depends on R64)
+- Wake-on-LAN (depends on R51)
+- Bluetooth-keyboard wake (depends on R54)
+- Scheduled wake (`pmset schedule` analogue)
+- External-display clamshell-mode policy (depends on R6 multi-output)
+- RAPL-based per-app energy attribution
+- Light-sensor auto-brightness (depends on R6 sensor maturation)
+- ARM PSCI `CPU_SUSPEND` validation
+- Manifest-level finer `prevents_sleep` expression
+- Power Nap on ARM (currently desktop-full + mobile only)
+- Configurable thermal trip-point thresholds (currently hard-coded 70/80/90/95)
+- Audio ducking during low battery
+- Per-domain TLS SNI enforcement in `network_hosts` (currently destination-IP only)
+- Hibernate-resume after kernel update with compatibility table
+- `pmset`-style user-facing tooling
+- Battery-health degradation tracking beyond one-shot at ≤80 %
+- Power Nap leaderboard ("which app used the most background CPU")
+
+### Explicitly NEVER
+
+- Claiming a VM's `echo mem > /sys/power/state` is equivalent to bare-metal S3
+- Single-phase suspend
+- Hibernate of `restorable = false` app without per-suspend user confirmation
+- `background_fetch = true` in manifest treated as sufficient consent
+- Calling `on-suspend` without first completing Phase 2 ack and Phase 3 quiesce
+- Two separate assertion APIs; unified `AssertionRegistry` is the only path
+- Polling sysfs when the kernel can netlink-push
+- Forwarding the first post-wake input event to any app
+- Non-chrome app submitting `reason: UserAction`
+- Honoring any assertion against `CriticalBattery`, `ThermalCriticalHard`, or `UserAction`
+- A `Mutex` held across a WIT call
+- A `Mutex` on the thermal polling hot path
+- Power Nap fetches in the supervisor's primary network namespace
+- Power Nap fetches without an audit-log entry
+- Persisting Power Nap consent outside Round 60 Keychain
+- Hibernate image without per-app blob SHA verification
+- Hibernate image used across kernel-version or supervisor-SHA mismatch
+- Hibernate image used after `stale_hibernate_secs` (default 7 days)
+- Chrome trusting any app to submit `UserAction` other than itself
+- Tier 2 SIGSTOP applied to `UserInteractive`/`UserInitiated` QoS
+- Tier 3 SIGKILL without preceding `sync(2)` in the same code path
+- Loading hibernate image with magic other than `VYOMHIB2`
+- Compositor frame to a backlight that DPMS reports `Off`
+- Audio output stream without auto-acquiring `PreventSystemSleep`
+- Direct `/sys/power/state` or `/sys/class/backlight` writes outside `power::linux_pm`
+- Battery monitor sysfs reads from the main tokio reactor
+
+### Implementation files
+
+| File | LOC | Purpose |
+|------|-----|---------|
+| `supervisor/src/power/mod.rs` | 230 | `PowerManager` actor, dispatch loop, transition handler |
+| `supervisor/src/power/state.rs` | 230 | `SystemPowerState`, `PowerMode`, edge validation, platform gating |
+| `supervisor/src/power/assertions.rs` | 360 | Unified `AssertionRegistry`, `AssertionHandle` RAII, R5 shim |
+| `supervisor/src/power/battery.rs` | 420 | `BatteryMonitor`, sysfs reader, netlink subscription, EWMA, events |
+| `supervisor/src/power/display_power.rs` | 280 | `DisplayPower`, ramp, DPMS staging, `WakeInputGate` |
+| `supervisor/src/power/idle.rs` | 130 | `IdleDetector`, `last_input` ArcSwap, proposed-transition table |
+| `supervisor/src/power/thermal.rs` | 430 | `ThermalGovernor`, three-tier response, hysteresis, adaptive polling |
+| `supervisor/src/power/thermal_gpu.rs` | 100 | GPU min-freq writer (vendor stub) |
+| `supervisor/src/power/power_nap.rs` | 410 | `PowerNapScheduler`, consent gate, budgets, namespace isolation, audit |
+| `supervisor/src/power/suspend.rs` | 480 | `SuspendCoordinator`, five-phase pipeline, abort_suspend |
+| `supervisor/src/power/hibernate.rs` | 390 | `HibernateWriter`, image v2, header validation, write, load, discard |
+| `supervisor/src/power/linux_pm.rs` | 290 | sysfs writers (cpufreq, brightness, DPMS, power-state, cooling, sysrq) |
+| `supervisor/src/power/wit_contract.rs` | 250 | WIT marshaling for prepare/suspend/resume/state-changed/fetch |
+| `wit/vyoma-power.wit` | 150 | Three interfaces (`assert`, `events`, `fetch`), one world |
+
+**Total new:** ~4,140 LOC Rust + ~150 LOC WIT across 13 files + 1 WIT package; every file ≤ 500 lines.
+**Modified:** 2 files, ~180 added LOC (manifest.rs +120 for `[power]` parsing and `restorable`-vs-export validation, profile/profiles/*.toml +60 for `[power]` sections).
+
+---
+
