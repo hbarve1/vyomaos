@@ -8,11 +8,31 @@
 
 ## Vision
 
-VyomaOS Desktop is a capability-secure, WASM-first operating system with the full feature depth of macOS:
-- Every app is a `wasm32-wasip2` binary; the kernel never executes app code
-- A Rust PID-1 supervisor owns all policy: display, input, IPC, lifecycle, security
-- Linux 5.10+ kernel handles hardware only; all OS personality lives in userspace Rust
-- API surface exposed to apps: VYOMA_DRAW v3, VYOMA_INPUT, VYOMA_IPC, VYOMA_FS, VYOMA_NET, VYOMA_AUDIO, VYOMA_NOTIFY
+VyomaOS Desktop is a capability-secure, WASM-first operating system with the full feature depth of macOS.
+Every stone has been turned. 80 subsystems — from kernel interrupts to PDF rendering, from Bluetooth to
+Stage Manager — debated, critiqued, and synthesized into a coherent whole.
+
+**Foundational constraints:**
+- Every app is a `wasm32-wasip2` binary; the kernel never executes app code natively
+- A Rust PID-1 supervisor owns all OS personality: display, input, IPC, lifecycle, security, networking
+- Linux 5.10+ kernel handles hardware only; no macOS personality in kernel space
+- API surface to apps: VYOMA_DRAW v3, VYOMA_INPUT, VYOMA_IPC, VYOMA_FS, VYOMA_NET, VYOMA_AUDIO, VYOMA_NOTIFY, VYOMA_SHM
+
+**Scope: 80 subsystems across 9 layers:**
+
+| Layer | Subsystems | IDs |
+|-------|-----------|-----|
+| Core OS & Kernel | Kernel, VM, IPC, FS, Scheduler, Drivers, Power, Boot, HAL, Interrupts | 1–10 |
+| Display & Graphics | Compositor, GPU, Fonts, Images, Color, Animation, Drawing API, Capture, Virtual Display, HiDPI | 11–20 |
+| Window System | WM/Spaces, App Lifecycle, Menu Bar, Dock, Mission Control, Stage Manager, Split View, Focus/Z-order, Desktop, Accessibility | 21–30 |
+| Input | Keyboard, Mouse/Trackpad, Touch/Stylus, IME, Hotkeys, Cursor, Gamepad, Drag&Drop, Text Input, Clipboard | 31–40 |
+| Storage & Files | File Manager, Spotlight, File Coordination, Cloud Sync, Snapshots, Disk Mgmt, Tags, Document Model, App FS, Package Mgr | 41–50 |
+| Networking | Network Stack, DNS/mDNS, VPN, Bluetooth, Wi-Fi, AirDrop, Sharing, TLS/Certs | 51–58 |
+| Security | Sandboxing, Keychain, Permissions, Code Signing, Secure Enclave, Encryption, Firewall, Quarantine | 59–66 |
+| Multimedia | Audio, Video, Camera, MIDI, Image Processing, PDF | 67–72 |
+| App Services | Notifications, Launch Services, Distribution, WASM Framework, Terminal, Prefs, Browser, L10n | 73–80 |
+
+**Progress:** 1 completed · 1 in progress · 78 pending
 
 ---
 
