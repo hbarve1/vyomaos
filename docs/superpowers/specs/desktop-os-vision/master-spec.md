@@ -373,3 +373,131 @@ Each subsystem goes through:
 
 ---
 
+## 4. File System & VFS Layer
+
+**Final spec:** [`debates/04-filesystem-FINAL.md`](debates/04-filesystem-FINAL.md)
+**macOS equivalent:** APFS + VFS + `NSFileManager` + `NSOpenPanel`/`NSSavePanel` + `NSFileCoordinator` + FSEvents + Powerbox + xattrs + Trash
+
+### Headline architecture
+
+- **Storage backend pivot.** virtio-blk + ext4 image at `/data` is the primary persistent
+  backend, NOT 9P. The 9P mount, when configured, is exposed as `/host` (read-only by default)
+  for developer workflows. This restores per-op latency to ~50–200 µs (vs ~1.5 ms on 9P) and
+  unlocks `inotify`, `FICLONE`, hardlinks, sparse files.
+- **Hybrid mediation strategy.** Wasmtime preopens ARE the sandbox; the supervisor does NOT
+  perform runtime path rewriting. A thin `WriteShim` overrides exactly two methods on the
+  `wasi:filesystem/types/descriptor` resource (`write` + `set-size`) to inject quota CAS,
+  coordination check, and watcher notification. Reads, opens, stats, readdirs, unlinks,
+  renames pass through stock `wasmtime-wasi`. Supervisor is OFF the FS hot path for reads.
+- **`vyoma:fs@0.1.0` extends, does NOT replace, `wasi:filesystem`.** xattr, snapshot, watcher,
+  coord, panel, bookmark, trash, quota interfaces.
+- **Snapshots deferred to v2.** v1 ships `snapshot.clone-file` via ext4 `FICLONE` and the
+  atomic-rename idiom as "snapshot-like" primitives. Full subtree snapshots require btrfs
+  subvolumes in v2 kernel build.
+- **Bookmarks are HMAC-SHA-256 with per-bundle HKDF-derived signing keys.** Master key sealed
+  at `/data/.vyoma/keys/master.key` (TPM-sealed in v2 via Round 63 Secure Enclave).
+- **File coordination has WAL-backed crash recovery.** Reader-writer locks keyed by canonical
+  path; on app crash, Round 1's `on_instance_gone(iid)` drains held locks and cancels waiters;
+  on supervisor crash, the WAL is replayed and a 5 s grace window lets live instances
+  reattach. Cycle detection extends the Round 3 `WaitForGraph` to span IPC `Call` and FS
+  `CoordLock` edges uniformly.
+- **Watchers behind a `WatcherBackend` trait.** `Ext4InotifyBackend` for `/data` + `/tmp`;
+  `NinePPollBackend` (250 ms tumbling window) for `/host`. Events coalesced in a 100 ms
+  window per `(watch_id, path, kind)` tuple before being delivered as `FsEvent` IPC envelopes
+  on the Round 3 `Normal` class with `OverflowPolicy::Coalesce`.
+- **Quotas use lock-free `AtomicU64` per `(bundle_id, mount)` with CAS preflight in
+  `WriteShim`.** Delta WAL flushed every 100 ms; full snapshot every 60 s; corruption recovers
+  via per-bundle tree walk.
+- **Panel runs in a built-in WASM app** (`apps/panel/`) with `chrome` + `filesystem_full_disk`
+  + `panel_render` capabilities. Panel returns canonical paths to the supervisor; the
+  supervisor (not the panel) mints bookmarks scoped to the requester.
+- **Sandbox table:** `/data/<bundle>/` RW, `/data/<bundle>/.Trash/` mediated, `/tmp/<bundle>-<iid>/`
+  RW (tmpfs), `/sys/{fonts,icons,themes,timezones}/` RO. Additional unlocks via
+  `filesystem_shared`, `filesystem_documents`, `filesystem_full_disk` capabilities and
+  bookmarks (Powerbox-granted descriptors).
+- **Boot phases:** `Mounted9P` → `DiskImageReady` → `FilesystemMounted` → `XattrStoreReady` →
+  `CoordReplayed` → `WatcherReady` → `IpcReady` → `DisplayReady` → `PanelReady` →
+  `AppsLaunched`.
+
+### Resolved blocking issues from Round 4 critique
+
+| Critique | Fix |
+|----------|-----|
+| C1 9P bottleneck (~666 ops/sec) | Promote ext4 on virtio-blk; demote 9P to legacy `/host` RO |
+| C2 WASI P2 interception seam | Pick **hybrid**: preopen sandbox + WriteShim for write-side mediation only |
+| C3 Userspace COW infeasible | Defer subtree snapshots to v2; v1 uses `FICLONE` + atomic rename |
+| C4 Path-rewriting violates WASI capability model | `SandboxMap` drives `WasiCtxBuilder::preopened_dir`; descriptor IS the capability |
+| C5 Bookmark forgery | HMAC-SHA-256 with per-bundle HKDF signing key over CBOR-canonical body |
+| C6 Crash recovery for coord locks | WAL replay + 5 s reattach grace; `on_instance_gone` drains held locks |
+| C7 inotify on 9P | `WatcherBackend` trait: inotify for ext4/tmpfs, poll for 9P |
+
+### Performance budget
+
+| Operation | p50 | p99 |
+|-----------|-----|-----|
+| `wasi:filesystem.read` (4 KB, ext4) | 2 µs | 8 µs |
+| `wasi:filesystem.write` (4 KB, WriteShim) | 3 µs | 12 µs |
+| `wasi:filesystem.read` (64 KB, SharedBuffer) | 6 µs | 25 µs |
+| `wasi:filesystem.open` | 6 µs | 30 µs |
+| `vyoma:fs/xattr.get` (native) | 4 µs | 15 µs |
+| `vyoma:fs/snapshot.clone-file` (FICLONE) | 1 ms | 5 ms |
+| `vyoma:fs/watcher.subscribe` | 12 µs | 40 µs |
+| `vyoma:fs/coord.coordinate-write` (uncontended) | 2 µs | 8 µs |
+| `vyoma:fs/bookmark.open` | 15 µs | 60 µs |
+| `vyoma:fs/panel.open` (first frame) | 80 ms | 400 ms |
+
+System-wide ceiling: ~200 k ops/sec on a 4-core x86 desktop. Comfortably absorbs the
+Critic-projected 860 ops/sec demand.
+
+### Implementation files
+
+| File | LOC | Purpose |
+|------|-----|---------|
+| `supervisor/src/fs/mod.rs` | 380 | `Vfs`, wiring, public entry |
+| `supervisor/src/fs/vfs.rs` | 440 | `VfsBackend` trait, errors, `BackendPath`, `BackendCaps` |
+| `supervisor/src/fs/sandbox.rs` | 410 | `SandboxMap`, builder from manifest |
+| `supervisor/src/fs/wasi_shim.rs` | 460 | `VfsWasiBuilder`, perms, large-read SharedBuffer |
+| `supervisor/src/fs/write_shim.rs` | 280 | `WriteShim` host impl: `descriptor.write` + `set-size` |
+| `supervisor/src/fs/path_index.rs` | 220 | `PathBucket` LRU for vyoma:fs path resolution |
+| `supervisor/src/fs/watcher.rs` | 470 | `WatcherCore`, `WatcherBackend` trait |
+| `supervisor/src/fs/watcher_inotify.rs` | 360 | `Ext4InotifyBackend` |
+| `supervisor/src/fs/watcher_poll.rs` | 250 | `NinePPollBackend` |
+| `supervisor/src/fs/watcher_coalesce.rs` | 230 | `Coalescer`, merge rules |
+| `supervisor/src/fs/coordination.rs` | 470 | `CoordinationService`, locks, priority inherit |
+| `supervisor/src/fs/coord_wal.rs` | 320 | `CoordWal`, append/replay, crash recovery |
+| `supervisor/src/fs/panel.rs` | 380 | `PanelService`, session table, panel-app dispatch |
+| `supervisor/src/fs/bookmark.rs` | 440 | `BookmarkService`, mint/verify HMAC, HKDF, refresh |
+| `supervisor/src/fs/bookmark_store.rs` | 240 | sled-backed persistent bookmarks |
+| `supervisor/src/fs/xattr.rs` | 320 | `XattrStore`, shadow DB, namespace check |
+| `supervisor/src/fs/quota.rs` | 380 | `QuotaLedger`, CAS try-reserve, refund, WAL deltas |
+| `supervisor/src/fs/quota_wal.rs` | 240 | Quota WAL, snapshot+recovery |
+| `supervisor/src/fs/trash.rs` | 290 | `TrashService`, trash/untrash/sweeper |
+| `supervisor/src/fs/clone.rs` | 180 | FICLONE wrapper, atomic-rename helper |
+| `supervisor/src/fs/backends/mod.rs` | 60 | Backend registry |
+| `supervisor/src/fs/backends/ext4.rs` | 470 | Primary backend; mkfs + mount + cap-std root |
+| `supervisor/src/fs/backends/tmpfs.rs` | 360 | In-RAM backend for `/tmp` |
+| `supervisor/src/fs/backends/ninep.rs` | 280 | Legacy `/host` backend, RO default |
+| `supervisor/src/fs/backends/sys_ro.rs` | 220 | Read-only backend for `/sys/*` |
+| `wit/vyoma-fs.wit` | 380 | Full WIT package |
+| `apps/_lib/vyoma-fs-client/src/lib.rs` | 320 | App-side wrapper over generated WIT bindings |
+| `apps/_lib/vyoma-fs-client/src/atomic.rs` | 150 | Atomic-rename helper |
+| `apps/panel/src/main.rs` | 480 | Built-in panel app |
+| `apps/panel/src/sidebar.rs` | 220 | Panel sidebar |
+| `apps/panel/src/grid.rs` | 280 | Panel tile/list view |
+
+**Total new:** ~6,400 LOC across 31 source files; every file under the 500-line ceiling.
+**Modified:** 7 files, ~360 added LOC (`main.rs` +60, `boot.rs` +50, `lifecycle/actor.rs`
++30, `manifest.rs` +90, `process_table.rs` +40, `mount.rs` +50, `Cargo.toml` +40).
+
+### Out of scope (explicitly)
+
+- 9P as primary `/data` backend.
+- Runtime path rewriting in the supervisor.
+- Userspace block-layer COW.
+- Bookmark grants via stdout/IPC line protocol (always HMAC).
+- Case-insensitive Unicode-folding paths at the supervisor layer.
+- Per-app mount namespaces (preopens deliver isolation at lower cost).
+- Re-implementing `wasmtime-wasi::filesystem` (we override exactly two methods).
+
+---
+
