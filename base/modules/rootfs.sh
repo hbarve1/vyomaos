@@ -141,6 +141,10 @@ INIT_EOF
         mkdir -p "$ROOTFS/apps/${app_name}"
         cp "$wasm_file"     "$ROOTFS/apps/${app_name}/${app_name}.wasm"
         cp "$manifest_file" "$ROOTFS/apps/${app_name}/vyoma.toml"
+        local icon_file="$app_src_dir/icon.png"
+        if [[ -f "$icon_file" ]]; then
+            cp "$icon_file" "$ROOTFS/apps/${app_name}/icon.png"
+        fi
         log_info "  Included: ${app_name} ($(du -h "$wasm_file" | cut -f1))"
     done
 
