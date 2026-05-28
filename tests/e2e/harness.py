@@ -42,14 +42,17 @@ class QmpClient:
         self._sock.sendall(json.dumps(obj).encode() + b"\n")
 
     def _recv(self) -> dict:
-        # Note: QEMU may send async events between responses; this returns the next line unconditionally.
-        while b"\n" not in self._rbuf:
-            chunk = self._sock.recv(4096)
-            if not chunk:
-                raise RuntimeError("QMP connection closed unexpectedly")
-            self._rbuf += chunk
-        line, self._rbuf = self._rbuf.split(b"\n", 1)
-        return json.loads(line)
+        # Note: QEMU may send async events between responses; skip them.
+        while True:
+            while b"\n" not in self._rbuf:
+                chunk = self._sock.recv(4096)
+                if not chunk:
+                    raise RuntimeError("QMP connection closed unexpectedly")
+                self._rbuf += chunk
+            line, self._rbuf = self._rbuf.split(b"\n", 1)
+            msg = json.loads(line)
+            if "event" not in msg:
+                return msg
 
     def _input_event(self, event: dict):
         self._send({"execute": "input-send-event", "arguments": {"events": [event]}})
@@ -80,7 +83,9 @@ class QmpClient:
                     f"Screenshot not produced within 2s: {self._screenshot_tmp}"
                 )
             time.sleep(0.05)
-        return Image.open(self._screenshot_tmp)
+        img = Image.open(self._screenshot_tmp)
+        img.load()
+        return img
 
     def wait_log(self, pattern: str, timeout: int = 10) -> str:
         regex = re.compile(pattern)
