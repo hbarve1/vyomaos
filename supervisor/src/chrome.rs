@@ -366,6 +366,7 @@ pub fn draw_chrome_onto(
         let regions = regions_with_z.into_iter().map(|(_, n, r)| (n, r)).collect();
         (regions, display_apps)
     };
+    let dock_visible = crate::SHOW_DOCK.get().copied().unwrap_or(true);
     for (name, (wx, wy, ww, _wh)) in &regions {
         if *ww < 60 { continue; }
         let is_focused = focused_name.as_deref() == Some(name.as_str());
@@ -374,7 +375,10 @@ pub fn draw_chrome_onto(
             let reg = registry.lock().unwrap();
             reg.get(name.as_str()).map(|st| st.lock().unwrap().win_z >= Z_DOCK).unwrap_or(false)
         };
-        if !is_system {
+        if is_system {
+            // Dock-layer windows: only render chrome when dock is enabled.
+            if !dock_visible { continue; }
+        } else {
             draw_titlebar(fb, *wx, *wy, *ww, is_focused, is_hovered, name);
         }
     }
