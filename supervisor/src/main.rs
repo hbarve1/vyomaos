@@ -56,7 +56,7 @@ use std::{
 };
 
 use supervisor::logging::Subsystem;
-use supervisor::manifest::{BootConfig, BootEntry};
+use supervisor::manifest::{BootConfig, BootEntry, MenuItem};
 
 #[macro_export]
 macro_rules! log_info {
@@ -115,6 +115,8 @@ struct AppState {
     pub surface: Option<std::sync::Arc<std::sync::Mutex<crate::display::Surface>>>,
     // spec-044: management server live log subscribers
     log_subscribers: Vec<mpsc::Sender<String>>,
+    /// Declarative menu items from vyoma.toml — shown in the menu bar when focused.
+    menu_items: Vec<MenuItem>,
 }
 
 type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;

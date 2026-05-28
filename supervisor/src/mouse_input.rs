@@ -170,7 +170,19 @@ pub fn dispatch_mouse(
             *focused.lock().unwrap() = Some(name.clone());
             log_info!(Subsystem::Input, Some(name.as_str()), "menubar click: focus → {name}");
             repaint_all_borders(app_registry, focused);
-            crate::chrome::open_dropdown(&name, vec![], cx as u32, crate::chrome::MENUBAR_H);
+            let items: Vec<(String, String)> = {
+                let reg = app_registry.lock().unwrap();
+                reg.get(&name)
+                    .map(|st| {
+                        st.lock().unwrap()
+                            .menu_items
+                            .iter()
+                            .map(|mi| (mi.label.clone(), mi.action.clone()))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            crate::chrome::open_dropdown(&name, items, cx as u32, crate::chrome::MENUBAR_H);
             return;
         }
     }
@@ -227,7 +239,17 @@ pub fn dispatch_mouse(
         let hit = crate::context_menu::context_menu_hit_test(cx, cy);
         crate::context_menu::close_context_menu();
         if let Some((target_app, action)) = hit {
-            send_reply(&target_app, &action, inbox);
+            if target_app == "supervisor" {
+                crate::ipc_handlers::handle_supervisor_command(
+                    &action,
+                    "desktop",
+                    inbox,
+                    focused,
+                    app_registry,
+                );
+            } else {
+                send_reply(&target_app, &action, inbox);
+            }
         }
         // Continue processing the click for normal focus/raise behaviour
     }

@@ -370,6 +370,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         pending_anim:        None,
         surface:             None,
         log_subscribers:     Vec::new(),
+        menu_items:          manifest.menu_items.clone(),
     }));
     // T053: enqueue Open animation so the window fades in on spawn
     {

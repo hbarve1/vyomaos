@@ -243,9 +243,18 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                     // T062: Enter key confirms the dropdown selection when open.
                     if dropdown_is_open() && (buf[0] == 0x0A || buf[0] == 0x0D) {
                         if let Some((app, action)) = handle_dropdown_key(0x0A) {
-                            let ipc_msg = format!("@{app}: {action}");
-                            if let Some(tx) = inbox.lock().unwrap().get(&app) {
-                                let _ = tx.send(ipc_msg);
+                            if app == "supervisor" {
+                                crate::ipc_handlers::handle_supervisor_command(
+                                    &action,
+                                    "desktop",
+                                    &inbox,
+                                    &focused,
+                                    &registry,
+                                );
+                            } else {
+                                if let Some(tx) = inbox.lock().unwrap().get(&app) {
+                                    let _ = tx.send(action);
+                                }
                             }
                         }
                         continue;
