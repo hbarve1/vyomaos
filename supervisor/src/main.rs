@@ -24,12 +24,14 @@ mod image;
 
 mod app_threads;
 mod chrome;
+mod context_menu;
 mod draw_cmd;
 mod input_keys;
 mod ipc_commands;
 mod ipc_handlers;
 mod mount;
 mod mouse_input;
+mod mouse_thread;
 mod net;
 mod packages;
 #[cfg(target_os = "linux")]
@@ -400,7 +402,7 @@ fn main() {
         let focused_m  = Arc::clone(&focused);
         thread::Builder::new()
             .name("mouse-input".into())
-            .spawn(move || mouse_input::run_mouse_input(inbox_m, focused_m, registry_m))
+            .spawn(move || mouse_thread::run_mouse_input(inbox_m, focused_m, registry_m))
             .expect("spawn mouse-input thread");
     }
 
@@ -483,7 +485,6 @@ fn main() {
 }
 
 // ── IPC router + display dispatcher — delegated to router.rs ──────────────────
-
 fn route_or_print(
     line:         &str,
     sender:       &str,
@@ -495,6 +496,5 @@ fn route_or_print(
 ) {
     router::route_or_print(line, sender, inbox, has_display, win_region, focused, app_registry);
 }
-
 fn send_reply(target: &str, msg: &str, inbox: &Inbox) { router::send_reply(target, msg, inbox); }
 

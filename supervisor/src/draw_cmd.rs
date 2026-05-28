@@ -106,6 +106,9 @@ pub fn handle_draw_command(
         // 3. Draw chrome on top of composited surfaces
         draw_chrome_onto(&mut *fb, app_registry, focused);
 
+        // 4. Draw context menu overlay (always topmost)
+        crate::context_menu::render_context_menu_if_open(&mut *fb);
+
         fb.flush();
 
         // FPS tracking
@@ -486,6 +489,7 @@ pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
         }
     }
     draw_chrome_onto(&mut *fb, registry, focused);
+    crate::context_menu::render_context_menu_if_open(&mut *fb);
     fb.flush();
 }
 
