@@ -669,3 +669,113 @@ observability/heartbeat.rs +50, mgmt_handlers.rs +140, memory/jetsam.rs +30).
 
 ---
 
+## 6. Device Driver Model
+
+**Status:** ✅ Debated & synthesized (2026-05-29)
+**Debate:** [Architect: 2579 lines] [Critic: 510 lines] [Final: 2715 lines]
+**Files:** `debates/06-drivers.md`, `debates/06-drivers-critique.md`, `debates/06-drivers-FINAL.md`
+
+### Key decisions
+
+- **Three-tier driver architecture.** Tier A: native-Rust in-supervisor subsystems for latency-critical, multi-subscriber work (input, display, audio, camera, USB-storage gate, sensors). Tier B: ed25519-signed WASM driver bundles for non-realtime vendor-specific protocol decoding only (Stream Deck, Wacom proprietary, MIDI exotica). Tier C: kernel driver + thin WIT shim where the kernel fully handles the protocol. **No WASM in the path of any interrupt-driven HID event.**
+- **Direct NETLINK_KOBJECT_UEVENT socket** owned by the supervisor (no systemd-udevd, no libudev linkage). 100 ms coalesce window for most subsystems; **input class bypasses the coalesce** so a freshly-plugged keyboard is usable in ~30 ms.
+- **`/sys` coldplug walk at boot** synthesises `UEvent::Add` events for every already-present device across `/sys/bus/*/devices`, `/sys/class/*`, and `/sys/bus/iio/devices`. Replaces `udevadm trigger`.
+- **`DeviceRegistry` with `ArcSwap<RegistrySnapshot>`** + 16 sharded `DashMap`s. Read cost: ~25 ns. Rebuild cost: ~50 µs over 50 devices.
+- **Three device access tiers** (`Exclusive`, `Shared`, `Multiplexed`) with class-default matrix. Audio defaults `Multiplexed` (mixer); camera defaults `Exclusive` with `Shared` opt-in; input is `Multiplexed` via `InputDispatcher`; sensors are `Shared`; USB storage is `Exclusive` to the file-manager namespace.
+- **Lock-free audio mixer on SCHED_DEADLINE** (R5). Per-app `SharedBuffer`-backed SPSC ring; `AtomicU32` Q16.16 volume; `AtomicBool` mute; `ArcSwap<AudioOutputBinding>` for device switching; epoch-RCU reclamation defers SharedBuffer unmap until the mixer crosses two period boundaries.
+- **`CompositorControl` pause/resume API** resolves the DRM hot-plug race. `on_drm_hotplug` marks affected connectors `Releasing`, calls `pause_rendering(crtc)` (blocks one vblank), rescans connectors, calls `reconfigure(topology, fallback_monitor)`, then `resume_rendering(crtc)`. Display-change notifications batch-fan-out via R3.
+- **Two-tier capability model.** `[capabilities.devices]` declares intent with `AccessLevel::{None, Focused, Allow, Ask}`. For `Ask`-tier classes (camera, microphone, location, screen-recording), the first runtime use blocks via `PermissionPrompter` → System UI prompt → user decision → persisted in Round 60 Keychain → `ArcSwap<DevicePolicy>` swap. Revocation flips the snapshot instantly; running handles get `revoked = true`.
+- **USB storage `DeviceOffer` flow.** USB block devices are **never** auto-mounted. `UsbStorageGate` scans filesystem magic bytes (allowlist: vfat, exfat, iso9660, udf), surfaces a `DeviceOffer` on `vyoma:device/storage-offer` IPC topic, awaits user decision via System UI, then mounts read-only into a namespace visible only to the file-manager app or apps declaring `removable_storage = true`.
+- **ed25519-signed WASM driver bundles.** Bundle = `<name>.wasm` + `vyoma.toml` + `.sig`. `SignatureVerifier` chains to trust roots in `/etc/vyoma/trust/` (same chain as Round 1 §10). Manifest validation rejects driver bundles requesting filesystem/network/display/shell. `DriverCapability` envelope (UsbRaw / HidRaw / MidiRaw) must align with `matches`; bundles MAY NOT match `Generic`. Unsigned bundles refuse to load. Revocation list distributed via system update.
+- **`CrashTracker` three-strikes-in-60s.** Crashes within a 60-second sliding window: retry@100ms, retry@1s, retry@10s, then device `Disabled` until user re-enables in System Preferences.
+- **BadUSB HID defense.** First keypress from an untrusted USB keyboard (vid/pid/serial not in Round 60 Keychain trust list) is frozen and a system trust prompt is surfaced.
+- **`InputDispatcher`** routes parsed `ParsedInput` to the focused app (or grabber on `grab` capability for games + controllers), with parallel delivery to `accessibility_subscribers`. End-to-end evdev → app callback latency: 6 µs p50 / 25 µs p99.
+- **`SensorSubsystem`** with 50 ms default subscription floor (per-bundle); 1 ms floor available only with `high_rate = true` capability + runtime grant. Sensor delivery suppressed when app is in App Nap (R5 assertion absent).
+- **WIT package `vyoma:device@0.1.0`** with eight interfaces (`types`, `registry`, `events`, `input`, `audio`, `usb`, `sensor`, `device-lifecycle`) and two worlds: `app` (no `usb` import) and `driver-bundle` (full set).
+- **Boot order extension:** `KernelHandoff → FsReady → IpcReady → DevicesReady → PolicyLoaded → AppsLaunching → AppsLaunched`. Driver subsystem contribution to boot: ~200 ms, well within < 5 s budget.
+
+### Critical v1 requirements
+
+- Direct NETLINK_KOBJECT_UEVENT socket; no userspace udev daemon
+- `/sys` coldplug walk at boot to populate registry before first frame
+- `DeviceRegistry` with `ArcSwap<RegistrySnapshot>` + 16 shards
+- `HidSubsystem` reads evdev; routes through `InputDispatcher`; no WASM in hot path
+- `DisplaySubsystem` enumerates DRM; defines `CompositorControl` pause/resume API
+- `AudioSubsystem` lock-free SPSC ring + SCHED_DEADLINE mixer + epoch-RCU unmap
+- `CameraSubsystem` enumerates V4L2; supports `Exclusive`/`Shared` modes
+- `UsbStorageGate` `DeviceOffer` flow; filesystem allowlist; never auto-mounts
+- `SensorSubsystem` sysfs/IIO enumeration; 50 ms default floor, 1 ms grant
+- `BundleRegistry` + ed25519 signature verification at install AND spawn
+- `ClaimTable` Exclusive/Shared/Multiplexed enforcement with atomic claims
+- `DevicePolicy` two-tier model (manifest intent + runtime grant)
+- `CrashTracker` three-strikes-in-60s → device Disabled
+- `PermissionPrompter` blocking system prompt for `Ask`-tier capabilities
+- BadUSB defense: HID keyboard trust prompt on first untrusted keystroke
+- WIT package `vyoma:device@0.1.0` with eight interfaces + two worlds
+- Class-specific drain windows (250 ms HID, 500 ms audio/camera, 5 s storage)
+- Hot-replug coalescing within 5 s window for stable (vid, pid, serial)
+
+### Deferred to v2
+
+- Bluetooth pairing UI and profile management (R54)
+- Wi-Fi credential management and network selection (R55)
+- ACPI event delivery for lid / power / sleep button (R7)
+- Power management suspend/resume hooks across all subsystems (R7)
+- IME pre-input hook integration (R34)
+- Multi-seat / fast user switching (R49)
+- Screen recording capability and indicator UI (R18)
+- HiDPI scale-factor propagation to apps (R20)
+- Network device topology enumeration UI (R51)
+- Printer / scanner spool layer (deferred indefinitely)
+- Driver bundle developer tooling (`vyoma driver-status`, attach debugger)
+- Persistent `device-aliases.toml` for stable id healing across hub-reconfig
+- Sandboxed `blkid` worker for filesystem probing
+- Operator UI for live device topology + claim heatmap
+- Per-app per-device usage analytics (camera-minutes, mic-minutes)
+
+### Explicitly NEVER
+
+- A WASM driver bundle in the path of any interrupt-driven HID event
+- Auto-mount of USB mass storage without user approval
+- Install-time grant for camera / microphone / location / screen-recording
+- Loading an unsigned WASM driver bundle
+- `modprobe` or `init_module(2)` from the supervisor
+- `Mutex` held across a WIT call (Round 5 rule extended here)
+- `Mutex` on the SCHED_DEADLINE audio mixer hot path
+- `Generic` device class as a bundle matcher target
+- Direct `/dev/input/event*` exposure to any WASM app
+- Direct `/dev/snd/*` exposure to any WASM app
+- Two driver bundles claiming the same device class with `exclusive_class = true`
+- Filesystem types outside `SAFE_FS_TYPES` (vfat/exfat/iso9660/udf) for USB mounts
+- Spawning a driver bundle without first verifying its ed25519 signature
+- DRM atomic commit while a connector is in `Releasing` state
+- Sensor sample delivery during App Nap (R5 assertion required)
+- Bypassing the BadUSB trust prompt for new HID keyboards
+- Persisting consent grants outside the Round 60 Keychain (no plaintext fallback)
+- Apps reading another app's audio ring buffer (each `SharedBuffer` is per-stream)
+
+### Implementation files
+
+| File | LOC | Purpose |
+|------|-----|---------|
+| `supervisor/src/drivers/mod.rs` | 310 | `DeviceManager`, boot, coldplug entry, event dispatch |
+| `supervisor/src/drivers/registry.rs` | 470 | `DeviceId`, `DeviceInfo`, `AccessTier`, `DeviceRegistry`, snapshot |
+| `supervisor/src/drivers/udev.rs` | 430 | NETLINK_KOBJECT_UEVENT, `UEvent::parse`, coldplug walk |
+| `supervisor/src/drivers/hid.rs` | 480 | evdev pipeline, `HidSubsystem`, `InputDispatcher`, BadUSB trust prompt |
+| `supervisor/src/drivers/display_dev.rs` | 440 | DRM enumeration, `MonitorInfo`, hot-plug state machine, compositor control trait |
+| `supervisor/src/drivers/audio_dev.rs` | 490 | ALSA scan, lock-free SPSC ring, `ArcSwap<AudioOutputBinding>`, RCU unmap |
+| `supervisor/src/drivers/audio_render.rs` | 290 | SCHED_DEADLINE thread body, mix kernel, PCM write |
+| `supervisor/src/drivers/camera.rs` | 370 | V4L2 enumeration, `CameraSubsystem`, Shared/Exclusive arbitration |
+| `supervisor/src/drivers/usb.rs` | 460 | usbfs, topology, raw transfers for driver bundles |
+| `supervisor/src/drivers/usb_storage_gate.rs` | 390 | `DeviceOffer` flow, magic-byte fs probe, mount allowlist |
+| `supervisor/src/drivers/sensor.rs` | 360 | sysfs/IIO scan, sample emission, consent gating |
+| `supervisor/src/drivers/bundle.rs` | 460 | `BundleRegistry`, ed25519 verification, lifecycle, crash backoff |
+| `supervisor/src/drivers/policy.rs` | 290 | `DevicePolicy`, runtime prompt, persistence to Keychain, revocation |
+| `supervisor/src/drivers/claim.rs` | 210 | `ClaimTable` (Exclusive vs Shared/Multiplexed), atomic exclusivity |
+| `wit/vyoma-device.wit` | 540 | Eight WIT interfaces, two worlds (`app`, `driver-bundle`) |
+
+**Total new:** ~5,860 LOC Rust + ~540 lines WIT across 14 files + 1 WIT package; every file ≤ 500 lines.
+**Modified:** 5 files, ~410 added LOC (manifest.rs +200, lifecycle.rs +90, ipc/envelope.rs +40, scheduler/sysctl.rs +30, profile/profiles/*.toml +50).
+
+---
+

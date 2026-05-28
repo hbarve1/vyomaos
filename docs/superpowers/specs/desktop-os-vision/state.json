@@ -1,7 +1,7 @@
 {
   "session_start": "2026-05-29",
   "target": "Full macOS-like Desktop OS (DesktopOS first, then Mobile, then embedded)",
-  "current_round": 6,
+  "current_round": 7,
   "status": "in_progress",
   "subsystems": [
     {"id": 1,  "name": "Kernel & Process Model",              "status": "completed",   "file": "01-kernel-process.md",         "macos_equiv": "XNU kernel / launchd"},
@@ -9,7 +9,7 @@
     {"id": 3,  "name": "Inter-Process Communication (IPC)",    "status": "completed",   "file": "03-ipc.md",                    "macos_equiv": "Mach ports / XPC"},
     {"id": 4,  "name": "File System & VFS Layer",              "status": "completed",   "file": "04-filesystem.md",             "macos_equiv": "APFS / VFS"},
     {"id": 5,  "name": "Scheduler & CPU Management",           "status": "completed",   "file": "05-scheduler.md",              "macos_equiv": "XNU Mach scheduler / QoS classes"},
-    {"id": 6,  "name": "Device Driver Model",                  "status": "pending",     "file": "06-drivers.md",                "macos_equiv": "IOKit / DriverKit"},
+    {"id": 6,  "name": "Device Driver Model",                  "status": "completed",   "file": "06-drivers.md",                "macos_equiv": "IOKit / DriverKit"},
     {"id": 7,  "name": "Power Management & Energy",            "status": "pending",     "file": "07-power.md",                  "macos_equiv": "IOPowerManagement / App Nap"},
     {"id": 8,  "name": "Boot Sequence & Init System",          "status": "pending",     "file": "08-boot.md",                   "macos_equiv": "iBoot / launchd phase ordering"},
     {"id": 9,  "name": "Hardware Abstraction Layer",           "status": "pending",     "file": "09-hal.md",                    "macos_equiv": "IOKit HAL / CoreOSServices"},
