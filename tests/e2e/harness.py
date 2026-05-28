@@ -25,9 +25,13 @@ class QmpClient:
             time.sleep(0.1)
         self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._sock.connect(self._sock_path)
-        self._recv()                                 # consume QMP greeting
-        self._send({"execute": "qmp_capabilities"})
-        self._recv()                                 # consume {"return": {}}
+        try:
+            self._recv()                                 # consume QMP greeting
+            self._send({"execute": "qmp_capabilities"})
+            self._recv()                                 # consume {"return": {}}
+        except Exception:
+            self.close()
+            raise
 
     def close(self):
         if self._sock:
@@ -38,6 +42,7 @@ class QmpClient:
         self._sock.sendall(json.dumps(obj).encode() + b"\n")
 
     def _recv(self) -> dict:
+        # Note: QEMU may send async events between responses; this returns the next line unconditionally.
         while b"\n" not in self._rbuf:
             chunk = self._sock.recv(4096)
             if not chunk:
