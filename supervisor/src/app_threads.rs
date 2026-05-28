@@ -106,6 +106,25 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
 
     // Tile remaining apps in usable area above the dock strip.
     if tiled.is_empty() { return; }
+    // T077: when windowed_mode is false, expand the first tiled app to fill the
+    // full screen (overrides tiled regions entirely for single-app full-screen).
+    let windowed = supervisor::WINDOWED_MODE.get().copied().unwrap_or(true);
+    if !windowed {
+        let reg = registry.lock().unwrap();
+        for (i, (name, _, _, _)) in tiled.iter().enumerate() {
+            if let Some(st) = reg.get(name.as_str()) {
+                let region = if i == 0 { (0, 0, sw, sh) }
+                else { (sw, 0, 0, 0) }; // park other apps off-screen
+                let mut st_guard = st.lock().unwrap();
+                st_guard.win_region = Some(region);
+                if i == 0 { init_surface_for_region(&mut st_guard, region); }
+                log_info!(Subsystem::Display, Some(name.as_str()),
+                    "tiling: fullscreen ({},{},{},{})",
+                    region.0, region.1, region.2, region.3);
+            }
+        }
+        return;
+    }
     let usable_h = sh.saturating_sub(MENUBAR_H).saturating_sub(dock_h_reserved);
     let min_sizes: Vec<(u32, u32)> = tiled.iter().map(|(_, _, mw, mh)| (*mw, *mh)).collect();
     let regions: Vec<(u32, u32, u32, u32)> =

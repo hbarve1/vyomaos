@@ -318,6 +318,8 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
             let is_focused = focused_name.as_deref() == Some(name.as_str());
             let is_hovered = hovered_name.as_deref() == Some(name.as_str());
             draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, is_hovered, name);
+            // T078: focus ring — 3px Apple-blue rounded highlight around focused/hovered title bar
+            if (is_focused || is_hovered) && supervisor::FOCUS_RING.get().copied().unwrap_or(false) { use crate::display::draw_rounded_rect; let (fsw, fsh, fst) = (fb.width, fb.height, fb.stride); draw_rounded_rect(&mut fb.back, wx.saturating_sub(2), wy.saturating_sub(2), ww+4, TITLEBAR_H+4, 0x0A84FFFF, 3, fst, fsw, fsh); }
         }
         let sw = fb.width;
         let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
@@ -380,6 +382,8 @@ pub fn draw_chrome_onto(
             if !dock_visible { continue; }
         } else {
             draw_titlebar(fb, *wx, *wy, *ww, is_focused, is_hovered, name);
+            // T078: focus ring — 3px Apple-blue rounded highlight around focused/hovered title bar
+            if (is_focused || is_hovered) && supervisor::FOCUS_RING.get().copied().unwrap_or(false) { use crate::display::draw_rounded_rect; let (fsw, fsh, fst) = (fb.width, fb.height, fb.stride); draw_rounded_rect(&mut fb.back, wx.saturating_sub(2), wy.saturating_sub(2), ww+4, TITLEBAR_H+4, 0x0A84FFFF, 3, fst, fsw, fsh); }
         }
     }
     let sw = fb.width;
