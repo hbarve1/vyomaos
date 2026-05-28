@@ -501,3 +501,171 @@ Critic-projected 860 ops/sec demand.
 
 ---
 
+## 5. Scheduler & CPU Management
+
+**Status:** ✅ Debated & synthesized (2026-05-29)
+**Debate:** [Architect: 1955 lines] [Critic: 915 lines] [Final: 2839 lines]
+**macOS equivalent:** XNU Mach scheduler + `NSQualityOfService` + App Nap + Grand Central
+Dispatch (libdispatch) + `dispatch_source_t` timers + Activity Monitor + thermal pressure
+**Final spec:** [`debates/05-scheduler-FINAL.md`](debates/05-scheduler-FINAL.md)
+
+### Key decisions
+
+- **Two cooperating layers:** L1 = Linux CFS / SCHED_DEADLINE / cgroup v2 (kernel); L2 =
+  VyomaOS supervisor scheduler (hints + caps + epoch preemption). The supervisor does NOT
+  reimplement CPU dispatch; it biases CFS via `nice` + `sched_setscheduler`, caps via
+  cgroup `cpu.max`, and signals preemption via Wasmtime epoch interruption.
+- **One OS thread per WASM instance.** Established in R1. No GCD-style thread pool can
+  share a `!Sync` Wasmtime Store; the Architect's GCD framing was rejected.
+- **QoS is derived (not declared).** The supervisor computes class from `(focus_state,
+  capabilities, recent_input, recent_audio, recent_net_io, active_assertions,
+  user_pinned_floor, ipc_inheritance)`. Apps cannot ask for higher QoS — only *be*
+  interactive.
+- **6-class taxonomy (macOS-compatible):** `UserInteractive`, `UserInitiated`, `Default`,
+  `Utility`, `Background`, `Maintenance`. Each maps to a `QosPolicy` tuple
+  `(nice, sched, cpu.max, cpu.weight, epoch_deadline_ticks, epoch_action, timer_leeway,
+  nap_eligible)`.
+- **CPU measurement via `CLOCK_THREAD_CPUTIME_ID`** sampled at every WASI boundary +
+  epoch yield, EWMA-smoothed into per-app `CpuAccount`. Epoch counts kept as a secondary
+  preemption-density signal but are NOT the authoritative throttling source.
+- **Throttling via cgroup v2 `cpu.max`**, NEVER via epoch-frequency manipulation. Epoch
+  rate stays fixed at 1 kHz; cgroup enforces actual CPU bandwidth ceilings.
+- **Audio realtime via `SCHED_DEADLINE(2ms/8ms/10ms)` + `RLIMIT_RTTIME=5ms`**, NEVER
+  `SCHED_FIFO`. The `on-audio-render` WIT callback runs inside the SCHED_DEADLINE thread
+  with epoch interruption disabled. Watchdog co-process on a separate CPU core SIGKILLs
+  on > 500 ms stuck render. Requires signed-manifest `audio_realtime` capability.
+- **App Nap via ActivityAssertion tokens.** Each subsystem (IPC, audio, network, FS coord,
+  dispatch) calls `ActivityRegistry::assert(app, reason)` when starting work and drops
+  the returned RAII guard when done. `NapDetector` consults assertion *counts*, never
+  subsystem state. Resolves cross-subsystem omniscience problem.
+- **Park semantics via WIT `on-suspend`** (NEVER `SIGSTOP`). `kill(tid, SIGSTOP)` stops
+  the entire supervisor process; we cannot use it. Instead: set `nap_divider = NAP_PARK`,
+  fire `on-suspend`, persist StateBlob, drop the Store, exit the thread. On wake:
+  re-instantiate and call `on-resume(blob)`.
+- **Priority inheritance through IPC.** `IpcEnvelope::effective_qos` field added; router
+  promotes call receiver's QoS for the duration of the call when sender has higher QoS,
+  demotes on reply/timeout/sender-crash. Cycle detection reuses R3's `WaitForGraph`.
+- **`VYOMA_DISPATCH` split into two paths:** **HostJob** runs predefined typed jobs
+  (sha256, png-decode, http-fetch) on a supervisor pool; **OnDispatch** is actor-per-app
+  delivery to the app's own thread via the `on-dispatch` WIT callback. No `custom-wasm`
+  fork-bomb vector.
+- **Hierarchical timing wheel** (5 levels: 1 ms / 64 ms / 4 s / 4 min / 4 h) with
+  QoS-tiered leeway + per-app `hash(app)` jitter. Wakeup budget (1000/s desktop, 100/s
+  mobile); leeway pressure increases when exceeded.
+- **Capability degradation:** probe `CAP_SYS_NICE`, `SCHED_DEADLINE`, `RLIMIT_RTTIME`,
+  cgroup v2 at boot. Fail-soft to default `SCHED_OTHER` and broadcast a `scheduler-degraded`
+  system event when privileges missing. Critical for bare-metal `iot-edge` and
+  `robotics-rt` profiles.
+- **Boot warmup window:** first 5 s after `BootPhase::AppsLaunched`, every app gets
+  `UserInitiated` floor regardless of focus. Protects < 5 s boot target.
+- **Compositor is privileged supervisor subsystem.** Runs on a dedicated thread under
+  `SCHED_DEADLINE(2ms/16ms/16ms)` pinned to CPU 0. Not a WASM app; not subject to QoS.
+- **Platform profile bundles:** `desktop-full`, `server-headless`, `mobile`,
+  `robotics-rt`, `iot-edge`, `mcu-minimal` each ship a TOML override in
+  `supervisor/src/profile/profiles/`; mcu-minimal uses cooperative round-robin stub.
+- **Emergency escape hatch:** kernel command line `vyoma.sched=off` disables QoS-driven
+  mutation and falls back to vanilla CFS.
+
+### Critical v1 requirements
+
+- 6-class QoS taxonomy with derived (not declared) classification
+- Linux thread `nice` + `sched_setscheduler` for L1 hinting
+- cgroup v2 `cpu.max` + `cpu.weight` for hard CPU caps per QoS
+- 1 kHz global epoch ticker with per-app `nap_divider`
+- `CLOCK_THREAD_CPUTIME_ID` sampling at WASI + epoch boundaries
+- `CpuAccount` + `EpochAccount` per app (1s / 10s / lifetime windows + EWMA)
+- `ActivityRegistry` with RAII `ActivityAssertionGuard` for cross-subsystem activity
+- IPC / audio / network / FS coord / dispatch / timer all integrate with registry
+- `NapDetector` (Awake / LightNap / DeepNap / Parked) driven by assertion count + focus + timers
+- Park via WIT `on-suspend` + StateBlob persisted to `/data/state/parked/<bundle>.bin`
+- `IpcEnvelope::effective_qos` + router-driven QoS promotion on call delivery
+- `WaitForGraph` cycle detection extended to promotion chains
+- `VYOMA_DISPATCH` HostJob (supervisor pool) + OnDispatch (app thread via WIT) paths
+- Hierarchical timing wheel + QoS-tiered leeway + per-app jitter
+- Wakeup budget enforcement with leeway pressure escalation
+- Audio realtime via `SCHED_DEADLINE` + `RLIMIT_RTTIME` + signed-manifest gate + watchdog
+  on dedicated core
+- `on-audio-render` WIT callback with epoch-interruption disabled inside render window
+- Boot warmup (5 s `UserInitiated` floor for all apps)
+- Thermal monitor with 4 levels driving cgroup throttling actions
+- `UsageSnapshot` per app + `vyoma:cpu/activity-monitor` capability-gated WIT interface
+- Capability degradation probe + `scheduler-degraded` system event on missing CAP_SYS_NICE
+- Platform profile TOML bundles for 6 profiles; mcu-minimal cooperative round-robin
+- Mgmt panel commands: `sched-stat`, `sched-cgroup`, `sched-assertions`, `sched-degraded`,
+  `sched-park`, `sched-wake`, `sched-set-floor`, `sched-budget`
+- Kernel command line `vyoma.sched=off` emergency escape hatch
+- Heartbeat scheduler section published every 1 s
+
+### Deferred to v2
+
+- Per-CPU affinity model + CPU topology awareness (Apple Silicon P/E cores, ARM big.LITTLE)
+- WASI-call-latency classification + "main thread checker"
+- WASI Preview 3 future/stream as a distinct activity signal
+- Per-window QoS (blocked on WASM single-threadedness)
+- Adaptive QoS tuning based on per-app history
+- Cross-app dispatch barriers
+- Persistent activity-monitor history (long-term storage)
+- Energy attribution (joules) beyond thermal-level reporting
+- Scheduler hot-reload without restart
+- Operator UI for live scheduler heatmap
+- Property-based tests for promotion cycle detection
+- Deterministic scheduling under test seed
+- Per-app cgroup `cpu.pressure` (PSI) observation
+- Multi-app audio mixer in supervisor (handled in future audio round)
+
+### Explicitly NEVER
+
+- `SCHED_FIFO` for any WASM-hosted callback (use `SCHED_DEADLINE`)
+- `SIGSTOP` / `SIGCONT` on threads inside the supervisor process (use park via WIT)
+- Epoch frequency manipulation as a CPU bandwidth control (use cgroup `cpu.max`)
+- Apps declaring their own QoS class (derived only; admin can pin a floor)
+- App pool / thread pool for executing app code (Store is `!Sync`)
+- Subscription-based App Nap requiring scheduler omniscience (use assertions)
+- Audio realtime without `RLIMIT_RTTIME` ceiling or without watchdog
+- Audio realtime granted to unsigned manifests
+- Priority inheritance without cycle detection
+- Holding a lock across a WIT call
+- Epoch deadline callback acquiring AppTable shard lock
+- Killing apps for CPU overrun based on epoch counts alone (use cgroup + EWMA)
+- Promoting QoS based on app self-request
+- Dispatch jobs re-entering app's main `Store` from a host worker thread
+- `custom-wasm` short-lived Store spawning (removed; fork-bomb vector)
+- Sub-millisecond epoch ticking (overhead too high; CPU-time sampling fills the gap)
+- Disabling thermal throttling under `desktop-full` (always on)
+- Per-app dedicated epoch ticker threads (single global ticker only)
+- Polling `/proc/<tid>/stat` as primary CPU measurement (use CLOCK_THREAD_CPUTIME_ID)
+
+### Implementation files
+
+| File | LOC | Purpose |
+|------|-----|---------|
+| `supervisor/src/scheduler/mod.rs` | 220 | Public re-exports, `Scheduler` struct, wiring |
+| `supervisor/src/scheduler/qos.rs` | 480 | `QosClass`, `QosPolicy`, `QosDeriver`, `FocusObserver` |
+| `supervisor/src/scheduler/sysctl.rs` | 280 | `apply_qos`, `set_sched_deadline`, `set_rlimit_rttime` |
+| `supervisor/src/scheduler/probe.rs` | 180 | `SchedCapabilities`, capability detection |
+| `supervisor/src/scheduler/cgroup.rs` | 360 | `CgroupManager`, per-app cgroup lifecycle |
+| `supervisor/src/scheduler/cpu_account.rs` | 240 | `CpuAccount`, `CpuSampler`, `thread_cputime_ns()` |
+| `supervisor/src/scheduler/epoch_controller.rs` | 460 | `EpochController`, 1 kHz ticker, reconciler |
+| `supervisor/src/scheduler/app_nap.rs` | 420 | `NapDetector`, state machine, park/wake hooks |
+| `supervisor/src/scheduler/activity.rs` | 360 | `ActivityRegistry`, `ActivityAssertionGuard` RAII |
+| `supervisor/src/scheduler/dispatch.rs` | 490 | `DispatchPool`, host-job execution |
+| `supervisor/src/scheduler/dispatch_app.rs` | 320 | `AppDispatchQueue`, OnDispatch path |
+| `supervisor/src/scheduler/timers.rs` | 460 | `TimerWheel`, hierarchical wheel + leeway |
+| `supervisor/src/scheduler/audio.rs` | 440 | `AudioRenderThread`, SCHED_DEADLINE setup |
+| `supervisor/src/scheduler/audio_watchdog.rs` | 240 | Watchdog on dedicated CPU core |
+| `supervisor/src/scheduler/usage.rs` | 460 | `UsageSnapshot`, `UsageSampler`, `SystemUsage` |
+| `supervisor/src/scheduler/thermal.rs` | 260 | `ThermalMonitor`, level transitions, throttling |
+| `supervisor/src/scheduler/decay.rs` | 140 | 1 Hz QoS decay loop |
+| `supervisor/src/scheduler/promotion.rs` | 220 | `PromotionSet`, `QosPromotionGuard` |
+| `wit/vyoma-cpu.wit` | 200 | `cpu`, `time`, `activity-monitor` interfaces |
+| `wit/vyoma-dispatch.wit` | 180 | `dispatch`, `dispatch-callbacks` interfaces |
+| `wit/vyoma-audio.wit` | 120 | `audio`, `audio-callbacks` interfaces |
+
+**Total new:** ~6,560 LOC across 21 files; every file under the 500-line ceiling.
+**Modified:** 13 files, ~930 added LOC (envelope.rs +30, router.rs +110, main.rs +60,
+boot.rs +50, manifest.rs +120, lifecycle/actor.rs +90, lifecycle/restoration.rs +60,
+ipc/wit_host.rs +40, runtime/wasmtime_adapter.rs +90, runtime/wasi_shim.rs +60,
+observability/heartbeat.rs +50, mgmt_handlers.rs +140, memory/jetsam.rs +30).
+
+---
+
