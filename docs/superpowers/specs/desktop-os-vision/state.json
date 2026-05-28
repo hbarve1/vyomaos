@@ -1,12 +1,12 @@
 {
   "session_start": "2026-05-29",
   "target": "Full macOS-like Desktop OS (DesktopOS first, then Mobile, then embedded)",
-  "current_round": 3,
+  "current_round": 4,
   "status": "in_progress",
   "subsystems": [
     {"id": 1,  "name": "Kernel & Process Model",              "status": "completed",   "file": "01-kernel-process.md",         "macos_equiv": "XNU kernel / launchd"},
     {"id": 2,  "name": "Virtual Memory & Address Space",       "status": "completed",   "file": "02-virtual-memory.md",         "macos_equiv": "Mach VM / vmmap"},
-    {"id": 3,  "name": "Inter-Process Communication (IPC)",    "status": "pending",     "file": "03-ipc.md",                    "macos_equiv": "Mach ports / XPC"},
+    {"id": 3,  "name": "Inter-Process Communication (IPC)",    "status": "completed",   "file": "03-ipc.md",                    "macos_equiv": "Mach ports / XPC"},
     {"id": 4,  "name": "File System & VFS Layer",              "status": "pending",     "file": "04-filesystem.md",             "macos_equiv": "APFS / VFS"},
     {"id": 5,  "name": "Scheduler & CPU Management",           "status": "pending",     "file": "05-scheduler.md",              "macos_equiv": "XNU Mach scheduler / QoS classes"},
     {"id": 6,  "name": "Device Driver Model",                  "status": "pending",     "file": "06-drivers.md",                "macos_equiv": "IOKit / DriverKit"},

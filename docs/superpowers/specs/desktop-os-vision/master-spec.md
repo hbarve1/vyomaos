@@ -240,3 +240,136 @@ Each subsystem goes through:
 
 ---
 
+## 3. Inter-Process Communication (IPC)
+
+**Status:** ✅ Debated & synthesized (2026-05-29)
+**Debate:** [Architect: 1764 lines] [Critic: 985 lines] [Final: 2399 lines]
+**macOS equivalent:** Mach ports + XPC + NSDistributedNotification + Apple Events + Pasteboard + `launchctl`
+
+### Key decisions
+
+- **Sharded routing fabric, not one actor.** N=`min(num_cpus, 8)` `RouteShard` workers + read-mostly `ArcSwap<RouteTable>` for address resolution. Per-message critical path: atomic load (policy snapshot) → atomic load (route table) → `try_send` to inbox. Warm-cache cost: ~50–80 ns per send. Eliminates the Critic's single-thread bottleneck.
+- **Per-receiver delivery thread; router only enqueues.** Each `AppHandle`'s `CallbackDispatcher` thread drains its own inbox. The router clones the `Sender<IpcEnvelope>` once at instance birth and never touches it again until `InstanceGone`.
+- **Two physical inboxes per app: `inbox_hi` (cap 64) + `inbox_lo` (cap 256).** Hi carries `Critical`/`System` priority (lifecycle, OOM, focus, timeouts); lo carries `Normal`/`Input`. Dispatcher's `select_biased!` drains hi-first.
+- **Non-blocking overflow with manifest-declared per-class policy.** Defaults: `Input → DropOldest`, `Render → DropOldest+Coalesce`, `Ipc → NackSender`, `Control → BlockBriefly(50ms)`. The router never blocks the world.
+- **Wait-for graph + cycle detection on `call`.** O(degree) DFS on every new request; cycle ⇒ `IpcError::WouldDeadlock` returned synchronously. Per-app `max_inflight = 8` default; global `pending_table` cap 4096 with LRU NACK eviction.
+- **`SharedBuffer` supervisor-owned, refcounted, publish/commit `seq`.** RAII `BufferHandle` in each instance's resource table; sender crash flips `valid` AtomicBool to false; reader's subsequent `read()` returns `IpcError::ShmInvalidated`. `SurfaceAlias` kind reuses compositor's double-buffer; no SHM refcount path.
+- **`on-ipc` push, batched up to 16 envelopes, with reentrancy state machine.** States: `IDLE`/`IN_ONIPC`/`AWAITING`/`DRAINING`. Input lane bypasses batching (single-message dispatch). Coalescing of same-(sender, schema) `Render` messages on dequeue.
+- **`ArcSwap<PolicySnapshot>` in `AppState.hot`.** Capability lookups are atomic-load + Arc clone (~20 ns); no `RwLock` on hot path. `ManifestReloaded` builds a new snapshot and `ArcSwap::store`s it. Old envelopes complete normally; readers see eventual consistency.
+- **`@supervisor:` is an authenticated WIT call; legacy stdout path OFF by default.** Manifest declares `[capabilities.supervisor]` with `read`/`focus`/`admin` + `spawn_allow`/`kill_allow`. `EntitlementChecker` validates on every call. Boot flag `legacy_stdout_supervisor = false` (default). SecurityAgent elevation flow with one-shot 30s grants.
+- **Wire format = `(schema_id: u64, schema_version: u16, body: CBOR)`.** Schema IDs are SipHash-2-4 of WIT type's FQDN under persisted seed (`/data/state/ipc-seed`). Version negotiation: receiver bindings declare `(min, max)` acceptable range; mismatch ⇒ `IpcError::SchemaUnsupported`.
+- **Fast-path streams (`StreamChannel`) for media.** Pre-established lock-free SPSC ring buffer; capability checked at setup only; zero supervisor involvement per frame. Required for audio (187 msg/s) and 60 FPS video (500 MB/s).
+- **CBOR over Protobuf/MessagePack.** Schema-optional, byte-string-preserving, `ciborium` integration with `wit-bindgen`, ~25 KiB WASM footprint.
+- **Capability passing via `VyomaResource` (File, Surface, Port, Sub) with per-instance opaque `VyomaFd`.** `flags.move` semantics; supervisor's `fd_table` is source of truth.
+- **Three broadcast tiers: `BestEffort` / `Reliable` / `StateReplication`.** Reliable has per-subscriber retry queue cap 64; on overflow subscriber is force-disconnected and must re-subscribe.
+- **Per-app IPC quotas in manifest** (`max_pending_requests`, `max_active_subscriptions`, `max_shared_buffers`, `max_shared_buffer_bytes`, `max_outbound_per_sec`). Breach ⇒ `IpcError::QuotaExceeded`.
+- **Tracing fields `trace_id: Option<u128>`, `span_id: Option<u64>` in every envelope**; propagated by router through reply paths. OpenTelemetry-compatible.
+
+### Critical v1 requirements
+
+- Sharded routing fabric with `ArcSwap<RouteTable>` and N≥1 `RouteShard` workers
+- `inbox_hi` (cap 64) + `inbox_lo` (cap 256) per app with biased select drain
+- Per-class overflow policies: `DropOldest`, `DropNewest`, `NackSender`, `Coalesce`, `BlockBriefly`
+- Wait-for graph + cycle detection on `call`; `max_inflight = 8` default
+- Reply mailbox with `tokio::sync::Notify` bridge; `ReplyWaiter::poll` race-free
+- 100 ms tick deadline sweep; epoch-aware pending row reaping
+- `SharedBuffer` supervisor-owned, refcounted, `valid` AtomicBool, publish/commit `seq`
+- Sender-crash → buffer invalidated; reader read returns `ShmInvalidated`
+- Receiver-crash → refcount decrement; reclaim on 0
+- `SurfaceAlias` kind reuses compositor double-buffer; no SHM refcount path
+- `on-ipc` push, batched up to 16 envelopes, `Input` bypass for single-message dispatch
+- Coalescing of same-(sender, schema) `Render` messages on dequeue
+- Reentrancy state machine: `IDLE`/`IN_ONIPC`/`AWAITING`/`DRAINING`
+- `ArcSwap<PolicySnapshot>` in `AppState.hot`; no `RwLock` on hot path
+- Policy snapshot rebuilt on `ManifestReloaded`; atomic swap; lock-free reads
+- Authenticated supervisor commands; legacy stdout `@supervisor:` rejected by default
+- `[capabilities.supervisor]` manifest declaration with `read`/`focus`/`admin` + `spawn_allow`/`kill_allow`
+- SecurityAgent elevation flow with one-shot 30s grants
+- `legacy_stdout_supervisor = false` in `/etc/vyoma/boot.toml` defaults
+- Three broadcast tiers: `BestEffort` / `Reliable` / `StateReplication`; per-subscriber retry queue cap 64
+- IpcSeed persisted to `/data/state/ipc-seed` for stable topic/schema hashing across reboots
+- Pre-established `StreamChannel` for media (audio/video) with SPSC ring; capability checked at setup
+- Per-app rate limit via `RateBucket` (`max_outbound_per_sec`) on every (sender, recipient) pair
+- Global pending-table cap 4096; LRU NACK on overflow
+- Distributed tracing fields (`trace_id`, `span_id`) propagated through router
+- Sender authentication: router overwrites `sender_bundle`/`sender_epoch`/`id` from caller_id
+- Schema-version negotiation: `(schema_id, schema_version, body)`; receiver enforces version range
+- CBOR body wire format via `ciborium`; inline `SmallVec<[u8; 256]>` for ≤256B
+- Capability passing: `VyomaResource::{File, Surface, Port, Sub}` with opaque `VyomaFd` per instance
+- `flags.move` semantics in router; `fd_table` ownership check
+- IPC metrics: counters per shard (delivered, dropped, nacked, coalesced, timeouts)
+- `mgmt` panel commands: `ipc-inbox <bundle>`, `ipc-deadlock`, `ipc-trace <bundle>`
+
+### Deferred to v2
+
+- Cross-VM IPC (`@bundle@host`) — routing between supervisors
+- Persistent inbox across reboot (only `vyoma.lifecycle.*` ring persists in v1)
+- Per-app input dedup window (idempotency keys for `Reliable` topics)
+- Audit log retention for compliance (SOC2 / ISO) — basic warn-log only in v1
+- Role-based service discovery (`role = "notification-daemon"` registry)
+- Adaptive shard rebalancing — fixed N at boot in v1
+- Operator UI for `iptop` live view — CLI only in v1
+- Property-based test harness for ordering invariants
+- Deterministic IPC scheduling under test seed
+- Wire-format compression (zstd for large CBOR payloads)
+- Anycast addressing (`@@anycast.<role>`)
+- TopicGlob with full regex syntax (basic `*` wildcard only in v1)
+- WIT-typed `on-broadcast` (uses `on-ipc` envelope dispatch in v1)
+- Mmap-backed SHM for very large buffers (Owned `Vec<u8>` only in v1)
+- Adaptive `max_inflight` per app based on recent latency
+- Hot-reload of IPC subsystem itself without restart
+
+### Explicitly NEVER
+
+- Direct app-to-app `crossbeam::Sender` handles (would bypass capability check)
+- Unauthenticated `@supervisor:` stdout protocol (deprecated v0.5, removed v1)
+- Apps setting their own `env.sender` (always overwritten by router)
+- Apps setting their own `env.id` (always overwritten)
+- Wasmtime async outside `reply.rs` and `wit_host.rs::host_call`
+- `tokio::Runtime` for anything other than the async reply bridge
+- Mach ports / Binder / D-Bus equivalents (we built our own broker)
+- `RwLock` on the per-message critical path (PolicySnapshot is ArcSwap-only)
+- Single global router actor (sharded fabric only)
+- Blocking sends from router (every send is `try_send` + policy)
+- Per-message capability cache LRU (the PolicySnapshot itself is the cache)
+- `cap_cache: Mutex<LruCache<...>>` (eliminated entirely)
+- Apps drawing into another app's surface without an explicit `Capability::Surface` handoff
+- Cross-instance shared linear memory (wasip2 doesn't allow; we don't invent)
+- App holding `crossbeam::Receiver<IpcEnvelope>` directly (always via dispatcher)
+- WASM-side correlation IDs (router-allocated only; apps see opaque `u64`)
+- App-side schema registry (each app's WIT is local; supervisor doesn't maintain a global registry)
+- Bypassing the wait-for graph for "trusted" apps (cycles are bugs regardless of trust)
+- Subscriber-driven backpressure on the publisher (broadcast is fan-out, never blocks the publisher)
+
+### Implementation files
+
+| File | LOC | Purpose |
+|------|-----|---------|
+| `supervisor/src/ipc/mod.rs`             | 80   | Re-exports, glue, `IpcSubsystem::start()` |
+| `supervisor/src/ipc/addr.rs`            | 220  | `IpcAddr`, parsing, resolution, glob match |
+| `supervisor/src/ipc/envelope.rs`        | 360  | `IpcEnvelope`, `IpcPayload`, `TypedMessage`, `SchemaId`, `IpcFlags`, `Priority`, `InlineBody`, `VyomaResource` |
+| `supervisor/src/ipc/router.rs`          | 460  | `IpcRouter`, shard fan-out, `RouterCmd`, `RouteEntry`, `ArcSwap<RouteTable>`, instance lifecycle hooks |
+| `supervisor/src/ipc/shard.rs`           | 380  | `RouteShard` worker — owns `pending` map, `inflight` counter, drives `route` |
+| `supervisor/src/ipc/deliver.rs`         | 280  | Non-blocking delivery + overflow policy application |
+| `supervisor/src/ipc/overflow.rs`        | 180  | `OverflowPolicy`, `ClassPolicy`, default tables, manifest parse |
+| `supervisor/src/ipc/reply.rs`           | 420  | `PendingReply`, `ReplyMailbox`, `ReplyWaiter`, async bridge, `IpcError` |
+| `supervisor/src/ipc/waitfor.rs`         | 320  | `WaitForGraph`, cycle DFS, drop_all_for, cycles() introspection |
+| `supervisor/src/ipc/ticker.rs`          | 140  | Periodic deadline sweep + parked-resume re-arm |
+| `supervisor/src/ipc/broadcast.rs`       | 360  | `TopicTable`, `TopicId`, `TopicGlob`, three delivery tiers, retry queue |
+| `supervisor/src/ipc/supervisor_cmd.rs`  | 440  | `SupervisorCmdHandler`, `SupCmd` parser, entitlement check, dispatch |
+| `supervisor/src/ipc/policy.rs`          | 280  | `PolicySnapshot`, `HotPolicy`, `BundleGlob`/`SchemaGlob`/`TopicGlob`, `EntitlementSet` |
+| `supervisor/src/ipc/cap.rs`             | 240  | `RateBucket`, per-app quota enforcement, capability matrix evaluation |
+| `supervisor/src/ipc/wit_host.rs`        | 460  | Wasmtime host bindings for `ipc-client`, async `func_wrap_async` for `call`, `host_call` |
+| `supervisor/src/ipc/dispatch.rs`        | 360  | Batched delivery to `on-ipc`, priority lane drain, reentrancy state machine, coalescing |
+| `supervisor/src/ipc/stream.rs`          | 360  | `StreamChannel`, `StreamTx`, `StreamRx`, lock-free SPSC ring |
+| `supervisor/src/ipc/metrics.rs`         | 160  | `IpcMetrics` (delivered/dropped/nacked/coalesced/timeouts counters) |
+| `supervisor/src/shm/lifecycle.rs`       | 360  | `SharedBufferRegistry` v2 — refcount, valid, commit/read |
+| `wit/vyoma-ipc.wit`                     | 240  | Full WIT interface |
+| `wit/vyoma-streams.wit`                 | 80   | Stream interface |
+| `apps/_lib/vyoma-ipc-client/src/lib.rs` | 320  | App-side ergonomic Rust wrapper over generated WIT bindings |
+
+**Total new:** ~6,580 LOC across 22 source files; every file under the 500-line ceiling.
+**Modified:** 8 files, ~450 added LOC (instance.rs +60, process_table.rs +50, manifest.rs +180, lifecycle/actor.rs +30, runtime/callbacks.rs +60, display/surface.rs +20, main.rs +30, boot.rs +20).
+
+---
+
