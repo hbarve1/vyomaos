@@ -31,6 +31,12 @@ def test_assert_pixel_fails_outside_tolerance():
         assert_pixel(img, 5, 5, (0, 0, 0), tolerance=15)
 
 
+def test_assert_pixel_out_of_bounds():
+    img = _solid(10, 10, (100, 100, 100))
+    with pytest.raises(AssertionError, match="out of bounds"):
+        assert_pixel(img, 100, 100, (100, 100, 100))
+
+
 def test_assert_region_color_solid_match():
     img = _solid(100, 100, DESKTOP_BG)
     assert_region_color(img, 0, 0, 100, 100, DESKTOP_BG, min_ratio=0.9)

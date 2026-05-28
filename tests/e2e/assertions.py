@@ -12,6 +12,10 @@ def _matches(actual: tuple, expected: tuple, tolerance: int) -> bool:
 
 
 def assert_pixel(img: Image.Image, x: int, y: int, rgb: tuple, tolerance: int = TOLERANCE):
+    if x < 0 or x >= img.width or y < 0 or y >= img.height:
+        raise AssertionError(
+            f"Pixel ({x},{y}): coordinates out of bounds for {img.width}×{img.height} image"
+        )
     actual = img.getpixel((x, y))[:3]
     if not _matches(actual, rgb, tolerance):
         raise AssertionError(
