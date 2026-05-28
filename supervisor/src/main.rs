@@ -154,9 +154,9 @@ static FLUSH_COUNTS: OnceLock<Mutex<HashMap<String, (u64, std::time::Instant)>>>
 fn flush_counts() -> &'static Mutex<HashMap<String, (u64, std::time::Instant)>> {
     FLUSH_COUNTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
-/// Gate: false = suppress menu bar rendering on non-desktop profiles.
-pub static SHOW_MENU_BAR: OnceLock<bool> = OnceLock::new();
-/// Active display profile name broadcast to apps via VYOMA_SYSTEM:display_profile.
+// Profile gates: false = suppress on non-desktop profiles.
+pub static SHOW_MENU_BAR: OnceLock<bool> = OnceLock::new(); // suppress menu bar
+pub static SHOW_DOCK:     OnceLock<bool> = OnceLock::new(); // suppress dock strip
 pub static DISPLAY_PROFILE: OnceLock<String> = OnceLock::new();
 
 // ── T023: Scalable font cache (Linux-only) ────────────────────────────────────
@@ -267,7 +267,7 @@ fn main() {
     // ── T017: Load platform profile (PLATFORM env var or default) ────────────
     let _active_profile = load_platform_profile();
     if let Some(ref p) = _active_profile {
-        let _ = SHOW_MENU_BAR.set(p.display.show_menu_bar);
+        let _ = SHOW_MENU_BAR.set(p.display.show_menu_bar); let _ = SHOW_DOCK.set(p.display.show_dock);
         let _ = DISPLAY_PROFILE.set(p.display.profile.clone());
     }
 

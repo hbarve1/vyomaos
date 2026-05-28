@@ -86,9 +86,10 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
     // Partition: system-layer (dock, overlay) vs. regular tiled apps.
     let (pinned, tiled): (Vec<_>, Vec<_>) = apps.iter().partition(|(_, z, _, _)| *z >= Z_DOCK);
 
-    // Assign pinned apps to the reserved bottom strip.
-    let dock_h_reserved: u32 = if pinned.is_empty() { 0 } else { DOCK_STRIP_H };
-    {
+    // Assign pinned apps to the reserved bottom strip (skipped when SHOW_DOCK=false).
+    let dock_enabled = crate::SHOW_DOCK.get().copied().unwrap_or(true);
+    let dock_h_reserved: u32 = if pinned.is_empty() || !dock_enabled { 0 } else { DOCK_STRIP_H };
+    if dock_enabled {
         let reg = registry.lock().unwrap();
         for (name, _, _, _) in &pinned {
             if let Some(st) = reg.get(name.as_str()) {
