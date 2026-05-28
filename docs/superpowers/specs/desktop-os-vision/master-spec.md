@@ -133,3 +133,110 @@ Each subsystem goes through:
 
 ---
 
+## 2. Virtual Memory & Address Space
+
+**Status:** ✅ Debated & synthesized (2026-05-29)
+**Debate:** [Architect: 1237 lines] [Critic: 747 lines] [Final: 2403 lines]
+
+### Key decisions
+- **PSI is the source of truth for memory pressure, not `/proc/meminfo` polling.** The supervisor opens `/proc/pressure/memory`, registers a "some 150 ms / 1 s" trigger, and waits on it via `epoll`. Polling becomes a fallback only when PSI is unavailable. Pressure is an event, not a number.
+- **`MemoryGovernor` reservations are RAII tokens, never overshoot-and-backout.** `try_reserve()` returns `Option<ReservationToken<'_>>`; `commit()` makes the reservation permanent; `Drop` releases on panic or unwind. No window in which `wasm_used_bytes > wasm_budget_bytes` is ever observable.
+- **`AppLimiter` is lifted into `AppState.hot` as `Arc<AppLimiter>`.** The `Store` shares the same `Arc`; `WasmMemoryStat::read` reads atomic fields from any thread without touching the Store lock.
+- **Suspension grant: in-flight `Suspending` instances get an unconditional `state_blob_bytes + 256 KiB` admission window.** `on-suspend` can allocate to serialize state even under `PressureLevel::Critical`. The grant is reclaimed when the store is dropped. Breaks the eviction-serialize circularity.
+- **`SharedBufferKind::Surface` is zero-copy via aliasing.** The `Vec<u8>` backing the supervisor-side `Surface.back` IS the shared buffer. Compositor reads it directly; no second copy. 60 Hz video is feasible.
+- **Per-instance cap, governor reservation, and pressure admission are merged into a single atomic decision** inside `AppLimiter::memory_growing`. The decision is computed under lock-free atomics in < 100 ns. `AtomicBool is_foreground` on the limiter eliminates Arc-clone cost on the hot path.
+- **RSS budget at the 512 MiB `desktop-full` floor supports 12 concurrent apps** with Wasmtime PoolingAllocator + shared `tokio::task::spawn_blocking` driver pool. The 50-app target is reserved for systems with ≥ 2 GiB RAM.
+- **Jetsam scoring uses a `profile.toml`-configurable weight table; `Suspended` apps are removed from the live-scoring pool** and compacted in a separate "old StateBlob GC" pass. Prevents the "select-victims-that-yield-no-memory" pathology.
+- **Static supervisor allocations (font atlas, framebuffer, image cache) are pre-registered with the governor** at `InitDisplay` so the governor's `wasm_used_bytes` reflects supervisor overhead from boot onwards.
+- **`WasmMemoryView` is replaced with thin free functions over `Memory::read` / `Memory::write`.** No raw `data_ptr` exposure, no snapshot-size guard pattern (unsound in release builds).
+- **Batched re-sampling suspend loop with a per-tick cap of 5 instances** replaces "suspend everyone selected". `MemAvailable` is re-read after each suspension; the loop exits as soon as the target watermark is reached.
+- **`on-memory-warning` WIT callback has a fully defined contract:** synchronous on driver thread, 100 ms budget, returns bytes-released, fires only on level transitions.
+- **Pull-only streaming gains `read-at(offset, len)` for random-access workloads.** Implementation uses `pread()`; mmap-backed fast path optional.
+- **`SharedBufferKind::Surface` cap is raised to 64 MiB** to match max surface size. Other kinds (`AudioBuffer`, `ImageData`, `Custom`) remain at 16 MiB.
+- **Long-running app fragmentation is addressed by an explicit "soft restart" policy.** When `current_pages / reported_live_bytes > 4×` for > 1 h, the supervisor signals `on-soft-restart`, persists `StateBlob`, terminates, and re-spawns.
+
+### Critical v1 requirements
+- PSI-based pressure monitor with polling fallback (Linux < 4.20 only)
+- `MemoryGovernor` with RAII `ReservationToken` — never overshoots budget, panic-safe
+- `Arc<AppLimiter>` in `AppState.hot` — telemetry readable from any thread without Store contact
+- Suspension grant — `on-suspend` can allocate `state_blob_bytes + 256 KiB` even under Critical
+- `SharedBufferKind::Surface` zero-copy aliasing — Surface.back IS the SHM buffer; video at 60 Hz achievable
+- Per-instance `max_pages` cap + global wasm budget + pressure admission composed in one atomic decision
+- Pre-registration of static allocations at `InitDisplay` so atlas + framebuffer count against budget from boot
+- Batched re-sampling suspend loop (`max_per_tick = 5`); MemAvailable re-read after each suspension
+- Jetsam scoring with `profile.toml`-configurable weights; Suspended apps excluded from live scoring
+- `on-memory-warning` callback with 100 ms budget, fires on level transitions only
+- Streaming I/O `read-at(offset, len)` via `pread()` for random-access media workloads
+- `AtomicBool is_foreground` on `AppLimiter` updated by focus manager — no Arc clone per grow
+- `MemAvailable` parsed from `/proc/meminfo` for classification; PSI is the wakeup signal
+- Soft-restart on fragmentation: `current_pages / reported_live_bytes > 4×` for > 1 h triggers `on-soft-restart`
+- Wasmtime PoolingAllocator with `linear_memory_keep_resident(0)` — virtual reservation, RSS on demand
+- Shared `tokio::spawn_blocking` driver pool (size `2 × num_cpus`, 2 MiB stack) — no per-app dedicated thread
+- Crash report enrichment with `WasmMemoryStat`, `last_attempted_pages`, `pressure_at_crash`, `GovernorSnapshot`
+- Compile arena (single-permit semaphore + pressure gate); blocks new module installs under Critical
+- Lock-order test (`lock_order_test.rs`) — every reverse pairing fails under `parking_lot` deadlock detector
+- Heartbeat memory section with `jetsam_storm` flag (`jetsam_events_5s >= 5`)
+
+### Deferred to v2
+- GPU VRAM accounting (handled in subsystem #12)
+- NUMA awareness (single-socket desktop only)
+- Persistent memory (pmem)
+- Memory ballooning to host hypervisor
+- Per-process address space sharing (wasm-threads / wasip3 dependency)
+- Memory compression (zram / swap compressor)
+- Adaptive jetsam-weight learning
+- Per-window surface compression for occluded windows
+- Mmap-backed `read-at` (pread()-only in v1)
+- `mgmt: vm-allocate-trace` per-grow audit trail
+
+### Explicitly NEVER
+- Direct `mmap` / `mach_vm_*` exposed to apps
+- Cross-instance shared linear memory (wasip2 has none; we will not invent a non-standard extension)
+- Raw host pointers crossing the WIT boundary (SHM is `u64` handles only)
+- `Memory::data_mut` / `Memory::data_ptr` outside `runtime/memory_io.rs`
+- Overshoot-and-backout reservation patterns
+- Per-app dedicated 8 MiB driver thread (shared blocking pool only)
+- Per-app private font atlas (one system-wide atlas, LRU eviction)
+- Killing an app to free memory it doesn't hold (Suspended apps NOT live-jetsam candidates)
+- Polling `/proc/meminfo` as the primary pressure signal
+- WASM `memory.shrink` (spec doesn't exist; use soft-restart)
+- Allowing growth during Imminent pressure (never, foreground or otherwise)
+- Holding the AppTable shard lock across a WIT call
+
+### Implementation files
+| File | LOC | Purpose |
+|------|-----|---------|
+| `supervisor/src/memory/mod.rs` | 80 | module wiring; re-exports `PressureLevel`, `MemoryGovernor`, `WasmMemoryStat`, `ReservationToken` |
+| `supervisor/src/memory/governor.rs` | 460 | `MemoryGovernor`, `ReservationToken` RAII, `try_reserve`, `pre_register`, `set_foreground`, `set_lifecycle`, snapshot |
+| `supervisor/src/memory/pressure.rs` | 140 | `PressureLevel`, `PressureThresholds`, `PressureEvent` types |
+| `supervisor/src/memory/pressure_monitor.rs` | 380 | `MemoryPressureMonitor` PSI + polling fallback + dispatch |
+| `supervisor/src/memory/jetsam.rs` | 480 | `JetsamDirector`, `JetsamWeights`, snapshot scorer, suspend/jetsam/compact loops |
+| `supervisor/src/memory/layout.rs` | 320 | `SupervisorMemoryLayout`, `RegionStat`, smaps reader |
+| `supervisor/src/memory/stat.rs` | 80 | `WasmMemoryStat` reader (lock-free) |
+| `supervisor/src/memory/callback_registry.rs` | 220 | `PressureCallbackRegistry` — `on-memory-warning` broadcast with timeout |
+| `supervisor/src/shm/mod.rs` | 50 | module wiring |
+| `supervisor/src/shm/shared_buffer.rs` | 280 | `SharedBuffer`, kind, Owned vs SurfaceAlias storage, flags, lifecycle |
+| `supervisor/src/shm/registry.rs` | 460 | `SharedBufferRegistry` — create_owned, create_surface_alias, attach, write, read, publish, destroy, evict_orphans |
+| `supervisor/src/shm/audio_ring.rs` | 180 | SPSC ring path for audio frames (lock-free crossbeam SegQueue) |
+| `supervisor/src/shm/wit_host.rs` | 320 | WIT `vyoma:memory/shared` + `vyoma:memory/report` host impl |
+| `supervisor/src/runtime/memory_io.rs` | 120 | `write_to_wasm`, `read_from_wasm` free functions |
+| `supervisor/src/runtime/compile_arena.rs` | 140 | Cranelift concurrent-compile limiter + pressure gate |
+| `supervisor/src/runtime/driver_pool.rs` | 160 | Shared `tokio::spawn_blocking` pool for app drivers |
+| `supervisor/src/display/surface.rs` (modified) | +60 | `Surface::drop_front`, ArcSwap front + `EMPTY_FRONT` sentinel |
+| `supervisor/src/resource_limiter.rs` (modified) | +180 | `AppLimiter` with `is_foreground`, `lifecycle_tag`, `suspension_grant`, `grow_attempted`, `last_attempted_pages`, `LimiterView` |
+| `supervisor/src/lifecycle/crash.rs` (modified) | +80 | add `StackOverflow`, `Jetsamed`, `ShmExhausted`, `SoftRestart` |
+| `supervisor/src/manifest.rs` (modified) | +120 | parse + validate `[memory]`, `[memory.streaming]`, `mgmt.allow_pressure_injection` |
+| `supervisor/src/observability/heartbeat.rs` (modified) | +70 | emit memory section + jetsam rate + storm flag |
+| `supervisor/src/mgmt_handlers.rs` (modified) | +110 | memstat / memmap / governor / jetsam-rank / soft-restart / set-pressure |
+| `supervisor/src/boot.rs` (modified) | +40 | reorder phases; pre-register atlas + framebuffer + caches |
+| `wit/vyoma-memory.wit` | new | `shared` + `report` interfaces |
+| `wit/vyoma-state.wit` (extend) | — | `state-stream` (begin, push, commit, cancel) |
+| `wit/vyoma-callbacks.wit` (extend) | — | `on-memory-warning`, `on-soft-restart` |
+| `wit/vyoma-mgmt.wit` (extend) | — | `memory-mgmt` (memstat, memmap, governor, jetsam-rank, set-pressure) |
+| `wit/vyoma-fs.wit` (extend) | — | `streaming` adds `read-at` |
+
+**Total new:** ~3,870 LOC across 16 new files; every file under the 500-line ceiling.
+**Modified:** 7 files, ~660 added LOC.
+
+---
+
