@@ -29,6 +29,8 @@ mod draw_cmd;
 mod input_keys;
 mod ipc_commands;
 mod ipc_handlers;
+mod ipc_update;
+mod platform;
 mod mount;
 mod mouse_input;
 mod mouse_thread;
@@ -55,7 +57,6 @@ use std::{
 
 use supervisor::logging::Subsystem;
 use supervisor::manifest::{BootConfig, BootEntry};
-use supervisor::profile;
 
 #[macro_export]
 macro_rules! log_info {
@@ -203,59 +204,8 @@ const LOG_DIR:           &str = "/data/logs";
 const LOG_TAIL_LINES:    usize = 30;
 
 
-// ── T017: Platform profile loader ────────────────────────────────────────────
-
-const PLATFORM_PROFILE_DIR: &str = "/etc/vyoma/profiles";
-const DEFAULT_PROFILE_NAME: &str = "desktop-full";
-
-/// Load the active platform profile from disk.
-///
-/// Resolution order:
-/// 1. `PLATFORM` environment variable (e.g. `PLATFORM=iot-edge`)
-/// 2. Default: `desktop-full`
-///
-/// Profile file is looked up at `PLATFORM_PROFILE_DIR/<name>.toml`.
-/// If the file does not exist, logs a warning and returns `None`
-/// (system continues with defaults).
-fn load_platform_profile() -> Option<profile::PlatformProfile> {
-    let name = std::env::var("PLATFORM")
-        .unwrap_or_else(|_| DEFAULT_PROFILE_NAME.to_string());
-    let path = format!("{PLATFORM_PROFILE_DIR}/{name}.toml");
-    match profile::load_profile(std::path::Path::new(&path)) {
-        Ok(p) => {
-            log_info!(
-                Subsystem::Lifecycle,
-                None,
-                "platform profile loaded: {} (runtime={:?}, ram={}KB)",
-                p.platform.name,
-                p.platform.runtime,
-                p.platform.min_ram_kb
-            );
-            Some(p)
-        }
-        Err(profile::ProfileError::Io(_)) => {
-            // Profile file absent — acceptable on desktop where no profile is deployed.
-            log_info!(
-                Subsystem::Lifecycle,
-                None,
-                "no platform profile at {path}, using defaults"
-            );
-            None
-        }
-        Err(e) => {
-            log_warn!(Subsystem::Lifecycle, None, "platform profile error: {e}");
-            None
-        }
-    }
-}
-
-// ── P19: watchdog backoff helper ─────────────────────────────────────────────
-
-fn watchdog_next_backoff(watchdog_secs: u32, restarts: u32) -> u64 {
-    let base = watchdog_secs as u64;
-    let factor = 1u64 << restarts.min(8);
-    (base * factor).min(300)
-}
+// Re-export for use by app_threads (via crate::watchdog_next_backoff)
+pub use platform::watchdog_next_backoff;
 
 fn main() {
     BOOT_INSTANT.get_or_init(std::time::Instant::now);
@@ -265,7 +215,7 @@ fn main() {
     log_info!(Subsystem::Lifecycle, None, "filesystems mounted");
 
     // ── T017: Load platform profile (PLATFORM env var or default) ────────────
-    let _active_profile = load_platform_profile();
+    let _active_profile = platform::load_platform_profile();
     if let Some(ref p) = _active_profile {
         let _ = SHOW_MENU_BAR.set(p.display.show_menu_bar);
         let _ = SHOW_DOCK.set(p.display.show_dock);
