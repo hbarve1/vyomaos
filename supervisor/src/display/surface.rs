@@ -128,19 +128,34 @@ pub fn blit_surface(
     fb_height: u32,
 ) {
     if global_alpha == 0 { return; }
-    for row in 0..surface.height {
-        let screen_y = dy + row;
-        if screen_y >= fb_height { break; }
-        for col in 0..surface.width {
-            let screen_x = dx + col;
-            if screen_x >= fb_width { continue; }
-            let src_off = (row * surface.stride + col * 4) as usize;
-            if src_off + 4 > surface.buf.len() { continue; }
-            let fb_off = (screen_y * fb_stride + screen_x * 4) as usize;
-            if fb_off + 4 > fb_back.len() { continue; }
-            if global_alpha == 255 {
-                fb_back[fb_off..fb_off + 4].copy_from_slice(&surface.buf[src_off..src_off + 4]);
-            } else {
+
+    if global_alpha == 255 {
+        // Fast path: row-level memcpy. Surface and fb are both BGRA — no conversion needed.
+        let visible_w = surface.width.min(fb_width.saturating_sub(dx));
+        if visible_w == 0 { return; }
+        let copy_bytes = (visible_w * 4) as usize;
+        for row in 0..surface.height {
+            let screen_y = dy + row;
+            if screen_y >= fb_height { break; }
+            let src_start = (row * surface.stride) as usize;
+            let fb_start  = (screen_y * fb_stride + dx * 4) as usize;
+            if src_start + copy_bytes > surface.buf.len() { break; }
+            if fb_start  + copy_bytes > fb_back.len()     { break; }
+            fb_back[fb_start..fb_start + copy_bytes]
+                .copy_from_slice(&surface.buf[src_start..src_start + copy_bytes]);
+        }
+    } else {
+        // Slow path for animation fades: per-pixel alpha blend.
+        for row in 0..surface.height {
+            let screen_y = dy + row;
+            if screen_y >= fb_height { break; }
+            for col in 0..surface.width {
+                let screen_x = dx + col;
+                if screen_x >= fb_width { continue; }
+                let src_off = (row * surface.stride + col * 4) as usize;
+                if src_off + 4 > surface.buf.len() { continue; }
+                let fb_off = (screen_y * fb_stride + screen_x * 4) as usize;
+                if fb_off + 4 > fb_back.len() { continue; }
                 let src = read_bgra(&surface.buf, src_off);
                 let (sr, sg, sb, sa) = super::compositor::unpack(src);
                 let eff_a = (sa as u32 * global_alpha as u32 / 255) as u8;
