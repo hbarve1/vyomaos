@@ -274,20 +274,32 @@ pub fn handle_draw_command(
                 font::parse_size(parts[4]),
             ) {
                 let text = parts[5];
-                let (ax, ay, effective_max_w) = match win {
-                    None => (lx, ly, max_w),
-                    Some((wx, wy, ww, wh)) => {
-                        let content_wy = wy + chrome_h;
-                        let ax = wx + lx;
-                        let ay = content_wy + ly;
-                        let content_bottom = wy + wh;
-                        if ax >= wx + ww || ay >= content_bottom { return; }
-                        let effective_max_w = max_w.min(ww.saturating_sub(lx));
-                        if effective_max_w == 0 { return; }
-                        (ax, ay, effective_max_w)
+                if let Some(surface_arc) = get_surface(sender, app_registry) {
+                    // Route to surface: word-wrap then draw each line with bitmap font.
+                    let max_chars = (max_w / font::GLYPH_W) as usize;
+                    let lines = display::wrap_words(text, max_chars);
+                    let mut surface = surface_arc.lock().unwrap();
+                    for (i, line) in lines.iter().enumerate() {
+                        let line_y = ly.saturating_add(i as u32 * font::GLYPH_H);
+                        if line_y >= surface.height { break; }
+                        surface.draw_text_bitmap(lx, line_y, line, rgba);
                     }
-                };
-                fb_lock.lock().unwrap().draw_text_wrap(ax, ay, effective_max_w, text, rgba, size);
+                } else {
+                    let (ax, ay, effective_max_w) = match win {
+                        None => (lx, ly, max_w),
+                        Some((wx, wy, ww, wh)) => {
+                            let content_wy = wy + chrome_h;
+                            let ax = wx + lx;
+                            let ay = content_wy + ly;
+                            let content_bottom = wy + wh;
+                            if ax >= wx + ww || ay >= content_bottom { return; }
+                            let effective_max_w = max_w.min(ww.saturating_sub(lx));
+                            if effective_max_w == 0 { return; }
+                            (ax, ay, effective_max_w)
+                        }
+                    };
+                    fb_lock.lock().unwrap().draw_text_wrap(ax, ay, effective_max_w, text, rgba, size);
+                }
             } else {
                 log_error!(Subsystem::Display, Some(sender), "bad draw_text_wrap args: {args}");
             }
