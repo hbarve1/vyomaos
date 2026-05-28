@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use crate::{AppRegistry, AppStatus, FocusedApp, HOVERED_APP, Z_ORDER, BOOT_INSTANT};
 
 #[cfg(target_os = "linux")]
-use crate::display;
+use crate::display::{self, draw_rounded_rect};
 
 // ── Z-layer constants ─────────────────────────────────────────────────────────
 #[allow(dead_code)]
@@ -142,7 +142,6 @@ fn draw_glyph_str(
 /// dark rounded rects slightly offset below and around the window frame.
 #[cfg(target_os = "linux")]
 fn draw_window_shadow(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, wh: u32) {
-    use crate::display::draw_rounded_rect;
     let shadow_rgba = 0x00000078_u32; // black at ~47% alpha
     let (sw, sh) = (fb.width, fb.height);
     let fs = fb.stride;
@@ -180,11 +179,8 @@ pub fn draw_titlebar(
     // Drop shadow rendered behind the window chrome
     draw_window_shadow(fb, wx, wy, ww, TITLEBAR_H);
     let bg = titlebar_color_for_state(is_focused, is_hovered);
-    {
-        use crate::display::draw_rounded_rect;
-        let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-        draw_rounded_rect(&mut fb.back, wx, wy, ww, TITLEBAR_H, bg, 10, fs, sw, sh);
-    }
+    let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
+    draw_rounded_rect(&mut fb.back, wx, wy, ww, TITLEBAR_H, bg, 10, fs, sw, sh);
     fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
 
     // Traffic lights — circles (radius = TL_DOT/2), left-aligned, vertically centered
@@ -194,14 +190,11 @@ pub fn draw_titlebar(
     } else {
         (TL_GRAY, TL_GRAY, TL_GRAY)
     };
-    {
-        use crate::display::draw_rounded_rect;
-        let r = TL_DOT / 2;
-        let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-        draw_rounded_rect(&mut fb.back, wx +  9, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
-        draw_rounded_rect(&mut fb.back, wx + 30, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
-        draw_rounded_rect(&mut fb.back, wx + 51, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
-    }
+    let r = TL_DOT / 2;
+    let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
+    draw_rounded_rect(&mut fb.back, wx +  9, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
+    draw_rounded_rect(&mut fb.back, wx + 30, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
+    draw_rounded_rect(&mut fb.back, wx + 51, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
 
     // App name centered — 13pt regular Inter
     let nlen = name.len().min(20);
@@ -277,11 +270,7 @@ pub fn draw_menubar(
 /// Immediately repaint title bars for all windowed apps (called on focus changes).
 pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     let focused_name = focused.lock().unwrap().clone();
-    let hovered_name = HOVERED_APP
-        .get_or_init(|| Mutex::new(None))
-        .lock()
-        .unwrap()
-        .clone();
+    let hovered_name = HOVERED_APP.get_or_init(|| Mutex::new(None)).lock().unwrap().clone();
     // Collect (win_z, name, region) then sort by win_z ascending so lower-z
     // windows are painted first (appear behind higher-z windows).
     let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
@@ -319,7 +308,13 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
             let is_hovered = hovered_name.as_deref() == Some(name.as_str());
             draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, is_hovered, name);
             // T078: focus ring — 3px Apple-blue rounded highlight around focused/hovered title bar
-            if (is_focused || is_hovered) && supervisor::FOCUS_RING.get().copied().unwrap_or(false) { use crate::display::draw_rounded_rect; let (fsw, fsh, fst) = (fb.width, fb.height, fb.stride); draw_rounded_rect(&mut fb.back, wx.saturating_sub(2), wy.saturating_sub(2), ww+4, TITLEBAR_H+4, 0x0A84FFFF, 3, fst, fsw, fsh); }
+            if (is_focused || is_hovered) && supervisor::FOCUS_RING.get().copied().unwrap_or(false) {
+                let (fsw, fsh, fst) = (fb.width, fb.height, fb.stride);
+                draw_rounded_rect(
+                    &mut fb.back, wx.saturating_sub(2), wy.saturating_sub(2),
+                    ww + 4, TITLEBAR_H + 4, 0x0A84FFFF, 3, fst, fsw, fsh,
+                );
+            }
         }
         let sw = fb.width;
         let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
@@ -343,9 +338,7 @@ pub fn draw_chrome_onto(
     focused: &FocusedApp,
 ) {
     let focused_name = focused.lock().unwrap().clone();
-    let hovered_name = HOVERED_APP
-        .get_or_init(|| Mutex::new(None))
-        .lock().unwrap().clone();
+    let hovered_name = HOVERED_APP.get_or_init(|| Mutex::new(None)).lock().unwrap().clone();
     let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
         let reg = registry.lock().unwrap();
         let mut regions_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = Vec::new();
@@ -383,7 +376,13 @@ pub fn draw_chrome_onto(
         } else {
             draw_titlebar(fb, *wx, *wy, *ww, is_focused, is_hovered, name);
             // T078: focus ring — 3px Apple-blue rounded highlight around focused/hovered title bar
-            if (is_focused || is_hovered) && supervisor::FOCUS_RING.get().copied().unwrap_or(false) { use crate::display::draw_rounded_rect; let (fsw, fsh, fst) = (fb.width, fb.height, fb.stride); draw_rounded_rect(&mut fb.back, wx.saturating_sub(2), wy.saturating_sub(2), ww+4, TITLEBAR_H+4, 0x0A84FFFF, 3, fst, fsw, fsh); }
+            if (is_focused || is_hovered) && supervisor::FOCUS_RING.get().copied().unwrap_or(false) {
+                let (fsw, fsh, fst) = (fb.width, fb.height, fb.stride);
+                draw_rounded_rect(
+                    &mut fb.back, wx.saturating_sub(2), wy.saturating_sub(2),
+                    ww + 4, TITLEBAR_H + 4, 0x0A84FFFF, 3, fst, fsw, fsh,
+                );
+            }
         }
     }
     let sw = fb.width;
@@ -488,7 +487,6 @@ pub fn render_dropdown_if_open(fb: &mut display::Framebuffer) {
     if !s.open || s.items.is_empty() { return; }
     let (ax, ay, items, selected) = (s.anchor_x, s.anchor_y, s.items.clone(), s.selected);
     drop(s);
-    use crate::display::draw_rounded_rect;
     let row_h: u32 = 22; let (pw, fs, fw, fh) = (200u32, fb.stride, fb.width, fb.height);
     draw_rounded_rect(&mut fb.back, ax, ay, pw, row_h * items.len() as u32 + 8, 0x1C1C1EE8_u32, 8, fs, fw, fh);
     for (i, (label, _)) in items.iter().enumerate() {

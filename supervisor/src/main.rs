@@ -267,7 +267,10 @@ fn main() {
     // ── T017: Load platform profile (PLATFORM env var or default) ────────────
     let _active_profile = load_platform_profile();
     if let Some(ref p) = _active_profile {
-        let _ = SHOW_MENU_BAR.set(p.display.show_menu_bar); let _ = SHOW_DOCK.set(p.display.show_dock); let _ = supervisor::WINDOWED_MODE.set(p.display.windowed_mode); let _ = supervisor::FOCUS_RING.set(p.display.focus_ring);
+        let _ = SHOW_MENU_BAR.set(p.display.show_menu_bar);
+        let _ = SHOW_DOCK.set(p.display.show_dock);
+        let _ = supervisor::WINDOWED_MODE.set(p.display.windowed_mode);
+        let _ = supervisor::FOCUS_RING.set(p.display.focus_ring);
         let _ = DISPLAY_PROFILE.set(p.display.profile.clone());
     }
 
