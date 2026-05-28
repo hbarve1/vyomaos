@@ -414,20 +414,56 @@ pub fn open_dropdown(app: &str, items: Vec<(String, String)>, ax: u32, ay: u32) 
     let mut s = dropdown_state().lock().unwrap();
     s.open = true; s.selected = 0; s.items = items; s.anchor_x = ax; s.anchor_y = ay; s.app_name = app.to_string();
 }
-/// Close the dropdown.
+/// Close the dropdown without dispatching any action.
 #[allow(dead_code)]
 pub fn close_dropdown() { dropdown_state().lock().unwrap().open = false; }
 
-/// Handle keyboard navigation within the dropdown.
-#[allow(dead_code)]
-pub fn handle_dropdown_key(key: u8) {
-    let mut s = match dropdown_state().try_lock() { Ok(s) => s, Err(_) => return };
-    if !s.open { return; }
+/// Return true when the dropdown is currently open.
+///
+/// Used by the keyboard router in `input_keys` to intercept navigation
+/// keys before they are forwarded to the focused app's stdin.
+pub fn dropdown_is_open() -> bool {
+    dropdown_state().lock().unwrap().open
+}
+
+/// Handle a keyboard navigation event while the dropdown is open.
+///
+/// Key byte mapping (spec T062):
+///   `0x42` — ArrowDown  — move selection down (clamp at last item)
+///   `0x41` — ArrowUp    — move selection up   (clamp at first item)
+///   `0x0A` — Enter      — confirm selection, close dropdown,
+///                          returns `Some((app_name, action))` for IPC dispatch
+///   `0x1B` — Escape     — close dropdown without action, returns `None`
+///
+/// All other keys are ignored.  When the dropdown is closed this is a no-op.
+///
+/// # Return value
+/// `Some((app_name, action))` when Enter is pressed and the dropdown was open;
+/// the caller must send `@<app_name>: <action>` via the IPC inbox.
+/// `None` in all other cases.
+pub fn handle_dropdown_key(key: u8) -> Option<(String, String)> {
+    let mut s = match dropdown_state().try_lock() { Ok(s) => s, Err(_) => return None };
+    if !s.open { return None; }
     match key {
-        b'\r' | b'\n' | 27 => { s.open = false; }
-        b'j' => { if s.selected + 1 < s.items.len() { s.selected += 1; } }
-        b'k' => { if s.selected > 0 { s.selected -= 1; } }
-        _ => {}
+        0x42 => { // ArrowDown
+            if s.selected + 1 < s.items.len() { s.selected += 1; }
+            None
+        }
+        0x41 => { // ArrowUp
+            if s.selected > 0 { s.selected -= 1; }
+            None
+        }
+        0x0A => { // Enter — confirm and close
+            let result = s.items.get(s.selected)
+                .map(|(_, action)| (s.app_name.clone(), action.clone()));
+            s.open = false;
+            result
+        }
+        0x1B => { // Escape — discard and close
+            s.open = false;
+            None
+        }
+        _ => None,
     }
 }
 /// Public wrapper for draw_glyph_str (used by toast.rs banner renderer).
