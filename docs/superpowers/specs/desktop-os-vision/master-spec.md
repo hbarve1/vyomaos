@@ -1035,3 +1035,149 @@ observability/heartbeat.rs +50, mgmt_handlers.rs +140, memory/jetsam.rs +30).
 
 ---
 
+## 9. Hardware Abstraction Layer
+
+**Source:** [`debates/09-hal-FINAL.md`](debates/09-hal-FINAL.md)
+
+The HAL is the single layer through which every VyomaOS application
+touches hardware. It unifies six platform tiers (`mcu-minimal`,
+`iot-edge`, `robotics-rt`, `mobile`, `desktop-full`, `server-headless`)
+behind one manifest-driven capability model and one WIT interface
+(`vyoma:hal@0.1.0` for Wasmtime tier; flat `env.*` core imports for the
+wasm3 tier).
+
+### Key decisions
+
+1. **Two compile-time tiers only (C6):** `wasmtime-tier` and
+   `wasm3-tier`. Platform selection inside each tier is runtime, driven
+   by a `PlatformProfile` TOML. No per-platform Cargo features.
+2. **GPIO_V2 chardev exclusively (C1):** `/dev/gpiochip*` +
+   `GPIO_V2_GET_LINE_IOCTL`. Sysfs GPIO refused at build time on kernels
+   ≥ 5.5 via `build.rs` probe. `GpioV2Backend` owns the chardev fd.
+3. **Per-bus dedicated OS threads (C2):** Every I²C, SPI, UART, GPIO
+   chip, ADC, and PWM channel has its own `std::thread` with a
+   `crossbeam::channel::bounded(256)` work queue. Callers send
+   `HalRequest` (flat enum, no `Box<dyn FnOnce>`) and immediately receive
+   a oneshot reply. The IPC event loop never blocks on hardware I/O.
+4. **`AccessMode` enum replaces boolean exclusivity (C4):**
+   `ExclusiveReadWrite`, `SharedRead`, `NotifyOnly`,
+   `AddressScoped(u8)`. Compatibility matrix enforced by
+   `HalRegistry::open_gpio` and friends. Multiple `SharedRead` holders
+   coexist; `ExclusiveReadWrite` blocks all others.
+5. **Mandatory safe-state on app exit (C5):** Manifest pins declare
+   `safe_state` (`input_float`, `input_pulldown`, `input_pullup`,
+   `output_low`, `output_high`, `hi_z`; default `input_float`). The
+   supervisor's `on_instance_gone` hook calls
+   `GpioPin::apply_safe_state()` before releasing the handle, on every
+   exit reason (clean exit, crash, kill, watchdog).
+6. **Dual binding surface (C3):** `vyoma:hal@0.1.0` WIT package for
+   Wasmtime; flat `env.gpio_read` / `env.i2c_write_read` /
+   `env.uart_write` / `env.adc_read` / `env.pwm_set` raw core imports
+   for wasm3. Both compile against the same `GpioPin`, `I2cBus`,
+   `SpiBus`, `UartPort`, `AdcChannel`, `PwmChannel`, `AudioPcm`,
+   `InputDevice` traits.
+7. **Per-class `RwLock` granularity:** One `RwLock<HashMap>` per
+   peripheral class, not a global mutex. `SharedRead` opens take a read
+   lock; ownership mutations take the write lock.
+8. **Audio (ALSA) and input (evdev) folded into the HAL:** Same
+   `AccessMode` semantics, same per-bus thread queue. Removes a
+   special-case codepath from the supervisor.
+9. **Manifest extensions:** `safe_state` per pin; per-pin direction
+   override; existing `[capabilities.gpio]`, `[capabilities.i2c]`,
+   `[capabilities.spi]`, `[capabilities.uart]`, `[capabilities.adc]`,
+   `[capabilities.pwm]` documented in
+   `docs/vyoma-manifest-schema.md`.
+
+### Critical v1 requirements
+
+- No code path calls `/sys/class/gpio/export`. `build.rs` rejects
+  sysfs-only kernels at compile time.
+- 100 % of GPIO traffic goes through `GPIO_V2_GET_LINE_IOCTL` +
+  `GPIO_V2_LINE_GET_VALUES_IOCTL` + `GPIO_V2_LINE_SET_VALUES_IOCTL`.
+- Every HAL bus runs on its own thread; IPC loop `recv_timeout(0)`
+  never blocks > 100 µs under a synthetic 50 ms slow-bus stress test.
+- `AccessMode` compatibility matrix covered by 16 cell-by-cell tests.
+- `on_instance_gone` hook applies safe state on every exit reason and
+  unit-tested via crashed-app fixture (motor-controller pin verified
+  low after segfault).
+- Two Cargo features only (`wasmtime-tier`, `wasm3-tier`); CI matrix
+  builds both on every PR.
+- `vyoma:hal@0.1.0` WIT package shipped under `wit/vyoma-hal.wit`.
+- Raw `env.*` import table documented in `wit/raw-imports.md`.
+- Integration test on real Pi 4 hardware (BME280 over I²C, LED on
+  GPIO 17) gates every release tag.
+
+### Deferred to v2
+
+- Edge-triggered GPIO event polling (`NotifyOnly` returns
+  `NotImplemented` in v1).
+- I²C target (slave) mode.
+- SPI multi-master arbitration.
+- USB raw device API.
+- Camera (V4L2).
+- CAN bus (`socketcan`).
+- HW RNG passthrough.
+- Real-time scheduling guarantees (`SCHED_FIFO` + core pinning for
+  bus threads).
+- GPIO debounce flag exposure.
+
+### Explicitly NEVER
+
+- Sysfs GPIO. Ever. Even as a fallback.
+- Per-platform Cargo features (`desktop-full`, `iot-edge`,
+  `robotics-rt` are runtime profiles, never features).
+- Blocking the IPC event loop on any HAL syscall, even a 10 µs
+  `read()`.
+- `Box<dyn FnOnce>` closures in `HalRequest`.
+- Direct `unsafe` MMIO from Wasmtime-tier code — MMIO is exclusively
+  a `wasm3-tier` (`mcu-minimal`) concern.
+- Implicit pin grabbing — manifest must declare every pin.
+- Cross-app handle sharing via IPC.
+- Skipping safe-state on "clean" exits — the manifest is the source of
+  truth, not the app's intent.
+- Falling back to legacy `GPIOHANDLE_*` v1 ioctls.
+
+### Implementation files
+
+All files under `supervisor/src/hal/`; every file ≤ 500 LOC.
+
+| File | LOC | Purpose |
+|------|----:|---------|
+| `mod.rs` | 220 | Public API; tier dispatch; `init()` |
+| `types.rs` | 280 | `AccessMode`, `HalRequest`, `HalResult`, error types |
+| `registry.rs` | 460 | `HalRegistry`; per-class ownership tables; `release_all` |
+| `bus_thread.rs` | 180 | `BusBackend` trait; `BusThread::spawn`; `send_blocking` |
+| `gpio.rs` | 180 | `GpioPin` trait |
+| `gpio_v2.rs` | 480 | `GPIO_V2_GET_LINE_IOCTL` + value get/set ioctls |
+| `gpio_mmio.rs` | 220 | MCU MMIO GPIO backend |
+| `i2c.rs` | 90 | `I2cBus` trait |
+| `i2c_linux.rs` | 300 | `/dev/i2c-*` `I2C_RDWR` backend |
+| `i2c_mmio.rs` | 240 | MCU I2C peripheral driver |
+| `spi.rs` | 70 | `SpiBus` trait |
+| `spi_linux.rs` | 320 | `/dev/spidev*` `SPI_IOC_MESSAGE` backend |
+| `uart.rs` | 90 | `UartPort` trait |
+| `uart_linux.rs` | 380 | termios baud/flow + read/write backend |
+| `uart_mmio.rs` | 200 | MCU UART peripheral driver |
+| `adc.rs` | 70 | `AdcChannel` trait |
+| `adc_iio.rs` | 240 | `/sys/bus/iio/devices/*` backend |
+| `pwm.rs` | 70 | `PwmChannel` trait |
+| `pwm_sysfs.rs` | 260 | `/sys/class/pwm/*` backend |
+| `audio.rs` | 80 | `AudioPcm` trait |
+| `audio_alsa.rs` | 420 | ALSA PCM playback + capture |
+| `input.rs` | 110 | `InputDevice` trait; `InputEvent` enum |
+| `input_evdev.rs` | 360 | evdev event-decoding backend |
+| `safe_state.rs` | 200 | `GpioSafeState` enum + manifest parse |
+| `wit_bindings.rs` | 440 | `vyoma:hal@0.1.0` host implementation |
+| `raw_bindings.rs` | 380 | `env.*` import table for wasm3 tier |
+| `wit/vyoma-hal.wit` | 90 | WIT interface definition |
+| `wit/raw-imports.md` | 60 | wasm3-tier raw import contract |
+| `supervisor/build.rs` | 60 | Kernel-config probe (sysfs GPIO refusal) |
+
+**Total new:** ~6,540 LOC Rust + 90 LOC WIT + 60 LOC docs across 29
+files; every file ≤ 480 lines.
+**Modified:** `vyoma-manifest-schema.md` (~120 added LOC documenting
+peripheral capabilities and `safe_state`); `supervisor/src/main.rs`
+(~30 LOC routing through `hal::init(&profile)`).
+
+---
+
