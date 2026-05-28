@@ -7,7 +7,7 @@
 use std::sync::{Mutex, OnceLock};
 
 use crate::{log_info, AppRegistry, AppStatus, FocusedApp};
-use crate::chrome::{draw_titlebar, TITLEBAR_H};
+use crate::chrome::draw_titlebar;
 use supervisor::logging::Subsystem;
 
 #[cfg(target_os = "linux")]
@@ -65,14 +65,7 @@ pub fn apply_drag_update(
             st_arc.lock().unwrap().win_region = Some(new_region);
         }
     }
-    if let Some(fb_lock) = display::get() {
-        let focused_name = focused.lock().unwrap().clone();
-        let is_focused = focused_name.as_deref() == Some(ds.app_name.as_str());
-        let mut fb = fb_lock.lock().unwrap();
-        fb.fill_rect(wx, wy, ww, TITLEBAR_H, 0x0D1117FF);
-        draw_titlebar(&mut *fb, new_x, new_y, ww, is_focused, false, &ds.app_name);
-        fb.flush();
-    }
+    crate::draw_cmd::force_repaint(registry, focused);
     log_info!(Subsystem::Input, None, "drag: ({wx},{wy}) -> ({new_x},{new_y})");
 }
 
@@ -85,6 +78,7 @@ pub fn finish_drag_snap(
     screen_w: i32,
     screen_h: i32,
     registry: &AppRegistry,
+    focused: &FocusedApp,
 ) {
     let ds_finished = drag_state().lock().unwrap().take();
     let Some(ds) = ds_finished else { return };
@@ -117,6 +111,7 @@ pub fn finish_drag_snap(
             snapped.0, snapped.1, snapped.2, snapped.3);
     }
     let _ = (ww, wh);
+    crate::draw_cmd::force_repaint(registry, focused);
 }
 
 // ── Minimize (called on TrafficLight::Minimize click) ────────────────────────

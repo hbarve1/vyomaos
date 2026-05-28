@@ -454,5 +454,40 @@ pub fn handle_draw_command(
     log_warn!(Subsystem::Display, Some(sender), "unknown command: {cmd}");
 }
 
+/// Full compositor pass for supervisor-side repaints (drag, snap) that bypass
+/// the normal app `flush` path.
+#[cfg(target_os = "linux")]
+pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
+    let Some(fb_lock) = display::get() else { return };
+    let mut fb = fb_lock.lock().unwrap();
+    let (fb_w, fb_h, fb_s) = (fb.width, fb.height, fb.stride);
+    fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
+    let mut apps_sorted: Vec<(u32, String, (u32, u32, u32, u32))> = {
+        let reg = registry.lock().unwrap();
+        reg.iter()
+            .filter_map(|(name, st)| {
+                let st = st.lock().unwrap();
+                st.win_region.map(|r| (st.win_z, name.clone(), r))
+            })
+            .collect()
+    };
+    apps_sorted.sort_by_key(|(z, _, _)| *z);
+    for (z, name, (wx, wy, ww, _wh)) in &apps_sorted {
+        let surface_arc = {
+            let reg = registry.lock().unwrap();
+            reg.get(name.as_str()).and_then(|st| st.lock().unwrap().surface.clone())
+        };
+        if let Some(arc) = surface_arc {
+            let surface = arc.lock().unwrap();
+            let blit_y = if *z >= Z_DOCK { *wy } else { wy + TITLEBAR_H };
+            if *ww > 0 {
+                display::blit_surface(&mut fb.back, &surface, *wx, blit_y, 255, fb_s, fb_w, fb_h);
+            }
+        }
+    }
+    draw_chrome_onto(&mut *fb, registry, focused);
+    fb.flush();
+}
+
 // Satisfy unused-import warnings on non-Linux builds.
 #[cfg(not(target_os = "linux"))] fn _dummy_non_linux() { let _ = (TITLEBAR_H, Z_DOCK); }

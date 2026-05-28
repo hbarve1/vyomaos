@@ -459,7 +459,7 @@ pub fn run_mouse_input(inbox: Inbox, focused: FocusedApp, registry: AppRegistry)
                     if pending_release_mask & 1 != 0 {
                         *crate::mouse_drag_start().lock().unwrap() = None;
                         // Drag release: snap to nearest tiled slot if within 40 px
-                        crate::win_actions::finish_drag_snap(screen_w, screen_h, &registry);
+                        crate::win_actions::finish_drag_snap(screen_w, screen_h, &registry, &focused);
                     }
                     btn_held &= !pending_release_mask;
                     pending_release_mask = 0;
