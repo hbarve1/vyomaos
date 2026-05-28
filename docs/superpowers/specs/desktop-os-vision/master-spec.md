@@ -898,3 +898,140 @@ observability/heartbeat.rs +50, mgmt_handlers.rs +140, memory/jetsam.rs +30).
 
 ---
 
+## 8. Boot Sequence & Init System
+
+**Status:** Debated & synthesized (2026-05-29)
+**Debate:** [Architect: 1213 lines] [Critic: 1029 lines] [Final: 2052 lines]
+**Files:** `debates/08-boot.md`, `debates/08-boot-critique.md`, `debates/08-boot-FINAL.md`
+
+### Key decisions
+
+- **Two-stage init for PID-1 fault containment.** A ~150-line statically linked `stage1` binary owns PID 1; its only job is to fork+exec the Rust supervisor as PID 2 and re-exec on death. Stage1 has no allocator, no `unwrap`, no dynamic libraries, no Wasmtime, no IPC, no network. It also owns the kernel watchdog kick (every 500 ms). After 5 supervisor crashes in 60 s, stage1 drops to `/sbin/recovery-shell` — breaking reboot loops cold.
+- **Ten-phase `BootPhase` FSM with tiered deadlines.** `EarlyInit, KernelSetup, StorageMount, DeviceDiscovery, SubsystemInit, AppRegistryLoad, AppLaunch, DisplayReady, AllAppsSpawned, Operational`. Each phase has a warm deadline (sum = 3 s), a cold scale factor (cold target 10 s), and a recovery deadline (10× warm, recovery target 30 s). Tier auto-detected: presence of AOT cache → Warm; absence → Cold; recovery marker → Recovery.
+- **Two-phase subsystem init (`init_early` + `init_late`) to break dependency cycles.** Phase A allocates fields with no cross-subsystem calls; Phase B resolves dependencies via a typed `SubsystemRegistry`. The dependency DAG (Power → Memory → Devices → VFS → IPC → Scheduler → Compositor → Input/Audio) is cycle-free by construction in `init_late`; compile-time `const fn` topological sort fails the build on cycles.
+- **`RankedMutex<T, const RANK: u16>` enforces lock order.** Every `Mutex` in the supervisor is replaced with a ranked newtype. Thread-local stores the maximum rank held; lower-or-equal acquisition panics in debug, zero-overhead in release. Canonical ranks defined at compile time: PowerManager=100, MemoryGovernor=200, DeviceManager=300, VFS=400, IpcRouter=500, Scheduler=600, Compositor=700, InputDispatcher=800, Audio=900, BootBarrier=1000, AppTable=1200, IpcInbox=1500, Surface=1700. New locks must add a named const, never a literal.
+- **Three-layer `boot.toml` resolution.** Layer 1: `FACTORY_BOOT_TOML` baked into supervisor binary via `include_bytes!` (always parses, CI-enforced). Layer 2: `/etc/vyoma/boot.toml` on read-only initramfs. Layer 3: `/data/etc/override.toml` writable for user customization. Cascade is initramfs base → data override; any layer's parse failure falls back to the previous one. No on-disk corruption can brick the device.
+- **Pipelined launch with bounded parallelism.** Mandatory and optional waves use a 4-stage pipeline: I/O (read wasm) → JIT/AOT load (gated by `JitSemaphore`, cap `min(num_cpus / 2, 4)`) → store alloc + cgroup attach → run. AOT-cached apps skip the JIT semaphore. Per-wave launch concurrency capped at `min(num_cpus, 4)`. Across waves, sequential.
+- **Wasmtime AOT cache for warm boots.** `/data/.system/aot/<wasm_sha256>.cwasm` stores serialized modules. Cache invalidates on Wasmtime version change, supervisor SHA mismatch, or kernel uname mismatch. Warm boot loads ~30 ms/app vs ~400 ms/app JIT — the gap that makes the 3 s warm target achievable. Verified-once marker `/data/.system/aot/<digest>.verified` skips ed25519 re-verify on subsequent boots.
+- **Mandatory app failure has three modes.** (a) Crash during init → retry once with 3 s timeout, then EmergencyShell. (b) Crash post-`Operational` → R1 `RestartPolicy::Always` with exponential backoff (1, 2, 4, 8, 16 s); after 5 crashes / 60 s → `MarkDegraded`, no further restart. (c) Compositor crash specifically → does NOT kill other apps; supervisor draws blank frame from the framebuffer it owns; compositor restarted under R1 policy; 3 compositor failures / 60 s → EmergencyShell.
+- **Supervisor-internal MinimalShell — no Wasmtime.** The emergency REPL is built into the supervisor binary and runs without IPC, compositor, or Wasmtime — by definition the WASM runtime might be unsafe to use after failure. Commands: `ps`, `log`, `df`, `dmesg`, `journal`, `mount`, `reboot`, `halt`, `factory-reset`, `preserve-log`. Writes to `/dev/tty1` framebuffer text mode or kernel console.
+- **Strict reverse-topological shutdown.** Optional apps first, mandatory apps second, then UI subsystems (Input → Compositor; compositor exits LAST so apps see their final frame), then non-UI subsystems (Audio → Scheduler → IPC → VFS with sync → Devices → Memory → Power), then `sync(2)`, then `/sys/power/state` or `reboot(2)`. Per-app grace 3 s (optional) / 5 s (mandatory). Within a wave, parallel; across waves, sequential.
+- **`catch_unwind` boundary around every phase body.** A panic inside any phase becomes a `PhaseFailure { recovery: EmergencyShell }` rather than a supervisor exit. Stage1 still catches the case where the panic hook itself is broken.
+- **No network in critical boot path.** No NTP, no DHCP, no remote attestation. Networking apps come up in the optional wave and may fail without holding boot back.
+- **boot.log preserved across factory reset.** Before any wipe of `/data/.system`, the active boot.log is copied to `/data/.system/preserved/boot.log.factory-reset` so the user can diagnose *why* the reset happened.
+- **Headless profile preserves the FSM.** `server-headless` profile sets `skip_phases = ["display_ready"]`; the coordinator logs `display_ready: skipped(headless)` and advances directly to `AllAppsSpawned`. No special-case FSM variant.
+- **Stage1 owns the watchdog.** Hardware watchdog at `/dev/watchdog0` is kicked by stage1, never by the supervisor. A supervisor deadlock or livelock causes hardware reboot within `watchdog_timeout` (default 30 s).
+- **Recovery actions are typed.** `SkipNonCritical` (handled in-phase), `RetryAppOnce`, `EmergencyShell`, `FactoryResetPrompt`, `ReexecSupervisor` (exit 42 → stage1 re-execs without advancing crash counter), `Reboot`, `Halt`. The recovery dispatcher dispatches statically; recovery code path is itself tested under chaos.
+
+### Critical v1 requirements
+
+- Two-stage init: stage1 PID 1 + supervisor PID 2; stage1 ≤ 200 LOC, no allocator, no `unwrap`
+- Kernel watchdog kicked only by stage1; 5 crashes / 60 s → `/sbin/recovery-shell`
+- Ten-phase `BootPhase` FSM with explicit warm + cold + recovery deadlines
+- `BootBarrier::advance` monotonic; regression panics; panic caught by `catch_unwind`
+- Two-phase `init_early` + `init_late` per subsystem; compile-time topological sort
+- `RankedMutex<T, const RANK>` everywhere; named rank constants only, no literal ranks
+- Three-layer boot.toml cascade with embedded factory const (CI-verified to parse)
+- Wasmtime AOT cache at `/data/.system/aot/`; invalidates on version drift
+- JIT semaphore separate from launch concurrency; AOT loads skip JIT semaphore
+- ed25519 signature verification once per `WasmDigest`; verified marker cached
+- `R1::RestartPolicy` with exponential backoff; 5-failure cap → `MarkDegraded`
+- Compositor crash isolated; supervisor draws blank frame; other apps not killed
+- `MinimalShell` is supervisor-internal, no Wasmtime, no IPC, no compositor dependency
+- Reverse-topological shutdown; compositor last among UI subsystems
+- `vfs.sync_all()` precedes `vfs.shutdown()`; AssertionRegistry → Draining at shutdown
+- `catch_unwind` boundary around every phase body
+- No network in critical boot path
+- boot.log preserved to `/data/.system/preserved/` before factory reset
+- `ReexecSupervisor` returns exit 42; stage1 distinguishes re-exec from crash
+- Per-phase boot timing recorded to `boot.log` as JSON-line events
+- `make boot-budget` CI gate: fail if any phase > 110 % of budget
+- `make check-stage1-size` CI gate: stripped stage1 binary < 200 KB
+- `factory-boot.toml` must parse via `cargo test factory_boot_toml_parses`
+- Recovery shell binary (`/sbin/recovery-shell`) ships in initramfs
+
+### Deferred to v2
+
+- Hibernation / resume from saved snapshot (depends on R7 hibernate image v2)
+- Boot-time secure boot / measured boot (depends on R63 TEE)
+- TPM-sealed disk encryption key (depends on R64)
+- Boot from alternate slot (A/B partition scheme depends on R7 OTA)
+- Multi-user boot (single-user only in v1)
+- Boot speed optimization via `kexec`-based recovery kernel
+- Boot-time crash dump to dedicated partition
+- Profile-guided wasm optimization at install time
+- Speculative pre-load of frequently-launched apps
+- Boot timing telemetry export to remote endpoint (depends on R51 networking + consent)
+- Configurable per-phase hard cutoffs in boot.toml
+- Per-app `shutdown_grace` override in manifest
+- Stage1 → supervisor state handoff via tmpfs file (for `systemctl daemon-reexec` equivalent)
+- Recovery shell with text-mode framebuffer drawing (currently kernel console only)
+- Custom recovery wallpaper / branding
+- Hot-pluggable subsystem reload (`@supervisor: reload-subsystem audio` at runtime)
+
+### Explicitly NEVER
+
+- Letting the Rust supervisor run as PID 1
+- Calling `unwrap()` or `expect()` anywhere under `supervisor/src/boot/`
+- `panic!()` outside a `catch_unwind` boundary
+- Allocating in stage1
+- Stage1 calling into any dynamic library
+- Stage1 reading from a network socket
+- Stage1 invoking Wasmtime
+- Reading `/data/etc/override.toml` without falling through on parse failure
+- Raw `parking_lot::Mutex<T>` in the supervisor — must be `RankedMutex<T, RANK_*>`
+- Literal numeric rank in `RankedMutex<T, 1234>` — must use named constant
+- Cross-subsystem call inside `init_early`
+- Holding any `RankedMutex` across a WIT call
+- `await_display` blocking longer than 2 s without invoking `compositor::draw_fallback_panel`
+- Per-app shutdown grace > 10 s
+- Compositor shutdown before all apps have exited
+- Boot path depending on networking (NTP, DHCP, remote attestation)
+- AOT cache used without validating Wasmtime version + supervisor SHA + kernel uname
+- Direct write to `/etc/vyoma/boot.toml` — must go through `/data/etc/override.toml` overlay
+- Reading `/etc/vyoma/boot.toml` with `read_to_string(..).unwrap()`
+- A `BootPhase` regression (advance from `AppLaunch` back to `SubsystemInit`)
+- Compositor crash causing other apps to be killed
+- Mandatory app failure causing unbounded restart loop (R1 backoff caps at 5/60 s)
+- Wiping `/data/.system` on factory reset without copying boot.log to preserved/
+- `MinimalShell` invoking Wasmtime, IPC, or compositor
+- Spawn wave parallelism > `min(num_cpus, 4)`
+- JIT concurrency > `min(num_cpus / 2, 4)` (CPU thrashing)
+- Re-executing the supervisor without going through stage1
+- Hardware watchdog kicked by anything other than stage1
+- A subsystem reading from another subsystem in `init_early`
+- A subsystem's `init_late` calling `lookup(name)` for a subsystem not in `depends_on()`
+- Two subsystems claiming the same `name()` in the registry
+- Forwarding the first post-wake input event to any app (R7 invariant honored)
+- Trusting `/data/.system/aot/*.cwasm` without integrity check against current Wasmtime version
+
+### Implementation files
+
+| File | LOC | Purpose |
+|------|-----|---------|
+| `supervisor/stage1/src/main.rs` | 150 | PID-1 fork+exec wrapper with watchdog kick + crash gate |
+| `supervisor/src/lock_order.rs` | 120 | `RankedMutex<T, const RANK>` newtype + canonical rank constants |
+| `supervisor/src/boot/mod.rs` | 280 | `BootCoordinator`, FSM run loop, recovery dispatch, `catch_unwind` |
+| `supervisor/src/boot/phases.rs` | 150 | `BootPhase` enum, warm/cold/recovery deadlines, `PhaseOutcome` |
+| `supervisor/src/boot/barrier.rs` | 90 | `BootBarrier` with timeout-aware `wait_for` |
+| `supervisor/src/boot/subsystem.rs` | 80 | `Subsystem` trait, `InitContext`, `InitError` |
+| `supervisor/src/boot/registry.rs` | 90 | typed name-keyed `SubsystemRegistry` (Arc-based lookup) |
+| `supervisor/src/boot/early_init.rs` | 110 | pseudo-FS mounts (proc/sys/dev/run/cgroup2/devpts), panic hook |
+| `supervisor/src/boot/kernel_setup.rs` | 140 | seccomp, rlimits, cgroup v2 hierarchy, sysctls |
+| `supervisor/src/boot/storage_mount.rs` | 150 | `StorageBackend::probe`, ext4/9P/tmpfs mount, dir scaffolding |
+| `supervisor/src/boot/device_discovery.rs` | 120 | netlink open, coldplug sysfs walk |
+| `supervisor/src/boot/subsystem_init.rs` | 230 | two-phase init driver (init_early × 9, init_late × 9) |
+| `supervisor/src/boot/manifest_loader.rs` | 360 | three-layer boot.toml cascade, DAG, signature verify, AOT cache |
+| `supervisor/src/boot/app_launcher.rs` | 340 | pipelined wave launcher, `JitSemaphore`, ready contract |
+| `supervisor/src/boot/restart_policy.rs` | 110 | `AppFailureTracker` with exponential backoff and degraded gate |
+| `supervisor/src/boot/shutdown.rs` | 180 | reverse-topological teardown, sync, poweroff/reboot/suspend |
+| `supervisor/src/boot/recovery.rs` | 150 | `RecoveryAction` dispatch, factory-reset prompt with log preservation |
+| `supervisor/src/boot/minimal_shell.rs` | 220 | supervisor-internal REPL, no Wasmtime / IPC / compositor deps |
+| `config/factory-boot.toml` | 40 | embedded factory default boot config (CI parse-tested) |
+| `wit/vyoma-lifecycle.wit` | 60 | `on-ready`, `on-terminate` exports |
+
+**Total new:** ~3,170 LOC Rust + 60 LOC WIT + 40 LOC TOML across 20 files; every file ≤ 500 lines.
+**Modified:** 1 file, ~80 added LOC (`supervisor/src/main.rs` re-routed through `BootCoordinator::run`).
+
+---
+

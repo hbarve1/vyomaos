@@ -1,7 +1,7 @@
 {
   "session_start": "2026-05-29",
   "target": "Full macOS-like Desktop OS (DesktopOS first, then Mobile, then embedded)",
-  "current_round": 8,
+  "current_round": 9,
   "status": "in_progress",
   "subsystems": [
     {"id": 1,  "name": "Kernel & Process Model",              "status": "completed",   "file": "01-kernel-process.md",         "macos_equiv": "XNU kernel / launchd"},
@@ -11,7 +11,7 @@
     {"id": 5,  "name": "Scheduler & CPU Management",           "status": "completed",   "file": "05-scheduler.md",              "macos_equiv": "XNU Mach scheduler / QoS classes"},
     {"id": 6,  "name": "Device Driver Model",                  "status": "completed",   "file": "06-drivers.md",                "macos_equiv": "IOKit / DriverKit"},
     {"id": 7,  "name": "Power Management & Energy",            "status": "completed",   "file": "07-power.md",                  "macos_equiv": "IOPowerManagement / App Nap"},
-    {"id": 8,  "name": "Boot Sequence & Init System",          "status": "pending",     "file": "08-boot.md",                   "macos_equiv": "iBoot / launchd phase ordering"},
+    {"id": 8,  "name": "Boot Sequence & Init System",          "status": "completed",   "file": "08-boot.md",                   "macos_equiv": "iBoot / launchd phase ordering"},
     {"id": 9,  "name": "Hardware Abstraction Layer",           "status": "pending",     "file": "09-hal.md",                    "macos_equiv": "IOKit HAL / CoreOSServices"},
     {"id": 10, "name": "Interrupt & Exception Handling",       "status": "pending",     "file": "10-interrupts.md",             "macos_equiv": "XNU interrupt controller / Mach exceptions"},
     {"id": 11, "name": "Display Server & Compositor",          "status": "pending",     "file": "11-display-compositor.md",     "macos_equiv": "WindowServer / SkyLight compositor"},
