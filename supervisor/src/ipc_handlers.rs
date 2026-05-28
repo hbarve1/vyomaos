@@ -126,6 +126,32 @@ pub fn handle_supervisor_command(
             }
         }
 
+        // spawn <name> — launch an on-demand app by short name.
+        // Resolves the manifest to /apps/<name>/vyoma.toml and delegates to
+        // the same spawn_app path used by `run`.
+        "spawn" => {
+            let name = match parts.get(1).map(|s| s.trim()) {
+                Some(n) if !n.is_empty() => n.to_string(),
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: spawn <app_name>", inbox);
+                    return;
+                }
+            };
+            let path = format!("/apps/{name}/vyoma.toml");
+            log_info!(Subsystem::Ipc, None, "@supervisor: spawn {name} ({path})");
+            let entry = BootEntry { manifest: path.clone(), restart: "never".to_string() };
+            match spawn_app(&entry, inbox, app_registry) {
+                Some(app) => {
+                    let app_name = app.name.clone();
+                    launch_app_threads(app, inbox, focused, app_registry);
+                    send_reply(sender, &format!("REPLY:launched {app_name}"), inbox);
+                }
+                None => {
+                    send_reply(sender, &format!("REPLY:error: could not spawn {name}"), inbox);
+                }
+            }
+        }
+
         // ── P13T01 process management commands ───────────────────────────────
 
         // ps-raw — machine-readable: name:status:uptime_secs:restarts per entry

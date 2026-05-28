@@ -49,8 +49,8 @@ pub fn open_context_menu(x: u32, y: u32) {
     s.y = y;
     s.selected = 0;
     s.items = vec![
-        ("New Note".to_string(),      "new".to_string()),
-        ("Open Settings".to_string(), "open".to_string()),
+        ("New Note".to_string(),            "new".to_string()),
+        ("Open Settings".to_string(), "spawn settings".to_string()),
     ];
 }
 
@@ -67,8 +67,8 @@ pub fn context_menu_is_open() -> bool {
 /// Hit-test (cx, cy) against the open context menu.
 ///
 /// Returns `Some((target_app, action))` when the click lands on an item row:
-///   - item 0 ("New Note",      "new")  → target = "notes"
-///   - item 1 ("Open Settings", "open") → target = "supervisor"
+///   - item 0 ("New Note",      "new")            → target = "notes"
+///   - item 1 ("Open Settings", "spawn settings") → target = "supervisor"
 ///
 /// Returns `None` when the click is outside the panel, or when the menu is closed.
 pub fn context_menu_hit_test(cx: i32, cy: i32) -> Option<(String, String)> {
@@ -83,13 +83,17 @@ pub fn context_menu_hit_test(cx: i32, cy: i32) -> Option<(String, String)> {
     {
         return None;
     }
-    let row = (cy - py - (PADDING / 2) as i32) / ROW_H as i32;
-    if row < 0 || row as usize >= s.items.len() { return None; }
+    // Guard against clicks in the top PADDING/2 zone: negative offset maps to
+    // row 0 via truncation-toward-zero, so we must check before dividing.
+    let offset = cy - py - (PADDING / 2) as i32;
+    if offset < 0 { return None; }
+    let row = offset / ROW_H as i32;
+    if row as usize >= s.items.len() { return None; }
     let (_label, action) = &s.items[row as usize];
     let target_app = match action.as_str() {
-        "new"  => "notes",
-        "open" => "supervisor",
-        _      => return None,
+        "new"            => "notes",
+        "spawn settings" => "supervisor",
+        _                => return None,
     };
     Some((target_app.to_string(), action.clone()))
 }
