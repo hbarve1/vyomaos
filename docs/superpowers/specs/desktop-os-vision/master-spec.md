@@ -1430,3 +1430,36 @@ Mirror mode: after vsync flush, a **single** `vsync_lock.read()` copies fb into 
 ### Platform Matrix
 
 Mirror: desktop-full only. Extend/remote-only: desktop-full, mobile (extend only), server-headless. Capability mismatch at load time → error (not warning).
+
+---
+
+## 20. HiDPI & Multi-Resolution Display
+**macOS Analogue**: `NSScreen.backingScaleFactor`, Retina display  
+**Depends on**: R11 (Surfaces), R13 (fonts), R17 (VYOMA_DRAW), R19 (virtual display)
+
+### Architecture
+
+Integer scale factors only (1x, 2x) in v1. Scale configured via `boot.toml [display] scale_factor = 2` (QEMU has no EDID). `DisplayConfig` struct carries `physical_{w,h}`, `logical_{w,h}`, and `scale_factor`.
+
+**Opt-in**: `hidpi_aware = true` in `vyoma.toml` capabilities. Legacy apps (absent flag) are backward-compatible — they get a logical-sized Surface and the compositor pixel-doubles it to fill the physical screen.
+
+### Surface Allocation
+
+- **Legacy app** on 2x: Surface = `logical_w × logical_h`; compositor 2×-upscales to physical screen via nearest-neighbor blit
+- **HiDPI-aware app** on 2x: Surface = `physical_w × physical_h`; `VYOMA_DRAW:` coords in logical points, supervisor applies `saturating_mul(2)` before drawing
+
+### Coordinate Safety
+
+`scale_coord(v: u32, sf) -> u32` uses `saturating_mul` — u32 overflow clamps to u32::MAX, caught by out-of-bounds clipper, silently discarded. No wraparound corruption.
+
+### Startup Contract
+
+HiDPI-aware apps MUST wait for `VYOMA_DISPLAY:window_info:<lw>,<lh>,<sf>` on stdin before first draw. Supervisor sends this at spawn; line is in stdin buffer before WASM starts. Apps that draw before receiving it produce a provisional frame; expected to redraw on receipt.
+
+### Font Logical Sizes
+
+Font logical point sizes are scale-invariant: `m` is always 8×16 pts. At 2x, physical rendering is 16×32 pixels. Layout at `y = logical_h - 16` for `m` text is overflow-safe at any scale.
+
+### VYOMA_VDISP_SCREEN Breaking Change
+
+R19's 3-field format extended to 4 fields (`scale_factor`). Apps must update parsers to accept ≥3 fields; migration note provided.
