@@ -1489,3 +1489,27 @@ Window properties (`win_x/y/w/h` in logical pts, `win_z: PerSpaceZ`, `win_space`
 3. Blit space-N apps ascending z → `vsync_lock.read()`
 4. Blit space-0 apps ascending z (always on top) → still in read-lock
 5. DRM blit → `vsync_lock.write()`
+
+---
+
+## 22. App Lifecycle Management
+**macOS Analogue**: `NSApplicationDelegate`, `UIApplication`  
+**Depends on**: R11 (AppState), R21 (WM integration)
+
+### States
+`Launching` → `Running` ↔ `Suspended` / `Background` → `Terminating` → `Terminated`. Complete 16-row transition table with all edge cases: Launching→Terminating (kill-while-launching), Suspended↔Background (policy change), IPC delivery stopped on Terminating.
+
+### Launching→Running Transition
+Single `on_app_ready` function called under APPS_MAP write lock. Three trigger paths: stdout `VYOMA_LIFECYCLE:ready`, WIT `notify-ready`, first `VYOMA_DRAW:flush`. All are no-ops when state ≠ Launching — idempotent, no race.
+
+### Graceful Termination
+`will_terminate` → 2s grace → SIGKILL. IPC delivery stopped atomically at state flip. `will_terminate` is last stdin write. Timer checked on every event loop tick (non-blocking).
+
+### Watchdog
+Active in `Running` and `Background`. Paused in `Suspended`, `Terminating`, `Launching`. Output-reading thread dual-checks lifecycle state before firing — closes event-loop-thread vs output-thread race.
+
+### Restart Backoff
+On `restart = "always"`: 0s, 1s, 2s, 4s, 8s, 16s backoff for successive crashes within 60s window. Window resets after 60s of continuous uptime (checked on every tick, not just exit). Max 10 restarts per hour.
+
+### `reload` Command
+All-or-nothing: validate ALL vyoma.toml manifests before killing any app. Any parse failure → abort with error listing. Diff: added (spawn), removed (graceful terminate), changed (restart).
