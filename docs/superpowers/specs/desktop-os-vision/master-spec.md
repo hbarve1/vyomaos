@@ -1770,3 +1770,28 @@ Dual-thread evdev acquisition: `mouse-evdev` (EV_REL/EV_KEY → button + delta �
 
 ### Capability Gates
 `mouse = true` → `VYOMA_INPUT:mouse:` + `vyoma:pointer@1.0.0` WIT. `gestures = true` → `VYOMA_INPUT:gesture:` (requires `mouse = true`). `cursor = true` → `VYOMA_CURSOR:shape/hide/show`.
+
+---
+
+## Section 33: Touch & Stylus Input
+
+**macOS analogue**: `UITouch` / `Apple Pencil` / `PencilKit`  
+**Status**: FINAL
+
+### Architecture
+`touch-evdev` thread reads EV_ABS MT slot + stylus + BTN_TOOL_* events, calls `flush_touch_frame` on SYN_REPORT. `touch-dispatch` drains `TouchEventQueue` every 2ms and calls `route_touch`. For touch-to-mouse fallback, synthesized `MouseEvent(source=Touch)` is pushed to R32's `MouseEventQueue` — `mouse-dispatch` owns all mouse state exclusively (no cross-thread writes to `MOUSE_DRAG_CAPTURE`/`LAST_HOVER_TARGET`/`CURRENT_BUTTONS`).
+
+### TouchSlot + StylusState (B1+B2 fix)
+`TouchSlot` gains `just_ended: bool` (set by `end_tracking`); `flush_touch_frame` takes `&mut slots` to clear `just_began` after first emission and emit `Ended` events from `just_ended` slots. `StylusState` gains `btn_touch + prev_btn_touch`; stylus `Began`/`Moved`/`Ended` phases derived from `prev/current btn_touch` comparison. `STYLUS_TOUCH_ID = i32::MIN` sentinel.
+
+### Stylus Routing (B3 fix)
+Stylus events bypass `hit_test` and go to `FOCUSED_APP` via `lookup_hit_by_name(FOCUSED_APP)` — stylus hover occurs outside window bounds. Finger events use position-based `hit_test` from R32.
+
+### Touch-to-Mouse Synthesis (B4+B5 fix)
+`Began→Press`, `Moved→Move`, `Ended/Cancelled→Release`. Synthesized events pushed to `MouseEventQueue`; `mouse-dispatch` updates `CURRENT_BUTTONS`/`MOUSE_DRAG_CAPTURE`. `touch-dispatch` never writes mouse globals.
+
+### Lock Rise Cancellation
+`on_input_lock_rise()` (R32) extended to call `cancel_all_active_touches()` — emits `VYOMA_INPUT:touch:cancelled:<id>` for all in-flight touch sequences tracked in `ACTIVE_TOUCH_TARGETS: Mutex<HashMap<String, Vec<i32>>>`.
+
+### Capability Gates
+`touch = true` → `VYOMA_INPUT:touch:` + `vyoma:touch@1.0.0` WIT. `stylus = true` → `VYOMA_INPUT:stylus:` (requires `touch = true`). Apps with both `touch` and `mouse` receive only touch events.
