@@ -1270,3 +1270,28 @@ peripheral capabilities and `safe_state`); `supervisor/src/main.rs`
 **Implementation files:** `supervisor/src/font/` — 15 files each ≤500 LOC (mod.rs, bitmap.rs, bitmap_data.rs, truetype.rs, atlas_cpu.rs, atlas_gpu.rs, registry.rs, fallback.rs, layout.rs, session.rs, worker.rs, wit_handlers.rs, manifest.rs, config.rs, subsystem.rs)
 
 ---
+
+
+## 14. Image & Icon Pipeline
+**macOS equiv:** ImageIO / CoreImage
+**Status:** FINAL
+**Key decisions:**
+- Supported formats: PNG (`png` crate), JPEG (`jpeg-decoder` + `kamadak-exif` for EXIF auto-rotate), BMP (hand-rolled, BI_RGB only — BI_BITFIELDS/RLE rejected), QOI (`qoi` crate), SVG (`resvg`/`usvg`, feature-gated, external resources fully disabled). All wrapped in `catch_unwind(AssertUnwindSafe(...))`.
+- Header-first decode: dimension check happens BEFORE pixel allocation via format-specific header parsers (`png_dimensions`, `jpeg_dimensions`, `bmp_header_dimensions`, `qoi_dimensions`). Crafted images cannot OOM before rejection.
+- Magic-byte format detection: `detect_format(data) -> Option<ImageFormat>` by magic bytes (PNG: `\x89PNG`, JPEG: `\xFF\xD8`, BMP: `BM`, QOI: `qoif`, SVG: XML `<svg` scan). Used when `format_hint` is absent.
+- Path cache key uses `Arc<PathBuf>` full path — no hash collisions. `ahash` as HashMap hasher for performance. System icon cache is `RwLock<LruCache<(Arc<PathBuf>, u32), Arc<ImageData>>>`.
+- Per-PID decoded-bytes budget (`DashMap<u32, usize>`): charged against `max_decoded_bytes_per_pid` (desktop-full: 256 MB, mobile: 64 MB, iot-edge: 8 MB). Budget tracks decoded BGRA32 pixels, not compressed bytes.
+- Decode worker pool sized by platform: `decode_worker_threads` in `ImageConfig` (desktop-full/server-headless: 3, mobile: 2, others: 1). Monitor watchdog per worker respawns on panic. `recv_timeout(500 ms)` on callers.
+- Bilinear resize loop correctly processes all 4 BGRA channels (0..4). Lanczos3 uses sRGB→linear→resize→sRGB for gamma-correct output. Nearest stays in sRGB.
+- EXIF orientation auto-applied for all JPEG decodes. All 8 transform variants (1–8) handled via `apply_exif_orientation(img, orient)`.
+- WIT: `vyoma:images@1.0.0` with `io` + `icons` interfaces. `blit-image` includes source crop `(src-x, src-y, src-w, src-h)` — ABI stable from day one. Handle namespaces for `io` and `icons` are separate pools.
+- SVG security: `usvg::Options { resources_dir: None, ... }` with explicit filesystem+network resource lock-down. `resvg` runs in-process inside a worker thread (isolated from compositor).
+- Cargo features: `decode_png`, `decode_jpeg`, `decode_bmp`, `decode_qoi`, `decode_svg`, `image_gpu` — all optional, no build.rs. `mcu-minimal` enables no image features; all decode requests fail with `ImageError::FormatNotEnabled`.
+- GPU texture cache: `GpuImageCache` maps `ImageCacheKey → u32` texture handles (R12 WIT); eviction coordinated with R12's `VramBudget`.
+- QOI encoder for compositor thumbnail snapshots (Mission Control R25 preview path).
+**Critical v1:** PNG/JPEG/QOI decode, header-first dimension check, per-PID budget, worker pool + watchdog, blit-image with source crop, EXIF auto-rotate, SVG resource lock-down, ARC<PathBuf> cache key
+**Deferred:** Animated GIF/APNG/WebP, ICC color pipeline (R15), image effects/filters (CoreImage equiv v3), thumbnail daemon, metadata query
+**Never:** `format_hint` as sole format selector without magic-byte fallback, BMP RLE/BI_BITFIELDS in v1, SVG with external resource access
+**Implementation files:** `supervisor/src/image/` — 17 files each ≤500 LOC (mod.rs, config.rs, decode_png.rs, decode_jpeg.rs, decode_bmp.rs, decode_qoi.rs, decode_svg.rs, resize.rs, cache.rs, icon.rs, worker.rs, surface_ext.rs, manifest.rs, wit_handlers.rs, protocol_v2.rs, gpu_cache.rs, subsystem.rs)
+
+---
