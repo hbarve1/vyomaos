@@ -1826,3 +1826,31 @@ Apps report `VYOMA_IME:cursor_rect:<x>,<y>,<w>,<h>` (screen-absolute). Superviso
 
 ### WIT & Platform
 `vyoma:ime@1.0.0` — `commit-text`, `update-composition`, `end-composition`, `passthrough-key`, `get-cursor-rect`. Desktop: optional WASM IME app. Mobile: virtual keyboard IS the IME (has both `ime=true` and `display=true`). Server/IoT/MCU: no IME.
+
+---
+
+## Section 35: Global Shortcuts & Hotkeys
+
+**macOS analogue**: `NSEvent` global monitors / Carbon `RegisterEventHotKey`  
+**Status**: FINAL
+
+### Architecture
+P3 in `route_keyboard` (after lock gate P1/P2, before IME P4). Two classes: (1) system-reserved (compiled into supervisor, `system.rs`); (2) app-registered (`hotkeys=true` capability required). Input thread NEVER holds `ChildStdin` mutex — delivery via per-app SPSC `mpsc::SyncSender`; `stdin-writer` thread writes to pipe.
+
+### System-Reserved Table (B2 Fix)
+`SystemShortcut` uses `allowed_locks: LockLevelMask` (`u8` bitfield). `fires_at(lock)` = `allowed_locks & (1 << lock as u8) != 0`. Key combos: Cmd+Space (Spotlight), Cmd+Tab (app switcher), F3 (Mission Control), Cmd+Ctrl+Q (lock, any lock level), Fn+F1..F12 (HW media, always). `dispatch_global_shortcuts` re-reads `INPUT_LOCK_LEVEL` (Acquire) on entry, not from P1 snapshot.
+
+### Combo Validation (B1 Fix)
+`validate_combo` enforces: must contain at least one of Cmd/Ctrl/Alt/Fn (Shift alone rejected); primary key must not be a modifier; Escape/Tab/Return/Backspace/Arrows require Cmd|Ctrl|Alt. `RegisterError::InvalidCombo` raised at register time. System-reserved table registration rejected with `ReservedBySystem` regardless of current lock level.
+
+### Registry & Identity (B5 Fix)
+`Registration` tracks `owner: AppHandle { name: String, generation: u64 }` (not `Weak<ChildStdin>`). Generation minted per-spawn by process manager. `on_app_exit` purges dead generation before restart re-spawns, so new instance can reclaim its combo. All mutations: acquire `REGISTRY_WRITE_LOCK` → `load_full()` → clone-modify → `store` (no exceptions). `ArcSwap<GlobalHotkeyRegistry>` for lock-free reads on input thread.
+
+### IME Composition Cancel (B4 Fix)
+Before any system shortcut fires: `maybe_cancel_ime_composition_before_system_action()` enqueues `VYOMA_IME:cancel` to composing app's channel and `focus_will_change` to IME — best-effort (no wait, same 50ms timeout as R34). Prevents partial composition state after Cmd+Q etc.
+
+### Delivery (B3 Fix)
+`HOTKEY_CHANNELS: ArcSwap<HashMap<AppHandle, mpsc::SyncSender>>`. Input thread: `try_send` (never blocks; drops oldest with log on full). Each app's `stdin-writer` thread drains channel and acquires `ChildStdin` mutex. System actions enqueued on `SYSTEM_ACTION_QUEUE` — never invoke broker synchronously from input thread.
+
+### Per-App Quota & Conflict
+Max 32 registrations per app. Higher `manifest_priority` wins; tie-break by `epoch_registered` (earliest). Shadowed registrants notified via `VYOMA_HOTKEY:shadowed:<id>`; promoted on winner exit via `VYOMA_HOTKEY:activated:<id>`. `vyoma:hotkeys@1.0.0` WIT: `register`, `unregister`, `list-mine`; export events: `on-fire`, `on-shadowed`, `on-activated`.

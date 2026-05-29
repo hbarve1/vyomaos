@@ -1,7 +1,7 @@
 {
   "session_start": "2026-05-29",
   "target": "Full macOS-like Desktop OS (DesktopOS first, then Mobile, then embedded)",
-  "current_round": 35,
+  "current_round": 36,
   "status": "in_progress",
   "subsystems": [
     {"id": 1,  "name": "Kernel & Process Model",              "status": "completed",   "file": "01-kernel-process.md",         "macos_equiv": "XNU kernel / launchd"},
@@ -38,7 +38,7 @@
     {"id": 32, "name": "Mouse, Trackpad & Gestures",           "status": "completed",   "file": "32-mouse-gestures.md",         "macos_equiv": "IOHIDFamily / NSGestureRecognizer"},
     {"id": 33, "name": "Touch & Stylus Input",                 "status": "completed",   "file": "33-touch-stylus.md",           "macos_equiv": "UITouch / Apple Pencil / PencilKit"},
     {"id": 34, "name": "Input Method Editor (IME / CJK)",      "status": "completed",   "file": "34-ime.md",                    "macos_equiv": "InputMethodKit / CJK input sources"},
-    {"id": 35, "name": "Global Shortcuts & Hotkeys",           "status": "pending",     "file": "35-hotkeys.md",                "macos_equiv": "NSEvent global monitors / Carbon HotKeys"},
+    {"id": 35, "name": "Global Shortcuts & Hotkeys",           "status": "completed",   "file": "35-hotkeys.md",                "macos_equiv": "NSEvent global monitors / Carbon HotKeys"},
     {"id": 36, "name": "Cursor & Pointer System",              "status": "pending",     "file": "36-cursor.md",                 "macos_equiv": "NSCursor / CursorManager"},
     {"id": 37, "name": "Controller & Gamepad Input",           "status": "pending",     "file": "37-gamepad.md",                "macos_equiv": "GameController framework / MFi"},
     {"id": 38, "name": "Drag & Drop",                          "status": "pending",     "file": "38-drag-drop.md",              "macos_equiv": "NSDraggingDestination / NSPasteboardItem"},
