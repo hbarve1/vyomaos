@@ -1,7 +1,7 @@
 {
   "session_start": "2026-05-29",
   "target": "Full macOS-like Desktop OS (DesktopOS first, then Mobile, then embedded)",
-  "current_round": 19,
+  "current_round": 20,
   "status": "in_progress",
   "subsystems": [
     {"id": 1,  "name": "Kernel & Process Model",              "status": "completed",   "file": "01-kernel-process.md",         "macos_equiv": "XNU kernel / launchd"},
@@ -22,7 +22,7 @@
     {"id": 16, "name": "Animation Engine",                     "status": "completed",   "file": "16-animation.md",              "macos_equiv": "Core Animation / CALayer"},
     {"id": 17, "name": "VYOMA_DRAW v3 (Advanced Rendering)",   "status": "completed",   "file": "17-rendering-api.md",          "macos_equiv": "Quartz 2D / CoreGraphics"},
     {"id": 18, "name": "Screen Capture & Recording",           "status": "completed",   "file": "18-screen-capture.md",         "macos_equiv": "ScreenCaptureKit / QuickTime capture"},
-    {"id": 19, "name": "Virtual Display & Screen Mirroring",   "status": "pending",     "file": "19-virtual-display.md",        "macos_equiv": "AirPlay display / Sidecar"},
+    {"id": 19, "name": "Virtual Display & Screen Mirroring",   "status": "completed",   "file": "19-virtual-display.md",        "macos_equiv": "AirPlay display / Sidecar"},
     {"id": 20, "name": "HiDPI & Multi-Resolution Display",     "status": "pending",     "file": "20-hidpi.md",                  "macos_equiv": "Retina display / NSScreen backing scale"},
     {"id": 21, "name": "Window Manager & Spaces",              "status": "pending",     "file": "21-window-manager.md",         "macos_equiv": "WindowServer spaces / CoreDock"},
     {"id": 22, "name": "App Lifecycle Management",             "status": "pending",     "file": "22-app-lifecycle.md",          "macos_equiv": "NSApplicationDelegate / UIApplication"},

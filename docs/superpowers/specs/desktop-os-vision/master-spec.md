@@ -1398,3 +1398,35 @@ Full capture (PNG/JPEG/MJPEG) on desktop-full, mobile (30fps cap), server-headle
 ```
 supervisor/src/capture/{mod,screenshot,recorder,worker,paths,permissions}.rs
 ```
+
+---
+
+## 19. Virtual Display & Screen Mirroring
+**macOS Analogue**: AirPlay display / Sidecar  
+**Depends on**: R11 (Surface buffers, vsync RwLock), R18 (link-time WIT gating, capture pattern)
+
+### Architecture
+
+Three modes: **mirror** (duplicate compositor output to consumer), **extend** (independent logical screen for apps), **remote-only** (headless virtual screen for testing/remote access). Transports: Unix socket (local, mode 0600), TCP (with HMAC-SHA256 token auth), virtio-vsock (optional kernel feature).
+
+**Link-time gating**: `vyoma:virtual-display@1.0.0` WIT registered per-app conditionally. `virtual_display_any` (mirror of full compositor output) requires runtime consent + capable profile (desktop-full only).
+
+### Transport Safety
+
+`try_send_frame` pre-checks `SIOCOUTQ` vs `SO_SNDBUF` before writing. If kernel buffer lacks space for header+payload, drops frame atomically (zero bytes written). Uses `write_vectored` for header+payload in one `writev(2)` syscall — no partial writes possible. TCP auth handshake: 5-second read/write timeout on all transports; on timeout: close + log + re-listen.
+
+### Compositor Integration
+
+Mirror mode: after vsync flush, a **single** `vsync_lock.read()` copies fb into `Arc<Vec<u8>>` snapshot shared by all active mirror sessions. Total vsync stall = ~2ms regardless of session count. Extend mode: mini-compositor pass over assigned apps' Surfaces (no `vsync_lock` needed). Remote-only: pass skipped when zero apps assigned.
+
+### Coordinate Space
+
+`VYOMA_VDISP_SCREEN:<display_id>,<width>,<height>` pushed to app stdin on every assignment change. `current-display` WIT function for polling. Apps fall back to physical display dims before first assignment.
+
+### Consent Revocation
+
+`vdisp_consent_revoke:<app_id>` IPC from chrome sets `consent_suspended = true`, destroys all active mirror sessions, notifies app. Suspended until reboot; consent cannot be re-granted in same session.
+
+### Platform Matrix
+
+Mirror: desktop-full only. Extend/remote-only: desktop-full, mobile (extend only), server-headless. Capability mismatch at load time → error (not warning).
