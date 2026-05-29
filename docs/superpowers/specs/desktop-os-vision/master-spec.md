@@ -1659,3 +1659,24 @@ Step 0 (new): left-edge clip — `effective_dest_x`, `src_x_offset`, `blittable_
 
 ### Starvation Prevention
 `on_app_exit`: cleans `last_focused` from all spaces; if exited app was focused, finds MRU replacement by `last_focus_time` in active space.
+
+---
+
+## 29. Desktop & Wallpaper Engine
+**macOS Analogue**: Finder desktop / wallpaper daemon  
+**Depends on**: R21 (compositor, vsync_lock, fb.fill), R26 (Stage Manager), R27 (FS suppression)
+
+### Architecture
+Supervisor-rendered wallpaper: `fill_wallpaper()` replaces `fb.fill(BACKGROUND_COLOR)` in compositor. No dedicated WASM app. Per-space `HashMap<u8, WallpaperConfig>`. Formats: solid color, linear gradient, image (BGRA raw + PNG via lodepng). Persisted to `/data/wallpaper.toml`, loaded after 9P mount ready.
+
+### Thread Safety (B1+B2+B3 fix)
+`wallpaper_cache: Arc<RwLock<WallpaperCache>>` — compositor acquires `read()` inside blit pass (never inside `vsync_lock.write()`); IPC acquires `write()` during set/load. `wallpaper_preload_complete: AtomicBool` — fill returns solid fallback until `/data` mount confirmed. `maybe_apply_time_variant` runs after `vsync_lock` drops.
+
+### HiDPI Fill (B4 fix)
+`scaled_w = (src_w as f32 * scale).ceil() as u32` for Fill mode — ensures no 1-pixel seam. `floor()` for Fit. Direct `dst_w` for Stretch.
+
+### Capability Gating (B5 fix)
+Mutations (`wallpaper_set`, `screensaver_set`) require `shell = true`. Queries require `display = true`. Settings apps need only `shell = true` — no framebuffer surface allocated.
+
+### Extras
+Dynamic wallpapers: `time_variants: Vec<(u8, WallpaperKind)>` checked once per minute. Screen saver: blank-screen fallback after N idle seconds (v1 only). Desktop icons deferred to R41.
