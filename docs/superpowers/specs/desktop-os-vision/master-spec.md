@@ -1360,3 +1360,41 @@ peripheral capabilities and `safe_state`); `supervisor/src/main.rs`
 **v3 WIT additions**: `set-font(family, weight, style, size)`, `draw-text`, full gradient API, `clip-path`, `save-state`/`restore-state`, `set-blend-mode` (12 modes). Image handles from R14 are globally valid in R17 calls.
 
 **Files**: `supervisor/src/draw/` — 11 modules ≤500 LOC each: `mod.rs`, `context.rs`, `rasterizer.rs`, `stroke.rs`, `gradient.rs`, `blend.rs`, `text.rs`, `image.rs`, `transform.rs`, `protocol.rs`, `wit_handlers.rs`. Zero new external dependencies (Rayon already in supervisor).
+
+---
+
+## 18. Screen Capture & Recording
+**macOS Analogue**: ScreenCaptureKit / QuickTime capture  
+**Depends on**: R11 (Surface buffers, vsync RwLock), R14 (image table), R17 (WIT draw)
+
+### Architecture
+
+Software-only capture from CPU-visible framebuffer or per-app Surface buffers. Three modes: full-screen (composited fb), per-window (app Surface), region (rectangle of fb). Screen recording adds a bounded frame-queue with MJPEG encoder thread.
+
+**Link-time WASM capability gating**: `vyoma:capture@1.0.0` WIT imports are added to each app's `Linker` conditionally — only when the manifest declares `capture = true`. No manifest flag = no import = Wasmtime instantiation error if WASM tries to use it.
+
+### vsync Synchronization
+
+`vsync_lock` (R11) upgraded from `Mutex<()>` to `RwLock<()>`. Compositor takes a write-lock only during the DRM blit step (~2ms). Capture takes a read-lock for the pixel memcpy (~2ms). Multiple readers allowed simultaneously; write waiter blocks subsequent readers at most ~2ms.
+
+### capture_worker Thread
+
+Single named thread. One-shot screenshot encoding dispatched via `WorkerTask::Screenshot { frame, result_tx: SyncSender<Result> }`. WIT closure parks on `result_rx.recv()` — app's Wasmtime thread blocks for 80–250ms (PNG), supervisor event loop is never blocked. Recording sessions have separate per-session encoder threads; frame pump runs via `WorkerTask::FramePumpTick`.
+
+### Backpressure
+
+When frame queue is full: drop frame, increment `Arc<AtomicU64>` counter, send `VYOMA_CAPTURE_DROPPING:<session_id>` to app stdin (rate-limited: at most 1/s per session). App adjusts fps on receipt. `dropped-frames` WIT function is a destructive read (resets counter to 0).
+
+### Output Path Safety
+
+`CAPTURES_DIR = "/data/captures"` is a compile-time `const &str`. Never sourced from boot.toml or any config. Path = `CAPTURES_DIR/<app_id>/<session_id>.<ext>` — all integer supervisor-assigned values; no user strings in path.
+
+### Platform Matrix
+
+Full capture (PNG/JPEG/MJPEG) on desktop-full, mobile (30fps cap), server-headless. `capture_any` permission (full-screen + other-window capture) desktop-full only. Unsupported profiles compile stub WIT functions returning `Err("capture not available")`. Capability mismatch (e.g. `capture_any` on mobile) is a **load-time error**, not a warning.
+
+### Key Files
+
+```
+supervisor/src/capture/{mod,screenshot,recorder,worker,paths,permissions}.rs
+```
