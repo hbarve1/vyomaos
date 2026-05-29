@@ -1610,3 +1610,29 @@ Inactive-stage apps hidden at `win_x = OFFSCREEN_X`. `stage_offscreen: bool` + `
 
 ### blit_clipped 7-step formula (B5 fix)
 Step 0 (new): left-edge clip — `effective_dest_x`, `src_x_offset`, `blittable_w_clipped` (right-overflow clamp). `blit_surface` extended with `src_x_offset: u32` + `width: u32` parameters. `is_space0: bool` flag on `AppSnapshot` replaces string comparisons. Normative for all future rounds.
+
+---
+
+## 27. Full Screen & Split View
+**macOS Analogue**: Full Screen / Split View / Tile Window  
+**Depends on**: R21 (spaces, pending_resize), R25 (pending_focus, INPUT_LOCK_LEVEL), R26 (Stage Manager, blit_clipped)
+
+### Three Modes
+- **FullScreen**: dedicated space (via `SpaceRegistry.allocate_next()`), chrome/dock suppressed, app resizes to full logical dimensions
+- **SplitView**: two-app pair in dedicated space, `compute_split_rects()` with configurable `ratio: f32`, both apps use `pending_resize` drain path
+- **TileWindow**: single app at left/right half of content area, stays in current space, chrome/dock visible, `win_manual_layout = true`
+
+### Space Free-List (B2 fix)
+`SpaceRegistry` adds `free_list: Vec<u8>`. `allocate_next()` pops free-list before incrementing high-water mark. `release()` pushes non-tail releases. MC strip and `PENDING_SPACE_SWITCH` skip free-list entries.
+
+### FS Suppression Flags (B1 fix)
+`FS_CHROME_SUPPRESSED` / `FS_DOCK_SUPPRESSED` atomics updated inside `vsync_lock.write()` space-switch block (before blit loop reads them). `chrome_clip_px`/`dock_clip_px` recomputed under `vsync_lock.read()` after write-lock drops — zero-frame glitch.
+
+### LockLevel (B3 fix)
+`LockLevel::FsTransition = 4` appended. `route_keyboard` swallows keys on `3 | 4`. No existing call sites renumbered.
+
+### SplitView Exit (B4 fix)
+`splitview_exit_app`: Step 1a compact z-order in `fs_pre_space`; Step 1b `PENDING_SPACE_SWITCH` + `pending_focus` (R25 deferred pattern); Step 1c stage re-integration — focus lands in correct space after switch.
+
+### Tile + Stage Manager (B5 fix)
+`compute_tile_rect(side, config, sm_enabled)` accounts for 140pt strip when SM active. `on_stage_manager_toggled()` hook recomputes all tiled apps in affected space and sends `VYOMA_FS:tile_geometry_changed`.
