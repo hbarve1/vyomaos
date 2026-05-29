@@ -1680,3 +1680,27 @@ Mutations (`wallpaper_set`, `screensaver_set`) require `shell = true`. Queries r
 
 ### Extras
 Dynamic wallpapers: `time_variants: Vec<(u8, WallpaperKind)>` checked once per minute. Screen saver: blank-screen fallback after N idle seconds (v1 only). Desktop icons deferred to R41.
+
+---
+
+## 30. Accessibility Tree & AX API
+**macOS Analogue**: `NSAccessibility` / `AXUIElement` / VoiceOver  
+**Depends on**: R21 (apps-map lock), R28 (focus), R29 (capability gating)
+
+### Architecture
+Hybrid push/pull: apps push UI trees via `VYOMA_AX:` line protocol; supervisor maintains `AXRegistry: Arc<RwLock<...>>`; registered AX clients receive push events via `AXEventQueue` and pull data via WIT `vyoma:accessibility@1.0.0`.
+
+### Thread Safety (B1+B3 fix)
+`AXParseState` is thread-local on per-app output reader thread — never in AppState or AXRegistry. `AXEventQueue: Arc<Mutex<Vec<(client, event_line)>>>`: output reader threads push; compositor tick phase 3b is sole consumer/sender (no concurrent pipe writes).
+
+### Screen Coordinates (B2 fix)
+`get-window-bounds: func(app-name: string) -> option<window-bounds>` in WIT. `VYOMA_AX_EVENT:window_moved` emitted on position change for cache invalidation.
+
+### VoiceOver + Normative Space-0 Table (B4 fix)
+`voiceover` at z=65531 added to normative space-0 table. Caption y computed adaptively via `VYOMA_AX:config_set:caption_y,<y>`. Surface cleared explicitly on empty-label or SECURE_INPUT focus.
+
+### Bootstrap Protocol (B5 fix)
+`app_appeared` = registered (tree may be empty, revision=0). New `tree_ready:<app>:<revision>` event signals first valid tree (revision 0→1). VoiceOver ignores focus_changed for apps with revision=0.
+
+### Capability Gates
+`accessibility = true` → publish tree + `accessibility-publish` WIT. `accessibility_client = true` → receive events + `accessibility-client` WIT.
