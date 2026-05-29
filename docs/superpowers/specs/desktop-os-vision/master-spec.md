@@ -1246,3 +1246,27 @@ peripheral capabilities and `safe_state`); `supervisor/src/main.rs`
 **Implementation:** supervisor/src/gpu/ — 12 files each <500 LOC
 
 ---
+
+
+## 13. Font System & Typography
+**macOS equiv:** CoreText / FontServices
+**Status:** FINAL
+**Key decisions:**
+- `FontProvider` trait with `coverage(ch) -> GlyphCoverage` tri-state (Native/Substitute/NoGlyph); replaces bool `has_glyph`. BitmapFontProvider returns Substitute for non-ASCII (renders U+FFFD box); TrueTypeFontProvider returns NoGlyph for absent codepoints so chain tries next provider.
+- Two backends: BitmapFontProvider (v1, zero deps, nearest-neighbor scaling) + TrueTypeFontProvider (fontdue crate, platform-gated off mcu-minimal). Apps opt in via `[capabilities.fonts]` manifest; bitmap is always the terminal fallback.
+- All fontdue entry points wrapped in `catch_unwind(AssertUnwindSafe(...))` — `safe_rasterize` + `safe_metrics`. `validate_font_file` performs pre-flight rasterization of 10 ASCII glyphs at 14 px. Worker thread panics trigger monitor respawn; callers use `recv_timeout(200 ms)` and fall back to bitmap substitute glyph on timeout.
+- GlyphAtlas: `CpuGlyphAtlas` (lru::LruCache, `get_or_insert` bumps MRU on hit) + `GpuGlyphAtlas` (etagere Skyline-BL allocator, per-PID quota `MAX_PER_PID=128`, `evict_lru_for_pid` on quota breach, `take_dirty` for frame-coherent GPU upload).
+- FontConfig replaces global constants: per-platform values for `max_font_bytes`, `max_total_estimated_ram` (raw bytes × 2 factor), `max_glyph_cache_entries`, `max_atlas_entries_per_pid`, `truetype_enabled`. CJK requires desktop-full/server-headless (256 MiB cap); iot-edge/robotics-rt are Latin-only by constraint.
+- LayoutSession pins provider resolution and `quantize_size(size_px * 4 / 4)` for both `glyph_advance` and `render_glyph`, eliminating measure/render skew. `layout_text` takes `&mut LayoutSession` and returns `Result<Vec<TextLine>, LayoutError>`.
+- RTL detected via Hebrew/Arabic Unicode ranges → `Err(LayoutError::RtlUnsupported)`. No silent LTR corruption. Legacy `VYOMA_DRAW:draw_text_wrap` logs warning and emits empty line.
+- `TextLine` carries `trailing_glyph: Option<char>` for `WrapMode::Ellipsis`. Empty-input returns single `TextLine{text:"",width:0.0,y_offset:0.0}`.
+- WIT: `vyoma:fonts/typography@1.0.0` — `load-font`, `unload-font`, `measure-text`, `line-height`, `has-glyph`, `select-font`, `layout-text` (returns lines as `list<tuple<string,f32,f32>>`).
+- System fonts: VyomaSans-Regular + VyomaSans-Bold (Inter subset, OFL-1.1) + VyomaMono-Regular (JetBrains Mono subset, OFL-1.1), loaded at `BootPhase::Display` before first app spawn. Total system-font footprint <2 MiB.
+- `FontWorker` + `FontMonitor` watchdog: `bounded(32)` channel; monitor joins worker handle, detects panic via `join().is_err()`, respawns with 10 ms back-off.
+- Cargo feature flags: `fontdue` and `etagere` gated off mcu-minimal builds.
+**Critical v1:** FontProvider trait, BitmapFontProvider + U+FFFD, TrueTypeFontProvider with safe wrappers, FontConfig per-platform, GpuGlyphAtlas with per-PID eviction, LayoutSession, RTL error, worker watchdog
+**Deferred:** HarfBuzz/complex shaping (v3), RTL full BiDi (v3), variable fonts, color/emoji, dynamic font download
+**Never:** fontdue inside WASM binary, global mutable font state without locks, silent RTL corruption
+**Implementation files:** `supervisor/src/font/` — 15 files each ≤500 LOC (mod.rs, bitmap.rs, bitmap_data.rs, truetype.rs, atlas_cpu.rs, atlas_gpu.rs, registry.rs, fallback.rs, layout.rs, session.rs, worker.rs, wit_handlers.rs, manifest.rs, config.rs, subsystem.rs)
+
+---
