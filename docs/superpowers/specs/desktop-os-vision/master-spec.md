@@ -1957,3 +1957,28 @@ Every supervisor→app mutating command (`insert`, `delete`, `select_range`, `un
 
 ### System Services
 Spell check (WASM service, 250ms debounce), smart substitution (inline rewrite before key delivery), data detector (750ms stability). All skip secure fields.
+
+---
+
+## Section 40: Clipboard & Pasteboard
+
+**macOS analogue**: `NSPasteboard` / `UIPasteboard` / clipboard history  
+**Status**: FINAL
+
+### Architecture
+Four named pasteboards: `general`(16 history), `find`(1), `drag`(1, unified with R38 token dirs), `ruler`(4). Each backed by `ArcSwap<PasteboardState>`. `TOKEN_REFS: Mutex<HashMap<[u8;16], u32>>` tracks reader lifetimes for GC (B4 fix).
+
+### Atomic Write (B1 + B2 Fix)
+Two-phase write: `begin` → items → `commit`. Staging dir `/run/vyoma/pb/.staging/<token>/` (unobservable). On commit: `fsync` all item files, validate sizes, `rename` to `/run/vyoma/pb/<token>/` (atomic), then ArcSwap. Large items: supervisor grants scoped WASI subdir descriptor to Wasmtime resource table on `begin` ack; revoked on commit/abort.
+
+### Read & GC (B4 Fix)
+Refcount incremented before `reply:` sent; decremented on `release` or 30s timer. Token dir GC only when refcount=0 AND not current for any pasteboard. 5s watchdog GCs uncommitted staging dirs.
+
+### Security (B3 Fix)
+Removed `clipboard_read_unattended`. Non-Cmd+V reads require chrome banner consent (persisted in `/data/clipboard-grants.toml`). `changed:` notification omits `source_app` by default; `clipboard_observer_unredacted=true` capability requires user opt-in via Settings. Secure entries: `changed:` emits `***secure***` only.
+
+### Cmd+C Multi-MIME (B5 Fix)
+`clipboard_provider=true` apps own Cmd+C: receive `VYOMA_HOTKEY:copy:<field_id>`, perform full two-phase write with all MIME types (text/plain+rtf+html). Unprivileged apps: supervisor fetches plain text via R39 `fetch_selection` and writes `text/plain` only; chrome shows "Plain text copy" indicator.
+
+### Secure Clipboard
+`:secure[:ttl]` suffix on `commit`. TTL default 60s, max 120s. Never enters history. Consume-on-read. Zeroed on expiry (overwrite + fsync + unlink). Sweep runs at 1 Hz and on every focus change.

@@ -1,7 +1,7 @@
 {
   "session_start": "2026-05-29",
   "target": "Full macOS-like Desktop OS (DesktopOS first, then Mobile, then embedded)",
-  "current_round": 40,
+  "current_round": 41,
   "status": "in_progress",
   "subsystems": [
     {"id": 1,  "name": "Kernel & Process Model",              "status": "completed",   "file": "01-kernel-process.md",         "macos_equiv": "XNU kernel / launchd"},
@@ -43,7 +43,7 @@
     {"id": 37, "name": "Controller & Gamepad Input",           "status": "completed",   "file": "37-gamepad.md",                "macos_equiv": "GameController framework / MFi"},
     {"id": 38, "name": "Drag & Drop",                          "status": "completed",   "file": "38-drag-drop.md",              "macos_equiv": "NSDraggingDestination / NSPasteboardItem"},
     {"id": 39, "name": "Text Input & Selection Model",         "status": "completed",   "file": "39-text-input.md",             "macos_equiv": "NSTextView / TSM / TextKit"},
-    {"id": 40, "name": "Clipboard & Pasteboard",               "status": "pending",     "file": "40-clipboard.md",              "macos_equiv": "NSPasteboard / UIPasteboard"},
+    {"id": 40, "name": "Clipboard & Pasteboard",               "status": "completed",   "file": "40-clipboard.md",              "macos_equiv": "NSPasteboard / UIPasteboard"},
     {"id": 41, "name": "File Manager (Finder equivalent)",     "status": "pending",     "file": "41-file-manager.md",           "macos_equiv": "Finder / NSOpenPanel"},
     {"id": 42, "name": "Spotlight & Metadata Search",          "status": "pending",     "file": "42-spotlight.md",              "macos_equiv": "Spotlight / MDQuery / NSMetadataQuery"},
     {"id": 43, "name": "File Coordination & Locking",          "status": "pending",     "file": "43-file-coordination.md",      "macos_equiv": "NSFileCoordinator / NSFilePresenter"},
