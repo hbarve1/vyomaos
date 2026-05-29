@@ -1202,3 +1202,25 @@ peripheral capabilities and `safe_state`); `supervisor/src/main.rs`
 **Implementation files:** `supervisor/src/interrupt/` — mod.rs, event_loop.rs, callback_queue.rs, signal.rs, epoch.rs, timer.rs, crash.rs, panic_recovery.rs, worker.rs, types.rs (each <500 LOC)
 
 ---
+
+
+## 11. Display Server & Compositor
+**macOS equiv:** WindowServer / SkyLight compositor
+**Status:** FINAL
+**Key decisions:**
+- In-supervisor compositor (WASM sandboxing = trust boundary; no separate WindowServer process)
+- Sharded WindowRegistry: metadata Mutex (brief, lifecycle only) + per-window RwLock<Surface> + per-window AtomicDamageRect (lock-free). Compositor snapshots metadata in <1 µs, then blits under per-window read locks only.
+- Chrome lives in content Surface top strip (CHROME_H=28 px); chrome.rs is refactored to write into Surface, not FB directly. chrome_dirty:AtomicBool per window.
+- Display protocol v2 on separate pipe fd (not stdout) — framed binary `[u16 len][u8 verb][payload]`; v1 stdout protocol remains for backwards compatibility.
+- SharedBuffer via Wasmtime custom memory creator (Config::with_host_memory); single-buffer v1; desktop-full/mobile only.
+- VSync via timerfd(CLOCK_MONOTONIC) absolute-deadline; DRM page-flip attempted but falls back gracefully on virtio-gpu; 60/30/15/1 Hz by platform profile.
+- Per-platform Surface format: Bgra32 (desktop/server), Rgb565 (iot-edge/robotics-rt), Mono1bpp (mcu-minimal, direct-draw only).
+- Explicit window creation: v1 window synthesized eagerly after apply_tiling_layout() before IO threads spawn; v2 requires create_window before any draw.
+- Lock order invariant: Surface RwLock < FB Mutex (always); documented and debug_assert'd.
+- Z-order: Vec<IidKey> sorted back-to-front; no integer overflow.
+**Critical v1:** WindowRegistry, Surface sharding, compositor pass, display fd pipe, timerfd vsync, chrome-in-Surface
+**Deferred:** SharedBuffer double-buffering, hardware DRM KMS plane overlay, multi-display (R19), GPU acceleration (R12)
+**Never:** Per-app display server process (too much IPC overhead for WASM model), AsyncSignalSafe chrome painting into FB
+**Implementation files:** `supervisor/src/display/` — mod.rs (split into framebuffer.rs+fb_flush.rs), surface.rs, compositor.rs, compositor_pass.rs, window_registry.rs, protocol_v2.rs, dispatch.rs, vsync.rs, frame_scheduler.rs, shared_surface.rs, chrome_compose.rs, font_iface.rs (each <500 LOC)
+
+---
