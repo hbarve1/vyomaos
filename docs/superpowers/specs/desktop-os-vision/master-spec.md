@@ -1295,3 +1295,24 @@ peripheral capabilities and `safe_state`); `supervisor/src/main.rs`
 **Implementation files:** `supervisor/src/image/` — 17 files each ≤500 LOC (mod.rs, config.rs, decode_png.rs, decode_jpeg.rs, decode_bmp.rs, decode_qoi.rs, decode_svg.rs, resize.rs, cache.rs, icon.rs, worker.rs, surface_ext.rs, manifest.rs, wit_handlers.rs, protocol_v2.rs, gpu_cache.rs, subsystem.rs)
 
 ---
+
+
+## 15. Color Management & ICC Profiles
+**macOS equiv:** ColorSync / ICC profile manager
+**Status:** FINAL
+**Key decisions:**
+- Two paths: (1) analytic sRGB↔LinearSrgb via compile-time LUT (~2 ns/px, no dependencies); (2) `qcms` pure-Rust ICC transform (~8 ns/px, `color-icc` Cargo feature). mcu-minimal/iot-edge/robotics-rt use analytic only; mobile/desktop-full/server-headless get full ICC.
+- ICC pre-validation before qcms: `validate_icc_profile` checks size (≤4 MiB), declared-size == actual size, tag count ≤100, known color space signature. qcms only called after validation passes. `catch_unwind` as secondary defense only.
+- `TransformRegistry` uses a separate `AtomicU32` handle counter from `ProfileId` — no handle namespace collision. `get_or_create(key, pid)` is idempotent: same `(from, to, intent)` returns cached handle. All transforms owned as `Arc<parking_lot::Mutex<qcms::Transform>>` — no raw pointer casting, no double-free.
+- `ImageData.color_space: Option<ColorSpace>` (None = sRGB); `effective_color_space()` returns Srgb for None. All R14 decoder callsites compile without change.
+- WIT `apply-transform-to-surface(transform, surface)` operates on supervisor-side Surface handle — zero copies through WASM boundary for 4K frames. `apply-transform(pixels: list<u8>)` retained for small/offline use.
+- Compositor: `CompositorColorState` with pre-allocated scratch buffer and `needs_color_management: bool` fast-path skip for sRGB displays (avoids 64ms/frame qcms cost at 60Hz).
+- EDID gamut detection: `edid_color_space(edid)` requires `rx>0.680 && ry<0.320 && gx<0.270` (triple-condition prevents false-positives on cheap sRGB panels).
+- System profiles: sRGB.icc + DisplayP3.icc in initramfs at `/usr/share/color/icc/vyoma/`, loaded at `BootPhase::Display`.
+- No lcms2 (C FFI UB risk); qcms only (pure-Rust). HDR/EDR, ProPhoto, CMYK, display calibration deferred.
+**Critical v1:** validate_icc_profile, ProfileRegistry, TransformRegistry (idempotent get_or_create), Arc<Mutex<>> ownership, apply-transform-to-surface, CompositorColorState fast-path, EDID detection
+**Deferred:** HDR/EDR, ProPhoto RGB, CMYK, display calibration UI, per-window color space tagging (R21), color delta-E
+**Never:** lcms2 C FFI, raw pointer casting for qcms::Transform, hash-only ICC profile validation, single-condition EDID threshold
+**Implementation files:** `supervisor/src/color/` — 9 files each ≤500 LOC (mod.rs, config.rs, profile.rs, registry.rs, transform.rs, display.rs, convert.rs, wit_handlers.rs, manifest.rs)
+
+---
