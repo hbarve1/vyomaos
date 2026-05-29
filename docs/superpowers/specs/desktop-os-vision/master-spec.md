@@ -1882,3 +1882,28 @@ ID validated `^[A-Za-z0-9_-]{1,32}$`. Per-app `TokenBucket` (64 KiB/sec). 8-spri
 
 ### Shape Priority
 1. FsTransition → hidden. 2. Any lock>None → forced Arrow. 3. Drag-capture owner shape. 4. Hit-test region match (window-local rects). 5. App default shape/custom. 6. Arrow fallback.
+
+---
+
+## Section 37: Controller & Gamepad Input
+
+**macOS analogue**: GameController framework / MFi controllers  
+**Status**: FINAL
+
+### Architecture
+Controller hub thread polls evdev via epoll; delivers `VYOMA_INPUT:controller:*` via R35 SPSC channels (never holds ChildStdin mutex). Up to 4 controllers (P1–P4). P1 follows `FOCUSED_APP` by default; P2–P4 claimable via `@supervisor: controller_claim <player>` (requires `shell=true + controller_max_players≥N`).
+
+### SYN_REPORT Batching (B2 Fix)
+Raw axis/button changes accumulate into a scratch `ControllerState`; normalization + hysteresis + emission fires ONLY at `SYN_REPORT` boundary. Prevents split-axis emissions where LX updates before LY, corrupting radial deadzone. Hysteresis: axis change >256, trigger change >4.
+
+### Disconnect Delivery (B1 Fix)
+`LAST_ROUTED_APP[4]: [ArcSwap<Option<String>>; 4]` updated on every successful state delivery. Disconnect event delivered directly to `last_routed_app[slot]` — bypasses lock gate and current routing recomputation entirely. Controllers plugged in during MC/lock buffer connect via last-routed tracking.
+
+### Lock-Rise Flush (B3 Fix)
+`on_input_lock_rise()` (R32) extended to call `flush_controller_state_on_lock_rise()`: emits all-zero synthetic state (`buttons=0, axes=0, triggers=0`) with bumped epoch+seq to all `LAST_ROUTED_APP` targets. Prevents "stuck button" desync after Mission Control dismissal.
+
+### Dual-Fd Rumble (B4 Fix)
+Each controller device opened **twice**: `read_fd` (hub epoll, input reads only), `write_fd` (per-controller writer task, ioctl+write only). No fd sharing. Writer task: bounded mpsc capacity=4 (overflow drops oldest). `duration_ms` clamped to 5000ms.
+
+### Claim Cleanup (B5 Fix)
+`release_controller_claims(app)` called from `on_app_exit` hook in `process.rs`. For `restart=always`, process manager re-emits `on_controller_connect` for previously-claimed connected slots after re-spawn — no re-registration required.
