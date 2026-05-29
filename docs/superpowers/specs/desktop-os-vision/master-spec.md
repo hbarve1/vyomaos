@@ -1636,3 +1636,26 @@ Step 0 (new): left-edge clip — `effective_dest_x`, `src_x_offset`, `blittable_
 
 ### Tile + Stage Manager (B5 fix)
 `compute_tile_rect(side, config, sm_enabled)` accounts for 140pt strip when SM active. `on_stage_manager_toggled()` hook recomputes all tiled apps in affected space and sends `VYOMA_FS:tile_geometry_changed`.
+
+---
+
+## 28. Focus Management & Z-order
+**macOS Analogue**: `NSApplication.keyWindow` / `makeKeyAndOrderFront`  
+**Depends on**: R21 (PerSpaceZ, compact_z_order), R25 (INPUT_LOCK_LEVEL), R26 (Stage Manager), R27 (SplitView)
+
+### Core Model
+`FOCUSED_APP: ArcSwap<String>` — wait-free reads on TTY input thread. All focus transitions go through `focus_transfer(new, old, reason, pending_compact, pending_notifs)`. App names (not integer IDs) used throughout.
+
+### No-Deadlock Pattern (B1+B2+B3 fix)
+- Notifications (`notify_chrome`, `notify_dock`, `VYOMA_FOCUS:`) enqueued in `pending_focus_notifications: Vec<PendingFocusNotif>` under apps-map lock; drained by main loop AFTER lock released
+- Z-bump (O(N) scan) under apps-map lock; `PENDING_COMPACT_SPACES: AtomicU8` bitmask set; compositor calls `compact_z_order` per flagged space under `vsync_lock.write()` — O(N log N) deferred out of IPC path
+- `SpaceState.last_focused: Option<String>` embedded in `SupervisorState.spaces` under existing apps-map lock — no new Mutex (eliminates ABBA with `LAST_FOCUSED` static)
+
+### SplitView Focus (B4 fix)
+`@supervisor: splitview_toggle_focus` — symmetric command accepted from either primary or secondary. Both apps receive `VYOMA_FOCUS:splitview_role_changed:<primary|secondary>`.
+
+### WIT Interface (B5 fix)
+`vyoma:focus@1.0.0`: `focus-query` (any display app) + `focus-control` (display+shell). All functions return app name strings — no undefined `name→id` map. `focused-window: func() -> string`.
+
+### Starvation Prevention
+`on_app_exit`: cleans `last_focused` from all spaces; if exited app was focused, finds MRU replacement by `last_focus_time` in active space.
