@@ -1340,3 +1340,23 @@ peripheral capabilities and `safe_state`); `supervisor/src/main.rs`
 **Files**: `supervisor/src/animation/` — 11 modules all ≤500 LOC: `mod.rs`, `config.rs`, `layer_tree.rs`, `presentation.rs`, `transaction.rs`, `runner.rs`, `timing.rs`, `interpolate.rs`, `compositor.rs`, `wit_handlers.rs`, `protocol.rs`.
 
 **Platform**: disabled on mcu/iot/robotics/server; full (512 layers/app, 30s cap) on desktop; limited (128 layers/app, 10s cap) on mobile.
+
+---
+
+## 17. VYOMA_DRAW v3 — Advanced 2D Rendering (Quartz 2D / CoreGraphics)
+
+**Three-tier protocol**: v1 (text `VYOMA_DRAW:`, R11) stays for simple apps. v2 (extended text path commands) rate-limited to <30Hz/<20 segments/frame — NOT for animated UI. v3 (`vyoma:draw@3.0.0` WIT) is the production path for all animated drawing.
+
+**Color space contract (B4)**: All WIT color f32 params are linear-light sRGB with premultiplied alpha [0.0, 1.0]. Apps migrating from v1 (packed sRGB u8) MUST convert via R15 `color-convert`. Passing gamma-encoded values produces 2× darker colors.
+
+**Rasterizer threading (B2)**: Path rasterization runs in Rayon parallel tasks — never on the vsync compositor thread. Each dirty `GraphicsContext` gets one Rayon task. `command_queue` filled async (protocol/WIT thread), drained at vsync in parallel. Budget: 4 apps × 3.5ms each fits within 16.6ms vsync on 4-core desktop.
+
+**Batch path submission (B5)**: `submit-path-buffer(ctx, list<u8>)` accepts compact binary encoding (1-byte opcode + up to 6 f32s = max 25 bytes/segment). 1,000 segments = one 25KB WIT call vs. 1,002 individual round-trips. Matches Skia/Blink path serialization approach.
+
+**Protocol recovery (B3)**: v2 path state auto-discards after 100ms timeout. Parse errors skip the bad segment (log + continue — not abort). v1 command interleaved with open path: discard path, warn, execute v1 command.
+
+**Clip model (N4)**: Clip paths rasterized to per-pixel alpha buffer (not boolean path intersection). Matches CoreGraphics/Skia model — O(pixels) not O(path²).
+
+**v3 WIT additions**: `set-font(family, weight, style, size)`, `draw-text`, full gradient API, `clip-path`, `save-state`/`restore-state`, `set-blend-mode` (12 modes). Image handles from R14 are globally valid in R17 calls.
+
+**Files**: `supervisor/src/draw/` — 11 modules ≤500 LOC each: `mod.rs`, `context.rs`, `rasterizer.rs`, `stroke.rs`, `gradient.rs`, `blend.rs`, `text.rs`, `image.rs`, `transform.rs`, `protocol.rs`, `wit_handlers.rs`. Zero new external dependencies (Rayon already in supervisor).
