@@ -1742,3 +1742,31 @@ TTY events have `scan_code=0` → `KeyCode::Unknown(0)`, breaking romanization I
 
 ### Capability Gates
 `keyboard_events = true` → receive `VYOMA_KEY:` structured events + `VYOMA_KBD:` notifications. `ime = true` → register as active IME. `shell = true` required for `kbd_inject`, `kbd_layout`, `kbd_repeat_*`, `kbd_compose`.
+
+---
+
+## Section 32: Mouse, Trackpad & Gestures
+
+**macOS analogue**: `IOHIDFamily` / `NSGestureRecognizer`  
+**Status**: FINAL
+
+### Architecture
+Dual-thread evdev acquisition: `mouse-evdev` (EV_REL/EV_KEY → button + delta → `MouseEventQueue`) and `trackpad-evdev` (ABS_MT slot protocol → `GestureState::feed_frame` → `MouseEventQueue`). `mouse-dispatch` is the sole consumer and sole caller of `route_mouse`. `GestureState` is locked only by `trackpad-evdev`; `mouse-dispatch` never holds it.
+
+### HitResult — Single APPS_MAP Acquisition (B1 fix)
+`hit_test(x, y, &APPS_MAP) -> Option<HitResult>` acquires `APPS_MAP` once, clones `stdin: Arc<Mutex<ChildStdin>>`, `is_space0: bool`, `win_x/y` into the result, then releases the lock. `deliver_to_hit` uses the cloned `Arc` directly — `APPS_MAP` is never re-acquired during delivery. Lock order: `APPS_MAP → per-app stdin` (acyclic).
+
+### Cursor Position (B4 fix)
+`CURSOR_POS: AtomicU64` packs X and Y. `cursor_xy()` uses `Ordering::Acquire`; `set_cursor_xy()` uses `Ordering::Release`. Eliminates torn-read on ARM64 (iot-edge, mobile, robotics-rt). Software cursor sprite drawn last in R11 pass 2 using single `cursor_xy()` call.
+
+### Enter/Leave Suppression During Animations (B2 fix)
+`synth_enter_leave_if_needed` returns immediately when `INPUT_LOCK_LEVEL != LL_NONE`, freezing the hover target. On `LL_NONE` re-entry, `on_input_unlock()` synthesizes at most one Leave+Enter to reconcile. Prevents thousands of spurious Enter/Leave events during Stage Manager / split-view animations.
+
+### Gesture Interruption (B3 fix)
+`GestureState` gains `aborted_ids: Vec<i32>` — tracking IDs of fingers active when the gesture was aborted. `feed_frame` filters them until they lift. `INPUT_EPOCH: AtomicU8` bumped on every lock-level change; gesture `MouseEvent`s carry their creation epoch; `route_mouse` drops stale-epoch gesture events.
+
+### Drag Capture Lock-Rise Cleanup (B5 fix)
+`on_input_lock_rise()` synthesizes a `Release` for the captured app and clears `MOUSE_DRAG_CAPTURE`. `CURRENT_BUTTONS: AtomicU8` maintained by `flush_mouse_frame`; `on_input_lock_fall()` clears capture if no buttons held. Prevents phantom drag after MC dismissal.
+
+### Capability Gates
+`mouse = true` → `VYOMA_INPUT:mouse:` + `vyoma:pointer@1.0.0` WIT. `gestures = true` → `VYOMA_INPUT:gesture:` (requires `mouse = true`). `cursor = true` → `VYOMA_CURSOR:shape/hide/show`.
