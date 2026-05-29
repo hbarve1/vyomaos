@@ -1704,3 +1704,41 @@ Hybrid push/pull: apps push UI trees via `VYOMA_AX:` line protocol; supervisor m
 
 ### Capability Gates
 `accessibility = true` → publish tree + `accessibility-publish` WIT. `accessibility_client = true` → receive events + `accessibility-client` WIT.
+
+---
+
+## Section 31: Keyboard & Input Methods
+
+**macOS analogue**: `IOHIDFamily` / `NSTextInputClient`  
+**Status**: FINAL
+
+### Architecture
+Dual-source input model: `/dev/tty0` termios raw (character delivery) + `/dev/input/eventN` evdev `EV_KEY` (modifier tracking, key release, scan codes). Both sources feed a shared `KeyEventQueue: Arc<Mutex<Vec<KeyEvent>>>`. The `input-router` thread is the sole caller of `route_keyboard` — the `kbd-evdev` thread only writes to `ModStateRef` and `KeyEventQueue`.
+
+### KeyEvent Struct
+`{ scan_code: u16, key_code: KeyCode, modifiers: Modifiers, character: Option<char>, is_press, is_repeat, is_release, from_virtual_kbd: bool }`. `from_virtual_kbd` causes the IME intercept (Priority 4) to be skipped while still respecting all `INPUT_LOCK_LEVEL` gates.
+
+### 5-Priority Dispatch Pipeline (normative)
+1. `INPUT_LOCK_LEVEL` gate (None=0, MC=1, ChromeConsent=2, StageSwitch=3, FsTransition=4)
+2. Global shortcuts (R35)
+3. Space-0 chrome interceptors (F3=MC, Escape=FS exit, Cmd+M=minimize)
+4. IME intercept — skipped for `from_virtual_kbd` events (B5 fix)
+5. Focused app stdin delivery
+
+### TTY Read Timeout and Evdev Drain Ordering (B1 fix)
+`VMIN=0, VTIME=1` (100ms) on `/dev/tty0` when `kbd-evdev` is active. Input-router drain loop (Phase A) always runs before TTY byte processing (Phase C), ensuring evdev modifier events are processed before the character they modify.
+
+### Character Resolution in the Drain Loop (B3 fix)
+`resolve_character(scan_code, modifiers, &keymap, &mut compose_state)` called in input-router Phase A for each evdev event. `ComposeState` is thread-local on input-router stack — never stored in shared state. `kbd-evdev` thread sets `character=None`; input-router resolves it.
+
+### TTY KeyCode Inference (B4 fix)
+TTY events have `scan_code=0` → `KeyCode::Unknown(0)`, breaking romanization IMEs. `Keymap::char_to_keycode(ch)` reverse lookup (normal-then-shift order) infers the most likely `KeyCode` from the resolved character. Called for TTY events before `route_keyboard`.
+
+### IME Security: Commit Authorization (B2 fix)
+`ime_commit` and `ime_passthrough` IPC handlers verify `sender == active_ime()` before processing. Rejected with `log_warn!`. Prevents non-IME apps from injecting text into arbitrary app stdins.
+
+### Virtual Keyboard and kbd_inject (B5 fix)
+`kbd_inject` (requires `shell = true`) sets `from_virtual_kbd=true` and calls `route_keyboard` through the full Priority 1–5 pipeline. Only Priority 4 (IME intercept) is skipped. Lock gates (including `FsTransition`) still apply.
+
+### Capability Gates
+`keyboard_events = true` → receive `VYOMA_KEY:` structured events + `VYOMA_KBD:` notifications. `ime = true` → register as active IME. `shell = true` required for `kbd_inject`, `kbd_layout`, `kbd_repeat_*`, `kbd_compose`.
