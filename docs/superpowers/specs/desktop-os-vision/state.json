@@ -1,7 +1,7 @@
 {
   "session_start": "2026-05-29",
   "target": "Full macOS-like Desktop OS (DesktopOS first, then Mobile, then embedded)",
-  "current_round": 25,
+  "current_round": 26,
   "status": "in_progress",
   "subsystems": [
     {"id": 1,  "name": "Kernel & Process Model",              "status": "completed",   "file": "01-kernel-process.md",         "macos_equiv": "XNU kernel / launchd"},
@@ -28,7 +28,7 @@
     {"id": 22, "name": "App Lifecycle Management",             "status": "completed",   "file": "22-app-lifecycle.md",          "macos_equiv": "NSApplicationDelegate / UIApplication"},
     {"id": 23, "name": "Menu Bar & System Chrome",             "status": "completed",   "file": "23-system-chrome.md",          "macos_equiv": "NSMenuBar / SystemUIServer"},
     {"id": 24, "name": "Dock & App Switcher",                  "status": "completed",   "file": "24-dock.md",                   "macos_equiv": "Dock / Cmd-Tab switcher"},
-    {"id": 25, "name": "Mission Control & Exposé",             "status": "pending",     "file": "25-mission-control.md",        "macos_equiv": "Mission Control / Exposé"},
+    {"id": 25, "name": "Mission Control & Exposé",             "status": "completed",   "file": "25-mission-control.md",        "macos_equiv": "Mission Control / Exposé"},
     {"id": 26, "name": "Stage Manager",                        "status": "pending",     "file": "26-stage-manager.md",          "macos_equiv": "Stage Manager (macOS 13+)"},
     {"id": 27, "name": "Full Screen & Split View",             "status": "pending",     "file": "27-split-view.md",             "macos_equiv": "Full Screen / Split View / Tile Window"},
     {"id": 28, "name": "Focus Management & Z-order",           "status": "pending",     "file": "28-focus-zorder.md",           "macos_equiv": "NSApplication keyWindow / makeKeyAndOrderFront"},

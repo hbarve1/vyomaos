@@ -1558,3 +1558,28 @@ Dock is a second privileged WASM app (`win_space=0`, `z=65534`). Chrome has `z=6
 `DockSwitcherState { ctrl_held: bool, last_ctrl_tab_at: Instant }` lives entirely in event loop (no shared bool). TTY sends `KeyEvent` over crossbeam channel. Main loop intercepts Ctrl-Tab, routes `VYOMA_DOCK:ctrl_tab_pressed` to dock; on Ctrl-release routes `VYOMA_DOCK:ctrl_released`. 500ms timeout synthetic release on each supervisor tick. Auto-cleared when dock lifecycle ≠ Running.
 
 **Switcher open sequence**: expand `resize_surface` → draw overlay → `flush` → `switcher_active=true`. Collapse only after flush commits (stdout stream ordering). `@supervisor: focus <selected>` on Ctrl-release.
+
+---
+
+## 25. Mission Control & Exposé
+**macOS Analogue**: Mission Control, Exposé  
+**Depends on**: R21 (WM spaces), R22 (lifecycle, surface_quiesced), R23 (chrome input lock), R24 (dock, Model A)
+
+### Architecture
+
+Mission Control is a third space=0 WASM app (`mission-control`, z=65533), below dock(65534) and chrome(65535). No `filesystem` capability — thumbnails delivered entirely via stdin as `VYOMA_MC:thumb_begin/data/end` base64 framing. `draw_thumb:<id>,<x>,<y>,<w>,<h>` renders in-memory thumbnail buffers.
+
+### Input Lock Priority (B2 fix)
+Replaced two independent `AtomicBool` flags with a single `AtomicU8 INPUT_LOCK_LEVEL`: `None=0`, `MissionControl=1`, `ChromeConsent=2`. Consent always wins — if consent dialog opens while MC is active, `PREV_LOCK_LEVEL` saves MC state for restore. Auto-clear via `compare_exchange` on lifecycle change away from Running.
+
+### Thumbnail Capture (B1 + B3 fix)
+Dedicated `capture_thread_main` spawned at supervisor startup. Main event loop posts `CaptureRequest` to channel and returns immediately. Capture thread holds one `vsync_lock.read()` for the **entire** multi-app snapshot (not per-app) — eliminates writer starvation. Releases lock before all I/O and base64 encoding.
+
+### Surface Quiescence (B4 fix)
+`surface_quiesced: bool` on `AppState`, set on Suspend, cleared on Resume. `draw_cmd` handler discards all commands when set. `last_flushed_snapshot: Option<Arc<Vec<u8>>>` is updated on each `flush` — MC capture reads this stable snapshot rather than live surface data.
+
+### Deferred Focus (B5 fix)
+`pending_focus: Option<String>` in `SupervisorState`. `handle_focus_command` stores focus in `pending_focus` when `PENDING_SPACE_SWITCH != 0`. Compositor applies `pending_focus` AFTER space switch commit in the same tick — focus always lands in the correct `spaces.active`.
+
+### Layout
+Space strip: top 80pt, one card per space + Add button. Window grid: `sqrt(n)` columns with 16:10 max aspect ratio, padding 8pt. Exposé mode: no space strip, full height, active-app windows only. Keyboard navigation: arrow keys + Enter/Escape.
