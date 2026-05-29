@@ -1463,3 +1463,29 @@ Font logical point sizes are scale-invariant: `m` is always 8×16 pts. At 2x, ph
 ### VYOMA_VDISP_SCREEN Breaking Change
 
 R19's 3-field format extended to 4 fields (`scale_factor`). Apps must update parsers to accept ≥3 fields; migration note provided.
+
+---
+
+## 21. Window Manager & Spaces
+**macOS Analogue**: WindowServer spaces, `NSWindow` positioning, Mission Control  
+**Depends on**: R11 (Surface/vsync), R18 (WIT gating), R20 (DisplayConfig/logical pts)
+
+### Architecture
+
+Window properties (`win_x/y/w/h` in logical pts, `win_z: PerSpaceZ`, `win_space`, `win_title`, `win_manual_layout`, `pending_resize`) added to `AppState`. `SpaceRegistry` owns `active: u8` + `PENDING_SPACE_SWITCH: AtomicU8`. Max 9 spaces; apps assigned to space 0 appear in all spaces (always-on-top layer).
+
+**Z-order**: `win_z: PerSpaceZ` (`HashMap<u8, u32>`) — per-space z-indices; compacting space N only modifies `by_space[N]`. Space-0 apps always composited after all space-N apps (Model A always-on-top).
+
+**Surface reallocation**: `resize` IPC sets `pending_resize: Option<(w,h)>` (no lock); compositor drains it in `vsync_lock.write()` between frames, atomically updating surface + geometry fields.
+
+**Space switching**: `PENDING_SPACE_SWITCH` written by IPC (no lock), checked at compositor tick start. Compositor holds `vsync_lock.write()` to: update `active`, `fb.fill(BACKGROUND)`, mark dirty, compact z. Ghost pixels eliminated.
+
+**Auto-tiling**: 1=full, 2=50/50, 3=main+right-split, 4=2×2 grid, 5+=equal columns. Layers model: any `win_manual_layout=true` app in a space disables auto-tiling for whole space. Manual apps float above tiled apps by z-order.
+
+### Compositor Pass Order
+
+1. Check `PENDING_SPACE_SWITCH` → apply with `vsync_lock.write()`
+2. Drain `pending_resize` → `vsync_lock.write()`
+3. Blit space-N apps ascending z → `vsync_lock.read()`
+4. Blit space-0 apps ascending z (always on top) → still in read-lock
+5. DRM blit → `vsync_lock.write()`
