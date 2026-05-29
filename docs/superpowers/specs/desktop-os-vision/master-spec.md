@@ -1795,3 +1795,34 @@ Stylus events bypass `hit_test` and go to `FOCUSED_APP` via `lookup_hit_by_name(
 
 ### Capability Gates
 `touch = true` → `VYOMA_INPUT:touch:` + `vyoma:touch@1.0.0` WIT. `stylus = true` → `VYOMA_INPUT:stylus:` (requires `touch = true`). Apps with both `touch` and `mouse` receive only touch events.
+
+---
+
+## Section 34: Input Method Editor (IME / CJK)
+
+**macOS analogue**: `InputMethodKit` / `NSTextInputClient` / CJK input sources  
+**Status**: FINAL
+
+### Architecture
+IME is a `wasm32-wasip2` app (`stdio=true, display=true, ime=true`) registered via `@supervisor: ime_register`. First to register wins; second registrant receives `VYOMA_SYSTEM:ime_register_rejected:already_active`. IME deregisters on exit (detected by R22 lifecycle handler) or via `@supervisor: ime_unregister` (sender must equal `ACTIVE_IME`).
+
+### Z-Order (B1 Fix)
+IME candidate window is a space-0 app at z=65529 (below voiceover z=65531). Composited in pass 2 above all space-N app content. Renders transparent except candidate list area. Updated space-0 z-order: chrome(65535), dock(65534), mc(65533), stage-strip(65532), voiceover(65531), ime-window(65529).
+
+### Two-Channel Composition Display (B2 Fix)
+`ime_composition_update <target_app> <text>` → focused app receives `VYOMA_IME:composition_update:<text>` for inline underline display. IME's own `VYOMA_DRAW:` surface renders candidate list separately. No duplicate data: focused app handles inline text; IME surface handles candidates.
+
+### Focus Transition (B3 Fix)
+`on_focus_changed` sends `VYOMA_IME_CONTEXT:focus_will_change` to active IME before switching focus, and unconditionally sends `VYOMA_IME:composition_end` to the previous focused app. IME has 50ms to flush/discard; supervisor proceeds regardless. Prevents composition strings orphaned mid-flight.
+
+### Registration Security (B4 Fix)
+`ime_register` rejects second registrant (first wins). `ime_unregister` enforces `sender == ACTIVE_IME`. `ime_commit`/`ime_passthrough`/`ime_composition_update` require `sender == ACTIVE_IME`. `ime_activate <name>` requires `shell = true`.
+
+### Modifier Bypass (B5 Fix)
+`dispatch_ime` returns `false` (IME skipped) when `ev.modifiers.intersects(Ctrl | Meta | Alt)`. Ctrl+C, Cmd+V, Alt+F4 bypass IME and reach focused app directly. Only unmodified character keys + Backspace/Enter/Space are forwarded for composition.
+
+### Cursor Rect Protocol
+Apps report `VYOMA_IME:cursor_rect:<x>,<y>,<w>,<h>` (screen-absolute). Supervisor forwards to active IME as `VYOMA_IME_CONTEXT:cursor_rect:...`. IME positions candidate window below cursor rect.
+
+### WIT & Platform
+`vyoma:ime@1.0.0` — `commit-text`, `update-composition`, `end-composition`, `passthrough-key`, `get-cursor-rect`. Desktop: optional WASM IME app. Mobile: virtual keyboard IS the IME (has both `ime=true` and `display=true`). Server/IoT/MCU: no IME.
