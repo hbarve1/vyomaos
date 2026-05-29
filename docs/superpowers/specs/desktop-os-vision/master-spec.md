@@ -1224,3 +1224,25 @@ peripheral capabilities and `safe_state`); `supervisor/src/main.rs`
 **Implementation files:** `supervisor/src/display/` — mod.rs (split into framebuffer.rs+fb_flush.rs), surface.rs, compositor.rs, compositor_pass.rs, window_registry.rs, protocol_v2.rs, dispatch.rs, vsync.rs, frame_scheduler.rs, shared_surface.rs, chrome_compose.rs, font_iface.rs (each <500 LOC)
 
 ---
+
+
+## 12. GPU Acceleration Layer
+**macOS equiv:** Metal / IOAcceleratorFamily
+**Status:** FINAL
+**Key decisions:**
+- WIT hostcalls only (vyoma:gpu/graphics + compute); no wgpu inside WASM binary; supervisor runs wgpu on app's behalf
+- Per-app VkDevice isolation; CompositorDevice separate; max 4 GPU apps on desktop-full
+- Three GPU levels: Level 0 (none), Level 1 (compositor only), Level 2 (full); v1: desktop-full=L2, mobile=L1, rest=L0
+- GpuBackend enum: VulkanNative/VulkanVirgl/Gles3Virgl/Lavapipe/Software; QEMU dev = Lavapipe (documented; 30 fps CI gate)
+- v1 data path: staging+write_texture (always copy); HostCoherent/DmaBuf deferred to v2
+- Shader: 64 KB + 100K AST pre-validation; dedicated worker thread (2s timeout); install-time precompile+cache
+- GPU DoS: 120 submissions/sec quota + 500ms GPU watchdog (Device destroy on hang)
+- Compositor never blocks on GPU: FencePoller thread + CPU fallback if fence not ready by vsync
+- SceneComplexity::{Trivial,Moderate,Heavy} selects CPU vs GPU compositor pass
+- VRAM: VramBudget (20% reserved for compositor) + SurfaceTextureState eviction + one-frame OOM fallback
+**Critical v1:** WIT hostcall interface, per-app Device, shader worker, CPU compositor fallback, GPU watchdog
+**Deferred:** HostCoherent/DmaBuf, Level 2 mobile, headless compute, ray tracing, multi-GPU
+**Never:** wgpu inside WASM, shared VkDevice, blocking GPU fence in compositor thread
+**Implementation:** supervisor/src/gpu/ — 12 files each <500 LOC
+
+---

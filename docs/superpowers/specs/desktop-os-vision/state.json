@@ -1,7 +1,7 @@
 {
   "session_start": "2026-05-29",
   "target": "Full macOS-like Desktop OS (DesktopOS first, then Mobile, then embedded)",
-  "current_round": 12,
+  "current_round": 13,
   "status": "in_progress",
   "subsystems": [
     {"id": 1,  "name": "Kernel & Process Model",              "status": "completed",   "file": "01-kernel-process.md",         "macos_equiv": "XNU kernel / launchd"},
@@ -15,7 +15,7 @@
     {"id": 9,  "name": "Hardware Abstraction Layer",           "status": "completed",   "file": "09-hal.md",                    "macos_equiv": "IOKit HAL / CoreOSServices"},
     {"id": 10, "name": "Interrupt & Exception Handling",       "status": "completed",   "file": "10-interrupts.md",             "macos_equiv": "XNU interrupt controller / Mach exceptions"},
     {"id": 11, "name": "Display Server & Compositor",          "status": "completed",   "file": "11-display-compositor.md",     "macos_equiv": "WindowServer / SkyLight compositor"},
-    {"id": 12, "name": "GPU Acceleration Layer",               "status": "pending",     "file": "12-gpu.md",                    "macos_equiv": "Metal / IOAcceleratorFamily"},
+    {"id": 12, "name": "GPU Acceleration Layer",               "status": "completed",   "file": "12-gpu.md",                    "macos_equiv": "Metal / IOAcceleratorFamily"},
     {"id": 13, "name": "Font System & Typography",             "status": "pending",     "file": "13-fonts.md",                  "macos_equiv": "CoreText / FontServices"},
     {"id": 14, "name": "Image & Icon Pipeline",                "status": "pending",     "file": "14-images.md",                 "macos_equiv": "ImageIO / CoreImage"},
     {"id": 15, "name": "Color Management & ICC Profiles",      "status": "pending",     "file": "15-color.md",                  "macos_equiv": "ColorSync / ICC profile manager"},
