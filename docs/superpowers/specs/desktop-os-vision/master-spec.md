@@ -1854,3 +1854,31 @@ Before any system shortcut fires: `maybe_cancel_ime_composition_before_system_ac
 
 ### Per-App Quota & Conflict
 Max 32 registrations per app. Higher `manifest_priority` wins; tie-break by `epoch_registered` (earliest). Shadowed registrants notified via `VYOMA_HOTKEY:shadowed:<id>`; promoted on winner exit via `VYOMA_HOTKEY:activated:<id>`. `vyoma:hotkeys@1.0.0` WIT: `register`, `unregister`, `list-mine`; export events: `on-fire`, `on-shadowed`, `on-activated`.
+
+---
+
+## Section 36: Cursor & Pointer System
+
+**macOS analogue**: `NSCursor` / `CursorManager` / cursor images  
+**Status**: FINAL
+
+### Architecture
+Supervisor owns the cursor sprite exclusively; apps only request shapes. `CursorState { shape, sprite, visible, pos: (i32,i32), epoch }` published as `ArcSwap<CursorState>`. Compositor reads one coherent snapshot — no separate `cursor_xy()` call (B1 fix). Cursor drawn last in R11 pass 2 via `composite_cursor`.
+
+### Position in CursorState (B1 Fix)
+`recompute_active_cursor()` snapshots `cursor_xy()` once and embeds it in the published `CursorState.pos`. Compositor uses `st.pos` exclusively — eliminates sprite/position torn-read on concurrent input-thread updates.
+
+### Clipped Blit (B3 Fix)
+`blit_rgba_straight_clipped` clips both source rect and dest rect against framebuffer bounds: `src_x0 = (-ox).max(0)`, `dst_x0 = ox.max(0)`, `copy_w = min(w - src_x0, fb_w - dst_x0)`. Hot spot validated `[0,w)×[0,h)` on upload. `ACTIVE_SUPPRESS_RECT`: set only by app whose name equals `ACTIVE_IME` via `VYOMA_DRAW:cursor:suppress_over`; compositor skips blit if cursor overlaps suppress rect.
+
+### Drag-Capture Shape (B2 Fix)
+`recompute_active_cursor()` called once after ALL R32 routing side effects (Enter/Leave synthesis complete, `MOUSE_DRAG_CAPTURE` cleared). Before applying drag-owner shape, verifies owner still alive in `APPS_MAP` — dead owner falls through to hit-test result.
+
+### Custom Sprites (B4 Fix)
+ID validated `^[A-Za-z0-9_-]{1,32}$`. Per-app `TokenBucket` (64 KiB/sec). 8-sprite LRU cap. `cleanup_app_cursor` brackets registry removal + `recompute_active_cursor` under single `APP_CURSORS` mutex — no window where compositor reads a removed sprite's registry entry.
+
+### Confinement (B5 Fix)
+`APP_CURSORS[owner].confine` is authoritative; `ACTIVE_CONFINE: ArcSwap` is derived cache. Trackpad deltas accumulate into `CONFINED_LOGICAL_POS`; only clipped result written to `CURSOR_POS` — no overshoot re-entry. Escape chord (`LCtrl×3 within 800ms`) matched in pre-routing stage (before any SPSC delivery) so a backpressured app cannot trap the cursor. All clear paths deliver `VYOMA_INPUT:confine_lost:<reason>` with `reason ∈ {focus, lock, escape, exit}`.
+
+### Shape Priority
+1. FsTransition → hidden. 2. Any lock>None → forced Arrow. 3. Drag-capture owner shape. 4. Hit-test region match (window-local rects). 5. App default shape/custom. 6. Arrow fallback.
