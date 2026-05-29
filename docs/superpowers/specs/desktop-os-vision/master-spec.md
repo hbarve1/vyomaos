@@ -1181,3 +1181,24 @@ peripheral capabilities and `safe_state`); `supervisor/src/main.rs`
 
 ---
 
+
+## 10. Interrupt & Exception Handling
+**macOS equiv:** XNU Mach exceptions + BSD signals + IOKit interrupt delivery + CoreFoundation runloop
+**Status:** FINAL
+**Key decisions:**
+- Multi-threaded EventLoop on perf-sensitive platforms (InputLoop SCHED_RR 60, TimerLoop SCHED_FIFO 50, SignalLoop, GeneralLoop); single-threaded on mcu-minimal/iot-edge
+- Two-queue model per iid: HPQ (watchdog/audio/control-loop timers; never evicted; blocks on full) + LPQ (general; evict oldest on overflow)
+- Epoch = cooperative preemption at backedges only; gaps documented (bulk memory ops, hostcalls, wasm3); per-platform tick rates (N/A on MCU → 100 Hz iot → 1 kHz mobile/desktop → 10 kHz robotics)
+- SIGSEGV install order: supervisor handler BEFORE Engine::new(); use Config::with_host_signal_handler; SA_RESETHAND re-entry guard
+- Stage1 restart = cold reboot of all apps; atomic crash writes (tmp→fsync→rename); FIFO drain; panic-loop detector (>5 deaths/30s → safe mode)
+- Out-of-process crash symbolication: raw record at trap time (pre-allocated CrashBuffer, zero heap); crash-reporter WASM app reads `.symbols` sidecar
+- Compile-time PanicPolicy: const fn panic_policy(Subsystem) → exhaustive match
+- Audio p99 latency budget: ≤4 ms on desktop-full/mobile; measured by audio-bench WASM app; CI gate
+- wasm3 cancel: instruction-count hook (every 1000 instructions, <100 µs cancel latency)
+- IidState: AtomicU8 CAS state machine (Running/YieldPending/Yielded/KillPending/Dead)
+**Critical v1:** WasmTrap mapping, EventLoop(s), CallbackQueue, epoch ticker, crash raw record, PanicPolicy
+**Deferred:** crash-reporter WASM app UI, sticky crash report UX, advanced DWARF with source lines
+**Never:** async-signal-safe handler logic beyond self-pipe write, per-app exception ports (XNU style)
+**Implementation files:** `supervisor/src/interrupt/` — mod.rs, event_loop.rs, callback_queue.rs, signal.rs, epoch.rs, timer.rs, crash.rs, panic_recovery.rs, worker.rs, types.rs (each <500 LOC)
+
+---
