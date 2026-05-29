@@ -1316,3 +1316,27 @@ peripheral capabilities and `safe_state`); `supervisor/src/main.rs`
 **Implementation files:** `supervisor/src/color/` — 9 files each ≤500 LOC (mod.rs, config.rs, profile.rs, registry.rs, transform.rs, display.rs, convert.rs, wit_handlers.rs, manifest.rs)
 
 ---
+
+---
+
+## 16. Animation Engine (Core Animation / CALayer)
+
+**Two-layer model**: ModelLayer (app-visible) + PresentationLayer (compositor-visible, interpolated). Apps never mutate presentation directly — they commit transactions to the model; the engine advances presentation each vsync tick.
+
+**Transaction pipeline (B1 — double-buffered)**: stdout parser thread writes to `back` buffer under brief lock. Vsync thread swaps `front`/`back` atomically at tick start, processes `front` exclusively — no lock held during compositing. Mirrors Core Animation's render server double-buffer.
+
+**Spring physics (B2)**: All three damping regimes (under/critical/over) with correct per-case formulas. `duration_ms` is a *maximum timeout* for springs — animation terminates when `|current - target| < 0.001` (convergence) OR `elapsed >= duration_ms`. `initial_velocity` in WebKit-normalized units (fraction of total displacement/sec).
+
+**Security (B3)**: `Transform3D::sanitize()` replaces NaN/Inf with identity elements, then clamps: translation `m[3][0,1]` to ±65536, scale `m[0,0], m[1,1]` to ±256. Prevents pixel-coordinate integer overflow and GPU rasterizer undefined behavior from large-finite values.
+
+**Implicit animations (B4)**: Setter called outside a transaction + `implicit_animations_enabled=true` → supervisor synthesizes a 250ms EaseInOut transaction and commits it immediately. Setter with implicit disabled → immediate model+presentation update.
+
+**WIT types (B5)**: `add-animation` uses structured `keyframe` WIT records — no msgpack, no external dependencies. `set-transform` takes 16 named f32 parameters (not `list<f32>`) for type safety.
+
+**Hit-test (N3)**: `hit-test(x, y)` uses PresentationLayer geometry — a button mid-slide is hittable at its animated position, not its model position.
+
+**Completion callbacks (N2)**: One `VYOMA_ANIM_COMPLETE:<token>` per transaction (not per `LayerChange`) via `Arc<CompletionGroup>` with atomic pending counter.
+
+**Files**: `supervisor/src/animation/` — 11 modules all ≤500 LOC: `mod.rs`, `config.rs`, `layer_tree.rs`, `presentation.rs`, `transaction.rs`, `runner.rs`, `timing.rs`, `interpolate.rs`, `compositor.rs`, `wit_handlers.rs`, `protocol.rs`.
+
+**Platform**: disabled on mcu/iot/robotics/server; full (512 layers/app, 30s cap) on desktop; limited (128 layers/app, 10s cap) on mobile.
