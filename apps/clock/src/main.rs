@@ -3,7 +3,7 @@
 
 //! Clock — digital uptime clock showing HH:MM:SS with blinking colons.
 
-use std::io::{self, BufRead, Write};
+use std::io::{self, Write};
 use std::time::Instant;
 
 const W: u32 = 360;
@@ -90,42 +90,12 @@ fn draw_frame(elapsed_secs: u64, blink_on: bool) {
 
 fn main() {
     let start = Instant::now();
-
-    // Initial draw
     draw_frame(0, true);
-
-    // Use a separate thread to handle stdin so we don't block the draw loop.
-    // The draw loop uses thread::sleep(500ms) and re-draws every half second.
-    // stdin lines are handled by a reader thread that sends a flag via channel.
-    let (tx, rx) = std::sync::mpsc::channel::<()>();
-
-    std::thread::spawn(move || {
-        let stdin = io::stdin();
-        for line in stdin.lock().lines() {
-            let raw = match line { Ok(l) => l, Err(_) => break };
-            // Handle VYOMA_SYSTEM:screen updates or exit signals
-            if raw == "\x03" {
-                let _ = tx.send(());
-                break;
-            }
-        }
-    });
-
     loop {
-        // Check for exit signal
-        if rx.try_recv().is_ok() {
-            fill(0, 0, W, H, C_BG);
-            flush();
-            std::process::exit(0);
-        }
-
         let elapsed = start.elapsed();
         let secs = elapsed.as_secs();
-        // blink_on: alternate every 500ms
         let blink_on = (elapsed.as_millis() / 500) % 2 == 0;
-
         draw_frame(secs, blink_on);
-
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
 }

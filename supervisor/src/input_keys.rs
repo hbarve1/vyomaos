@@ -85,7 +85,8 @@ pub fn show_shortcut_overlay() {
 /// Only compiled on Linux. Spawned by `main()` as a named thread.
 #[cfg(target_os = "linux")]
 pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry) {
-    use crate::chrome::{cycle_focus_backward, cycle_focus_forward, repaint_all_borders,
+    use crate::chrome::{cycle_focus_backward, cycle_focus_forward, dropdown_is_open,
+                        handle_dropdown_key, repaint_all_borders,
                         windowed_apps_sorted, MENUBAR_H};
     use crate::{log_error, log_info, log_warn};
     use crate::display;
@@ -122,9 +123,26 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                     let mut b1 = [0u8; 1];
                     if tty.read(&mut b1).unwrap_or(0) == 0 { continue; }
 
+                    // T062: Escape key closes the dropdown (must drain b1 first to
+                    // avoid blocking the TTY; only intercept when b1 is not '[').
+                    // While the dropdown is open, suppress all ESC-prefixed sequences
+                    // (Alt+key shortcuts etc.) to prevent background actions. Only bare
+                    // ESC and CSI arrow sequences are meaningful; all others are discarded.
+                    if dropdown_is_open() && b1[0] != 0x5B {
+                        handle_dropdown_key(0x1B);
+                        continue;
+                    }
+
                     if b1[0] == 0x5B {
                         let mut b2 = [0u8; 1];
                         if tty.read(&mut b2).unwrap_or(0) == 0 { continue; }
+
+                        // T062: ArrowUp/Down navigate the dropdown when open.
+                        if dropdown_is_open() && (b2[0] == 0x41 || b2[0] == 0x42) {
+                            handle_dropdown_key(b2[0]);
+                            continue;
+                        }
+
                         let fwd: Option<&str> = match b2[0] {
                             0x41 => Some("\x1b[A"),
                             0x42 => Some("\x1b[B"),
@@ -222,6 +240,26 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                         }
                     }
                 } else {
+                    // T062: Enter key confirms the dropdown selection when open.
+                    if dropdown_is_open() && (buf[0] == 0x0A || buf[0] == 0x0D) {
+                        if let Some((app, action)) = handle_dropdown_key(0x0A) {
+                            if app == "supervisor" {
+                                crate::ipc_handlers::handle_supervisor_command(
+                                    &action,
+                                    "desktop",
+                                    &inbox,
+                                    &focused,
+                                    &registry,
+                                );
+                            } else {
+                                if let Some(tx) = inbox.lock().unwrap().get(&app) {
+                                    let _ = tx.send(action);
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
                     let msg: Option<String> = match buf[0] {
                         0x0D | 0x0A => Some(String::new()),
                         0x7F | 0x08 => Some("\x7f".to_string()),

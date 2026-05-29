@@ -32,6 +32,7 @@ pub fn titlebar_color(focused: bool) -> u32 {
 /// Focused windows get a bright blue accent (`0x388BFDFF`).
 /// Unfocused windows get a dim gray (`0x30363DFF`).
 /// This is a pure function — no I/O, no side effects.
+#[allow(dead_code)]
 pub fn border_color(focused: bool) -> u32 {
     if focused { 0x388BFDFF } else { 0x30363DFF }
 }
@@ -40,6 +41,7 @@ pub fn border_color(focused: bool) -> u32 {
 ///
 /// The color is derived from a djb2 hash of the app name, then mapped to one
 /// of six palette entries.  The function is pure — no randomness, no global state.
+#[allow(dead_code)]
 pub fn app_accent_color(name: &str) -> u32 {
     const PALETTE: [u32; 6] = [
         0xFF6B6BFF, // red-ish

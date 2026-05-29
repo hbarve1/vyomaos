@@ -86,9 +86,10 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
     // Partition: system-layer (dock, overlay) vs. regular tiled apps.
     let (pinned, tiled): (Vec<_>, Vec<_>) = apps.iter().partition(|(_, z, _, _)| *z >= Z_DOCK);
 
-    // Assign pinned apps to the reserved bottom strip.
-    let dock_h_reserved: u32 = if pinned.is_empty() { 0 } else { DOCK_STRIP_H };
-    {
+    // Assign pinned apps to the reserved bottom strip (skipped when SHOW_DOCK=false).
+    let dock_enabled = crate::SHOW_DOCK.get().copied().unwrap_or(true);
+    let dock_h_reserved: u32 = if pinned.is_empty() || !dock_enabled { 0 } else { DOCK_STRIP_H };
+    if dock_enabled {
         let reg = registry.lock().unwrap();
         for (name, _, _, _) in &pinned {
             if let Some(st) = reg.get(name.as_str()) {
@@ -105,6 +106,25 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
 
     // Tile remaining apps in usable area above the dock strip.
     if tiled.is_empty() { return; }
+    // T077: when windowed_mode is false, expand the first tiled app to fill the
+    // full screen (overrides tiled regions entirely for single-app full-screen).
+    let windowed = supervisor::WINDOWED_MODE.get().copied().unwrap_or(true);
+    if !windowed {
+        let reg = registry.lock().unwrap();
+        for (i, (name, _, _, _)) in tiled.iter().enumerate() {
+            if let Some(st) = reg.get(name.as_str()) {
+                let region = if i == 0 { (0, 0, sw, sh) }
+                else { (sw, 0, 0, 0) }; // park other apps off-screen
+                let mut st_guard = st.lock().unwrap();
+                st_guard.win_region = Some(region);
+                if i == 0 { init_surface_for_region(&mut st_guard, region); }
+                log_info!(Subsystem::Display, Some(name.as_str()),
+                    "tiling: fullscreen ({},{},{},{})",
+                    region.0, region.1, region.2, region.3);
+            }
+        }
+        return;
+    }
     let usable_h = sh.saturating_sub(MENUBAR_H).saturating_sub(dock_h_reserved);
     let min_sizes: Vec<(u32, u32)> = tiled.iter().map(|(_, _, mw, mh)| (*mw, *mh)).collect();
     let regions: Vec<(u32, u32, u32, u32)> =
@@ -350,6 +370,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         pending_anim:        None,
         surface:             None,
         log_subscribers:     Vec::new(),
+        menu_items:          manifest.menu_items.clone(),
     }));
     // T053: enqueue Open animation so the window fades in on spawn
     {

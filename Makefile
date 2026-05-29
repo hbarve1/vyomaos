@@ -90,7 +90,7 @@ KVM ?=
 # ── phony declarations ────────────────────────────────────────────────────────
 .PHONY: image kernel supervisor apps rootfs disk build run run-gui run-net run-gui-net run-net-mgmt shell clean clean-image data \
         unit-test smoke test check-manifests check-profiles test-all-platforms \
-        test-unit-apps test-gui-protocol test-e2e-gui test-gui
+        test-unit-apps test-gui-protocol test-e2e-gui test-gui test-e2e
 
 # ── Docker image ──────────────────────────────────────────────────────────────
 image: $(DOCKERFILE)
@@ -341,6 +341,13 @@ test-gui-protocol: apps | image
 # Runs on the HOST (not in Docker). Requires socat + graphical qemu build.
 test-e2e-gui: build
 	bash base/scripts/test-e2e-gui.sh
+
+# ── test-e2e: pytest E2E harness (requires make build first) ──────────────────
+test-e2e: $(BZIMAGE) $(INITRAMFS)
+	$(DOCKER_RUN) bash -c " \
+	  pip install -q -r tests/e2e/requirements.txt && \
+	  BZIMAGE=$(BZIMAGE) INITRAMFS=$(INITRAMFS) \
+	  pytest tests/e2e/ -v --tb=short 2>&1"
 
 # ── test-gui: all GUI tests (unit + protocol) — does not require QEMU ────────
 test-gui: test-unit-apps test-gui-protocol

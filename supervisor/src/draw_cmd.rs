@@ -106,6 +106,9 @@ pub fn handle_draw_command(
         // 3. Draw chrome on top of composited surfaces
         draw_chrome_onto(&mut *fb, app_registry, focused);
 
+        // 4. Draw context menu overlay (always topmost)
+        crate::context_menu::render_context_menu_if_open(&mut *fb);
+
         fb.flush();
 
         // FPS tracking
@@ -274,20 +277,32 @@ pub fn handle_draw_command(
                 font::parse_size(parts[4]),
             ) {
                 let text = parts[5];
-                let (ax, ay, effective_max_w) = match win {
-                    None => (lx, ly, max_w),
-                    Some((wx, wy, ww, wh)) => {
-                        let content_wy = wy + chrome_h;
-                        let ax = wx + lx;
-                        let ay = content_wy + ly;
-                        let content_bottom = wy + wh;
-                        if ax >= wx + ww || ay >= content_bottom { return; }
-                        let effective_max_w = max_w.min(ww.saturating_sub(lx));
-                        if effective_max_w == 0 { return; }
-                        (ax, ay, effective_max_w)
+                if let Some(surface_arc) = get_surface(sender, app_registry) {
+                    // Route to surface: word-wrap then draw each line with bitmap font.
+                    let max_chars = (max_w / font::GLYPH_W) as usize;
+                    let lines = display::wrap_words(text, max_chars);
+                    let mut surface = surface_arc.lock().unwrap();
+                    for (i, line) in lines.iter().enumerate() {
+                        let line_y = ly.saturating_add(i as u32 * font::GLYPH_H);
+                        if line_y >= surface.height { break; }
+                        surface.draw_text_bitmap(lx, line_y, line, rgba);
                     }
-                };
-                fb_lock.lock().unwrap().draw_text_wrap(ax, ay, effective_max_w, text, rgba, size);
+                } else {
+                    let (ax, ay, effective_max_w) = match win {
+                        None => (lx, ly, max_w),
+                        Some((wx, wy, ww, wh)) => {
+                            let content_wy = wy + chrome_h;
+                            let ax = wx + lx;
+                            let ay = content_wy + ly;
+                            let content_bottom = wy + wh;
+                            if ax >= wx + ww || ay >= content_bottom { return; }
+                            let effective_max_w = max_w.min(ww.saturating_sub(lx));
+                            if effective_max_w == 0 { return; }
+                            (ax, ay, effective_max_w)
+                        }
+                    };
+                    fb_lock.lock().unwrap().draw_text_wrap(ax, ay, effective_max_w, text, rgba, size);
+                }
             } else {
                 log_error!(Subsystem::Display, Some(sender), "bad draw_text_wrap args: {args}");
             }
@@ -440,6 +455,42 @@ pub fn handle_draw_command(
     }
 
     log_warn!(Subsystem::Display, Some(sender), "unknown command: {cmd}");
+}
+
+/// Full compositor pass for supervisor-side repaints (drag, snap) that bypass
+/// the normal app `flush` path.
+#[cfg(target_os = "linux")]
+pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
+    let Some(fb_lock) = display::get() else { return };
+    let mut fb = fb_lock.lock().unwrap();
+    let (fb_w, fb_h, fb_s) = (fb.width, fb.height, fb.stride);
+    fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
+    let mut apps_sorted: Vec<(u32, String, (u32, u32, u32, u32))> = {
+        let reg = registry.lock().unwrap();
+        reg.iter()
+            .filter_map(|(name, st)| {
+                let st = st.lock().unwrap();
+                st.win_region.map(|r| (st.win_z, name.clone(), r))
+            })
+            .collect()
+    };
+    apps_sorted.sort_by_key(|(z, _, _)| *z);
+    for (z, name, (wx, wy, ww, _wh)) in &apps_sorted {
+        let surface_arc = {
+            let reg = registry.lock().unwrap();
+            reg.get(name.as_str()).and_then(|st| st.lock().unwrap().surface.clone())
+        };
+        if let Some(arc) = surface_arc {
+            let surface = arc.lock().unwrap();
+            let blit_y = if *z >= Z_DOCK { *wy } else { wy + TITLEBAR_H };
+            if *ww > 0 {
+                display::blit_surface(&mut fb.back, &surface, *wx, blit_y, 255, fb_s, fb_w, fb_h);
+            }
+        }
+    }
+    draw_chrome_onto(&mut *fb, registry, focused);
+    crate::context_menu::render_context_menu_if_open(&mut *fb);
+    fb.flush();
 }
 
 // Satisfy unused-import warnings on non-Linux builds.
