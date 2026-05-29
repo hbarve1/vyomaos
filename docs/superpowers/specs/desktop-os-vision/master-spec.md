@@ -1583,3 +1583,30 @@ Dedicated `capture_thread_main` spawned at supervisor startup. Main event loop p
 
 ### Layout
 Space strip: top 80pt, one card per space + Add button. Window grid: `sqrt(n)` columns with 16:10 max aspect ratio, padding 8pt. Exposé mode: no space strip, full height, active-app windows only. Keyboard navigation: arrow keys + Enter/Escape.
+
+---
+
+## 26. Stage Manager
+**macOS Analogue**: Stage Manager (macOS 13+)  
+**Depends on**: R21 (WM spaces), R22 (lifecycle), R24 (dock), R25 (MC, INPUT_LOCK_LEVEL, surface_quiesced)
+
+### Architecture
+
+Supervisor owns all stage geometry (`StageRegistry`); a thin `stage-strip` WASM app (space=0, z=65532) renders the 140pt left strip. Four space-0 apps: strip(65532), MC(65533), dock(65534), chrome(65535). `stage-strip` launches at boot with 0×0 surface, expands on first SM enable.
+
+**Data model**: `StageRegistry { spaces: HashMap<u8, SpaceStages> }`. Each `SpaceStages` has `stages: Vec<Stage>`, `active: StageId`, `enabled: bool`. A `Stage` has `members: Vec<String>`. Orphan (empty) stages GC'd after 5s.
+
+### Off-screen Quiescence (B2 fix)
+Inactive-stage apps hidden at `win_x = OFFSCREEN_X`. `stage_offscreen: bool` + `pending_offscreen_resize: Option<(u32,u32)>` on `AppState`. `draw_cmd` handler blocks `resize_surface` when `stage_offscreen = true` (stored in `pending_offscreen_resize`). On stage activation, deferred resize drained into `pending_resize` (normal R21 path).
+
+### Animation + finalize_stage_switch (B3 fix)
+200ms slide+fade via `anim_x_override`/`anim_alpha` on `AppState`. `LockLevel::StageSwitch=3` swallows keys during animation. `finalize_stage_switch` sets `win_x` BEFORE clearing `anim_x_override` — eliminates one-tick flash.
+
+### LockLevel (B1 fix)
+`StageSwitch=3` appended to `LockLevel` enum. MC=1 and ChromeConsent=2 unchanged — all R25 call sites remain correct. StageSwitch is swallow-only (discards keys, never routes to an app).
+
+### StageStripRouter (B4 fix)
+`on_strip_running()` synthesizes idempotent `strip_init` from live registry then flushes queue. `on_strip_terminated_no_restart()` clears queue. Stage Manager degrades gracefully if strip crashes.
+
+### blit_clipped 7-step formula (B5 fix)
+Step 0 (new): left-edge clip — `effective_dest_x`, `src_x_offset`, `blittable_w_clipped` (right-overflow clamp). `blit_surface` extended with `src_x_offset: u32` + `width: u32` parameters. `is_space0: bool` flag on `AppSnapshot` replaces string comparisons. Normative for all future rounds.
