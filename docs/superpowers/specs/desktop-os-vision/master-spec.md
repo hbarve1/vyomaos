@@ -1932,3 +1932,28 @@ Single `cancel_drag(CancelReason)` CAS-loop funnel. Wired to: `on_input_lock_ris
 
 ### Security (B5 Fix)
 All `VYOMA_DRAG:` commands verified: `start` = sender==capture-owner; `upload_done`/`cancel` = sender==source; `ack` = sender==`DROP_PENDING.target`. 128-bit random token defeats enumeration.
+
+---
+
+## Section 39: Text Input & Selection Model
+
+**macOS analogue**: `NSTextView` / `TSM` / `TextKit` / `NSTextInputClient`  
+**Status**: FINAL
+
+### Architecture (Thin Model)
+Supervisor owns a `TextContextSnapshot` per focused field — NOT the text buffer or undo ring. Per-field `ArcSwap<TextContextSnapshot>` for wait-free reads by AX/IME threads (B1 fix). `TextRegistry { fields: RwLock<HashMap>, focused: ArcSwap }`.
+
+### Focus & Secure Masking (B4 Fix)
+`VYOMA_TEXT:focus:<field_id>:<kind>:<traits_u32>`. For `kind==password` or `secure` bit, supervisor zeros all service trait bits on ingress — no context_window, no spell/substitution/data-detector for secure fields. Services receive `field_kind` and reject `password` fields.
+
+### Selection Protocol (B3 Fix)
+Two separate lines: `VYOMA_TEXT:selection_range:<field_id>:<start>:<end>:<utf8_byte_count>` (always-accurate metadata) and `VYOMA_TEXT:selection_preview:<field_id>:<base64>` (≤4096 bytes, optional). Clipboard copy uses fresh `VYOMA_CLIPBOARD:fetch_selection` request — never cached preview. Services tag `partial:true` when selection exceeds preview.
+
+### Ack Contract (B2 Fix)
+Every supervisor→app mutating command (`insert`, `delete`, `select_range`, `undo`, `redo`) carries `<seq>` token. App replies `VYOMA_TEXT:ack:<field_id>:<seq>` after applying mutation. `is_dirty=true` during window; AX/IME return pre-mutation snapshot with `is_stale:true`. 1s watchdog → field marked unresponsive.
+
+### Cross-App Security (B5 Fix)
+`on_text_drop` verifies `focused.app == drop_app`; cross-app mismatch → `VYOMA_DRAG:drop_rejected`. AX reads hard-bound to `app_pid`. Supervisor never exposes one app's `TextContext` to another.
+
+### System Services
+Spell check (WASM service, 250ms debounce), smart substitution (inline rewrite before key delivery), data detector (750ms stability). All skip secure fields.
