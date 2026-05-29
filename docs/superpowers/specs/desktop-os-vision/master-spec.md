@@ -1513,3 +1513,23 @@ On `restart = "always"`: 0s, 1s, 2s, 4s, 8s, 16s backoff for successive crashes 
 
 ### `reload` Command
 All-or-nothing: validate ALL vyoma.toml manifests before killing any app. Any parse failure → abort with error listing. Diff: added (spawn), removed (graceful terminate), changed (restart).
+
+---
+
+## 23. Menu Bar & System Chrome
+**macOS Analogue**: `NSMenuBar`, SystemUIServer  
+**Depends on**: R11, R20 (HiDPI), R21 (space-0 always-on-top), R22 (lifecycle)
+
+### Architecture
+
+Chrome is a privileged WASM app (`win_space=0`, always on top). It draws via `VYOMA_DRAW:` like other apps. Supervisor clips non-chrome draws to `y >= CHROME_HEIGHT_PX` in `flush_pass` (with correct `src_y_offset` to skip source rows above the clip). Chrome draws a 24pt menu bar with focused app name on left, clock on right.
+
+**Startup fallback**: `chrome_surface_ready: bool` flag; compositor fills top 24px with `0x1E1E2EFF` until chrome's first flush. Eliminates boot visual glitch.
+
+**Chrome queue**: `ChromeRouter` with 64-slot drop-oldest ring buffer. Routes `VYOMA_CHROME:` lines from all apps. Delivers queued messages when chrome reaches Running. Cleared when chrome Terminated with no restart pending.
+
+**Clock tick**: `last_chrome_tick = SystemTime::now()` at startup (not UNIX_EPOCH). `last_chrome_tick = now` on each emission (not `+=1s`) — absorbs overage, prevents burst. One tick per event-loop iteration max.
+
+**Input lock**: `Arc<AtomicBool> chrome_input_locked` (TTY thread reads atomically, no RwLock). Auto-stores false whenever chrome lifecycle ≠ Running — crash-safe.
+
+**Consent**: chrome draws modal, locks input, sends `consent_<type>_grant/deny` to supervisor via `@supervisor:` IPC.
