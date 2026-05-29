@@ -1907,3 +1907,28 @@ Each controller device opened **twice**: `read_fd` (hub epoll, input reads only)
 
 ### Claim Cleanup (B5 Fix)
 `release_controller_claims(app)` called from `on_app_exit` hook in `process.rs`. For `restart=always`, process manager re-emits `on_controller_connect` for previously-claimed connected slots after re-spawn — no re-registration required.
+
+---
+
+## Section 38: Drag & Drop
+
+**macOS analogue**: `NSDraggingSession` / `NSDraggingDestination` / `NSPasteboardItem`  
+**Status**: FINAL
+
+### Architecture
+`DragSession` is **fully immutable** — every transition (including hover-target change) allocates a fresh `DragSession` and CAS-swaps `ACTIVE_DRAG` with ABA-protection via `seq: u64` (B1 fix). `ACTIVE_DRAG: ArcSwap<Option<DragSession>>`. Session token is 128-bit random (not enumerable integer) (B5 fix).
+
+### Out-of-Band Payload (B4 Fix)
+Source sends `VYOMA_DRAG:start:<types>:<size>:<preview_hint>` on stdout (no inline bytes). Supervisor mounts `/run/vyoma/drag/<token>/upload` into source's WASI FS. Source writes payload there, then sends `VYOMA_DRAG:upload_done:<token>`. Supervisor seals file. 5s upload timeout → cancel. Decouples 16 MiB payload from stdout parser.
+
+### Mouse-Up & ACK-Window (B3 Fix)
+`MOUSE_DRAG_CAPTURE` released **immediately** on mouse-up (R32 fully unblocked). R38 maintains separate `DROP_PENDING { token, source, target }` for the 2s ACK window. `VYOMA_DRAG:ack:<token>:accepted|rejected` verified against `DROP_PENDING.target` — spoofed acks from non-target apps logged and dropped.
+
+### Routing Layering (B2 Fix)
+R32 delivers `mouse_move` to capture owner with coordinates clamped to source's window bounds. Non-droppable apps receive neither `mouse_move` nor drag events during session — prevents cursor-position probing by source app.
+
+### Cancellation
+Single `cancel_drag(CancelReason)` CAS-loop funnel. Wired to: `on_input_lock_rise()`, Escape key pre-routing, `on_app_exit`. Sends `VYOMA_DRAG:leave` to hover target and `VYOMA_DRAG:cancelled` to source. Unlinks staging dir.
+
+### Security (B5 Fix)
+All `VYOMA_DRAG:` commands verified: `start` = sender==capture-owner; `upload_done`/`cancel` = sender==source; `ack` = sender==`DROP_PENDING.target`. 128-bit random token defeats enumeration.
