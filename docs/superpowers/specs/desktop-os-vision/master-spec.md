@@ -1533,3 +1533,28 @@ Chrome is a privileged WASM app (`win_space=0`, always on top). It draws via `VY
 **Input lock**: `Arc<AtomicBool> chrome_input_locked` (TTY thread reads atomically, no RwLock). Auto-stores false whenever chrome lifecycle ≠ Running — crash-safe.
 
 **Consent**: chrome draws modal, locks input, sends `consent_<type>_grant/deny` to supervisor via `@supervisor:` IPC.
+
+---
+
+## 24. Dock & App Switcher
+**macOS Analogue**: Dock, Cmd-Tab switcher  
+**Depends on**: R21 (WM space-0, PerSpaceZ), R22 (lifecycle), R23 (chrome, y-clip, resize_surface)
+
+### Architecture
+
+Dock is a second privileged WASM app (`win_space=0`, `z=65534`). Chrome has `z=65535`. Both space-0 apps composited above all space-N apps via **Model A two-pass** (normative for all future rounds): Pass 1 blits space-N apps ascending z; Pass 2 blits space-0 apps ascending z (dock then chrome). Within pass, higher z = blitted later = on top.
+
+**Startup fallback**: `dock_surface_ready: bool` mirrors chrome's pattern. Compositor fills bottom 48px with `0x1E1E2EFF` until dock's first flush.
+
+**Dock queue**: `DockRouter` mirrors `ChromeRouter` — 64-slot drop-oldest VecDeque.
+
+### Combined Clip (6-step formula)
+`blit_clipped()` applies both top (chrome) and bottom (dock) clip explicitly: compute `src_y_offset`, `blittable_h_after_top_clip`, `blittable_bottom`, `dock_clip_y_px` cap, final `blittable_h_combined`. Space-0 apps (chrome/dock) skip the respective clip edge they own.
+
+### Data Model
+`DockState { slots: Vec<DockSlot>, mru_list: Vec<String>, switcher_index: usize, switcher_active: bool, focused_app: Option<String> }`. `DockSlot` has NO `mru_rank` field — sole MRU representation is `mru_list: Vec<String>` (remove-and-prepend on focus, append on launch, remove on exit).
+
+### Ctrl-Tab Switcher
+`DockSwitcherState { ctrl_held: bool, last_ctrl_tab_at: Instant }` lives entirely in event loop (no shared bool). TTY sends `KeyEvent` over crossbeam channel. Main loop intercepts Ctrl-Tab, routes `VYOMA_DOCK:ctrl_tab_pressed` to dock; on Ctrl-release routes `VYOMA_DOCK:ctrl_released`. 500ms timeout synthetic release on each supervisor tick. Auto-cleared when dock lifecycle ≠ Running.
+
+**Switcher open sequence**: expand `resize_surface` → draw overlay → `flush` → `switcher_active=true`. Collapse only after flush commits (stdout stream ordering). `@supervisor: focus <selected>` on Ctrl-release.
