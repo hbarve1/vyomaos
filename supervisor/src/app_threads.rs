@@ -23,7 +23,10 @@ use crate::{chrome, route_or_print, watchdog_next_backoff};
 use supervisor::logging::Subsystem;
 use supervisor::manifest::BootEntry;
 
-// ── init_surface_for_region ───────────────────────────────────────────────────
+/// P34: Send a message to the window-manager app if it exists in the inbox.
+fn notify_wm(msg: &str, inbox: &Inbox) {
+    if let Some(tx) = inbox.lock().unwrap().get("window-manager") { let _ = tx.send(msg.to_string()); }
+}
 
 /// Create or resize the per-window Surface for `st` to match the content area
 /// implied by `region`.  Content area = region height minus chrome (title bar +
@@ -240,6 +243,8 @@ pub fn launch_app_threads(
 
     if has_display {
         crate::chrome::z_order_push_front(&name);
+        // P34: notify window-manager of new display app
+        notify_wm(&format!("VYOMA_SYSTEM:app_launched:{name}"), inbox);
     }
 
     let registry_w = Arc::clone(app_registry);
@@ -424,6 +429,8 @@ pub fn wait_app(
         crate::toast::auto_transfer_focus(&name, &app_registry, &focused);
 
         if had_display {
+            // P34: notify window-manager of display app exit
+            notify_wm(&format!("VYOMA_SYSTEM:app_exited:{name}"), &inbox);
             apply_tiling_layout(&app_registry);
             #[cfg(target_os = "linux")]
             crate::chrome::repaint_all_borders(&app_registry, &focused);
@@ -458,11 +465,8 @@ pub fn wait_app(
         }
     }
 
-    // Remove from registry so Z_ORDER cleanup is consistent
     let _ = LAST_SENDER.get().and_then(|m| m.lock().ok()).map(|mut m| m.remove(&name));
 }
-
-// ── run_watchdog ──────────────────────────────────────────────────────────────
 
 /// P19: watchdog loop — kills any app that has been silent longer than its
 /// configured `watchdog_secs`.  Runs forever in its own named thread.
