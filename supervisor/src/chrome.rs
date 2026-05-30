@@ -479,6 +479,8 @@ pub fn handle_dropdown_key(key: u8) -> Option<(String, String)> {
 pub fn draw_glyph_str_pub(fb: &mut display::Framebuffer, text: &str, x: i32, y: i32, rgba: u32, pt: u32, bold: bool, mono: bool) {
     draw_glyph_str(fb, text, x, y, rgba, pt, bold, mono);
 }
+
+
 /// Render the dropdown menu if open.
 #[cfg(target_os = "linux")]
 #[allow(dead_code)]

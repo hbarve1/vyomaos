@@ -89,16 +89,22 @@ pub fn handle_draw_command(
         apps_sorted.sort_by_key(|(z, _, _)| *z);
         let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
         for (z, name, (wx, wy, ww, _wh)) in &apps_sorted {
-            let surface_arc = {
+            let (surface_arc, anim_alpha) = {
                 let reg = app_registry.lock().unwrap();
-                reg.get(name.as_str()).and_then(|st| st.lock().unwrap().surface.clone())
+                if let Some(st_arc) = reg.get(name.as_str()) {
+                    let st = st_arc.lock().unwrap();
+                    let alpha = crate::chrome::sample_anim_alpha(&st.pending_anim);
+                    (st.surface.clone(), alpha)
+                } else {
+                    (None, 255u8)
+                }
             };
             if let Some(arc) = surface_arc {
                 let surface = arc.lock().unwrap();
                 let is_sys = *z >= Z_DOCK;
                 let blit_y = if is_sys { *wy } else { wy + TITLEBAR_H };
                 if *ww > 0 {
-                    display::blit_surface(&mut fb.back, &surface, *wx, blit_y, 255, fs, fw, fh);
+                    display::blit_surface(&mut fb.back, &surface, *wx, blit_y, anim_alpha, fs, fw, fh);
                 }
             }
         }
@@ -106,8 +112,10 @@ pub fn handle_draw_command(
         // 3. Draw chrome on top of composited surfaces
         draw_chrome_onto(&mut *fb, app_registry, focused);
 
-        // 4. Draw context menu overlay (always topmost)
+        // 4. Overlay menus + banners above chrome
+        crate::chrome::render_dropdown_if_open(&mut *fb);
         crate::context_menu::render_context_menu_if_open(&mut *fb);
+        crate::toast::render_banners(&mut *fb);
 
         fb.flush();
 
@@ -476,20 +484,28 @@ pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
     };
     apps_sorted.sort_by_key(|(z, _, _)| *z);
     for (z, name, (wx, wy, ww, _wh)) in &apps_sorted {
-        let surface_arc = {
+        let (surface_arc, anim_alpha) = {
             let reg = registry.lock().unwrap();
-            reg.get(name.as_str()).and_then(|st| st.lock().unwrap().surface.clone())
+            if let Some(st_arc) = reg.get(name.as_str()) {
+                let st = st_arc.lock().unwrap();
+                let alpha = crate::chrome::sample_anim_alpha(&st.pending_anim);
+                (st.surface.clone(), alpha)
+            } else {
+                (None, 255u8)
+            }
         };
         if let Some(arc) = surface_arc {
             let surface = arc.lock().unwrap();
             let blit_y = if *z >= Z_DOCK { *wy } else { wy + TITLEBAR_H };
             if *ww > 0 {
-                display::blit_surface(&mut fb.back, &surface, *wx, blit_y, 255, fb_s, fb_w, fb_h);
+                display::blit_surface(&mut fb.back, &surface, *wx, blit_y, anim_alpha, fb_s, fb_w, fb_h);
             }
         }
     }
     draw_chrome_onto(&mut *fb, registry, focused);
+    crate::chrome::render_dropdown_if_open(&mut *fb);
     crate::context_menu::render_context_menu_if_open(&mut *fb);
+    crate::toast::render_banners(&mut *fb);
     fb.flush();
 }
 

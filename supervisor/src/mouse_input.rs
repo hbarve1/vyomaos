@@ -238,6 +238,7 @@ pub fn dispatch_mouse(
     if btn == 1 && crate::context_menu::context_menu_is_open() {
         let hit = crate::context_menu::context_menu_hit_test(cx, cy);
         crate::context_menu::close_context_menu();
+        crate::draw_cmd::force_repaint(app_registry, focused);
         if let Some((target_app, action)) = hit {
             if target_app == "supervisor" {
                 crate::ipc_handlers::handle_supervisor_command(
@@ -256,7 +257,6 @@ pub fn dispatch_mouse(
 
     // ── Right-click on desktop: open context menu ────────────────────────────
     if btn == 2 {
-        // Check whether the cursor is inside any window.
         let inside_window: bool = {
             let reg = app_registry.lock().unwrap();
             let mut found = false;
@@ -275,12 +275,14 @@ pub fn dispatch_mouse(
         };
         if !inside_window {
             crate::context_menu::open_context_menu(cx as u32, cy as u32);
+            crate::draw_cmd::force_repaint(app_registry, focused);
         }
         return;
     }
 
     // On click, raise topmost window under cursor and set keyboard focus
     if btn != 0 {
+
         let raise_target = {
             let reg = app_registry.lock().unwrap();
             let mut found: Option<String> = None;
@@ -296,6 +298,7 @@ pub fn dispatch_mouse(
             }
             found
         };
+
         if let Some(ref name) = raise_target {
             z_order_push_front(name);
             *focused.lock().unwrap() = Some(name.clone());
