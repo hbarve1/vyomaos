@@ -138,42 +138,42 @@ pub fn handle_extended_command(
             send_reply(sender, &format!("REPLY:lowered {app_name}"), inbox);
         }
 
-        // P36: resize <app> <w> <h> — update win_region and notify app
+        // P36: resize <app> <x>,<y>,<w>,<h>  or  resize <app> <w> <h> (legacy)
         "resize" => {
             let rest = parts.get(1).unwrap_or(&"").trim();
-            let mut args = rest.splitn(3, ' ');
-            let app_name = args.next().unwrap_or("").trim().to_string();
-            let w_str    = args.next().unwrap_or("").trim();
-            let h_str    = args.next().unwrap_or("").trim();
-            if app_name.is_empty() || w_str.is_empty() || h_str.is_empty() {
-                send_reply(sender, "REPLY:error: usage: resize <app> <w> <h>", inbox);
+            let (app_name, geom_str) = rest.split_once(' ').unwrap_or(("", ""));
+            let app_name = app_name.trim().to_string();
+            if app_name.is_empty() || geom_str.is_empty() {
+                send_reply(sender, "REPLY:error: usage: resize <app> <x>,<y>,<w>,<h>", inbox);
                 return true;
             }
-            let (new_w, new_h) = match (w_str.parse::<u32>(), h_str.parse::<u32>()) {
-                (Ok(w), Ok(h)) if w > 0 && h > 0 => (w, h),
-                _ => {
-                    send_reply(sender, "REPLY:error: w and h must be positive integers", inbox);
-                    return true;
+            let cp: Vec<&str> = geom_str.split(',').collect();
+            let geom = if cp.len() == 4 {
+                match (cp[0].parse(), cp[1].parse(), cp[2].parse::<u32>(), cp[3].parse::<u32>()) {
+                    (Ok(x), Ok(y), Ok(w), Ok(h)) if w > 0 && h > 0 => Some((x, y, w, h)),
+                    _ => None,
                 }
-            };
-            let updated = {
-                let reg = app_registry.lock().unwrap();
-                if let Some(state_arc) = reg.get(&app_name) {
-                    let mut st = state_arc.lock().unwrap();
-                    let (x, y) = st.win_region.map(|(x, y, _, _)| (x, y)).unwrap_or((0, 0));
-                    st.win_region = Some((x, y, new_w, new_h));
-                    true
-                } else {
-                    false
+            } else if let Some((ws, hs)) = geom_str.split_once(' ') {
+                match (ws.trim().parse::<u32>(), hs.trim().parse::<u32>()) {
+                    (Ok(w), Ok(h)) if w > 0 && h > 0 => {
+                        let (x, y) = app_registry.lock().unwrap().get(&app_name)
+                            .and_then(|st| st.lock().unwrap().win_region.map(|(x, y, _, _)| (x, y)))
+                            .unwrap_or((0, 0));
+                        Some((x, y, w, h))
+                    }
+                    _ => None,
                 }
+            } else { None };
+            let (nx, ny, nw, nh) = match geom {
+                Some(g) => g,
+                None => { send_reply(sender, "REPLY:error: usage: resize <app> <x>,<y>,<w>,<h>", inbox); return true; }
             };
-            if !updated {
-                send_reply(sender, &format!("REPLY:error: app {app_name} not found"), inbox);
-                return true;
-            }
-            send_reply(&app_name, &format!("VYOMA_SYSTEM:resize:{new_w},{new_h}"), inbox);
-            log_info!(Subsystem::Display, Some(app_name.as_str()), "resize {app_name} → {new_w}×{new_h}");
-            send_reply(sender, &format!("REPLY:resized {app_name} to {new_w}x{new_h}"), inbox);
+            let ok = app_registry.lock().unwrap().get(&app_name)
+                .map(|sa| { sa.lock().unwrap().win_region = Some((nx, ny, nw, nh)); }).is_some();
+            if !ok { send_reply(sender, &format!("REPLY:error: app {app_name} not found"), inbox); return true; }
+            send_reply(&app_name, &format!("VYOMA_SYSTEM:resize:{nw},{nh}"), inbox);
+            log_info!(Subsystem::Display, Some(app_name.as_str()), "resize {app_name} → ({nx},{ny},{nw},{nh})");
+            send_reply(sender, &format!("REPLY:resized {app_name} to {nx},{ny},{nw}x{nh}"), inbox);
         }
 
         // P41: shutdown / reboot
