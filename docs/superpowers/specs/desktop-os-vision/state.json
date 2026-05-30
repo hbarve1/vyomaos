@@ -1,7 +1,7 @@
 {
   "session_start": "2026-05-29",
   "target": "Full macOS-like Desktop OS (DesktopOS first, then Mobile, then embedded)",
-  "current_round": 54,
+  "current_round": 56,
   "status": "in_progress",
   "subsystems": [
     {"id": 1,  "name": "Kernel & Process Model",              "status": "completed",   "file": "01-kernel-process.md",         "macos_equiv": "XNU kernel / launchd"},
@@ -57,8 +57,8 @@
     {"id": 51, "name": "Networking Stack",                     "status": "completed",   "file": "51-networking.md",             "macos_equiv": "CFNetwork / Network.framework"},
     {"id": 52, "name": "DNS & mDNS / Bonjour",                 "status": "completed",   "file": "52-dns.md",                    "macos_equiv": "mDNSResponder / Bonjour"},
     {"id": 53, "name": "VPN & Network Extensions",             "status": "completed",   "file": "53-vpn.md",                    "macos_equiv": "NetworkExtension / VPN profiles"},
-    {"id": 54, "name": "Bluetooth Stack",                      "status": "pending",     "file": "54-bluetooth.md",              "macos_equiv": "IOBluetooth / CoreBluetooth"},
-    {"id": 55, "name": "Wi-Fi Management",                     "status": "pending",     "file": "55-wifi.md",                   "macos_equiv": "CoreWLAN / WiFiKit"},
+    {"id": 54, "name": "Bluetooth Stack",                      "status": "completed",   "file": "54-bluetooth.md",              "macos_equiv": "IOBluetooth / CoreBluetooth"},
+    {"id": 55, "name": "Wi-Fi Management",                     "status": "completed",   "file": "55-wifi.md",                   "macos_equiv": "CoreWLAN / WiFiKit"},
     {"id": 56, "name": "AirDrop & P2P File Transfer",          "status": "pending",     "file": "56-airdrop.md",                "macos_equiv": "AirDrop / AWDL"},
     {"id": 57, "name": "Network Sharing & Tethering",          "status": "pending",     "file": "57-network-sharing.md",        "macos_equiv": "Internet Sharing / Personal Hotspot"},
     {"id": 58, "name": "TLS & Certificate Store",              "status": "pending",     "file": "58-tls-certs.md",              "macos_equiv": "Security.framework / Keychain cert store"},

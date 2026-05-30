@@ -2311,3 +2311,59 @@ Per-app `SO_BINDTODEVICE` is impossible (can't apply to future WASI sockets). Us
 
 ### Credential Security (B4)
 Log filter skips lines containing `vpn-key:`. `private_key_b64` marked `skip_serializing`. Profile created with mode `0o600`. R60 Keychain bridge via `private_key_ref`.
+
+---
+
+## Section 54: Bluetooth Stack
+
+**macOS analogue**: `IOBluetooth` / `CoreBluetooth`  
+**Depends on**: R03 (IPC), R51 (kernel base)  
+**Status**: FINAL
+
+### Kernel Config (B1)
+`CONFIG_BT=y`, `CONFIG_BT_BREDR=y`, `CONFIG_BT_LE=y`, `CONFIG_BT_HCIUART=y`, `CONFIG_BT_HCIUART_H4=y`. `CONFIG_BT_HCIUSB` is NOT included — it pulls in the full USB support chain (+200-400 KB). USB BT deferred to R54.1 with explicit `CONFIG_USB=y`.
+
+### Architecture
+Supervisor owns `AF_BLUETOOTH / BTPROTO_HCI` raw socket (apps cannot open `AF_BLUETOOTH` via WASI). Three dedicated threads: `bt_reader_thread` (HCI events → BT_EVENT_TX mpsc), `bt_dispatch_thread` (snapshot BT_SUBSCRIPTIONS, send_reply), `bt_worker_thread` (blocking bt-connect/bt-scan ops from BT_CMD_TX). IPC handler returns immediately. No HCI adapter → `BtState::available = false`; all bt-* IPC returns `REPLY:bt-error:no-adapter`.
+
+### Reader Shutdown (B2)
+`bt_reader_thread` uses `poll()` with 500ms timeout + `AtomicBool` shutdown flag instead of blocking `read()`. `bluetooth::shutdown()` sets flag; thread exits within 500ms. Clean join possible.
+
+### GATT Rate Limiting (B3)
+100 Hz BLE characteristic → OOM without throttling. Per-subscription `GattSub { min_interval_ms, last_sent_ms }`. In dispatch thread: if `now_ms - last_sent_ms < min_interval_ms`, drop notification. `bt-gatt-notify-on/<handle>/<uuid>/<min_ms>` sets the rate. Default 0 (no limit).
+
+### Paired Device Persistence (B4)
+`/data/.vyoma/bt-peers.toml` written atomically (write `.tmp` → fsync → rename). Crash recovery: when both `.tmp` and `.toml` exist, mtime comparison picks the newer file. This handles all crash scenarios regardless of which rename succeeded.
+
+### QEMU (B5)
+`virtio-bluetooth-pci` was proposed in 2021 but never merged into QEMU. Document only two working paths: HCI UART via virtio-serial (`-device virtserialport,chardev=bt0,name=hci0`) and USB BT adapter passthrough (`-device usb-host,vendorid=...`).
+
+---
+
+## Section 55: Wi-Fi Management
+
+**macOS analogue**: `CoreWLAN` / `WiFiKit`  
+**Depends on**: R51 (kernel net base), R52 (DNS resolver for wlan0)  
+**Platform scope**: `iot-edge`, `mobile`, `robotics-rt` only — `desktop-full` uses virtio-net  
+**Status**: FINAL
+
+### Kernel Config
+Platform-specific (`iot-edge.config`, `mobile.config`): `CONFIG_CFG80211=y`, `CONFIG_MAC80211=y`, `CONFIG_BRCMFMAC=y` (Raspberry Pi), `CONFIG_ATH9K=y`, `CONFIG_RTW88=y` (B2), `CONFIG_CRYPTO_AES=y`, `CONFIG_CRYPTO_SHA256=y`. QEMU fallback: `wifi/detect.rs` checks for `/sys/class/net/*/phy80211` symlink; if absent, `WifiManager` enters `NoHardware` state. Zero overhead on desktop-full.
+
+### nl80211 Crates (B1)
+Inline nlattr encoding silently corrupts nested attributes — kernel drops malformed messages, scans hang forever. Add `netlink-sys = "0.8"`, `netlink-packet-core = "0.7"`, `netlink-packet-generic = "0.3"` (platform-gated, ~40 KB total, no C deps). These provide correct nested nlattr serialization and nl80211 family ID resolution.
+
+### Driver Fix (B2)
+`CONFIG_RTL8192CU` dropped (poor `NL80211_CMD_CONNECT` support). Replaced with `CONFIG_RTW88_USB=y` (Realtek in-tree driver with proper cfg80211). ATH9K: runtime verify `NL80211_CMD_CONNECT` path; timeout returns `connect_failed:driver_unsupported` after 15s.
+
+### WPA2 Connection
+`NL80211_CMD_CONNECT` with PMK injection — kernel mac80211/FullMAC runs EAPOL internally. Pure-Rust PBKDF2-HMAC-SHA1 in `wifi/crypto.rs` (~120 lines, no new crates).
+
+### PMK Security (B3)
+PMK never persisted to disk (cryptographically equivalent to passphrase). Stored only in `WifiManager.pmk_cache: HashMap<String, [u8;32]>`. Profile TOML contains no secret material. Pre-R60: app must re-supply passphrase on supervisor restart. `wifi.require_keychain = true` on mobile blocks `wifi-add-profile` until R60.
+
+### Async Scan Worker (B4)
+nl80211 scan takes 2-5s on real hardware. Dedicated `wifi_worker_thread` driven by `WIFI_CMD_TX: OnceLock<mpsc::Sender<WifiCmd>>`. IPC handler sends to channel and returns `VYOMA_WIFI:scan_start` immediately. Worker delivers `VYOMA_WIFI:ap_found:...` events then `VYOMA_WIFI:scan_done:<count>`.
+
+### DHCP Client (B5)
+Kernel `ip=dhcp` only runs at boot on boot interface. After `NL80211_CMD_CONNECT` success, `wifi/dhcp.rs` runs userspace DHCP: poll `/sys/class/net/<iface>/operstate` until "up" (max 3s), then DISCOVER→OFFER→REQUEST→ACK via `AF_PACKET` raw socket, configure via `SIOCSIFADDR`/`SIOCADDRT` ioctls. Timeout (10s): `VYOMA_WIFI:connect_failed:<ssid>:dhcp_failed`.
