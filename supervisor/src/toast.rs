@@ -104,12 +104,21 @@ fn now_ms() -> u64 {
 }
 
 /// Enqueue a notification banner for display.
+#[allow(dead_code)]
 pub fn enqueue_banner(app_name: &str, title: &str, body: &str) {
+    enqueue_banner_with_icon(app_name, title, body, None);
+}
+
+/// T067: Enqueue a notification banner with an optional icon path.
+pub fn enqueue_banner_with_icon(
+    app_name: &str, title: &str, body: &str, icon: Option<&str>,
+) {
     let mut q = banner_queue().lock().unwrap();
+    // T066: Max 3 concurrent banners; evict oldest if full.
     if q.len() >= 3 { q.pop_front(); }
     q.push_back(NotificationBanner {
         app_name: app_name.to_string(),
-        icon_path: None,
+        icon_path: icon.map(|s| s.to_string()),
         title: title.to_string(),
         body: body[..body.len().min(120)].to_string(),
         created_ms: now_ms(),
@@ -117,32 +126,47 @@ pub fn enqueue_banner(app_name: &str, title: &str, body: &str) {
     });
 }
 
-/// Draw and auto-dismiss all pending notification banners.
-/// Call this from the display flush path.
+/// T065/T066: Draw and auto-dismiss all pending notification banners.
+/// 320x60px, dark 90% alpha, radius 10, 16x16 icon, 13pt bold title + 11pt body.
+/// T066: Max 3 concurrent banners stacked 64px apart from top-right.
 #[cfg(target_os = "linux")]
 #[allow(dead_code)]
 pub fn render_banners(fb: &mut crate::display::Framebuffer) {
     use crate::display::draw_rounded_rect;
     let now = now_ms();
     let mut q = banner_queue().lock().unwrap();
+    // T066: Auto-dismiss after dismiss_after_ms (4000ms default).
     q.retain(|b| now.saturating_sub(b.created_ms) < b.dismiss_after_ms as u64);
     let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-    let (bw, bh) = (320u32, 64u32);
+    let (bw, bh) = (320u32, 60u32); // T065: 320x60px
     let bx = sw.saturating_sub(bw + 12);
-    for (i, banner) in q.iter().enumerate() {
-        let by = 32 + i as u32 * (bh + 8);
+    // T066: Stack up to 3 banners, 64px apart from top-right.
+    for (i, banner) in q.iter().take(3).enumerate() {
+        let by = 32 + i as u32 * 64; // T066: 64px apart
         if by + bh > sh { break; }
+        // T065: dark, 90% alpha (0xE5 = 229/255 ~ 90%), radius 10
         draw_rounded_rect(&mut fb.back, bx, by, bw, bh, 0x1C1C1EE5_u32, 10, fs, sw, sh);
-        if let Some(ref icon_path) = banner.icon_path {
+        // T065: 16x16 icon if available
+        let has_icon = if let Some(ref icon_path) = banner.icon_path {
             let mut ic = crate::image_cache().lock().unwrap();
             if let Some(img) = ic.get(icon_path) {
                 let (iw, ih, rgba) = (img.width, img.height, img.rgba.clone());
                 drop(ic);
-                crate::display::blit_image(&mut fb.back, &rgba, iw, ih, bx + 8, by + 8, 16, 16, fs, sw, sh);
-            }
-        }
-        let tx = (bx + 30) as i32;
-        crate::chrome::draw_glyph_str_pub(fb, &banner.title, tx, (by + 20) as i32, 0xFFFFFFFF, 13, true, false);
-        crate::chrome::draw_glyph_str_pub(fb, &banner.body,  tx, (by + 40) as i32, 0xAAAAAFFF, 11, false, false);
+                crate::display::blit_image(
+                    &mut fb.back, &rgba, iw, ih,
+                    bx + 10, by + 10, 16, 16, fs, sw, sh,
+                );
+                true
+            } else { false }
+        } else { false };
+        // T065: text offset depends on icon presence
+        let tx = if has_icon { (bx + 32) as i32 } else { (bx + 12) as i32 };
+        // T065: 13pt bold title + 11pt regular body
+        crate::chrome::draw_glyph_str_pub(
+            fb, &banner.title, tx, (by + 22) as i32, 0xFFFFFFFF, 13, true, false,
+        );
+        crate::chrome::draw_glyph_str_pub(
+            fb, &banner.body, tx, (by + 42) as i32, 0xAAAAAFFF, 11, false, false,
+        );
     }
 }

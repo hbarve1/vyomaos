@@ -118,6 +118,37 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
         match tty.read(&mut buf) {
             Ok(0) | Err(_) => break,
             Ok(_) => {
+                // T062: When dropdown is open, intercept keys for navigation.
+                if crate::chrome::is_dropdown_open() {
+                    let key_str = if buf[0] == 0x1B {
+                        let mut b1 = [0u8; 1];
+                        if tty.read(&mut b1).unwrap_or(0) == 0 { continue; }
+                        if b1[0] == 0x5B {
+                            let mut b2 = [0u8; 1];
+                            if tty.read(&mut b2).unwrap_or(0) == 0 { continue; }
+                            match b2[0] {
+                                0x41 => "\x1b[A".to_string(), // ArrowUp
+                                0x42 => "\x1b[B".to_string(), // ArrowDown
+                                _    => "\x1b".to_string(),
+                            }
+                        } else {
+                            "\x1b".to_string() // plain Escape
+                        }
+                    } else if buf[0] == 0x0D || buf[0] == 0x0A {
+                        "\r".to_string()
+                    } else {
+                        String::from(buf[0] as char)
+                    };
+                    if let Some((app, action)) = crate::chrome::handle_dropdown_key_action(&key_str) {
+                        // Send the menu action as IPC to the app
+                        let msg = format!("VYOMA_SYSTEM:menu_action:{action}");
+                        if let Some(tx) = inbox.lock().unwrap().get(&app) {
+                            let _ = tx.send(msg);
+                        }
+                    }
+                    continue;
+                }
+
                 if buf[0] == 0x1B {
                     let mut b1 = [0u8; 1];
                     if tty.read(&mut b1).unwrap_or(0) == 0 { continue; }

@@ -108,6 +108,11 @@ pub fn handle_draw_command(
         // 3. Draw chrome on top of composited surfaces
         draw_chrome_onto(&mut *fb, app_registry, focused);
 
+        // 4. Draw overlay menus (dropdown, context menu, banners) on top of chrome
+        crate::chrome::render_dropdown_if_open(&mut *fb);
+        crate::chrome::render_context_menu_if_open(&mut *fb);
+        crate::toast::render_banners(&mut *fb);
+
         fb.flush();
 
         // FPS tracking
@@ -491,8 +496,10 @@ pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
         }
     }
     draw_chrome_onto(&mut *fb, registry, focused);
+    crate::chrome::render_dropdown_if_open(&mut *fb);
+    crate::chrome::render_context_menu_if_open(&mut *fb);
+    crate::toast::render_banners(&mut *fb);
     fb.flush();
 }
 
-// Satisfy unused-import warnings on non-Linux builds.
 #[cfg(not(target_os = "linux"))] fn _dummy_non_linux() { let _ = (TITLEBAR_H, Z_DOCK); }

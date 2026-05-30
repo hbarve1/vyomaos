@@ -333,6 +333,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
     let min_size = manifest.window.as_ref()
         .map(|wr| (wr.width.unwrap_or(0), wr.height.unwrap_or(0)))
         .unwrap_or((0, 0));
+    let menu_items = manifest.menu_items.clone();
 
     let state = Arc::new(Mutex::new(AppState {
         entry:            entry.clone(),
@@ -356,6 +357,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         // T053: pending_anim set below after construction
         pending_anim:        None,
         surface:             None,
+        menu_items,
         log_subscribers:     Vec::new(),
     }));
     // T053: enqueue Open animation so the window fades in on spawn

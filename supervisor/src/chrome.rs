@@ -11,16 +11,10 @@ use crate::{AppRegistry, AppStatus, FocusedApp, HOVERED_APP, Z_ORDER, BOOT_INSTA
 use crate::display;
 
 // ── Z-layer constants ─────────────────────────────────────────────────────────
-#[allow(dead_code)]
-pub const Z_DESKTOP:  u32 = 0;    // desktop wallpaper — always background
-#[allow(dead_code)]
-pub const Z_APP:      u32 = 10;   // default app window layer
-#[allow(dead_code)]
-pub const Z_DOCK:     u32 = 100;  // dock — always above app windows
-#[allow(dead_code)]
-pub const Z_OVERLAY:  u32 = 255;  // notifications, system overlays
-
-// Ordering invariant: background < apps < dock < overlay
+#[allow(dead_code)] pub const Z_DESKTOP: u32 = 0;
+#[allow(dead_code)] pub const Z_APP:     u32 = 10;
+#[allow(dead_code)] pub const Z_DOCK:    u32 = 100;
+#[allow(dead_code)] pub const Z_OVERLAY: u32 = 255;
 const _: () = assert!(Z_DESKTOP < Z_APP && Z_APP < Z_DOCK && Z_DOCK < Z_OVERLAY);
 
 // ── macOS-inspired chrome constants ──────────────────────────────────────────
@@ -43,39 +37,31 @@ const TL_GRAY:          u32 = 0x4D4D4DFF; // inactive traffic lights
 
 // ── Focus helpers ─────────────────────────────────────────────────────────────
 
-/// Return all windowed app names (those with `win_region = Some(_)`) sorted alphabetically.
+/// Return all windowed app names sorted alphabetically.
 pub fn windowed_apps_sorted(registry: &AppRegistry) -> Vec<String> {
     let reg = registry.lock().unwrap();
     let mut v: Vec<String> = reg.iter()
         .filter(|(_, st)| st.lock().unwrap().win_region.is_some())
-        .map(|(n, _)| n.clone())
-        .collect();
-    v.sort();
-    v
+        .map(|(n, _)| n.clone()).collect();
+    v.sort(); v
 }
 
-/// Advance focus to the next app in `names` (wrapping).  If `current` is None or
-/// not in `names`, return the first element.
+/// Advance focus to the next app in `names` (wrapping).
 pub fn cycle_focus_forward(names: &[String], current: Option<&str>) -> Option<String> {
-    if names.is_empty() {
-        return None;
-    }
+    if names.is_empty() { return None; }
     match current.and_then(|c| names.iter().position(|n| n == c)) {
         Some(idx) => Some(names[(idx + 1) % names.len()].clone()),
-        None      => Some(names[0].clone()),
+        None => Some(names[0].clone()),
     }
 }
 
-/// Move focus to the previous app in `names` (wrapping).  If `current` is None or
-/// not in `names`, return the last element.
+/// Move focus to the previous app in `names` (wrapping).
 pub fn cycle_focus_backward(names: &[String], current: Option<&str>) -> Option<String> {
-    if names.is_empty() {
-        return None;
-    }
+    if names.is_empty() { return None; }
     match current.and_then(|c| names.iter().position(|n| n == c)) {
-        Some(0)   => Some(names[names.len() - 1].clone()),
+        Some(0) => Some(names[names.len() - 1].clone()),
         Some(idx) => Some(names[idx - 1].clone()),
-        None      => Some(names[names.len() - 1].clone()),
+        None => Some(names[names.len() - 1].clone()),
     }
 }
 
@@ -389,21 +375,18 @@ pub fn draw_chrome_onto(
 // ── Focus ring (TV / Vision profiles) ─────────────────────────────────────────
 
 /// Draw a 3 px highlight border around the focused window when `FOCUS_RING` is enabled.
-/// Uses `draw_rounded_rect` with a transparent fill to outline only.
 #[cfg(target_os = "linux")]
 pub fn draw_focus_ring(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, wh: u32) {
     if !crate::FOCUS_RING.get().copied().unwrap_or(false) { return; }
     const RING_W: u32 = 3;
     const RING_COLOR: u32 = 0x0A84FFFF; // system blue
     let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-    // Top edge
     if wy >= RING_W {
         crate::display::draw_rounded_rect(
             &mut fb.back, wx.saturating_sub(RING_W), wy.saturating_sub(RING_W),
             ww + RING_W * 2, RING_W, RING_COLOR, 6, fs, sw, sh,
         );
     }
-    // Bottom edge
     let by = wy + wh;
     if by + RING_W <= sh {
         crate::display::draw_rounded_rect(
@@ -411,14 +394,12 @@ pub fn draw_focus_ring(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32,
             ww + RING_W * 2, RING_W, RING_COLOR, 6, fs, sw, sh,
         );
     }
-    // Left edge
     if wx >= RING_W {
         crate::display::draw_rounded_rect(
             &mut fb.back, wx.saturating_sub(RING_W), wy,
             RING_W, wh, RING_COLOR, 6, fs, sw, sh,
         );
     }
-    // Right edge
     let rx = wx + ww;
     if rx + RING_W <= sw {
         crate::display::draw_rounded_rect(
@@ -428,7 +409,7 @@ pub fn draw_focus_ring(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32,
     }
 }
 
-// ── T056: Animation alpha stub ────────────────────────────────────────────────
+// ── Animation alpha ──────────────────────────────────────────────────────────
 
 /// Sample the current animation alpha and clear completed animations.
 /// Returns 255 (fully opaque) when no animation is active.
@@ -443,55 +424,19 @@ pub fn sample_and_clear_anim(anim: &mut Option<crate::display::animator::Animati
     state.alpha
 }
 
-// ── T059–T064: Dropdown menu state ───────────────────────────────────────────
-
-struct DropdownState { open: bool, selected: usize, items: Vec<(String, String)>, anchor_x: u32, anchor_y: u32, app_name: String }
-static DROPDOWN_STATE: std::sync::OnceLock<Mutex<DropdownState>> = std::sync::OnceLock::new();
-fn dropdown_state() -> &'static Mutex<DropdownState> {
-    DROPDOWN_STATE.get_or_init(|| Mutex::new(DropdownState { open: false, selected: 0, items: vec![], anchor_x: 0, anchor_y: 0, app_name: String::new() }))
-}
-
-/// Open the app-name dropdown at anchor position.
-pub fn open_dropdown(app: &str, items: Vec<(String, String)>, ax: u32, ay: u32) {
-    let mut s = dropdown_state().lock().unwrap();
-    s.open = true; s.selected = 0; s.items = items; s.anchor_x = ax; s.anchor_y = ay; s.app_name = app.to_string();
-}
-/// Close the dropdown.
-#[allow(dead_code)]
-pub fn close_dropdown() { dropdown_state().lock().unwrap().open = false; }
-
-/// Handle keyboard navigation within the dropdown.
-#[allow(dead_code)]
-pub fn handle_dropdown_key(key: u8) {
-    let mut s = match dropdown_state().try_lock() { Ok(s) => s, Err(_) => return };
-    if !s.open { return; }
-    match key {
-        b'\r' | b'\n' | 27 => { s.open = false; }
-        b'j' => { if s.selected + 1 < s.items.len() { s.selected += 1; } }
-        b'k' => { if s.selected > 0 { s.selected -= 1; } }
-        _ => {}
-    }
-}
-/// Public wrapper for draw_glyph_str (used by toast.rs banner renderer).
+/// Public wrapper for draw_glyph_str (used by toast.rs and menus.rs).
 #[cfg(target_os = "linux")]
-#[allow(dead_code)]
-pub fn draw_glyph_str_pub(fb: &mut display::Framebuffer, text: &str, x: i32, y: i32, rgba: u32, pt: u32, bold: bool, mono: bool) {
-    draw_glyph_str(fb, text, x, y, rgba, pt, bold, mono);
-}
-/// Render the dropdown menu if open.
+pub fn draw_glyph_str_pub(
+    fb: &mut display::Framebuffer, text: &str,
+    x: i32, y: i32, rgba: u32, pt: u32, bold: bool, mono: bool,
+) { draw_glyph_str(fb, text, x, y, rgba, pt, bold, mono); }
+
+// Re-export menu functions for callers using chrome::*
+#[allow(unused_imports)]
+pub use crate::menus::{
+    is_dropdown_open, open_dropdown, close_dropdown, handle_dropdown_key_action,
+    open_context_menu, close_context_menu, is_context_menu_open,
+    dismiss_context_menu_if_outside,
+};
 #[cfg(target_os = "linux")]
-#[allow(dead_code)]
-pub fn render_dropdown_if_open(fb: &mut display::Framebuffer) {
-    let s = dropdown_state().lock().unwrap();
-    if !s.open || s.items.is_empty() { return; }
-    let (ax, ay, items, selected) = (s.anchor_x, s.anchor_y, s.items.clone(), s.selected);
-    drop(s);
-    use crate::display::draw_rounded_rect;
-    let row_h: u32 = 22; let (pw, fs, fw, fh) = (200u32, fb.stride, fb.width, fb.height);
-    draw_rounded_rect(&mut fb.back, ax, ay, pw, row_h * items.len() as u32 + 8, 0x1C1C1EE8_u32, 8, fs, fw, fh);
-    for (i, (label, _)) in items.iter().enumerate() {
-        let ry = ay + 4 + i as u32 * row_h;
-        if i == selected { draw_rounded_rect(&mut fb.back, ax + 4, ry, pw - 8, row_h - 2, 0x0A84FFFF_u32, 4, fs, fw, fh); }
-        draw_glyph_str(fb, label, (ax + 12) as i32, (ry + row_h / 2) as i32, 0xFFFFFFFF, 13, false, false);
-    }
-}
+pub use crate::menus::{render_dropdown_if_open, render_context_menu_if_open};
