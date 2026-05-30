@@ -4,8 +4,6 @@
 use std::fs;
 use std::io::{self, BufRead, Write};
 
-// ── Layout constants ─────────────────────────────────────────────────────────
-
 const W: u32 = 900;
 const H: u32 = 700;
 const HEADER_H: u32 = 48;
@@ -13,8 +11,6 @@ const STATUS_H: u32 = 28;
 const ROW_H: u32 = 36;
 const SECTION_GAP: u32 = 16;
 const LEFT_PAD: u32 = 24;
-
-// ── Colors ───────────────────────────────────────────────────────────────────
 
 const C_BG: u32 = 0x1C1C1EFF;
 const C_HEADER: u32 = 0x2C2C2EFF;
@@ -26,10 +22,10 @@ const C_SEL_BG: u32 = 0x0A84FFFF;
 const C_SECTION: u32 = 0xAEAEB2FF;
 const C_VALUE: u32 = 0x30D158FF;
 const C_STATUS_BG: u32 = 0x2C2C2EFF;
-
+const C_WARN: u32 = 0xFF453AFF;
+const C_DIALOG_BG: u32 = 0x2C2C2EFF;
+const C_OVERLAY: u32 = 0x000000AA;
 const SETTINGS_PATH: &str = "/data/settings.toml";
-
-// ── Drawing helpers ──────────────────────────────────────────────────────────
 
 fn fill(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
     println!("VYOMA_DRAW:fill_rect:{x},{y},{w},{h},{rgba:#010x}");
@@ -41,8 +37,6 @@ fn flush() {
     println!("VYOMA_DRAW:flush");
     let _ = io::stdout().flush();
 }
-
-// ── Settings model ───────────────────────────────────────────────────────────
 
 struct Settings {
     wallpaper_color: u32,
@@ -68,7 +62,6 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// Parse settings from a TOML-like file. Simple line-by-line key = value.
     fn load() -> Self {
         let content = match fs::read_to_string(SETTINGS_PATH) {
             Ok(c) => c,
@@ -107,7 +100,6 @@ impl Settings {
         s
     }
 
-    /// Serialize settings to TOML-like format and write to file.
     fn save(&self) {
         let apps_str: Vec<String> = self.boot_apps.iter().map(|a| format!("\"{a}\"")).collect();
         let content = format!(
@@ -125,14 +117,12 @@ impl Settings {
         let _ = fs::write(SETTINGS_PATH, content);
     }
 
-    /// Apply wallpaper color via supervisor IPC.
     fn apply_wallpaper(&self) {
         println!("@supervisor: wallpaper 0x{:08X}", self.wallpaper_color);
         let _ = io::stdout().flush();
     }
 }
 
-/// Parse a u32 from decimal or 0xHEX string.
 fn parse_u32_or_hex(s: &str) -> Option<u32> {
     let s = s.trim();
     if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
@@ -142,7 +132,6 @@ fn parse_u32_or_hex(s: &str) -> Option<u32> {
     }
 }
 
-/// Parse a simple TOML-style string array: ["a", "b", "c"]
 fn parse_string_array(s: &str) -> Vec<String> {
     let s = s.trim();
     let inner = s.trim_start_matches('[').trim_end_matches(']');
@@ -153,9 +142,6 @@ fn parse_string_array(s: &str) -> Vec<String> {
         .collect()
 }
 
-// ── UI items ─────────────────────────────────────────────────────────────────
-
-/// Each menu item that can be selected.
 #[derive(Clone)]
 struct MenuItem {
     section: &'static str,
@@ -169,6 +155,8 @@ enum ItemKind {
     FontSize,
     Theme,
     BootApps,
+    RestartSystem,
+    ShutDown,
 }
 
 const WALLPAPER_PRESETS: &[(u32, &str)] = &[
@@ -197,27 +185,22 @@ fn build_menu() -> Vec<MenuItem> {
         MenuItem { section: "Display",    label: "Font Size",       kind: ItemKind::FontSize },
         MenuItem { section: "Appearance", label: "Theme",           kind: ItemKind::Theme },
         MenuItem { section: "Startup",    label: "Boot Apps",       kind: ItemKind::BootApps },
+        MenuItem { section: "Power",      label: "Restart System",  kind: ItemKind::RestartSystem },
+        MenuItem { section: "Power",      label: "Shut Down",       kind: ItemKind::ShutDown },
     ]
 }
 
-// ── Rendering ────────────────────────────────────────────────────────────────
-
 fn draw_all(items: &[MenuItem], cursor: usize, settings: &Settings, status: &str) {
-    // Background
     fill(0, 0, W, H, C_BG);
-
-    // Header
     fill(0, 0, W, HEADER_H, C_HEADER);
     fill(0, HEADER_H, W, 1, C_BORDER);
     text(LEFT_PAD, 16, C_TEXT, "System Preferences");
     text(W - 300, 16, C_HINT, "Up/Dn: move  L/R: change  S: save");
 
-    // Content area
     let mut y = HEADER_H + 20;
     let mut last_section = "";
 
     for (i, item) in items.iter().enumerate() {
-        // Section header
         if item.section != last_section {
             if !last_section.is_empty() {
                 y += SECTION_GAP;
@@ -229,8 +212,6 @@ fn draw_all(items: &[MenuItem], cursor: usize, settings: &Settings, status: &str
         }
 
         let is_sel = i == cursor;
-
-        // Selection highlight
         if is_sel {
             fill(LEFT_PAD - 4, y - 2, W - LEFT_PAD * 2 + 8, ROW_H, C_SEL_BG);
         }
@@ -238,7 +219,6 @@ fn draw_all(items: &[MenuItem], cursor: usize, settings: &Settings, status: &str
         let label_color = if is_sel { C_TEXT } else { C_DIM };
         text(LEFT_PAD + 8, y + 8, label_color, item.label);
 
-        // Value display on the right side
         let value_str = get_value_string(item, settings);
         let val_color = if is_sel { C_TEXT } else { C_VALUE };
         let val_x = W - LEFT_PAD - (value_str.len() as u32 * 8).min(400);
@@ -247,7 +227,6 @@ fn draw_all(items: &[MenuItem], cursor: usize, settings: &Settings, status: &str
         y += ROW_H;
     }
 
-    // Boot apps detail (show list when selected)
     if let Some(item) = items.get(cursor) {
         if matches!(item.kind, ItemKind::BootApps) {
             y += SECTION_GAP;
@@ -263,7 +242,6 @@ fn draw_all(items: &[MenuItem], cursor: usize, settings: &Settings, status: &str
         }
     }
 
-    // Status bar
     fill(0, H - STATUS_H, W, STATUS_H, C_STATUS_BG);
     fill(0, H - STATUS_H, W, 1, C_BORDER);
     if !status.is_empty() {
@@ -289,10 +267,10 @@ fn get_value_string(item: &MenuItem, settings: &Settings) -> String {
             let count = settings.boot_apps.len();
             format!("{count} apps")
         }
+        ItemKind::RestartSystem => "Press Enter".to_string(),
+        ItemKind::ShutDown => "Press Enter".to_string(),
     }
 }
-
-// ── Input handling ───────────────────────────────────────────────────────────
 
 fn cycle_value(settings: &mut Settings, item: &MenuItem, forward: bool) -> bool {
     match item.kind {
@@ -339,14 +317,12 @@ fn cycle_value(settings: &mut Settings, item: &MenuItem, forward: bool) -> bool 
             toggle_boot_app(settings, forward);
             true
         }
+        ItemKind::RestartSystem | ItemKind::ShutDown => false,
     }
 }
 
-/// For boot apps, cycle through available apps and toggle membership.
 fn toggle_boot_app(settings: &mut Settings, forward: bool) {
-    // Find first non-included app (forward) or first included app (backward)
     if forward {
-        // Add next available app not already in the list
         for app in AVAILABLE_BOOT_APPS {
             if !settings.boot_apps.iter().any(|a| a == app) {
                 settings.boot_apps.push(app.to_string());
@@ -354,14 +330,34 @@ fn toggle_boot_app(settings: &mut Settings, forward: bool) {
             }
         }
     } else {
-        // Remove last app from list (keep at least one)
         if settings.boot_apps.len() > 1 {
             settings.boot_apps.pop();
         }
     }
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
+fn draw_confirm(action_label: &str) {
+    fill(0, 0, W, H, C_OVERLAY);
+    let dw: u32 = 400;
+    let dh: u32 = 120;
+    let dx = (W - dw) / 2;
+    let dy = (H - dh) / 2;
+    fill(dx, dy, dw, dh, C_DIALOG_BG);
+    fill(dx, dy, dw, 1, C_BORDER);
+    fill(dx, dy + dh - 1, dw, 1, C_BORDER);
+    fill(dx, dy, 1, dh, C_BORDER);
+    fill(dx + dw - 1, dy, 1, dh, C_BORDER);
+    text(dx + 24, dy + 20, C_WARN, action_label);
+    text(dx + 24, dy + 50, C_TEXT, "Are you sure? (y/n)");
+    text(dx + 24, dy + 80, C_DIM, "Press Y to confirm, N or Esc to cancel");
+    flush();
+}
+
+#[derive(Clone)]
+enum PendingPower {
+    Restart,
+    ShutDown,
+}
 
 fn main() {
     let stdin = io::stdin();
@@ -369,6 +365,7 @@ fn main() {
     let mut cursor: usize = 0;
     let mut settings = Settings::load();
     let mut status = String::from("Settings loaded");
+    let mut confirm: Option<PendingPower> = None;
 
     // Raise window
     println!("@supervisor: raise system-preferences");
@@ -385,62 +382,93 @@ fn main() {
             continue;
         }
 
+        // ── Confirmation dialog mode ────────────────────────────────
+        if let Some(ref pending) = confirm {
+            match raw.as_str() {
+                "y" | "Y" => {
+                    let cmd = match pending {
+                        PendingPower::Restart => "reboot",
+                        PendingPower::ShutDown => "shutdown",
+                    };
+                    println!("@supervisor: {cmd}");
+                    let _ = io::stdout().flush();
+                    status = format!("Sent {cmd} command...");
+                    confirm = None;
+                }
+                "n" | "N" | "\x1b" => {
+                    status = String::from("Cancelled");
+                    confirm = None;
+                }
+                _ => {
+                    // Ignore other keys while dialog is open
+                    continue;
+                }
+            }
+            draw_all(&items, cursor, &settings, &status);
+            continue;
+        }
+
+        // ── Normal mode ─────────────────────────────────────────────
         let mut changed = false;
 
         match raw.as_str() {
-            // Quit
             "\x03" | "\x1b" => {
                 fill(0, 0, W, H, 0x00000000);
                 flush();
                 std::process::exit(0);
             }
-            // Up arrow
             "\x1b[A" => {
-                if cursor > 0 {
-                    cursor -= 1;
-                }
+                if cursor > 0 { cursor -= 1; }
                 status.clear();
             }
-            // Down arrow
             "\x1b[B" => {
-                if cursor + 1 < items.len() {
-                    cursor += 1;
-                }
+                if cursor + 1 < items.len() { cursor += 1; }
                 status.clear();
             }
-            // Right arrow — cycle value forward
             "\x1b[C" => {
                 if let Some(item) = items.get(cursor) {
                     changed = cycle_value(&mut settings, item, true);
                 }
                 status = String::from("Modified (press S to save)");
             }
-            // Left arrow — cycle value backward
             "\x1b[D" => {
                 if let Some(item) = items.get(cursor) {
                     changed = cycle_value(&mut settings, item, false);
                 }
                 status = String::from("Modified (press S to save)");
             }
-            // Enter — same as right arrow (cycle forward)
+            // Enter — power items show confirmation, others cycle forward
             "" => {
                 if let Some(item) = items.get(cursor) {
-                    changed = cycle_value(&mut settings, item, true);
+                    match item.kind {
+                        ItemKind::RestartSystem => {
+                            confirm = Some(PendingPower::Restart);
+                            draw_all(&items, cursor, &settings, &status);
+                            draw_confirm("Restart System");
+                            continue;
+                        }
+                        ItemKind::ShutDown => {
+                            confirm = Some(PendingPower::ShutDown);
+                            draw_all(&items, cursor, &settings, &status);
+                            draw_confirm("Shut Down");
+                            continue;
+                        }
+                        _ => {
+                            changed = cycle_value(&mut settings, item, true);
+                            status = String::from("Modified (press S to save)");
+                        }
+                    }
                 }
-                status = String::from("Modified (press S to save)");
             }
-            // 's' or 'S' — save
             "s" | "S" => {
                 settings.save();
                 settings.apply_wallpaper();
                 status = String::from("Settings saved to /data/settings.toml");
             }
-            // 'r' or 'R' — reload from disk
             "r" | "R" => {
                 settings = Settings::load();
                 status = String::from("Settings reloaded from disk");
             }
-            // 'd' or 'D' — reset to defaults
             "d" | "D" => {
                 settings = Settings::default();
                 changed = true;
@@ -449,10 +477,7 @@ fn main() {
             _ => {}
         }
 
-        if changed {
-            // Auto-save on change for immediate feedback
-            settings.save();
-        }
+        if changed { settings.save(); }
 
         draw_all(&items, cursor, &settings, &status);
     }
