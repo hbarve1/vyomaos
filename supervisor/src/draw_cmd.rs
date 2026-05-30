@@ -89,16 +89,18 @@ pub fn handle_draw_command(
         apps_sorted.sort_by_key(|(z, _, _)| *z);
         let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
         for (z, name, (wx, wy, ww, _wh)) in &apps_sorted {
-            let surface_arc = {
+            let (surface_arc, alpha) = {
                 let reg = app_registry.lock().unwrap();
-                reg.get(name.as_str()).and_then(|st| st.lock().unwrap().surface.clone())
+                let st_opt = reg.get(name.as_str());
+                let surface = st_opt.and_then(|st| st.lock().unwrap().surface.clone());
+                let a = st_opt.map(|st| crate::chrome::sample_and_clear_anim(&mut st.lock().unwrap().pending_anim)).unwrap_or(255);
+                (surface, a)
             };
             if let Some(arc) = surface_arc {
                 let surface = arc.lock().unwrap();
-                let is_sys = *z >= Z_DOCK;
-                let blit_y = if is_sys { *wy } else { wy + TITLEBAR_H };
+                let blit_y = if *z >= Z_DOCK { *wy } else { wy + TITLEBAR_H };
                 if *ww > 0 {
-                    display::blit_surface(&mut fb.back, &surface, *wx, blit_y, 255, fs, fw, fh);
+                    display::blit_surface(&mut fb.back, &surface, *wx, blit_y, alpha, fs, fw, fh);
                 }
             }
         }
@@ -473,15 +475,18 @@ pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
     };
     apps_sorted.sort_by_key(|(z, _, _)| *z);
     for (z, name, (wx, wy, ww, _wh)) in &apps_sorted {
-        let surface_arc = {
+        let (surface_arc, alpha) = {
             let reg = registry.lock().unwrap();
-            reg.get(name.as_str()).and_then(|st| st.lock().unwrap().surface.clone())
+            let st_opt = reg.get(name.as_str());
+            let surface = st_opt.and_then(|st| st.lock().unwrap().surface.clone());
+            let a = st_opt.map(|st| crate::chrome::sample_and_clear_anim(&mut st.lock().unwrap().pending_anim)).unwrap_or(255);
+            (surface, a)
         };
         if let Some(arc) = surface_arc {
             let surface = arc.lock().unwrap();
             let blit_y = if *z >= Z_DOCK { *wy } else { wy + TITLEBAR_H };
             if *ww > 0 {
-                display::blit_surface(&mut fb.back, &surface, *wx, blit_y, 255, fb_s, fb_w, fb_h);
+                display::blit_surface(&mut fb.back, &surface, *wx, blit_y, alpha, fb_s, fb_w, fb_h);
             }
         }
     }
