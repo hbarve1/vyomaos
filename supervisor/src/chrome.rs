@@ -251,15 +251,30 @@ pub fn draw_menubar(
         draw_glyph_str(fb, display_name, nx as i32, ty, MAC_LABEL, 12, false, false);
     }
 
-    // Right: elapsed clock HH:MM:SS — 12pt regular
+    // Right: clock HH:MM:SS — 12pt regular (rightmost element)
     let h = elapsed_secs / 3600;
     let m = (elapsed_secs % 3600) / 60;
     let s = elapsed_secs % 60;
     let clock = format!("{h:02}:{m:02}:{s:02}");
     let cw = crate::font_cache().lock().unwrap()
         .measure_str(&clock, 12, false, false);
-    if sw > cw + 20 {
-        draw_glyph_str(fb, &clock, (sw - cw - 12) as i32, ty, MAC_LABEL2, 12, false, false);
+    let clock_x = if sw > cw + 12 { sw - cw - 12 } else { 0 };
+    if clock_x > 0 {
+        draw_glyph_str(fb, &clock, clock_x as i32, ty, MAC_LABEL2, 12, false, false);
+    }
+
+    // Tray indicators: rendered right-to-left, to the left of the clock
+    let tray_items = crate::tray::collect_items();
+    let tray_gap = 12_u32; // gap between tray items
+    let mut tray_x = clock_x.saturating_sub(tray_gap);
+    for item in tray_items.iter().rev() {
+        let tw = crate::font_cache().lock().unwrap()
+            .measure_str(&item.text, 12, false, false);
+        tray_x = tray_x.saturating_sub(tw);
+        if tray_x > 0 {
+            draw_glyph_str(fb, &item.text, tray_x as i32, ty, item.color, 12, false, false);
+        }
+        tray_x = tray_x.saturating_sub(tray_gap);
     }
 }
 
