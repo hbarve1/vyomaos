@@ -1181,3 +1181,1723 @@ peripheral capabilities and `safe_state`); `supervisor/src/main.rs`
 
 ---
 
+
+## 10. Interrupt & Exception Handling
+**macOS equiv:** XNU Mach exceptions + BSD signals + IOKit interrupt delivery + CoreFoundation runloop
+**Status:** FINAL
+**Key decisions:**
+- Multi-threaded EventLoop on perf-sensitive platforms (InputLoop SCHED_RR 60, TimerLoop SCHED_FIFO 50, SignalLoop, GeneralLoop); single-threaded on mcu-minimal/iot-edge
+- Two-queue model per iid: HPQ (watchdog/audio/control-loop timers; never evicted; blocks on full) + LPQ (general; evict oldest on overflow)
+- Epoch = cooperative preemption at backedges only; gaps documented (bulk memory ops, hostcalls, wasm3); per-platform tick rates (N/A on MCU → 100 Hz iot → 1 kHz mobile/desktop → 10 kHz robotics)
+- SIGSEGV install order: supervisor handler BEFORE Engine::new(); use Config::with_host_signal_handler; SA_RESETHAND re-entry guard
+- Stage1 restart = cold reboot of all apps; atomic crash writes (tmp→fsync→rename); FIFO drain; panic-loop detector (>5 deaths/30s → safe mode)
+- Out-of-process crash symbolication: raw record at trap time (pre-allocated CrashBuffer, zero heap); crash-reporter WASM app reads `.symbols` sidecar
+- Compile-time PanicPolicy: const fn panic_policy(Subsystem) → exhaustive match
+- Audio p99 latency budget: ≤4 ms on desktop-full/mobile; measured by audio-bench WASM app; CI gate
+- wasm3 cancel: instruction-count hook (every 1000 instructions, <100 µs cancel latency)
+- IidState: AtomicU8 CAS state machine (Running/YieldPending/Yielded/KillPending/Dead)
+**Critical v1:** WasmTrap mapping, EventLoop(s), CallbackQueue, epoch ticker, crash raw record, PanicPolicy
+**Deferred:** crash-reporter WASM app UI, sticky crash report UX, advanced DWARF with source lines
+**Never:** async-signal-safe handler logic beyond self-pipe write, per-app exception ports (XNU style)
+**Implementation files:** `supervisor/src/interrupt/` — mod.rs, event_loop.rs, callback_queue.rs, signal.rs, epoch.rs, timer.rs, crash.rs, panic_recovery.rs, worker.rs, types.rs (each <500 LOC)
+
+---
+
+
+## 11. Display Server & Compositor
+**macOS equiv:** WindowServer / SkyLight compositor
+**Status:** FINAL
+**Key decisions:**
+- In-supervisor compositor (WASM sandboxing = trust boundary; no separate WindowServer process)
+- Sharded WindowRegistry: metadata Mutex (brief, lifecycle only) + per-window RwLock<Surface> + per-window AtomicDamageRect (lock-free). Compositor snapshots metadata in <1 µs, then blits under per-window read locks only.
+- Chrome lives in content Surface top strip (CHROME_H=28 px); chrome.rs is refactored to write into Surface, not FB directly. chrome_dirty:AtomicBool per window.
+- Display protocol v2 on separate pipe fd (not stdout) — framed binary `[u16 len][u8 verb][payload]`; v1 stdout protocol remains for backwards compatibility.
+- SharedBuffer via Wasmtime custom memory creator (Config::with_host_memory); single-buffer v1; desktop-full/mobile only.
+- VSync via timerfd(CLOCK_MONOTONIC) absolute-deadline; DRM page-flip attempted but falls back gracefully on virtio-gpu; 60/30/15/1 Hz by platform profile.
+- Per-platform Surface format: Bgra32 (desktop/server), Rgb565 (iot-edge/robotics-rt), Mono1bpp (mcu-minimal, direct-draw only).
+- Explicit window creation: v1 window synthesized eagerly after apply_tiling_layout() before IO threads spawn; v2 requires create_window before any draw.
+- Lock order invariant: Surface RwLock < FB Mutex (always); documented and debug_assert'd.
+- Z-order: Vec<IidKey> sorted back-to-front; no integer overflow.
+**Critical v1:** WindowRegistry, Surface sharding, compositor pass, display fd pipe, timerfd vsync, chrome-in-Surface
+**Deferred:** SharedBuffer double-buffering, hardware DRM KMS plane overlay, multi-display (R19), GPU acceleration (R12)
+**Never:** Per-app display server process (too much IPC overhead for WASM model), AsyncSignalSafe chrome painting into FB
+**Implementation files:** `supervisor/src/display/` — mod.rs (split into framebuffer.rs+fb_flush.rs), surface.rs, compositor.rs, compositor_pass.rs, window_registry.rs, protocol_v2.rs, dispatch.rs, vsync.rs, frame_scheduler.rs, shared_surface.rs, chrome_compose.rs, font_iface.rs (each <500 LOC)
+
+---
+
+
+## 12. GPU Acceleration Layer
+**macOS equiv:** Metal / IOAcceleratorFamily
+**Status:** FINAL
+**Key decisions:**
+- WIT hostcalls only (vyoma:gpu/graphics + compute); no wgpu inside WASM binary; supervisor runs wgpu on app's behalf
+- Per-app VkDevice isolation; CompositorDevice separate; max 4 GPU apps on desktop-full
+- Three GPU levels: Level 0 (none), Level 1 (compositor only), Level 2 (full); v1: desktop-full=L2, mobile=L1, rest=L0
+- GpuBackend enum: VulkanNative/VulkanVirgl/Gles3Virgl/Lavapipe/Software; QEMU dev = Lavapipe (documented; 30 fps CI gate)
+- v1 data path: staging+write_texture (always copy); HostCoherent/DmaBuf deferred to v2
+- Shader: 64 KB + 100K AST pre-validation; dedicated worker thread (2s timeout); install-time precompile+cache
+- GPU DoS: 120 submissions/sec quota + 500ms GPU watchdog (Device destroy on hang)
+- Compositor never blocks on GPU: FencePoller thread + CPU fallback if fence not ready by vsync
+- SceneComplexity::{Trivial,Moderate,Heavy} selects CPU vs GPU compositor pass
+- VRAM: VramBudget (20% reserved for compositor) + SurfaceTextureState eviction + one-frame OOM fallback
+**Critical v1:** WIT hostcall interface, per-app Device, shader worker, CPU compositor fallback, GPU watchdog
+**Deferred:** HostCoherent/DmaBuf, Level 2 mobile, headless compute, ray tracing, multi-GPU
+**Never:** wgpu inside WASM, shared VkDevice, blocking GPU fence in compositor thread
+**Implementation:** supervisor/src/gpu/ — 12 files each <500 LOC
+
+---
+
+
+## 13. Font System & Typography
+**macOS equiv:** CoreText / FontServices
+**Status:** FINAL
+**Key decisions:**
+- `FontProvider` trait with `coverage(ch) -> GlyphCoverage` tri-state (Native/Substitute/NoGlyph); replaces bool `has_glyph`. BitmapFontProvider returns Substitute for non-ASCII (renders U+FFFD box); TrueTypeFontProvider returns NoGlyph for absent codepoints so chain tries next provider.
+- Two backends: BitmapFontProvider (v1, zero deps, nearest-neighbor scaling) + TrueTypeFontProvider (fontdue crate, platform-gated off mcu-minimal). Apps opt in via `[capabilities.fonts]` manifest; bitmap is always the terminal fallback.
+- All fontdue entry points wrapped in `catch_unwind(AssertUnwindSafe(...))` — `safe_rasterize` + `safe_metrics`. `validate_font_file` performs pre-flight rasterization of 10 ASCII glyphs at 14 px. Worker thread panics trigger monitor respawn; callers use `recv_timeout(200 ms)` and fall back to bitmap substitute glyph on timeout.
+- GlyphAtlas: `CpuGlyphAtlas` (lru::LruCache, `get_or_insert` bumps MRU on hit) + `GpuGlyphAtlas` (etagere Skyline-BL allocator, per-PID quota `MAX_PER_PID=128`, `evict_lru_for_pid` on quota breach, `take_dirty` for frame-coherent GPU upload).
+- FontConfig replaces global constants: per-platform values for `max_font_bytes`, `max_total_estimated_ram` (raw bytes × 2 factor), `max_glyph_cache_entries`, `max_atlas_entries_per_pid`, `truetype_enabled`. CJK requires desktop-full/server-headless (256 MiB cap); iot-edge/robotics-rt are Latin-only by constraint.
+- LayoutSession pins provider resolution and `quantize_size(size_px * 4 / 4)` for both `glyph_advance` and `render_glyph`, eliminating measure/render skew. `layout_text` takes `&mut LayoutSession` and returns `Result<Vec<TextLine>, LayoutError>`.
+- RTL detected via Hebrew/Arabic Unicode ranges → `Err(LayoutError::RtlUnsupported)`. No silent LTR corruption. Legacy `VYOMA_DRAW:draw_text_wrap` logs warning and emits empty line.
+- `TextLine` carries `trailing_glyph: Option<char>` for `WrapMode::Ellipsis`. Empty-input returns single `TextLine{text:"",width:0.0,y_offset:0.0}`.
+- WIT: `vyoma:fonts/typography@1.0.0` — `load-font`, `unload-font`, `measure-text`, `line-height`, `has-glyph`, `select-font`, `layout-text` (returns lines as `list<tuple<string,f32,f32>>`).
+- System fonts: VyomaSans-Regular + VyomaSans-Bold (Inter subset, OFL-1.1) + VyomaMono-Regular (JetBrains Mono subset, OFL-1.1), loaded at `BootPhase::Display` before first app spawn. Total system-font footprint <2 MiB.
+- `FontWorker` + `FontMonitor` watchdog: `bounded(32)` channel; monitor joins worker handle, detects panic via `join().is_err()`, respawns with 10 ms back-off.
+- Cargo feature flags: `fontdue` and `etagere` gated off mcu-minimal builds.
+**Critical v1:** FontProvider trait, BitmapFontProvider + U+FFFD, TrueTypeFontProvider with safe wrappers, FontConfig per-platform, GpuGlyphAtlas with per-PID eviction, LayoutSession, RTL error, worker watchdog
+**Deferred:** HarfBuzz/complex shaping (v3), RTL full BiDi (v3), variable fonts, color/emoji, dynamic font download
+**Never:** fontdue inside WASM binary, global mutable font state without locks, silent RTL corruption
+**Implementation files:** `supervisor/src/font/` — 15 files each ≤500 LOC (mod.rs, bitmap.rs, bitmap_data.rs, truetype.rs, atlas_cpu.rs, atlas_gpu.rs, registry.rs, fallback.rs, layout.rs, session.rs, worker.rs, wit_handlers.rs, manifest.rs, config.rs, subsystem.rs)
+
+---
+
+
+## 14. Image & Icon Pipeline
+**macOS equiv:** ImageIO / CoreImage
+**Status:** FINAL
+**Key decisions:**
+- Supported formats: PNG (`png` crate), JPEG (`jpeg-decoder` + `kamadak-exif` for EXIF auto-rotate), BMP (hand-rolled, BI_RGB only — BI_BITFIELDS/RLE rejected), QOI (`qoi` crate), SVG (`resvg`/`usvg`, feature-gated, external resources fully disabled). All wrapped in `catch_unwind(AssertUnwindSafe(...))`.
+- Header-first decode: dimension check happens BEFORE pixel allocation via format-specific header parsers (`png_dimensions`, `jpeg_dimensions`, `bmp_header_dimensions`, `qoi_dimensions`). Crafted images cannot OOM before rejection.
+- Magic-byte format detection: `detect_format(data) -> Option<ImageFormat>` by magic bytes (PNG: `\x89PNG`, JPEG: `\xFF\xD8`, BMP: `BM`, QOI: `qoif`, SVG: XML `<svg` scan). Used when `format_hint` is absent.
+- Path cache key uses `Arc<PathBuf>` full path — no hash collisions. `ahash` as HashMap hasher for performance. System icon cache is `RwLock<LruCache<(Arc<PathBuf>, u32), Arc<ImageData>>>`.
+- Per-PID decoded-bytes budget (`DashMap<u32, usize>`): charged against `max_decoded_bytes_per_pid` (desktop-full: 256 MB, mobile: 64 MB, iot-edge: 8 MB). Budget tracks decoded BGRA32 pixels, not compressed bytes.
+- Decode worker pool sized by platform: `decode_worker_threads` in `ImageConfig` (desktop-full/server-headless: 3, mobile: 2, others: 1). Monitor watchdog per worker respawns on panic. `recv_timeout(500 ms)` on callers.
+- Bilinear resize loop correctly processes all 4 BGRA channels (0..4). Lanczos3 uses sRGB→linear→resize→sRGB for gamma-correct output. Nearest stays in sRGB.
+- EXIF orientation auto-applied for all JPEG decodes. All 8 transform variants (1–8) handled via `apply_exif_orientation(img, orient)`.
+- WIT: `vyoma:images@1.0.0` with `io` + `icons` interfaces. `blit-image` includes source crop `(src-x, src-y, src-w, src-h)` — ABI stable from day one. Handle namespaces for `io` and `icons` are separate pools.
+- SVG security: `usvg::Options { resources_dir: None, ... }` with explicit filesystem+network resource lock-down. `resvg` runs in-process inside a worker thread (isolated from compositor).
+- Cargo features: `decode_png`, `decode_jpeg`, `decode_bmp`, `decode_qoi`, `decode_svg`, `image_gpu` — all optional, no build.rs. `mcu-minimal` enables no image features; all decode requests fail with `ImageError::FormatNotEnabled`.
+- GPU texture cache: `GpuImageCache` maps `ImageCacheKey → u32` texture handles (R12 WIT); eviction coordinated with R12's `VramBudget`.
+- QOI encoder for compositor thumbnail snapshots (Mission Control R25 preview path).
+**Critical v1:** PNG/JPEG/QOI decode, header-first dimension check, per-PID budget, worker pool + watchdog, blit-image with source crop, EXIF auto-rotate, SVG resource lock-down, ARC<PathBuf> cache key
+**Deferred:** Animated GIF/APNG/WebP, ICC color pipeline (R15), image effects/filters (CoreImage equiv v3), thumbnail daemon, metadata query
+**Never:** `format_hint` as sole format selector without magic-byte fallback, BMP RLE/BI_BITFIELDS in v1, SVG with external resource access
+**Implementation files:** `supervisor/src/image/` — 17 files each ≤500 LOC (mod.rs, config.rs, decode_png.rs, decode_jpeg.rs, decode_bmp.rs, decode_qoi.rs, decode_svg.rs, resize.rs, cache.rs, icon.rs, worker.rs, surface_ext.rs, manifest.rs, wit_handlers.rs, protocol_v2.rs, gpu_cache.rs, subsystem.rs)
+
+---
+
+
+## 15. Color Management & ICC Profiles
+**macOS equiv:** ColorSync / ICC profile manager
+**Status:** FINAL
+**Key decisions:**
+- Two paths: (1) analytic sRGB↔LinearSrgb via compile-time LUT (~2 ns/px, no dependencies); (2) `qcms` pure-Rust ICC transform (~8 ns/px, `color-icc` Cargo feature). mcu-minimal/iot-edge/robotics-rt use analytic only; mobile/desktop-full/server-headless get full ICC.
+- ICC pre-validation before qcms: `validate_icc_profile` checks size (≤4 MiB), declared-size == actual size, tag count ≤100, known color space signature. qcms only called after validation passes. `catch_unwind` as secondary defense only.
+- `TransformRegistry` uses a separate `AtomicU32` handle counter from `ProfileId` — no handle namespace collision. `get_or_create(key, pid)` is idempotent: same `(from, to, intent)` returns cached handle. All transforms owned as `Arc<parking_lot::Mutex<qcms::Transform>>` — no raw pointer casting, no double-free.
+- `ImageData.color_space: Option<ColorSpace>` (None = sRGB); `effective_color_space()` returns Srgb for None. All R14 decoder callsites compile without change.
+- WIT `apply-transform-to-surface(transform, surface)` operates on supervisor-side Surface handle — zero copies through WASM boundary for 4K frames. `apply-transform(pixels: list<u8>)` retained for small/offline use.
+- Compositor: `CompositorColorState` with pre-allocated scratch buffer and `needs_color_management: bool` fast-path skip for sRGB displays (avoids 64ms/frame qcms cost at 60Hz).
+- EDID gamut detection: `edid_color_space(edid)` requires `rx>0.680 && ry<0.320 && gx<0.270` (triple-condition prevents false-positives on cheap sRGB panels).
+- System profiles: sRGB.icc + DisplayP3.icc in initramfs at `/usr/share/color/icc/vyoma/`, loaded at `BootPhase::Display`.
+- No lcms2 (C FFI UB risk); qcms only (pure-Rust). HDR/EDR, ProPhoto, CMYK, display calibration deferred.
+**Critical v1:** validate_icc_profile, ProfileRegistry, TransformRegistry (idempotent get_or_create), Arc<Mutex<>> ownership, apply-transform-to-surface, CompositorColorState fast-path, EDID detection
+**Deferred:** HDR/EDR, ProPhoto RGB, CMYK, display calibration UI, per-window color space tagging (R21), color delta-E
+**Never:** lcms2 C FFI, raw pointer casting for qcms::Transform, hash-only ICC profile validation, single-condition EDID threshold
+**Implementation files:** `supervisor/src/color/` — 9 files each ≤500 LOC (mod.rs, config.rs, profile.rs, registry.rs, transform.rs, display.rs, convert.rs, wit_handlers.rs, manifest.rs)
+
+---
+
+---
+
+## 16. Animation Engine (Core Animation / CALayer)
+
+**Two-layer model**: ModelLayer (app-visible) + PresentationLayer (compositor-visible, interpolated). Apps never mutate presentation directly — they commit transactions to the model; the engine advances presentation each vsync tick.
+
+**Transaction pipeline (B1 — double-buffered)**: stdout parser thread writes to `back` buffer under brief lock. Vsync thread swaps `front`/`back` atomically at tick start, processes `front` exclusively — no lock held during compositing. Mirrors Core Animation's render server double-buffer.
+
+**Spring physics (B2)**: All three damping regimes (under/critical/over) with correct per-case formulas. `duration_ms` is a *maximum timeout* for springs — animation terminates when `|current - target| < 0.001` (convergence) OR `elapsed >= duration_ms`. `initial_velocity` in WebKit-normalized units (fraction of total displacement/sec).
+
+**Security (B3)**: `Transform3D::sanitize()` replaces NaN/Inf with identity elements, then clamps: translation `m[3][0,1]` to ±65536, scale `m[0,0], m[1,1]` to ±256. Prevents pixel-coordinate integer overflow and GPU rasterizer undefined behavior from large-finite values.
+
+**Implicit animations (B4)**: Setter called outside a transaction + `implicit_animations_enabled=true` → supervisor synthesizes a 250ms EaseInOut transaction and commits it immediately. Setter with implicit disabled → immediate model+presentation update.
+
+**WIT types (B5)**: `add-animation` uses structured `keyframe` WIT records — no msgpack, no external dependencies. `set-transform` takes 16 named f32 parameters (not `list<f32>`) for type safety.
+
+**Hit-test (N3)**: `hit-test(x, y)` uses PresentationLayer geometry — a button mid-slide is hittable at its animated position, not its model position.
+
+**Completion callbacks (N2)**: One `VYOMA_ANIM_COMPLETE:<token>` per transaction (not per `LayerChange`) via `Arc<CompletionGroup>` with atomic pending counter.
+
+**Files**: `supervisor/src/animation/` — 11 modules all ≤500 LOC: `mod.rs`, `config.rs`, `layer_tree.rs`, `presentation.rs`, `transaction.rs`, `runner.rs`, `timing.rs`, `interpolate.rs`, `compositor.rs`, `wit_handlers.rs`, `protocol.rs`.
+
+**Platform**: disabled on mcu/iot/robotics/server; full (512 layers/app, 30s cap) on desktop; limited (128 layers/app, 10s cap) on mobile.
+
+---
+
+## 17. VYOMA_DRAW v3 — Advanced 2D Rendering (Quartz 2D / CoreGraphics)
+
+**Three-tier protocol**: v1 (text `VYOMA_DRAW:`, R11) stays for simple apps. v2 (extended text path commands) rate-limited to <30Hz/<20 segments/frame — NOT for animated UI. v3 (`vyoma:draw@3.0.0` WIT) is the production path for all animated drawing.
+
+**Color space contract (B4)**: All WIT color f32 params are linear-light sRGB with premultiplied alpha [0.0, 1.0]. Apps migrating from v1 (packed sRGB u8) MUST convert via R15 `color-convert`. Passing gamma-encoded values produces 2× darker colors.
+
+**Rasterizer threading (B2)**: Path rasterization runs in Rayon parallel tasks — never on the vsync compositor thread. Each dirty `GraphicsContext` gets one Rayon task. `command_queue` filled async (protocol/WIT thread), drained at vsync in parallel. Budget: 4 apps × 3.5ms each fits within 16.6ms vsync on 4-core desktop.
+
+**Batch path submission (B5)**: `submit-path-buffer(ctx, list<u8>)` accepts compact binary encoding (1-byte opcode + up to 6 f32s = max 25 bytes/segment). 1,000 segments = one 25KB WIT call vs. 1,002 individual round-trips. Matches Skia/Blink path serialization approach.
+
+**Protocol recovery (B3)**: v2 path state auto-discards after 100ms timeout. Parse errors skip the bad segment (log + continue — not abort). v1 command interleaved with open path: discard path, warn, execute v1 command.
+
+**Clip model (N4)**: Clip paths rasterized to per-pixel alpha buffer (not boolean path intersection). Matches CoreGraphics/Skia model — O(pixels) not O(path²).
+
+**v3 WIT additions**: `set-font(family, weight, style, size)`, `draw-text`, full gradient API, `clip-path`, `save-state`/`restore-state`, `set-blend-mode` (12 modes). Image handles from R14 are globally valid in R17 calls.
+
+**Files**: `supervisor/src/draw/` — 11 modules ≤500 LOC each: `mod.rs`, `context.rs`, `rasterizer.rs`, `stroke.rs`, `gradient.rs`, `blend.rs`, `text.rs`, `image.rs`, `transform.rs`, `protocol.rs`, `wit_handlers.rs`. Zero new external dependencies (Rayon already in supervisor).
+
+---
+
+## 18. Screen Capture & Recording
+**macOS Analogue**: ScreenCaptureKit / QuickTime capture  
+**Depends on**: R11 (Surface buffers, vsync RwLock), R14 (image table), R17 (WIT draw)
+
+### Architecture
+
+Software-only capture from CPU-visible framebuffer or per-app Surface buffers. Three modes: full-screen (composited fb), per-window (app Surface), region (rectangle of fb). Screen recording adds a bounded frame-queue with MJPEG encoder thread.
+
+**Link-time WASM capability gating**: `vyoma:capture@1.0.0` WIT imports are added to each app's `Linker` conditionally — only when the manifest declares `capture = true`. No manifest flag = no import = Wasmtime instantiation error if WASM tries to use it.
+
+### vsync Synchronization
+
+`vsync_lock` (R11) upgraded from `Mutex<()>` to `RwLock<()>`. Compositor takes a write-lock only during the DRM blit step (~2ms). Capture takes a read-lock for the pixel memcpy (~2ms). Multiple readers allowed simultaneously; write waiter blocks subsequent readers at most ~2ms.
+
+### capture_worker Thread
+
+Single named thread. One-shot screenshot encoding dispatched via `WorkerTask::Screenshot { frame, result_tx: SyncSender<Result> }`. WIT closure parks on `result_rx.recv()` — app's Wasmtime thread blocks for 80–250ms (PNG), supervisor event loop is never blocked. Recording sessions have separate per-session encoder threads; frame pump runs via `WorkerTask::FramePumpTick`.
+
+### Backpressure
+
+When frame queue is full: drop frame, increment `Arc<AtomicU64>` counter, send `VYOMA_CAPTURE_DROPPING:<session_id>` to app stdin (rate-limited: at most 1/s per session). App adjusts fps on receipt. `dropped-frames` WIT function is a destructive read (resets counter to 0).
+
+### Output Path Safety
+
+`CAPTURES_DIR = "/data/captures"` is a compile-time `const &str`. Never sourced from boot.toml or any config. Path = `CAPTURES_DIR/<app_id>/<session_id>.<ext>` — all integer supervisor-assigned values; no user strings in path.
+
+### Platform Matrix
+
+Full capture (PNG/JPEG/MJPEG) on desktop-full, mobile (30fps cap), server-headless. `capture_any` permission (full-screen + other-window capture) desktop-full only. Unsupported profiles compile stub WIT functions returning `Err("capture not available")`. Capability mismatch (e.g. `capture_any` on mobile) is a **load-time error**, not a warning.
+
+### Key Files
+
+```
+supervisor/src/capture/{mod,screenshot,recorder,worker,paths,permissions}.rs
+```
+
+---
+
+## 19. Virtual Display & Screen Mirroring
+**macOS Analogue**: AirPlay display / Sidecar  
+**Depends on**: R11 (Surface buffers, vsync RwLock), R18 (link-time WIT gating, capture pattern)
+
+### Architecture
+
+Three modes: **mirror** (duplicate compositor output to consumer), **extend** (independent logical screen for apps), **remote-only** (headless virtual screen for testing/remote access). Transports: Unix socket (local, mode 0600), TCP (with HMAC-SHA256 token auth), virtio-vsock (optional kernel feature).
+
+**Link-time gating**: `vyoma:virtual-display@1.0.0` WIT registered per-app conditionally. `virtual_display_any` (mirror of full compositor output) requires runtime consent + capable profile (desktop-full only).
+
+### Transport Safety
+
+`try_send_frame` pre-checks `SIOCOUTQ` vs `SO_SNDBUF` before writing. If kernel buffer lacks space for header+payload, drops frame atomically (zero bytes written). Uses `write_vectored` for header+payload in one `writev(2)` syscall — no partial writes possible. TCP auth handshake: 5-second read/write timeout on all transports; on timeout: close + log + re-listen.
+
+### Compositor Integration
+
+Mirror mode: after vsync flush, a **single** `vsync_lock.read()` copies fb into `Arc<Vec<u8>>` snapshot shared by all active mirror sessions. Total vsync stall = ~2ms regardless of session count. Extend mode: mini-compositor pass over assigned apps' Surfaces (no `vsync_lock` needed). Remote-only: pass skipped when zero apps assigned.
+
+### Coordinate Space
+
+`VYOMA_VDISP_SCREEN:<display_id>,<width>,<height>` pushed to app stdin on every assignment change. `current-display` WIT function for polling. Apps fall back to physical display dims before first assignment.
+
+### Consent Revocation
+
+`vdisp_consent_revoke:<app_id>` IPC from chrome sets `consent_suspended = true`, destroys all active mirror sessions, notifies app. Suspended until reboot; consent cannot be re-granted in same session.
+
+### Platform Matrix
+
+Mirror: desktop-full only. Extend/remote-only: desktop-full, mobile (extend only), server-headless. Capability mismatch at load time → error (not warning).
+
+---
+
+## 20. HiDPI & Multi-Resolution Display
+**macOS Analogue**: `NSScreen.backingScaleFactor`, Retina display  
+**Depends on**: R11 (Surfaces), R13 (fonts), R17 (VYOMA_DRAW), R19 (virtual display)
+
+### Architecture
+
+Integer scale factors only (1x, 2x) in v1. Scale configured via `boot.toml [display] scale_factor = 2` (QEMU has no EDID). `DisplayConfig` struct carries `physical_{w,h}`, `logical_{w,h}`, and `scale_factor`.
+
+**Opt-in**: `hidpi_aware = true` in `vyoma.toml` capabilities. Legacy apps (absent flag) are backward-compatible — they get a logical-sized Surface and the compositor pixel-doubles it to fill the physical screen.
+
+### Surface Allocation
+
+- **Legacy app** on 2x: Surface = `logical_w × logical_h`; compositor 2×-upscales to physical screen via nearest-neighbor blit
+- **HiDPI-aware app** on 2x: Surface = `physical_w × physical_h`; `VYOMA_DRAW:` coords in logical points, supervisor applies `saturating_mul(2)` before drawing
+
+### Coordinate Safety
+
+`scale_coord(v: u32, sf) -> u32` uses `saturating_mul` — u32 overflow clamps to u32::MAX, caught by out-of-bounds clipper, silently discarded. No wraparound corruption.
+
+### Startup Contract
+
+HiDPI-aware apps MUST wait for `VYOMA_DISPLAY:window_info:<lw>,<lh>,<sf>` on stdin before first draw. Supervisor sends this at spawn; line is in stdin buffer before WASM starts. Apps that draw before receiving it produce a provisional frame; expected to redraw on receipt.
+
+### Font Logical Sizes
+
+Font logical point sizes are scale-invariant: `m` is always 8×16 pts. At 2x, physical rendering is 16×32 pixels. Layout at `y = logical_h - 16` for `m` text is overflow-safe at any scale.
+
+### VYOMA_VDISP_SCREEN Breaking Change
+
+R19's 3-field format extended to 4 fields (`scale_factor`). Apps must update parsers to accept ≥3 fields; migration note provided.
+
+---
+
+## 21. Window Manager & Spaces
+**macOS Analogue**: WindowServer spaces, `NSWindow` positioning, Mission Control  
+**Depends on**: R11 (Surface/vsync), R18 (WIT gating), R20 (DisplayConfig/logical pts)
+
+### Architecture
+
+Window properties (`win_x/y/w/h` in logical pts, `win_z: PerSpaceZ`, `win_space`, `win_title`, `win_manual_layout`, `pending_resize`) added to `AppState`. `SpaceRegistry` owns `active: u8` + `PENDING_SPACE_SWITCH: AtomicU8`. Max 9 spaces; apps assigned to space 0 appear in all spaces (always-on-top layer).
+
+**Z-order**: `win_z: PerSpaceZ` (`HashMap<u8, u32>`) — per-space z-indices; compacting space N only modifies `by_space[N]`. Space-0 apps always composited after all space-N apps (Model A always-on-top).
+
+**Surface reallocation**: `resize` IPC sets `pending_resize: Option<(w,h)>` (no lock); compositor drains it in `vsync_lock.write()` between frames, atomically updating surface + geometry fields.
+
+**Space switching**: `PENDING_SPACE_SWITCH` written by IPC (no lock), checked at compositor tick start. Compositor holds `vsync_lock.write()` to: update `active`, `fb.fill(BACKGROUND)`, mark dirty, compact z. Ghost pixels eliminated.
+
+**Auto-tiling**: 1=full, 2=50/50, 3=main+right-split, 4=2×2 grid, 5+=equal columns. Layers model: any `win_manual_layout=true` app in a space disables auto-tiling for whole space. Manual apps float above tiled apps by z-order.
+
+### Compositor Pass Order
+
+1. Check `PENDING_SPACE_SWITCH` → apply with `vsync_lock.write()`
+2. Drain `pending_resize` → `vsync_lock.write()`
+3. Blit space-N apps ascending z → `vsync_lock.read()`
+4. Blit space-0 apps ascending z (always on top) → still in read-lock
+5. DRM blit → `vsync_lock.write()`
+
+---
+
+## 22. App Lifecycle Management
+**macOS Analogue**: `NSApplicationDelegate`, `UIApplication`  
+**Depends on**: R11 (AppState), R21 (WM integration)
+
+### States
+`Launching` → `Running` ↔ `Suspended` / `Background` → `Terminating` → `Terminated`. Complete 16-row transition table with all edge cases: Launching→Terminating (kill-while-launching), Suspended↔Background (policy change), IPC delivery stopped on Terminating.
+
+### Launching→Running Transition
+Single `on_app_ready` function called under APPS_MAP write lock. Three trigger paths: stdout `VYOMA_LIFECYCLE:ready`, WIT `notify-ready`, first `VYOMA_DRAW:flush`. All are no-ops when state ≠ Launching — idempotent, no race.
+
+### Graceful Termination
+`will_terminate` → 2s grace → SIGKILL. IPC delivery stopped atomically at state flip. `will_terminate` is last stdin write. Timer checked on every event loop tick (non-blocking).
+
+### Watchdog
+Active in `Running` and `Background`. Paused in `Suspended`, `Terminating`, `Launching`. Output-reading thread dual-checks lifecycle state before firing — closes event-loop-thread vs output-thread race.
+
+### Restart Backoff
+On `restart = "always"`: 0s, 1s, 2s, 4s, 8s, 16s backoff for successive crashes within 60s window. Window resets after 60s of continuous uptime (checked on every tick, not just exit). Max 10 restarts per hour.
+
+### `reload` Command
+All-or-nothing: validate ALL vyoma.toml manifests before killing any app. Any parse failure → abort with error listing. Diff: added (spawn), removed (graceful terminate), changed (restart).
+
+---
+
+## 23. Menu Bar & System Chrome
+**macOS Analogue**: `NSMenuBar`, SystemUIServer  
+**Depends on**: R11, R20 (HiDPI), R21 (space-0 always-on-top), R22 (lifecycle)
+
+### Architecture
+
+Chrome is a privileged WASM app (`win_space=0`, always on top). It draws via `VYOMA_DRAW:` like other apps. Supervisor clips non-chrome draws to `y >= CHROME_HEIGHT_PX` in `flush_pass` (with correct `src_y_offset` to skip source rows above the clip). Chrome draws a 24pt menu bar with focused app name on left, clock on right.
+
+**Startup fallback**: `chrome_surface_ready: bool` flag; compositor fills top 24px with `0x1E1E2EFF` until chrome's first flush. Eliminates boot visual glitch.
+
+**Chrome queue**: `ChromeRouter` with 64-slot drop-oldest ring buffer. Routes `VYOMA_CHROME:` lines from all apps. Delivers queued messages when chrome reaches Running. Cleared when chrome Terminated with no restart pending.
+
+**Clock tick**: `last_chrome_tick = SystemTime::now()` at startup (not UNIX_EPOCH). `last_chrome_tick = now` on each emission (not `+=1s`) — absorbs overage, prevents burst. One tick per event-loop iteration max.
+
+**Input lock**: `Arc<AtomicBool> chrome_input_locked` (TTY thread reads atomically, no RwLock). Auto-stores false whenever chrome lifecycle ≠ Running — crash-safe.
+
+**Consent**: chrome draws modal, locks input, sends `consent_<type>_grant/deny` to supervisor via `@supervisor:` IPC.
+
+---
+
+## 24. Dock & App Switcher
+**macOS Analogue**: Dock, Cmd-Tab switcher  
+**Depends on**: R21 (WM space-0, PerSpaceZ), R22 (lifecycle), R23 (chrome, y-clip, resize_surface)
+
+### Architecture
+
+Dock is a second privileged WASM app (`win_space=0`, `z=65534`). Chrome has `z=65535`. Both space-0 apps composited above all space-N apps via **Model A two-pass** (normative for all future rounds): Pass 1 blits space-N apps ascending z; Pass 2 blits space-0 apps ascending z (dock then chrome). Within pass, higher z = blitted later = on top.
+
+**Startup fallback**: `dock_surface_ready: bool` mirrors chrome's pattern. Compositor fills bottom 48px with `0x1E1E2EFF` until dock's first flush.
+
+**Dock queue**: `DockRouter` mirrors `ChromeRouter` — 64-slot drop-oldest VecDeque.
+
+### Combined Clip (6-step formula)
+`blit_clipped()` applies both top (chrome) and bottom (dock) clip explicitly: compute `src_y_offset`, `blittable_h_after_top_clip`, `blittable_bottom`, `dock_clip_y_px` cap, final `blittable_h_combined`. Space-0 apps (chrome/dock) skip the respective clip edge they own.
+
+### Data Model
+`DockState { slots: Vec<DockSlot>, mru_list: Vec<String>, switcher_index: usize, switcher_active: bool, focused_app: Option<String> }`. `DockSlot` has NO `mru_rank` field — sole MRU representation is `mru_list: Vec<String>` (remove-and-prepend on focus, append on launch, remove on exit).
+
+### Ctrl-Tab Switcher
+`DockSwitcherState { ctrl_held: bool, last_ctrl_tab_at: Instant }` lives entirely in event loop (no shared bool). TTY sends `KeyEvent` over crossbeam channel. Main loop intercepts Ctrl-Tab, routes `VYOMA_DOCK:ctrl_tab_pressed` to dock; on Ctrl-release routes `VYOMA_DOCK:ctrl_released`. 500ms timeout synthetic release on each supervisor tick. Auto-cleared when dock lifecycle ≠ Running.
+
+**Switcher open sequence**: expand `resize_surface` → draw overlay → `flush` → `switcher_active=true`. Collapse only after flush commits (stdout stream ordering). `@supervisor: focus <selected>` on Ctrl-release.
+
+---
+
+## 25. Mission Control & Exposé
+**macOS Analogue**: Mission Control, Exposé  
+**Depends on**: R21 (WM spaces), R22 (lifecycle, surface_quiesced), R23 (chrome input lock), R24 (dock, Model A)
+
+### Architecture
+
+Mission Control is a third space=0 WASM app (`mission-control`, z=65533), below dock(65534) and chrome(65535). No `filesystem` capability — thumbnails delivered entirely via stdin as `VYOMA_MC:thumb_begin/data/end` base64 framing. `draw_thumb:<id>,<x>,<y>,<w>,<h>` renders in-memory thumbnail buffers.
+
+### Input Lock Priority (B2 fix)
+Replaced two independent `AtomicBool` flags with a single `AtomicU8 INPUT_LOCK_LEVEL`: `None=0`, `MissionControl=1`, `ChromeConsent=2`. Consent always wins — if consent dialog opens while MC is active, `PREV_LOCK_LEVEL` saves MC state for restore. Auto-clear via `compare_exchange` on lifecycle change away from Running.
+
+### Thumbnail Capture (B1 + B3 fix)
+Dedicated `capture_thread_main` spawned at supervisor startup. Main event loop posts `CaptureRequest` to channel and returns immediately. Capture thread holds one `vsync_lock.read()` for the **entire** multi-app snapshot (not per-app) — eliminates writer starvation. Releases lock before all I/O and base64 encoding.
+
+### Surface Quiescence (B4 fix)
+`surface_quiesced: bool` on `AppState`, set on Suspend, cleared on Resume. `draw_cmd` handler discards all commands when set. `last_flushed_snapshot: Option<Arc<Vec<u8>>>` is updated on each `flush` — MC capture reads this stable snapshot rather than live surface data.
+
+### Deferred Focus (B5 fix)
+`pending_focus: Option<String>` in `SupervisorState`. `handle_focus_command` stores focus in `pending_focus` when `PENDING_SPACE_SWITCH != 0`. Compositor applies `pending_focus` AFTER space switch commit in the same tick — focus always lands in the correct `spaces.active`.
+
+### Layout
+Space strip: top 80pt, one card per space + Add button. Window grid: `sqrt(n)` columns with 16:10 max aspect ratio, padding 8pt. Exposé mode: no space strip, full height, active-app windows only. Keyboard navigation: arrow keys + Enter/Escape.
+
+---
+
+## 26. Stage Manager
+**macOS Analogue**: Stage Manager (macOS 13+)  
+**Depends on**: R21 (WM spaces), R22 (lifecycle), R24 (dock), R25 (MC, INPUT_LOCK_LEVEL, surface_quiesced)
+
+### Architecture
+
+Supervisor owns all stage geometry (`StageRegistry`); a thin `stage-strip` WASM app (space=0, z=65532) renders the 140pt left strip. Four space-0 apps: strip(65532), MC(65533), dock(65534), chrome(65535). `stage-strip` launches at boot with 0×0 surface, expands on first SM enable.
+
+**Data model**: `StageRegistry { spaces: HashMap<u8, SpaceStages> }`. Each `SpaceStages` has `stages: Vec<Stage>`, `active: StageId`, `enabled: bool`. A `Stage` has `members: Vec<String>`. Orphan (empty) stages GC'd after 5s.
+
+### Off-screen Quiescence (B2 fix)
+Inactive-stage apps hidden at `win_x = OFFSCREEN_X`. `stage_offscreen: bool` + `pending_offscreen_resize: Option<(u32,u32)>` on `AppState`. `draw_cmd` handler blocks `resize_surface` when `stage_offscreen = true` (stored in `pending_offscreen_resize`). On stage activation, deferred resize drained into `pending_resize` (normal R21 path).
+
+### Animation + finalize_stage_switch (B3 fix)
+200ms slide+fade via `anim_x_override`/`anim_alpha` on `AppState`. `LockLevel::StageSwitch=3` swallows keys during animation. `finalize_stage_switch` sets `win_x` BEFORE clearing `anim_x_override` — eliminates one-tick flash.
+
+### LockLevel (B1 fix)
+`StageSwitch=3` appended to `LockLevel` enum. MC=1 and ChromeConsent=2 unchanged — all R25 call sites remain correct. StageSwitch is swallow-only (discards keys, never routes to an app).
+
+### StageStripRouter (B4 fix)
+`on_strip_running()` synthesizes idempotent `strip_init` from live registry then flushes queue. `on_strip_terminated_no_restart()` clears queue. Stage Manager degrades gracefully if strip crashes.
+
+### blit_clipped 7-step formula (B5 fix)
+Step 0 (new): left-edge clip — `effective_dest_x`, `src_x_offset`, `blittable_w_clipped` (right-overflow clamp). `blit_surface` extended with `src_x_offset: u32` + `width: u32` parameters. `is_space0: bool` flag on `AppSnapshot` replaces string comparisons. Normative for all future rounds.
+
+---
+
+## 27. Full Screen & Split View
+**macOS Analogue**: Full Screen / Split View / Tile Window  
+**Depends on**: R21 (spaces, pending_resize), R25 (pending_focus, INPUT_LOCK_LEVEL), R26 (Stage Manager, blit_clipped)
+
+### Three Modes
+- **FullScreen**: dedicated space (via `SpaceRegistry.allocate_next()`), chrome/dock suppressed, app resizes to full logical dimensions
+- **SplitView**: two-app pair in dedicated space, `compute_split_rects()` with configurable `ratio: f32`, both apps use `pending_resize` drain path
+- **TileWindow**: single app at left/right half of content area, stays in current space, chrome/dock visible, `win_manual_layout = true`
+
+### Space Free-List (B2 fix)
+`SpaceRegistry` adds `free_list: Vec<u8>`. `allocate_next()` pops free-list before incrementing high-water mark. `release()` pushes non-tail releases. MC strip and `PENDING_SPACE_SWITCH` skip free-list entries.
+
+### FS Suppression Flags (B1 fix)
+`FS_CHROME_SUPPRESSED` / `FS_DOCK_SUPPRESSED` atomics updated inside `vsync_lock.write()` space-switch block (before blit loop reads them). `chrome_clip_px`/`dock_clip_px` recomputed under `vsync_lock.read()` after write-lock drops — zero-frame glitch.
+
+### LockLevel (B3 fix)
+`LockLevel::FsTransition = 4` appended. `route_keyboard` swallows keys on `3 | 4`. No existing call sites renumbered.
+
+### SplitView Exit (B4 fix)
+`splitview_exit_app`: Step 1a compact z-order in `fs_pre_space`; Step 1b `PENDING_SPACE_SWITCH` + `pending_focus` (R25 deferred pattern); Step 1c stage re-integration — focus lands in correct space after switch.
+
+### Tile + Stage Manager (B5 fix)
+`compute_tile_rect(side, config, sm_enabled)` accounts for 140pt strip when SM active. `on_stage_manager_toggled()` hook recomputes all tiled apps in affected space and sends `VYOMA_FS:tile_geometry_changed`.
+
+---
+
+## 28. Focus Management & Z-order
+**macOS Analogue**: `NSApplication.keyWindow` / `makeKeyAndOrderFront`  
+**Depends on**: R21 (PerSpaceZ, compact_z_order), R25 (INPUT_LOCK_LEVEL), R26 (Stage Manager), R27 (SplitView)
+
+### Core Model
+`FOCUSED_APP: ArcSwap<String>` — wait-free reads on TTY input thread. All focus transitions go through `focus_transfer(new, old, reason, pending_compact, pending_notifs)`. App names (not integer IDs) used throughout.
+
+### No-Deadlock Pattern (B1+B2+B3 fix)
+- Notifications (`notify_chrome`, `notify_dock`, `VYOMA_FOCUS:`) enqueued in `pending_focus_notifications: Vec<PendingFocusNotif>` under apps-map lock; drained by main loop AFTER lock released
+- Z-bump (O(N) scan) under apps-map lock; `PENDING_COMPACT_SPACES: AtomicU8` bitmask set; compositor calls `compact_z_order` per flagged space under `vsync_lock.write()` — O(N log N) deferred out of IPC path
+- `SpaceState.last_focused: Option<String>` embedded in `SupervisorState.spaces` under existing apps-map lock — no new Mutex (eliminates ABBA with `LAST_FOCUSED` static)
+
+### SplitView Focus (B4 fix)
+`@supervisor: splitview_toggle_focus` — symmetric command accepted from either primary or secondary. Both apps receive `VYOMA_FOCUS:splitview_role_changed:<primary|secondary>`.
+
+### WIT Interface (B5 fix)
+`vyoma:focus@1.0.0`: `focus-query` (any display app) + `focus-control` (display+shell). All functions return app name strings — no undefined `name→id` map. `focused-window: func() -> string`.
+
+### Starvation Prevention
+`on_app_exit`: cleans `last_focused` from all spaces; if exited app was focused, finds MRU replacement by `last_focus_time` in active space.
+
+---
+
+## 29. Desktop & Wallpaper Engine
+**macOS Analogue**: Finder desktop / wallpaper daemon  
+**Depends on**: R21 (compositor, vsync_lock, fb.fill), R26 (Stage Manager), R27 (FS suppression)
+
+### Architecture
+Supervisor-rendered wallpaper: `fill_wallpaper()` replaces `fb.fill(BACKGROUND_COLOR)` in compositor. No dedicated WASM app. Per-space `HashMap<u8, WallpaperConfig>`. Formats: solid color, linear gradient, image (BGRA raw + PNG via lodepng). Persisted to `/data/wallpaper.toml`, loaded after 9P mount ready.
+
+### Thread Safety (B1+B2+B3 fix)
+`wallpaper_cache: Arc<RwLock<WallpaperCache>>` — compositor acquires `read()` inside blit pass (never inside `vsync_lock.write()`); IPC acquires `write()` during set/load. `wallpaper_preload_complete: AtomicBool` — fill returns solid fallback until `/data` mount confirmed. `maybe_apply_time_variant` runs after `vsync_lock` drops.
+
+### HiDPI Fill (B4 fix)
+`scaled_w = (src_w as f32 * scale).ceil() as u32` for Fill mode — ensures no 1-pixel seam. `floor()` for Fit. Direct `dst_w` for Stretch.
+
+### Capability Gating (B5 fix)
+Mutations (`wallpaper_set`, `screensaver_set`) require `shell = true`. Queries require `display = true`. Settings apps need only `shell = true` — no framebuffer surface allocated.
+
+### Extras
+Dynamic wallpapers: `time_variants: Vec<(u8, WallpaperKind)>` checked once per minute. Screen saver: blank-screen fallback after N idle seconds (v1 only). Desktop icons deferred to R41.
+
+---
+
+## 30. Accessibility Tree & AX API
+**macOS Analogue**: `NSAccessibility` / `AXUIElement` / VoiceOver  
+**Depends on**: R21 (apps-map lock), R28 (focus), R29 (capability gating)
+
+### Architecture
+Hybrid push/pull: apps push UI trees via `VYOMA_AX:` line protocol; supervisor maintains `AXRegistry: Arc<RwLock<...>>`; registered AX clients receive push events via `AXEventQueue` and pull data via WIT `vyoma:accessibility@1.0.0`.
+
+### Thread Safety (B1+B3 fix)
+`AXParseState` is thread-local on per-app output reader thread — never in AppState or AXRegistry. `AXEventQueue: Arc<Mutex<Vec<(client, event_line)>>>`: output reader threads push; compositor tick phase 3b is sole consumer/sender (no concurrent pipe writes).
+
+### Screen Coordinates (B2 fix)
+`get-window-bounds: func(app-name: string) -> option<window-bounds>` in WIT. `VYOMA_AX_EVENT:window_moved` emitted on position change for cache invalidation.
+
+### VoiceOver + Normative Space-0 Table (B4 fix)
+`voiceover` at z=65531 added to normative space-0 table. Caption y computed adaptively via `VYOMA_AX:config_set:caption_y,<y>`. Surface cleared explicitly on empty-label or SECURE_INPUT focus.
+
+### Bootstrap Protocol (B5 fix)
+`app_appeared` = registered (tree may be empty, revision=0). New `tree_ready:<app>:<revision>` event signals first valid tree (revision 0→1). VoiceOver ignores focus_changed for apps with revision=0.
+
+### Capability Gates
+`accessibility = true` → publish tree + `accessibility-publish` WIT. `accessibility_client = true` → receive events + `accessibility-client` WIT.
+
+---
+
+## Section 31: Keyboard & Input Methods
+
+**macOS analogue**: `IOHIDFamily` / `NSTextInputClient`  
+**Status**: FINAL
+
+### Architecture
+Dual-source input model: `/dev/tty0` termios raw (character delivery) + `/dev/input/eventN` evdev `EV_KEY` (modifier tracking, key release, scan codes). Both sources feed a shared `KeyEventQueue: Arc<Mutex<Vec<KeyEvent>>>`. The `input-router` thread is the sole caller of `route_keyboard` — the `kbd-evdev` thread only writes to `ModStateRef` and `KeyEventQueue`.
+
+### KeyEvent Struct
+`{ scan_code: u16, key_code: KeyCode, modifiers: Modifiers, character: Option<char>, is_press, is_repeat, is_release, from_virtual_kbd: bool }`. `from_virtual_kbd` causes the IME intercept (Priority 4) to be skipped while still respecting all `INPUT_LOCK_LEVEL` gates.
+
+### 5-Priority Dispatch Pipeline (normative)
+1. `INPUT_LOCK_LEVEL` gate (None=0, MC=1, ChromeConsent=2, StageSwitch=3, FsTransition=4)
+2. Global shortcuts (R35)
+3. Space-0 chrome interceptors (F3=MC, Escape=FS exit, Cmd+M=minimize)
+4. IME intercept — skipped for `from_virtual_kbd` events (B5 fix)
+5. Focused app stdin delivery
+
+### TTY Read Timeout and Evdev Drain Ordering (B1 fix)
+`VMIN=0, VTIME=1` (100ms) on `/dev/tty0` when `kbd-evdev` is active. Input-router drain loop (Phase A) always runs before TTY byte processing (Phase C), ensuring evdev modifier events are processed before the character they modify.
+
+### Character Resolution in the Drain Loop (B3 fix)
+`resolve_character(scan_code, modifiers, &keymap, &mut compose_state)` called in input-router Phase A for each evdev event. `ComposeState` is thread-local on input-router stack — never stored in shared state. `kbd-evdev` thread sets `character=None`; input-router resolves it.
+
+### TTY KeyCode Inference (B4 fix)
+TTY events have `scan_code=0` → `KeyCode::Unknown(0)`, breaking romanization IMEs. `Keymap::char_to_keycode(ch)` reverse lookup (normal-then-shift order) infers the most likely `KeyCode` from the resolved character. Called for TTY events before `route_keyboard`.
+
+### IME Security: Commit Authorization (B2 fix)
+`ime_commit` and `ime_passthrough` IPC handlers verify `sender == active_ime()` before processing. Rejected with `log_warn!`. Prevents non-IME apps from injecting text into arbitrary app stdins.
+
+### Virtual Keyboard and kbd_inject (B5 fix)
+`kbd_inject` (requires `shell = true`) sets `from_virtual_kbd=true` and calls `route_keyboard` through the full Priority 1–5 pipeline. Only Priority 4 (IME intercept) is skipped. Lock gates (including `FsTransition`) still apply.
+
+### Capability Gates
+`keyboard_events = true` → receive `VYOMA_KEY:` structured events + `VYOMA_KBD:` notifications. `ime = true` → register as active IME. `shell = true` required for `kbd_inject`, `kbd_layout`, `kbd_repeat_*`, `kbd_compose`.
+
+---
+
+## Section 32: Mouse, Trackpad & Gestures
+
+**macOS analogue**: `IOHIDFamily` / `NSGestureRecognizer`  
+**Status**: FINAL
+
+### Architecture
+Dual-thread evdev acquisition: `mouse-evdev` (EV_REL/EV_KEY → button + delta → `MouseEventQueue`) and `trackpad-evdev` (ABS_MT slot protocol → `GestureState::feed_frame` → `MouseEventQueue`). `mouse-dispatch` is the sole consumer and sole caller of `route_mouse`. `GestureState` is locked only by `trackpad-evdev`; `mouse-dispatch` never holds it.
+
+### HitResult — Single APPS_MAP Acquisition (B1 fix)
+`hit_test(x, y, &APPS_MAP) -> Option<HitResult>` acquires `APPS_MAP` once, clones `stdin: Arc<Mutex<ChildStdin>>`, `is_space0: bool`, `win_x/y` into the result, then releases the lock. `deliver_to_hit` uses the cloned `Arc` directly — `APPS_MAP` is never re-acquired during delivery. Lock order: `APPS_MAP → per-app stdin` (acyclic).
+
+### Cursor Position (B4 fix)
+`CURSOR_POS: AtomicU64` packs X and Y. `cursor_xy()` uses `Ordering::Acquire`; `set_cursor_xy()` uses `Ordering::Release`. Eliminates torn-read on ARM64 (iot-edge, mobile, robotics-rt). Software cursor sprite drawn last in R11 pass 2 using single `cursor_xy()` call.
+
+### Enter/Leave Suppression During Animations (B2 fix)
+`synth_enter_leave_if_needed` returns immediately when `INPUT_LOCK_LEVEL != LL_NONE`, freezing the hover target. On `LL_NONE` re-entry, `on_input_unlock()` synthesizes at most one Leave+Enter to reconcile. Prevents thousands of spurious Enter/Leave events during Stage Manager / split-view animations.
+
+### Gesture Interruption (B3 fix)
+`GestureState` gains `aborted_ids: Vec<i32>` — tracking IDs of fingers active when the gesture was aborted. `feed_frame` filters them until they lift. `INPUT_EPOCH: AtomicU8` bumped on every lock-level change; gesture `MouseEvent`s carry their creation epoch; `route_mouse` drops stale-epoch gesture events.
+
+### Drag Capture Lock-Rise Cleanup (B5 fix)
+`on_input_lock_rise()` synthesizes a `Release` for the captured app and clears `MOUSE_DRAG_CAPTURE`. `CURRENT_BUTTONS: AtomicU8` maintained by `flush_mouse_frame`; `on_input_lock_fall()` clears capture if no buttons held. Prevents phantom drag after MC dismissal.
+
+### Capability Gates
+`mouse = true` → `VYOMA_INPUT:mouse:` + `vyoma:pointer@1.0.0` WIT. `gestures = true` → `VYOMA_INPUT:gesture:` (requires `mouse = true`). `cursor = true` → `VYOMA_CURSOR:shape/hide/show`.
+
+---
+
+## Section 33: Touch & Stylus Input
+
+**macOS analogue**: `UITouch` / `Apple Pencil` / `PencilKit`  
+**Status**: FINAL
+
+### Architecture
+`touch-evdev` thread reads EV_ABS MT slot + stylus + BTN_TOOL_* events, calls `flush_touch_frame` on SYN_REPORT. `touch-dispatch` drains `TouchEventQueue` every 2ms and calls `route_touch`. For touch-to-mouse fallback, synthesized `MouseEvent(source=Touch)` is pushed to R32's `MouseEventQueue` — `mouse-dispatch` owns all mouse state exclusively (no cross-thread writes to `MOUSE_DRAG_CAPTURE`/`LAST_HOVER_TARGET`/`CURRENT_BUTTONS`).
+
+### TouchSlot + StylusState (B1+B2 fix)
+`TouchSlot` gains `just_ended: bool` (set by `end_tracking`); `flush_touch_frame` takes `&mut slots` to clear `just_began` after first emission and emit `Ended` events from `just_ended` slots. `StylusState` gains `btn_touch + prev_btn_touch`; stylus `Began`/`Moved`/`Ended` phases derived from `prev/current btn_touch` comparison. `STYLUS_TOUCH_ID = i32::MIN` sentinel.
+
+### Stylus Routing (B3 fix)
+Stylus events bypass `hit_test` and go to `FOCUSED_APP` via `lookup_hit_by_name(FOCUSED_APP)` — stylus hover occurs outside window bounds. Finger events use position-based `hit_test` from R32.
+
+### Touch-to-Mouse Synthesis (B4+B5 fix)
+`Began→Press`, `Moved→Move`, `Ended/Cancelled→Release`. Synthesized events pushed to `MouseEventQueue`; `mouse-dispatch` updates `CURRENT_BUTTONS`/`MOUSE_DRAG_CAPTURE`. `touch-dispatch` never writes mouse globals.
+
+### Lock Rise Cancellation
+`on_input_lock_rise()` (R32) extended to call `cancel_all_active_touches()` — emits `VYOMA_INPUT:touch:cancelled:<id>` for all in-flight touch sequences tracked in `ACTIVE_TOUCH_TARGETS: Mutex<HashMap<String, Vec<i32>>>`.
+
+### Capability Gates
+`touch = true` → `VYOMA_INPUT:touch:` + `vyoma:touch@1.0.0` WIT. `stylus = true` → `VYOMA_INPUT:stylus:` (requires `touch = true`). Apps with both `touch` and `mouse` receive only touch events.
+
+---
+
+## Section 34: Input Method Editor (IME / CJK)
+
+**macOS analogue**: `InputMethodKit` / `NSTextInputClient` / CJK input sources  
+**Status**: FINAL
+
+### Architecture
+IME is a `wasm32-wasip2` app (`stdio=true, display=true, ime=true`) registered via `@supervisor: ime_register`. First to register wins; second registrant receives `VYOMA_SYSTEM:ime_register_rejected:already_active`. IME deregisters on exit (detected by R22 lifecycle handler) or via `@supervisor: ime_unregister` (sender must equal `ACTIVE_IME`).
+
+### Z-Order (B1 Fix)
+IME candidate window is a space-0 app at z=65529 (below voiceover z=65531). Composited in pass 2 above all space-N app content. Renders transparent except candidate list area. Updated space-0 z-order: chrome(65535), dock(65534), mc(65533), stage-strip(65532), voiceover(65531), ime-window(65529).
+
+### Two-Channel Composition Display (B2 Fix)
+`ime_composition_update <target_app> <text>` → focused app receives `VYOMA_IME:composition_update:<text>` for inline underline display. IME's own `VYOMA_DRAW:` surface renders candidate list separately. No duplicate data: focused app handles inline text; IME surface handles candidates.
+
+### Focus Transition (B3 Fix)
+`on_focus_changed` sends `VYOMA_IME_CONTEXT:focus_will_change` to active IME before switching focus, and unconditionally sends `VYOMA_IME:composition_end` to the previous focused app. IME has 50ms to flush/discard; supervisor proceeds regardless. Prevents composition strings orphaned mid-flight.
+
+### Registration Security (B4 Fix)
+`ime_register` rejects second registrant (first wins). `ime_unregister` enforces `sender == ACTIVE_IME`. `ime_commit`/`ime_passthrough`/`ime_composition_update` require `sender == ACTIVE_IME`. `ime_activate <name>` requires `shell = true`.
+
+### Modifier Bypass (B5 Fix)
+`dispatch_ime` returns `false` (IME skipped) when `ev.modifiers.intersects(Ctrl | Meta | Alt)`. Ctrl+C, Cmd+V, Alt+F4 bypass IME and reach focused app directly. Only unmodified character keys + Backspace/Enter/Space are forwarded for composition.
+
+### Cursor Rect Protocol
+Apps report `VYOMA_IME:cursor_rect:<x>,<y>,<w>,<h>` (screen-absolute). Supervisor forwards to active IME as `VYOMA_IME_CONTEXT:cursor_rect:...`. IME positions candidate window below cursor rect.
+
+### WIT & Platform
+`vyoma:ime@1.0.0` — `commit-text`, `update-composition`, `end-composition`, `passthrough-key`, `get-cursor-rect`. Desktop: optional WASM IME app. Mobile: virtual keyboard IS the IME (has both `ime=true` and `display=true`). Server/IoT/MCU: no IME.
+
+---
+
+## Section 35: Global Shortcuts & Hotkeys
+
+**macOS analogue**: `NSEvent` global monitors / Carbon `RegisterEventHotKey`  
+**Status**: FINAL
+
+### Architecture
+P3 in `route_keyboard` (after lock gate P1/P2, before IME P4). Two classes: (1) system-reserved (compiled into supervisor, `system.rs`); (2) app-registered (`hotkeys=true` capability required). Input thread NEVER holds `ChildStdin` mutex — delivery via per-app SPSC `mpsc::SyncSender`; `stdin-writer` thread writes to pipe.
+
+### System-Reserved Table (B2 Fix)
+`SystemShortcut` uses `allowed_locks: LockLevelMask` (`u8` bitfield). `fires_at(lock)` = `allowed_locks & (1 << lock as u8) != 0`. Key combos: Cmd+Space (Spotlight), Cmd+Tab (app switcher), F3 (Mission Control), Cmd+Ctrl+Q (lock, any lock level), Fn+F1..F12 (HW media, always). `dispatch_global_shortcuts` re-reads `INPUT_LOCK_LEVEL` (Acquire) on entry, not from P1 snapshot.
+
+### Combo Validation (B1 Fix)
+`validate_combo` enforces: must contain at least one of Cmd/Ctrl/Alt/Fn (Shift alone rejected); primary key must not be a modifier; Escape/Tab/Return/Backspace/Arrows require Cmd|Ctrl|Alt. `RegisterError::InvalidCombo` raised at register time. System-reserved table registration rejected with `ReservedBySystem` regardless of current lock level.
+
+### Registry & Identity (B5 Fix)
+`Registration` tracks `owner: AppHandle { name: String, generation: u64 }` (not `Weak<ChildStdin>`). Generation minted per-spawn by process manager. `on_app_exit` purges dead generation before restart re-spawns, so new instance can reclaim its combo. All mutations: acquire `REGISTRY_WRITE_LOCK` → `load_full()` → clone-modify → `store` (no exceptions). `ArcSwap<GlobalHotkeyRegistry>` for lock-free reads on input thread.
+
+### IME Composition Cancel (B4 Fix)
+Before any system shortcut fires: `maybe_cancel_ime_composition_before_system_action()` enqueues `VYOMA_IME:cancel` to composing app's channel and `focus_will_change` to IME — best-effort (no wait, same 50ms timeout as R34). Prevents partial composition state after Cmd+Q etc.
+
+### Delivery (B3 Fix)
+`HOTKEY_CHANNELS: ArcSwap<HashMap<AppHandle, mpsc::SyncSender>>`. Input thread: `try_send` (never blocks; drops oldest with log on full). Each app's `stdin-writer` thread drains channel and acquires `ChildStdin` mutex. System actions enqueued on `SYSTEM_ACTION_QUEUE` — never invoke broker synchronously from input thread.
+
+### Per-App Quota & Conflict
+Max 32 registrations per app. Higher `manifest_priority` wins; tie-break by `epoch_registered` (earliest). Shadowed registrants notified via `VYOMA_HOTKEY:shadowed:<id>`; promoted on winner exit via `VYOMA_HOTKEY:activated:<id>`. `vyoma:hotkeys@1.0.0` WIT: `register`, `unregister`, `list-mine`; export events: `on-fire`, `on-shadowed`, `on-activated`.
+
+---
+
+## Section 36: Cursor & Pointer System
+
+**macOS analogue**: `NSCursor` / `CursorManager` / cursor images  
+**Status**: FINAL
+
+### Architecture
+Supervisor owns the cursor sprite exclusively; apps only request shapes. `CursorState { shape, sprite, visible, pos: (i32,i32), epoch }` published as `ArcSwap<CursorState>`. Compositor reads one coherent snapshot — no separate `cursor_xy()` call (B1 fix). Cursor drawn last in R11 pass 2 via `composite_cursor`.
+
+### Position in CursorState (B1 Fix)
+`recompute_active_cursor()` snapshots `cursor_xy()` once and embeds it in the published `CursorState.pos`. Compositor uses `st.pos` exclusively — eliminates sprite/position torn-read on concurrent input-thread updates.
+
+### Clipped Blit (B3 Fix)
+`blit_rgba_straight_clipped` clips both source rect and dest rect against framebuffer bounds: `src_x0 = (-ox).max(0)`, `dst_x0 = ox.max(0)`, `copy_w = min(w - src_x0, fb_w - dst_x0)`. Hot spot validated `[0,w)×[0,h)` on upload. `ACTIVE_SUPPRESS_RECT`: set only by app whose name equals `ACTIVE_IME` via `VYOMA_DRAW:cursor:suppress_over`; compositor skips blit if cursor overlaps suppress rect.
+
+### Drag-Capture Shape (B2 Fix)
+`recompute_active_cursor()` called once after ALL R32 routing side effects (Enter/Leave synthesis complete, `MOUSE_DRAG_CAPTURE` cleared). Before applying drag-owner shape, verifies owner still alive in `APPS_MAP` — dead owner falls through to hit-test result.
+
+### Custom Sprites (B4 Fix)
+ID validated `^[A-Za-z0-9_-]{1,32}$`. Per-app `TokenBucket` (64 KiB/sec). 8-sprite LRU cap. `cleanup_app_cursor` brackets registry removal + `recompute_active_cursor` under single `APP_CURSORS` mutex — no window where compositor reads a removed sprite's registry entry.
+
+### Confinement (B5 Fix)
+`APP_CURSORS[owner].confine` is authoritative; `ACTIVE_CONFINE: ArcSwap` is derived cache. Trackpad deltas accumulate into `CONFINED_LOGICAL_POS`; only clipped result written to `CURSOR_POS` — no overshoot re-entry. Escape chord (`LCtrl×3 within 800ms`) matched in pre-routing stage (before any SPSC delivery) so a backpressured app cannot trap the cursor. All clear paths deliver `VYOMA_INPUT:confine_lost:<reason>` with `reason ∈ {focus, lock, escape, exit}`.
+
+### Shape Priority
+1. FsTransition → hidden. 2. Any lock>None → forced Arrow. 3. Drag-capture owner shape. 4. Hit-test region match (window-local rects). 5. App default shape/custom. 6. Arrow fallback.
+
+---
+
+## Section 37: Controller & Gamepad Input
+
+**macOS analogue**: GameController framework / MFi controllers  
+**Status**: FINAL
+
+### Architecture
+Controller hub thread polls evdev via epoll; delivers `VYOMA_INPUT:controller:*` via R35 SPSC channels (never holds ChildStdin mutex). Up to 4 controllers (P1–P4). P1 follows `FOCUSED_APP` by default; P2–P4 claimable via `@supervisor: controller_claim <player>` (requires `shell=true + controller_max_players≥N`).
+
+### SYN_REPORT Batching (B2 Fix)
+Raw axis/button changes accumulate into a scratch `ControllerState`; normalization + hysteresis + emission fires ONLY at `SYN_REPORT` boundary. Prevents split-axis emissions where LX updates before LY, corrupting radial deadzone. Hysteresis: axis change >256, trigger change >4.
+
+### Disconnect Delivery (B1 Fix)
+`LAST_ROUTED_APP[4]: [ArcSwap<Option<String>>; 4]` updated on every successful state delivery. Disconnect event delivered directly to `last_routed_app[slot]` — bypasses lock gate and current routing recomputation entirely. Controllers plugged in during MC/lock buffer connect via last-routed tracking.
+
+### Lock-Rise Flush (B3 Fix)
+`on_input_lock_rise()` (R32) extended to call `flush_controller_state_on_lock_rise()`: emits all-zero synthetic state (`buttons=0, axes=0, triggers=0`) with bumped epoch+seq to all `LAST_ROUTED_APP` targets. Prevents "stuck button" desync after Mission Control dismissal.
+
+### Dual-Fd Rumble (B4 Fix)
+Each controller device opened **twice**: `read_fd` (hub epoll, input reads only), `write_fd` (per-controller writer task, ioctl+write only). No fd sharing. Writer task: bounded mpsc capacity=4 (overflow drops oldest). `duration_ms` clamped to 5000ms.
+
+### Claim Cleanup (B5 Fix)
+`release_controller_claims(app)` called from `on_app_exit` hook in `process.rs`. For `restart=always`, process manager re-emits `on_controller_connect` for previously-claimed connected slots after re-spawn — no re-registration required.
+
+---
+
+## Section 38: Drag & Drop
+
+**macOS analogue**: `NSDraggingSession` / `NSDraggingDestination` / `NSPasteboardItem`  
+**Status**: FINAL
+
+### Architecture
+`DragSession` is **fully immutable** — every transition (including hover-target change) allocates a fresh `DragSession` and CAS-swaps `ACTIVE_DRAG` with ABA-protection via `seq: u64` (B1 fix). `ACTIVE_DRAG: ArcSwap<Option<DragSession>>`. Session token is 128-bit random (not enumerable integer) (B5 fix).
+
+### Out-of-Band Payload (B4 Fix)
+Source sends `VYOMA_DRAG:start:<types>:<size>:<preview_hint>` on stdout (no inline bytes). Supervisor mounts `/run/vyoma/drag/<token>/upload` into source's WASI FS. Source writes payload there, then sends `VYOMA_DRAG:upload_done:<token>`. Supervisor seals file. 5s upload timeout → cancel. Decouples 16 MiB payload from stdout parser.
+
+### Mouse-Up & ACK-Window (B3 Fix)
+`MOUSE_DRAG_CAPTURE` released **immediately** on mouse-up (R32 fully unblocked). R38 maintains separate `DROP_PENDING { token, source, target }` for the 2s ACK window. `VYOMA_DRAG:ack:<token>:accepted|rejected` verified against `DROP_PENDING.target` — spoofed acks from non-target apps logged and dropped.
+
+### Routing Layering (B2 Fix)
+R32 delivers `mouse_move` to capture owner with coordinates clamped to source's window bounds. Non-droppable apps receive neither `mouse_move` nor drag events during session — prevents cursor-position probing by source app.
+
+### Cancellation
+Single `cancel_drag(CancelReason)` CAS-loop funnel. Wired to: `on_input_lock_rise()`, Escape key pre-routing, `on_app_exit`. Sends `VYOMA_DRAG:leave` to hover target and `VYOMA_DRAG:cancelled` to source. Unlinks staging dir.
+
+### Security (B5 Fix)
+All `VYOMA_DRAG:` commands verified: `start` = sender==capture-owner; `upload_done`/`cancel` = sender==source; `ack` = sender==`DROP_PENDING.target`. 128-bit random token defeats enumeration.
+
+---
+
+## Section 39: Text Input & Selection Model
+
+**macOS analogue**: `NSTextView` / `TSM` / `TextKit` / `NSTextInputClient`  
+**Status**: FINAL  
+**Key files**: `supervisor/src/text_input/`
+
+### Architecture (Thin Model)
+Supervisor owns a `TextContextSnapshot` per focused field — NOT the text buffer or undo ring. Per-field `ArcSwap<TextContextSnapshot>` for wait-free reads by AX/IME threads (B1 fix). `TextRegistry { fields: RwLock<HashMap>, focused: ArcSwap }`.
+
+### Focus & Secure Masking (B4 Fix)
+`VYOMA_TEXT:focus:<field_id>:<kind>:<traits_u32>`. For `kind==password` or `secure` bit, supervisor zeros all service trait bits on ingress — no context_window, no spell/substitution/data-detector for secure fields. Services receive `field_kind` and reject `password` fields.
+
+### Selection Protocol (B3 Fix)
+Two separate lines: `VYOMA_TEXT:selection_range:<field_id>:<start>:<end>:<utf8_byte_count>` (always-accurate metadata) and `VYOMA_TEXT:selection_preview:<field_id>:<base64>` (≤4096 bytes, optional). Clipboard copy uses fresh `VYOMA_CLIPBOARD:fetch_selection` request — never cached preview. Services tag `partial:true` when selection exceeds preview.
+
+### Ack Contract (B2 Fix)
+Every supervisor→app mutating command (`insert`, `delete`, `select_range`, `undo`, `redo`) carries `<seq>` token. App replies `VYOMA_TEXT:ack:<field_id>:<seq>` after applying mutation. `is_dirty=true` during window; AX/IME return pre-mutation snapshot with `is_stale:true`. 1s watchdog → field marked unresponsive.
+
+### Cross-App Security (B5 Fix)
+`on_text_drop` verifies `focused.app == drop_app`; cross-app mismatch → `VYOMA_DRAG:drop_rejected`. AX reads hard-bound to `app_pid`. Supervisor never exposes one app's `TextContext` to another.
+
+### System Services
+Spell check (WASM service, 250ms debounce), smart substitution (inline rewrite before key delivery), data detector (750ms stability). All skip secure fields.
+
+---
+
+## Section 40: Clipboard & Pasteboard
+
+**macOS analogue**: `NSPasteboard` / `UIPasteboard` / clipboard history  
+**Status**: FINAL  
+**Key files**: `supervisor/src/clipboard/`
+
+### Architecture
+Four named pasteboards: `general`(16 history), `find`(1), `drag`(1, unified with R38 token dirs), `ruler`(4). Each backed by `ArcSwap<PasteboardState>`. `TOKEN_REFS: Mutex<HashMap<[u8;16], u32>>` tracks reader lifetimes for GC (B4 fix).
+
+### Atomic Write (B1 + B2 Fix)
+Two-phase write: `begin` → items → `commit`. Staging dir `/run/vyoma/pb/.staging/<token>/` (unobservable). On commit: `fsync` all item files, validate sizes, `rename` to `/run/vyoma/pb/<token>/` (atomic), then ArcSwap. Large items: supervisor grants scoped WASI subdir descriptor to Wasmtime resource table on `begin` ack; revoked on commit/abort.
+
+### Read & GC (B4 Fix)
+Refcount incremented before `reply:` sent; decremented on `release` or 30s timer. Token dir GC only when refcount=0 AND not current for any pasteboard. 5s watchdog GCs uncommitted staging dirs.
+
+### Security (B3 Fix)
+Removed `clipboard_read_unattended`. Non-Cmd+V reads require chrome banner consent (persisted in `/data/clipboard-grants.toml`). `changed:` notification omits `source_app` by default; `clipboard_observer_unredacted=true` capability requires user opt-in via Settings. Secure entries: `changed:` emits `***secure***` only.
+
+### Cmd+C Multi-MIME (B5 Fix)
+`clipboard_provider=true` apps own Cmd+C: receive `VYOMA_HOTKEY:copy:<field_id>`, perform full two-phase write with all MIME types (text/plain+rtf+html). Unprivileged apps: supervisor fetches plain text via R39 `fetch_selection` and writes `text/plain` only; chrome shows "Plain text copy" indicator.
+
+### Secure Clipboard
+`:secure[:ttl]` suffix on `commit`. TTL default 60s, max 120s. Never enters history. Consume-on-read. Zeroed on expiry (overwrite + fsync + unlink). Sweep runs at 1 Hz and on every focus change.
+
+---
+
+## Section 41: File Manager (Finder Equivalent)
+
+**macOS analogue**: `Finder` / `NSOpenPanel` / `NSSavePanel`  
+**Status**: FINAL
+
+### Architecture
+Two cooperating pieces: `file-manager` WASM app (space-0, z=65528) renders the browser UI; `panel_service` (supervisor) handles system-modal open/save sheets with path traversal guard and worker pools. Apps needing file pickers send `VYOMA_PANEL:open/save` to supervisor — they never spawn their own file browser.
+
+### Open/Save Panel (B1 Fix)
+`VYOMA_PANEL:open:<request_id>:<options_b64>` / `VYOMA_PANEL:save:...`. Supervisor keys panels by `app_instance_id: u64` (supervisor-assigned, incremented on spawn) — NOT by `app_name`. On any app exit: `purge_instance(id)` revokes all PanelGrants, ReadTokens, and WriteTokens. Result delivered: `VYOMA_PANEL:result:<request_id>:ok:<grant_token_hex>:<paths_b64>`.
+
+### Worker Pools (B2 Fix)
+Three isolated pools: `fs_io` (2 workers, per-app fair-queue, 256 KB chunk re-enqueue — prevents one giant copy from starving others), `fs_meta` (1 worker, FIFO, fast ops), `fs_quicklook` (1 worker, cancellable). `VYOMA_FS:cancel:<job_id>` preempts quicklook and chunked copy.
+
+### Capability Tokens (B3 Fix)
+Read tokens auto-revoke when full file size delivered. Write tokens require explicit `VYOMA_FS:write_commit:<token>` (fsync + rename tmp over real path). `BookmarkToken` for persistent access: user sees chrome banner + Settings → Privacy → File Access revoke UI; tokens stored in `/data/capability-grants.toml`.
+
+### Drag, Trash & Tags (B4 Fix)
+Open panel registers as R38 drop target — dropping a file populates the filename field. `vyoma://trash` virtual path → `/data/.vyoma/trash/` with `Put Back` support. `VYOMA_FS:tag/<path>/<add|remove>/<tag>` with sidecar SQLite DB at `/data/.vyoma/tags.db`. `VYOMA_FS:watch/<path>/<depth>` + `VYOMA_FS:notify_change` push live updates to `filesystem=true` apps.
+
+### Listing & Column View (B5 Fix)
+`VYOMA_FS:list` supports `sort_by`, `sort_dir`, `offset`, `limit`, `prefetch_thumb_size`; first NDJSON line is `{"type":"meta","total_count":N}` for scrollbar. `VYOMA_FS:list_paths` returns filenames only for fast column-view population. Quick Look: cache at `/data/.vyoma/quicklook/<sha256>-<mtime>.png`, 512 MB LRU cap.
+
+---
+
+## Section 42: Spotlight & Metadata Search
+
+**macOS analogue**: `Spotlight` / `MDQuery` / `NSMetadataQuery`  
+**Status**: FINAL
+
+### Architecture
+Native indexer thread in supervisor (not WASM) + `apps/spotlight/` WASM app (space-0, z=150). Indexer owns SQLite write-connection; query threads open separate read-only connections (B1 fix — boot-walk write batches of 100 rows, max ~5s lock-hold). Index at `/data/.vyoma/spotlight/index.db` (WAL mode) with FTS5 virtual table over `display_name` + `content_snippet`. Tags joined from `/data/.vyoma/tags.db` via `ATTACH DATABASE`.
+
+### Indexer Pipeline (B4 Fix)
+Boot walk: rate-limited to 20 file-stat/sec; separate 5 snippet-read/sec budget. Hard cap: `Read::take(512)` for snippets regardless of file size — blocks indexer for at most 1 read call. Extension allowlist skips binaries (`.wasm`, `.png`, `.db`). Snippet-fill deferred pass after boot walk. Live updates via R41 `VYOMA_FS:notify_change` events (100ms drain interval). Commits in batches of 100; FTS5 `rebuild` after boot walk bulk insert.
+
+### Query Protocol (B2 Fix)
+`VYOMA_SPOTLIGHT:query/<rid>/<query_b64>` processed in `router.rs` **unconditionally** — NOT inside `if has_display` guard. Non-`spotlight` capability apps receive `VYOMA_SPOTLIGHT:error:<rid>:no-spotlight-capability` rather than silent drop. Results: `VYOMA_SPOTLIGHT:result:<rid>:<total>:<json_b64>` (pages), then `result_end:<rid>`. Stateless pagination via re-execution. FTS5 BM25 rank × launch-frequency `score_boost` (capped at 2.5×).
+
+### Access Control (B3 Fix)
+`file_access_grants` table keyed on `(app_name, path_prefix)` — NOT `app_instance_id`. Atomic `DELETE + INSERT` on every `spawn_app` (grants survive restart correctly). Collision detection rejects two apps claiming the same `path_prefix`. Spotlight WASM app (no `filesystem`) sees `kind='app'` only; file results gated on caller's grants.
+
+### App Removal (B5 Fix)
+`pkg-remove` sends `IndexCmd::AppRemoved { name }` → indexer deletes `entries`, `file_access_grants`, and `app_meta` rows for that app in one write transaction. Prevents stale catalog entries and grant inheritance by reinstalled apps.
+
+### Spotlight UI
+Cmd+Space invokes the spotlight WASM app (toggle if already open). 600×400px centered panel, R16 open animation (scale 0.92→1.0, 200ms). Keyboard: printable chars re-query, Up/Down navigate, Enter opens result, Tab cycles categories, Escape clears/dismisses. On result open: issues `@supervisor: spotlight-open <path_b64>`; supervisor grants R41 `BookmarkToken` to handler app. Focus restored to pre-spotlight app on dismiss.
+
+---
+
+## Section 43: File Coordination & Locking
+
+**macOS analogue**: `NSFileCoordinator` / `NSFilePresenter`  
+**Status**: FINAL
+
+### Problem
+R41 write tokens guarantee single-app atomicity but not multi-app coordination: two apps can each get a WriteToken for the same file (second commit silently wins), reads can interleave with truncates, renames invalidate open ReadTokens. R43 adds a supervisor-brokered will_change/ack handshake before any mutation.
+
+### Presenter Registration
+`VYOMA_COORD:present:<path_b64>:<intent>:<presenter_token_hex>`. Intent flags: `read` (open for read, wants will_change), `write` (open for write), `monitor` (notifications only). Requires `file_coordination = true` manifest capability. Access-checked against `file_access_grants` — paths under `/data/.vyoma/` always rejected.
+
+### Coordination Flow
+`VYOMA_COORD:begin:<coord_id>:<op>:<path_b64>` → supervisor sends `VYOMA_COORD:will_change` to all read/write presenters (2000ms deadline, max 5000ms) → ack collected via fast-path before display queue (B1 fix) → `VYOMA_COORD:granted:<coord_id>:<write_token>` with expiry set at grant time (B3 fix). After commit/abort: `VYOMA_COORD:did_change` to all monitors. Unresponsive presenters: 3 strikes → downgraded to monitor-only.
+
+### Locking & Deadlock (B2 + B5 Fix)
+`LOCK_TABLE` + `WaitForGraph` merged into single `CoordLockState` mutex (eliminates TOCTOU gap). Deadlock DFS runs on snapshot cloned under lock then released — no O(V+E) work inside critical section. Depth capped at 16; `catch_unwind` prevents mutex poisoning. Write token extension: `VYOMA_COORD:extend_write:<token>` (one-time +30s).
+
+### Crash Recovery (B4 Fix)
+`purge_instance()` saves dead instance's registered paths in per-app_name hint table. New instance receives `VYOMA_COORD:re_present_hint:<path_b64>:<intent>` at startup — closes the unprotected window between crash and re-registration.
+
+### Group Operations
+`VYOMA_COORD:group_begin/add/commit` → acquire all path locks in sorted lexicographic order → collect acks from all presenters across all paths → `group_granted:<group_id>:<tokens>`. `group_write_commit` fsyncs all tmp files then renames all. Max 16 paths per group.
+
+---
+
+## Section 44: Cloud Storage Sync
+
+**macOS analogue**: `iCloud Drive` / `NSUbiquitousKeyValueStore`  
+**Depends on**: R41, R43, R60 (placeholder)  
+**Status**: FINAL  
+**Key files**: `supervisor/src/cloud_sync/`
+
+### Architecture
+Two-layer split: `cloud-sync` WASM coordinator (`restart = "always"`) handles sync engine, queue, policy, conflict resolution; per-provider plugin WASM apps (`cloud-sync-s3`, `cloud-sync-webdav`) handle HTTP transport to a single declared endpoint only (NO filesystem access). Supervisor owns KV store, credential proxy, path enrollment validation.
+
+### Sync Metadata Storage (B3)
+No SQLite in coordinator WASM (WAL corruption risk on hard kill). Flat JSON records per file at `/data/.vyoma/sync/records/<sha256_of_path>.json`, each written via R41 write_commit (fsync + atomic rename). Fields: path, provider_id, remote_key, local_mtime, local_size, content_hash, remote_etag, sync_state, conflict_mode, enrolled_by.
+
+### Lock-Safe Delivery (B1)
+`notify_path_change` snapshots watcher list under AppRegistry lock then drops before delivering to inbox. AppState gains `sync_watch_paths: Vec<String>` set on `VYOMA_SYNC:enroll`.
+
+### Plugin Backpressure (B2)
+Bounded `mpsc::sync_channel(8)` per plugin. Coordinator sends file chunks via `@cloud-sync-s3: chunk:<job_id>:<base64>` with `SYNC_CHUNK_ACK` protocol before each next chunk — prevents 100 MB files from buffering 1600 messages.
+
+### Key-Value Store (B4)
+KV handled entirely in supervisor (`cloud_sync/kv_store.rs`). `push_changed` gated on `is_sync_coordinator` flag (keyed on `app_instance_id`, never app_name). Storage: `/data/.vyoma/kv/<app_name>.kv`, line-oriented `<key>=<url_encoded_value>`, max 64 KB.
+
+### Conflict Resolution (B5)
+When app inbox absent: fallback to KeepBoth (no data loss) + queue in `pending_conflicts.json`. Delivered as `VYOMA_SYNC:conflict:<path>:<provider>` at app next spawn alongside `VYOMA_SYSTEM:screen`.
+
+### Security
+Credentials via R60 Keychain (interim: AES-256-GCM `creds.enc`). Delivered to plugins as 128-bit random proxy tokens (in-memory only, never on disk). `/backup` not preopened in any app WASI sandbox.
+
+---
+
+## Section 45: Time Machine & Snapshots
+
+**macOS analogue**: `Time Machine` / `APFS snapshots` / `tmutil`  
+**Depends on**: R04, R41, R43, R46  
+**Status**: FINAL  
+**Key files**: `supervisor/src/snapshot/`
+
+### Snapshot Primitive
+Hardlink-tree copy on ext4 (`cp -al` model) — NOT btrfs/APFS CoW, NOT tar. Snapshots are real directory trees enabling O(1) single-file browse/restore. All hardlinks within `/backup/snapshots/` (same ext4 volume); `/data` side never hardlinked.
+
+### Change Detection (B1)
+9P mtime unreliable with `security_model=mapped-xattr`. Journal at `/data/.tm/journal.toml`: `path → (size, sha256_first_4KB)`. Small files (<256KB): content-hash. Large: size-only. Journal updated atomically after each snapshot via R41 write_commit.
+
+### Schedule & Space (B3)
+`snapshot-timer` thread wakes every 60s. Prune runs BEFORE new snapshot. Free space check via `statvfs` — skip if <10% of backup volume, emit `VYOMA_SNAP:disk-full`. Retention: all hourlies 24h, one daily 30d, one weekly 52w. `prune_failed: bool` retry flag in scheduler.
+
+### Restore Protocol (B2 + B4)
+`AppState.quiesced: bool` — watchdog skips quiesced apps (B2). Restore runs in dedicated `snapshot-restore` thread with `RESTORE_ACK_TX: OnceLock<Mutex<Option<mpsc::Sender<String>>>>` collecting acks from IPC handler (B4). Protocol: `VYOMA_SYSTEM:quiesce` → `fs-quiesce-ack` (5s) → bulk copy → SIGCONT → `restore-done`.
+
+### App Exclusions (B5)
+`[backup]` as **top-level** table in AppManifest (NOT inside `[capabilities]` — avoids `deny_unknown_fields` conflict). Paths stored at `/data/.tm/exclusions.toml`; `..` components rejected.
+
+### Backup Destination
+Separate ext4 `out/backup.img` (256 MB), mounted `/backup` with `MS_NODEV|MS_NOEXEC|MS_NOSUID`. `try_mount_backup()` probes `/dev/vdb`, `/dev/vdc`, `/dev/sdb`.
+
+---
+
+## Section 46: Disk Management & Formatting
+
+**macOS analogue**: `Disk Utility` / `DiskArbitration` / `diskutil`  
+**Depends on**: R04, R21, R41, R43  
+**Status**: FINAL  
+**Key files**: `supervisor/src/disk/`
+
+### Disk Discovery
+Poll `/sys/block/` every 2 seconds. `DiskDevice` struct: name, path, serial, size_bytes, removable, model, fs_type, partitions. Superblock probe: pure Rust reads first 4096 bytes; magic bytes table:
+
+| Filesystem | Offset | Magic |
+|------------|--------|-------|
+| ext2/3/4   | 0x438  | `0x53 0xEF` (s_magic LE) |
+| FAT32      | 0x52   | `"FAT32   "` (8-byte ASCII) |
+| FAT16/12   | 0x36   | `"FAT"` prefix |
+| GPT        | 0x200  | `"EFI PART"` |
+| MBR        | 0x1FE  | `0x55 0xAA` |
+
+### Boot Disk Identity (B4)
+Boot disk identified by virtio serial `"vyoma-data-disk"` (Makefile `-drive ...,serial=vyoma-data-disk`), NOT `/dev/vda` node. `DiskDevice.serial` read from `/sys/block/<name>/device/serial`.
+
+### Protocol Routing (B1)
+`VYOMA_DISK:` routed in `router.rs` (NOT `draw_cmd.rs` — would exceed 500 lines and lack global handles). `disk_manage: bool` capability gate; missing cap → `VYOMA_DISK_REPLY:error:EPERM`.
+
+### Format Token Flow (B3)
+`Mutex<HashMap<[u8;16], PendingFormat>>` (NOT Vec). Atomic `remove()` prevents concurrent double-confirm. One-in-flight limit per app: reject with `EBUSY` if pending token exists. Two-leg flow: `format` → `format_token:<hex>` → user confirmation → `format_confirm:<token>` → worker thread calls `mkfs.ext4` / `mkfs.vfat` after `is_block_device()` check.
+
+### mkfs Binaries (B2)
+`rootfs.sh` copies `mkfs.ext4` and `mkfs.vfat` from builder image. Dockerfile ensures `e2fsprogs` + `dosfstools` installed.
+
+### Lock Safety (B5)
+Disk handlers snapshot state then release disk locks before calling `send_reply(inbox)`. Never hold `MOUNT_TABLE` or `PENDING_FORMATS` lock while acquiring inbox.
+
+### Partition Management
+Single-partition scope for R46. `mkpart:<device>:mbr` writes MBR (512-byte pure Rust). `mkpart:<device>:gpt` writes GPT protective MBR + header. `rmpart` uses same two-leg token flow as format. Mount points at `/media/<sanitized_device_name>/` (only `[a-z0-9]`, max 16 chars).
+
+---
+
+## Section 47: File Tagging & Metadata
+
+**macOS analogue**: `Finder tags` / `xattrs` / `NSMetadataItem`  
+**Depends on**: R04, R41, R42  
+**Status**: FINAL  
+**Key files**: `supervisor/src/file_tags/`
+
+### Storage
+Two complementary layers: (1) **xattr layer** — per-file inode via `setxattr`; `user.vyoma.tags` xattr holds a JSON array of tag name strings; `user.vyoma.meta` holds a JSON object of custom metadata. (2) **Central index** — `TagIndex` struct (inverted map tag→paths) backed by `/data/.vyoma/tags/index.json`; loaded into memory at supervisor init, flushed atomically (`.tmp` → rename) after every mutation batch.
+
+### SQLite (Extended Attributes + App Metadata)
+Two WAL-mode SQLite databases: `tags.db` (tag_names + file_tags tables) and `xattrs.db` (xattrs + app_meta tables). Writer connection exclusive to writer thread; read-only reader connection for parallel queries (B2 fix).
+
+### rusqlite musl Compilation (B1)
+`rusqlite bundled` feature compiles SQLite C source. Requires `CC_x86_64_unknown_linux_musl=musl-gcc` in `.cargo/config.toml` and Makefile Docker env passthrough.
+
+### TagColor Enum
+7 variants: `Red`, `Orange`, `Yellow`, `Green`, `Blue`, `Purple`, `Gray`. Each carries a hex color constant (`#FF3B30`…`#8E8E93`) for GUI rendering. Serialized by name in `index.json`.
+
+### Namespace Model
+`vyoma.*` (supervisor-only write), `user.*` (any filesystem app), `com.<bundle>.*` (app-scoped). Enforcement uses `bundle_id: Option<String>` from `AppState` (from `vyoma.toml [app] bundle_id`), NOT unqualified app name (B5 fix).
+
+### Router Dispatch (B4)
+`router.rs` arm dispatches `tag/`, `xattr/`, `app_meta/` opcodes to `meta_store::ipc_handler`. `META_STORE: OnceLock<MetaStore>` initialized in `main()`.
+
+### Tag Rename (B3)
+`BEGIN IMMEDIATE` transaction + pre-check for target name existence before UPDATE. Prevents ghost `tag_names` rows from concurrent renames to the same target name.
+
+### Spotlight Integration
+Tag changes send `IndexCmd::Reindex(path)` to Spotlight indexer. `xattrs.db` readable by indexer thread via reader connection, enabling `tag:red` queries.
+
+---
+
+## Section 48: Document Model & Recent Files
+
+**macOS analogue**: `NSDocument` / `NSDocumentController`  
+**Depends on**: R04, R41, R43, R74  
+**Status**: FINAL  
+**Key files**: `supervisor/src/document/` (registry.rs, recents.rs, versions.rs, autosave.rs, close.rs, ipc_handler.rs, mod.rs)
+
+### Document Lifecycle
+`VYOMA_DOC:open/close/dirty/clean/autosave_ack/should_close_response` protocol. `@supervisor: doc_open <path> <display_name>` → `REPLY:doc_id:<id>`. Routed in `router.rs` before draw block.
+
+### Document Registry
+`DocumentRecord` per open document: doc_id, path, app_name, owner_app, is_modified, last_opened, last_dirtied, autosave_path, `doc_signal: mpsc::Sender<DocSignal>`. Primary index: canonical path → record; secondary index: app_name → Vec<DocId>. `sweep_stale_docs(app_name)` on SIGCHLD drains all entries, flushes dirty ones to autosave shadow (B1 fix).
+
+### should_close Channel (B3)
+`should_close` delivered via per-doc `doc_signal` channel (NOT blocking IPC handler thread). Signal thread sends `DocSignal::ShouldClose { reply_tx: oneshot::Sender<CloseDecision> }`, delivers `VYOMA_DOC:should_close` to app, waits on oneshot with 5-second timeout before forcing close.
+
+### Recent Files Store
+Flat JSON files (NOT SQLite): system-wide at `/data/.vyoma/documents/recents_system.json`; per-app at `/data/.vyoma/documents/recents_<app>.json`. System cap 50, per-app cap 20. `RecentEntry { path, display_name, app_name, last_opened_secs }`. Deduplication by canonical path. `document-model` Cargo feature excluded for mcu-minimal profile (B2).
+
+### Version Snapshots
+Gzip-compressed snaps at `/data/.vyoma/versions/<hex16>/v000N_<ts>.snap`. Max 20 per path; oldest pruned. Written on `VYOMA_DOC:clean` only. Restore requires `filesystem = true` + `BookmarkToken` + existing DocEntry history for that path (B4 fix).
+
+### Autosave Shadow Files (B5)
+`/data/.vyoma/autosave/<hex16>.shadow` written via R41 atomic-rename (write `.tmp`, fsync, rename). Supervisor scans for orphaned shadows at startup and offers recovery to relevant app on next open.
+
+---
+
+## Section 49: App Sandbox & Container FS
+
+**macOS analogue**: `App Sandbox` / container directories  
+**Depends on**: R04, R41, R48, R50  
+**Status**: FINAL  
+**Key files**: `supervisor/src/sandbox/`
+
+### Container Layout
+Per-app container at `/data/apps/<app_name>/` with subdirs: `support/`, `cache/`, `documents/`, `preferences/`, `tmp/`. Shared containers at `/data/shared/<group_id>/` for apps declaring the same `shared_groups` in vyoma.toml. Read-only system assets at `/data/.shared/` (fonts, icons, themes). `/data/.vyoma/` never granted to apps.
+
+### SandboxPolicy Struct
+`SandboxPolicy { app_name, allowed_paths: Vec<PathBuf>, allow_writes: bool, quota_bytes: Option<u64>, shared_groups: Vec<String> }`. Derived from `vyoma.toml` at spawn time; stored in `AppState`; immutable for process lifetime.
+
+### Three-Layer Path Defense
+Every 9P path request passes: (1) dotdot reject — any `..` component rejected immediately; (2) canonical prefix check — `std::fs::canonicalize` result must have an `allowed_paths` entry as prefix; (3) symlink escape guard — resolved canonical path re-checked after canonicalization to prevent symlink escape.
+
+### Automatic Grant Wiring (B1)
+At spawn: atomic `DELETE WHERE app_name=? AND grant_type='auto'` + INSERT in single transaction. No window with zero grants or stale grants. `grant_type='bookmark'` rows (user-granted via Open panel) are preserved across respawns.
+
+### Temporary Files (B3)
+`tmp/` cleared in `spawn_app()` BEFORE wasmtime launch (handles crash case). Supervisor startup sweep removes files >24h old in all tmp dirs.
+
+### Inter-App Sharing (B2)
+`VYOMA_SANDBOX:share_grant:<path_b64>:<target_app>:<rw|ro>:<ttl>`. Supervisor validates path ownership + inserts target grant in single transaction (no TOCTOU). 128-bit random grant token; TTL-based expiry sweep.
+
+### pkg-remove Ordering (B4)
+Kill + wait FIRST; then revoke grants; then delete container. Prevents running instance from writing after grant revocation. Also calls `bookmark_store::revoke_all(app_name)` (B5 fix: stale BookmarkTokens don't survive uninstall).
+
+---
+
+## Section 50: Package Manager & App Store
+
+**macOS analogue**: `Mac App Store` / Homebrew  
+**Depends on**: R22, R42, R48, R49  
+**Status**: FINAL
+
+### Package Format
+`.vyomapkg` = tar+zst archive: `META-INF/manifest.json` + `META-INF/signature.ed25519` + `app/<name>.wasm` + `app/vyoma.toml` + `assets/`.
+
+### Registry
+SQLite `packages.db` at `/data/.vyoma/packages.db` (WAL). Schema: `packages`, `file_access_grants`, `sources`, `capability_reviews`, `update_history`. Migration from `/data/installed.txt` on first boot.
+
+### Install Atomicity (B1)
+All extraction to `/data/.vyoma/staging/<bundle_id>/`. Atomic `rename` staging → `/data/apps/<name>/` is the commit point. `state='pending'` row in packages.db written PRE-rename; updated to `'active'` post-rename. Startup scan cleans orphaned staging dirs.
+
+### boot.toml Concurrency (B2)
+`BOOT_CONFIG_LOCK: OnceLock<Mutex<()>>` serializes all reads+writes. R41 atomic-rename for write.
+
+### Kill-Before-File-Mutation (B3)
+`stop_app_sync()` (SIGTERM→SIGKILL, wait for confirmed exit) runs before ANY file/grant mutation.
+
+### Signature Verification (B4)
+Ed25519 via `ring` crate (pure Rust). Official keys as `const [u8; 32]` embedded in supervisor binary (not in replaceable files). Sideload bypass tied to `source` field, not caller-supplied flag.
+
+### Update Rollback (B5)
+Three-file swap: write `wasm.new` → `state='swap-pending'` in DB → rename `wasm→wasm.old` → rename `wasm.new→wasm` → `state='health-check'`. Health check deadline stored in DB; survives reboot. On startup with `state='health-check'`: restart timer for remaining duration; rollback if expired.
+
+---
+
+## Section 51: Networking Stack
+
+**macOS analogue**: `CFNetwork` / `Network.framework`  
+**Depends on**: R03, R49  
+**Status**: FINAL  
+**Key files**: `supervisor/src/networking/` (mod.rs, dns.rs, dns_cache.rs, policy.rs, monitor.rs, accounting.rs, netns.rs)
+
+### Kernel Config (B1)
+Add to `base/kernel.config`: `CONFIG_IP_PNP=y`, `CONFIG_IP_PNP_DHCP=y` (eth0 self-configures to 10.0.2.15 before PID 1), `CONFIG_NET_LOOPBACK=y`, `CONFIG_RTNETLINK=y`, `CONFIG_NET_CORE=y`, `CONFIG_BPF=y`, `CONFIG_BPF_SYSCALL=y`. Add `ip=dhcp` to kernel cmdline in Makefile.
+
+### Extended Network Capability
+`NetworkPolicy` enum: `None` | `Loopback` | `Full`. `Loopback` uses `unshare(CLONE_NEWNET)` in `pre_exec` — kernel enforces isolation, WASI socket connects to non-loopback return `ENETUNREACH` (B3 fix). `Full` = `inherit-network` as before.
+
+### Async DNS (B2)
+`dns-resolve` IPC handler sends to `DNS_TX: mpsc::Sender` and returns immediately. Dedicated `supervisor-dns` thread does UDP/53 queries with 5s timeout. Never blocks IPC handler.
+
+### Net-Status Detection (B4)
+Use `carrier=1 AND IP-in-fib_trie` as "up" — not `operstate` (always `unknown` on QEMU user-mode). Broadcast `VYOMA_SYSTEM:net-change:eth0:up:10.0.2.15` on change via netlink `RTMGRP_LINK`.
+
+### Per-App Network Policy
+`AppNetworkPolicy { allowed_hosts: Vec<String>, allowed_ports: Vec<u16>, max_connections: u32 }` stored in `AppState`. Connection tracking via `AppNetStats { active_connections, bytes_sent, bytes_recv }` in `accounting.rs`.
+
+### Port Conflict (B5)
+At spawn: check AppRegistry for existing app with same `network_port`; reject second app with error.
+
+---
+
+## Section 52: DNS & mDNS / Bonjour
+
+**macOS analogue**: `mDNSResponder` / Bonjour  
+**Depends on**: R51  
+**Status**: FINAL  
+**Key files**: `supervisor/src/dns/` (mod.rs, cache.rs, resolver.rs, mdns.rs, sd.rs, packet.rs)
+
+### Stub Resolver
+UDP/53 to `10.0.2.3` (QEMU forwarder). In-flight dedup: `DNS_INFLIGHT: Mutex<HashMap<String, Vec<Sender<ResolveResult>>>>` — check + register in single lock acquisition (B3 fix). LRU cache (256 entries, min 30s / max 300s TTL, negative 30s).
+
+### mDNS Responder
+`mdns-responder` thread binds UDP `224.0.0.251:5353`. Detects QEMU user-mode via gateway `10.0.2.2` in `/proc/net/route` (B2 fix): logs warning, skips multicast join, uses ARP unicast browse fallback. Records: A, PTR, SRV, TXT.
+
+### Panic-Safe Parser (B4)
+`parse_mdns_query` uses `Option`-propagation throughout (`get(i)?`). `dns_skip_name_safe` has 128-iteration cap + visited-offset bitmask guard against pointer loops. Malformed packets silently dropped — supervisor never crashes on bad mDNS.
+
+### DNS-SD Service Registry (B5)
+`ServiceRecord` struct in `sd.rs` tracks registered local services. Registrations persisted to `/data/.vyoma/dns/mdns-services.toml` (R41 atomic-rename). Loaded at `dns::init()`. On SIGTERM: `send_goodbye()` emits RFC 6762 TTL=0 Goodbye packets for all registered services before supervisor exits.
+
+### DnsCache (cache.rs)
+LRU eviction, 256-entry cap, per-entry TTL (min 30s, max 300s). `insert_negative(host)` stores negative cache entries with 30s TTL to prevent thundering re-queries. `evict_expired()` sweeps on every cache read. State restored from `/data/.vyoma/dns/cache.json` at init (TTL-valid entries only).
+
+### Packet Codec (packet.rs)
+`parse_mdns_query` uses `Option`-propagation (`get(i)?`) throughout — malformed packets silently dropped, supervisor never panics. `dns_skip_name_safe` has a 128-hop pointer guard + visited-offset bitmask to prevent infinite loops on compressed label pointer cycles.
+
+---
+
+## Section 53: VPN & Network Extensions
+
+**macOS analogue**: `NetworkExtension` / VPN profiles  
+**Depends on**: R51, R52  
+**Status**: FINAL  
+**Key files**: `supervisor/src/vpn/`
+
+### Kernel Delta (B1)
+`CONFIG_TUN=y` only (one line). No `CONFIG_WIREGUARD` — userspace WireGuard WASM app handles crypto. Boot probe: `vpn-connect` checks `/dev/net/tun` exists and returns error if not.
+
+### TUN Lifecycle (B2)
+`OwnedTunFd(RawFd)` with `Drop` impl calls `libc::close()`. `TUNSETPERSIST=0` means closing fd automatically destroys `vyoma0` interface. Stored in `VPN_STATE: Mutex<VpnState>`. VPN app crash → waiter thread calls `on_vpn_app_exit()` → drops fd → interface gone.
+
+### Traffic Routing (B3)
+Per-app `SO_BINDTODEVICE` is impossible (can't apply to future WASI sockets). Use default-route takeover: `ip route add default dev vyoma0 metric 50`. All `network=true` app traffic routes through tunnel. `vpn_route = true` reserved for future split-tunnel.
+
+### Authoritative Cleanup (B5)
+`on_vpn_app_exit()` is the ONLY function that: drops TunFd, removes route, calls `clear_vpn_dns()`, clears VPN_STATE, broadcasts `vpn-status:disconnected`. Called from exactly two paths: crash waiter and clean disconnect handler. DNS fallback: retry with `8.8.8.8` if RFC-1918 DNS server times out.
+
+### Credential Security (B4)
+Log filter skips lines containing `vpn-key:`. `private_key_b64` marked `skip_serializing`. Profile created with mode `0o600`. R60 Keychain bridge via `private_key_ref`.
+
+---
+
+## Section 54: Bluetooth Stack
+
+**macOS analogue**: `IOBluetooth` / `CoreBluetooth`  
+**Depends on**: R03 (IPC), R51 (kernel base)  
+**Status**: FINAL
+
+### Kernel Config (B1)
+`CONFIG_BT=y`, `CONFIG_BT_BREDR=y`, `CONFIG_BT_LE=y`, `CONFIG_BT_HCIUART=y`, `CONFIG_BT_HCIUART_H4=y`. `CONFIG_BT_HCIUSB` is NOT included — it pulls in the full USB support chain (+200-400 KB). USB BT deferred to R54.1 with explicit `CONFIG_USB=y`.
+
+### Architecture
+Supervisor owns `AF_BLUETOOTH / BTPROTO_HCI` raw socket (apps cannot open `AF_BLUETOOTH` via WASI). Three dedicated threads: `bt_reader_thread` (HCI events → BT_EVENT_TX mpsc), `bt_dispatch_thread` (snapshot BT_SUBSCRIPTIONS, send_reply), `bt_worker_thread` (blocking bt-connect/bt-scan ops from BT_CMD_TX). IPC handler returns immediately. No HCI adapter → `BtState::available = false`; all bt-* IPC returns `REPLY:bt-error:no-adapter`.
+
+### Reader Shutdown (B2)
+`bt_reader_thread` uses `poll()` with 500ms timeout + `AtomicBool` shutdown flag instead of blocking `read()`. `bluetooth::shutdown()` sets flag; thread exits within 500ms. Clean join possible.
+
+### GATT Rate Limiting (B3)
+100 Hz BLE characteristic → OOM without throttling. Per-subscription `GattSub { min_interval_ms, last_sent_ms }`. In dispatch thread: if `now_ms - last_sent_ms < min_interval_ms`, drop notification. `bt-gatt-notify-on/<handle>/<uuid>/<min_ms>` sets the rate. Default 0 (no limit).
+
+### Paired Device Persistence (B4)
+`/data/.vyoma/bt-peers.toml` written atomically (write `.tmp` → fsync → rename). Crash recovery: when both `.tmp` and `.toml` exist, mtime comparison picks the newer file. This handles all crash scenarios regardless of which rename succeeded.
+
+### QEMU (B5)
+`virtio-bluetooth-pci` was proposed in 2021 but never merged into QEMU. Document only two working paths: HCI UART via virtio-serial (`-device virtserialport,chardev=bt0,name=hci0`) and USB BT adapter passthrough (`-device usb-host,vendorid=...`).
+
+---
+
+## Section 55: Wi-Fi Management
+
+**macOS analogue**: `CoreWLAN` / `WiFiKit`  
+**Depends on**: R51 (kernel net base), R52 (DNS resolver for wlan0)  
+**Platform scope**: `iot-edge`, `mobile`, `robotics-rt` only — `desktop-full` uses virtio-net  
+**Status**: FINAL
+
+### Kernel Config
+Platform-specific (`iot-edge.config`, `mobile.config`): `CONFIG_CFG80211=y`, `CONFIG_MAC80211=y`, `CONFIG_BRCMFMAC=y` (Raspberry Pi), `CONFIG_ATH9K=y`, `CONFIG_RTW88=y` (B2), `CONFIG_CRYPTO_AES=y`, `CONFIG_CRYPTO_SHA256=y`. QEMU fallback: `wifi/detect.rs` checks for `/sys/class/net/*/phy80211` symlink; if absent, `WifiManager` enters `NoHardware` state. Zero overhead on desktop-full.
+
+### nl80211 Crates (B1)
+Inline nlattr encoding silently corrupts nested attributes — kernel drops malformed messages, scans hang forever. Add `netlink-sys = "0.8"`, `netlink-packet-core = "0.7"`, `netlink-packet-generic = "0.3"` (platform-gated, ~40 KB total, no C deps). These provide correct nested nlattr serialization and nl80211 family ID resolution.
+
+### Driver Fix (B2)
+`CONFIG_RTL8192CU` dropped (poor `NL80211_CMD_CONNECT` support). Replaced with `CONFIG_RTW88_USB=y` (Realtek in-tree driver with proper cfg80211). ATH9K: runtime verify `NL80211_CMD_CONNECT` path; timeout returns `connect_failed:driver_unsupported` after 15s.
+
+### WPA2 Connection
+`NL80211_CMD_CONNECT` with PMK injection — kernel mac80211/FullMAC runs EAPOL internally. Pure-Rust PBKDF2-HMAC-SHA1 in `wifi/crypto.rs` (~120 lines, no new crates).
+
+### PMK Security (B3)
+PMK never persisted to disk (cryptographically equivalent to passphrase). Stored only in `WifiManager.pmk_cache: HashMap<String, [u8;32]>`. Profile TOML contains no secret material. Pre-R60: app must re-supply passphrase on supervisor restart. `wifi.require_keychain = true` on mobile blocks `wifi-add-profile` until R60.
+
+### Async Scan Worker (B4)
+nl80211 scan takes 2-5s on real hardware. Dedicated `wifi_worker_thread` driven by `WIFI_CMD_TX: OnceLock<mpsc::Sender<WifiCmd>>`. IPC handler sends to channel and returns `VYOMA_WIFI:scan_start` immediately. Worker delivers `VYOMA_WIFI:ap_found:...` events then `VYOMA_WIFI:scan_done:<count>`.
+
+### DHCP Client (B5)
+Kernel `ip=dhcp` only runs at boot on boot interface. After `NL80211_CMD_CONNECT` success, `wifi/dhcp.rs` runs userspace DHCP: poll `/sys/class/net/<iface>/operstate` until "up" (max 3s), then DISCOVER→OFFER→REQUEST→ACK via `AF_PACKET` raw socket, configure via `SIOCSIFADDR`/`SIOCADDRT` ioctls. Timeout (10s): `VYOMA_WIFI:connect_failed:<ssid>:dhcp_failed`.
+
+---
+
+## Section 56: AirDrop & P2P File Transfer
+
+**macOS analogue**: `AirDrop` / `AWDL`  
+**Depends on**: R51, R52 (mDNS), R49 (sandbox FS)  
+**Status**: FINAL
+
+### Discovery
+Supervisor advertises `_vyoma-drop._tcp.local.` via mDNS (224.0.0.251:5353), announces every 30s, expires peers after 90s. New `airdrop: bool` capability in manifest.
+
+### Wire Protocol (TCP port 7474)
+`MAGIC(5) | version(1) | auth_handshake(Ed25519 TOFU) | sender_name | filename | file_size | ACK | chunks(4B_len + data) | SHA-256(32B)`. Hard cap: 512 MB. Max 4 concurrent transfers (semaphore — B2).
+
+### Per-Transfer-ID Accept/Reject (B1)
+`TransferId`-keyed `HashMap<u64, mpsc::Sender<bool>>` replaces single `PENDING` slot. UI message includes id; `airdrop-accept <id>` keyed. Concurrent arrivals each get their own channel.
+
+### Path Sanitization (B3)
+`Path::file_name()` extracts basename only; allow-list chars; verify `candidate.parent() == dest_dir`. No traversal escapes landing zone.
+
+### Chunked Send (B4)
+`file.read(&mut buf)` loop with 64 KB chunks. Peak heap bounded regardless of file size — no `fs::read()` into Vec.
+
+### TOFU Authentication (B5)
+Ed25519 keypair at `/data/.vyoma/airdrop/identity.key`. Challenge-response in handshake. Trust store at `trusted_peers.toml`. Unknown pubkey shows 8-byte fingerprint in accept prompt.
+
+---
+
+## Section 57: Network Sharing & Tethering
+
+**macOS analogue**: Internet Sharing / Personal Hotspot  
+**Platform scope**: `mobile`, `iot-edge` only  
+**Status**: FINAL
+
+### Kernel Delta
+`CONFIG_NETFILTER=y`, `CONFIG_NF_TABLES=y`, `CONFIG_NFT_MASQ=y`, `CONFIG_USB_GADGET=y`, `CONFIG_USB_G_NCM=y`. No iptables — nftables only.
+
+### ip_forward Reference Counter (B4)
+`AtomicU32 IP_FORWARD_REFS`; `acquire_ip_forward("hotspot")` / `release_ip_forward("hotspot")`. Forward only disabled when all subsystems (hotspot + VPN) have released. Prevents VPN blackhole when hotspot tears down last.
+
+### Interface Name Validation + nftables (B1)
+`validate_iface_name()` + `validate_nft_table_name()` allowlist `[a-zA-Z0-9_-]` only before any interpolation into nft script piped to `nft -f -`.
+
+### AP Mode Settle Wait (B2)
+`iw disconnect` → `wait_for_iface_down(3s)` poll → `verify_iface_type("AP")` via `iw dev info` → `verify_hostapd_running(3s)` ctrl socket check. Prevents silent broken AP from driver race.
+
+### DHCP Server (B3)
+In-process DHCP server (no dnsmasq). `socket2::Socket` with `SO_REUSEPORT` + `SO_BINDTODEVICE=wlan0`. Pool `192.168.42.100–200`. Isolated from upstream interface — no DHCP storm.
+
+### WPA2 Passphrase Shredding (B5)
+`OpenOptions::mode(0o600)` at CREATE time (no TOCTOU). Conf shredded with zeros + deleted after hostapd exec. `SharingMode::Hotspot` stores only `ssid` — passphrase never persisted.
+
+---
+
+## Section 58: TLS & Certificate Store
+
+**macOS analogue**: `Security.framework` / Keychain cert store  
+**Depends on**: R51, R52, R59 (capability gate), R60 (private keys)  
+**Status**: FINAL
+
+### Architecture
+Pure-Rust stack: `webpki`, `webpki-roots`, `rustls-pemfile`, `x509-parser`, `rcgen`. Cert store at `/data/.vyoma/certs/{roots,user,mtls,pins,crl}/`. No system PEM file needed — compiled-in Mozilla bundle (B5).
+
+### Scope Validation (B1)
+`validate_scope()` allowlist `["roots","user","mtls","pins","crl"]`; `validate_alias()` rejects separators and `..`; `write_atomic` canonicalizes parent to verify no escape from store root.
+
+### Capability Gate (B2)
+`has_tls: bool` on `AppState`; all `tls-*`/`cert-*` commands gated before dispatch. Without `tls = true` in manifest, commands return error at the IPC router.
+
+### No Private Keys Over IPC (B3)
+`cert-selfgen` returns only cert PEM; key stored in supervisor's `mtls/` store only. mTLS performed supervisor-side via `tls-connect-mtls <host:port> <cert-name>` — app uses `tls-send`/`tls-recv` with a `conn_id`.
+
+### CRL Integration (B4)
+`verify_chain` always receives `crl_cache` parameter; `is_revoked(serial_hex)` checked after chain validation succeeds. CRL snapshot taken under lock, dropped before webpki call (ABBA prevention).
+
+### Compiled-in Root Bundle (B5)
+`webpki_roots::TLS_SERVER_ROOTS` is the authoritative baseline — always ≥150 anchors. User store is additive. Zero-anchors condition is impossible.
+
+---
+
+## Section 59: Sandboxing & Capability Model
+
+**macOS analogue**: App Sandbox / entitlements / TCC  
+**Depends on**: R03, R49, R50–R55  
+**Status**: FINAL
+
+### Entitlement System
+`EntitlementSet { entries: Vec<Entitlement>, trust: TrustLevel }` stored on `AppState`. `TrustLevel::System` only for `/etc/vyoma/boot.toml` entries. `ShellCommand` enum scopes `shell = true` — User trust gets `[Ps, Log, Logf, Logs, Focus, Notify]` only; System gets `Any`.
+
+### Broadcast Rate Limit (B1)
+Token-bucket 200 msg/s per sender in `router.rs` before any `@` routing. Broadcast requires explicit `IpcSend { targets: ["broadcast"] }` entitlement — not granted by default to any app.
+
+### `run` Command Scope (B2)
+`run` requires `ShellCommand::Run` (System trust default); path must match `/apps/`, `/data/apps/`, `/etc/vyoma/`; `wasm_sha256` required; `is_system_entry: bool = false` for all runtime-spawned apps.
+
+### Temporal Grant Persistence (B3)
+Temporal grants persisted to `/data/caps/<app>.grants` with expiry timestamps; reloaded at spawn; `VYOMA_SYSTEM:caps_restored` sent on restart. Crash no longer silently strips runtime-granted permissions.
+
+### Seccomp Allowlist (B4)
+Default-deny `SECCOMP_RET_KILL_PROCESS`. Allowlist: `WASMTIME_BASE` (~40 syscalls) + `NETWORK_SYSCALLS` if `network=true` + `FILESYSTEM_EXTRA` if `filesystem=true`. Added `sigaltstack(131)`, `futex(202)`, `memfd_create(319)` for wasmtime-fiber. `VYOMA_SECCOMP_AUDIT=1` for dev mode.
+
+### IPC Token — Confused Deputy Prevention (B5)
+128-bit per-spawn token generated from `/dev/urandom`, delivered on app stdin as `VYOMA_SYSTEM:token:<hex>`. All `@supervisor:` commands must include `TOKEN:<hex>` prefix. Constant-time comparison. Relay attack fails — relayed commands carry wrong/absent token.
+
+---
+
+## Section 60: Keychain & Secret Storage
+
+**macOS analogue**: Keychain Services / `SecItem`  
+**Depends on**: R49, R53 (VPN key ref), R55 (Wi-Fi PMK), R58 (TLS keys), R59 (capability)  
+**Status**: FINAL
+
+### Storage Format
+Encrypted flat files at `/data/.vyoma/keychain/<namespace>/<label>`. Format: `nonce(12) || AES-256-GCM(owner_prefix + payload) || tag(16)`. Owner inside ciphertext — tampered ownership invalidates GCM tag. `meta.toml` holds Argon2id KDF params + salt (plaintext).
+
+### Key Derivation
+Argon2id: `m=65536 KiB, t=3, p=1` (~400ms on RPi4). Master key ephemeral (`ZeroizingKey` — overwrites on drop). After supervisor restart: keychain locked; privileged app calls `keychain-unlock <pin>` to re-derive.
+
+### Zeroize on Delivery (B1)
+`Zeroizing<Vec<u8>>` and `Zeroizing<[u8;32]>` for all plaintext and base64 intermediates. Stack copy guaranteed zeroed when scope exits.
+
+### Atomic Key Snapshot (B2)
+`snapshot_key()` acquires `MASTER_KEY` mutex, copies bytes to `Zeroizing<[u8;32]>`, drops mutex — single critical section, no TOCTOU with idle lock timer.
+
+### Secret Redaction + Out-of-Band Routing (B3)
+`router.rs` intercepts `keychain-*` before `LAST_SENDER` update or logging. `log_buf` skips `keychain-secret` lines. `keychain-unlock` PIN handled in `Zeroizing` buffer, never logged. Exponential backoff on failed unlock (2^(n-1) seconds, max 3600s).
+
+### Path Traversal Prevention (B4)
+`secret_path()`: reject `..`, allowlist `[a-zA-Z0-9-_/.]`, enforce single-slash depth, canonical prefix check against `KEYCHAIN_ROOT`.
+
+### Brute-Force Rate Limit (B5)
+`AtomicU32 UNLOCK_FAIL_COUNT` + `AtomicU64 UNLOCK_LOCKED_UNTIL_SECS`. Exponential backoff on each failure. `check_unlock_rate_limit()` called before PIN is decoded — no Argon2 computation during lockout.
+
+---
+
+## Section 61: Permissions & Privacy (TCC)
+
+**macOS analogue**: TCC / Privacy system preferences  
+**Key files**: `supervisor/src/permissions/` (mod.rs, db.rs, prompt.rs, audit.rs, ipc.rs)  
+**Storage**: `/data/.vyoma/permissions/db.toml` (R41 atomic), `audit.jsonl` (append-only)
+
+**Categories**: Camera, Microphone, ScreenRecording, Clipboard, Accessibility, Location, Contacts, Notifications, InputMonitoring. Apps must declare each category in `[capabilities.privacy]` manifest section; undeclared = denied without prompt.
+
+**Flow**: `perm-request <category>` returns immediately with `allowed`, `denied`, or `pending req_id=<N>`. Prompt rendered via compositor overlay (Z-order independent of focused app). User response pushed as `PERM_RESP:<N>:allowed|denied`. 60-second auto-deny on timeout. Privacy audit log written on every access decision.
+
+**B1** R41 atomic write for `db.toml` (`.tmp`→`fsync`→`rename`). **B2** Non-blocking prompt via deferred reply + overlay. **B3** Overlay layer in compositor bypasses focused-app surface routing. **B4** Manifest gate: undeclared categories denied without DB lookup. **B5** Append-only `audit.jsonl` on every `check_permission()` call.
+
+---
+
+## Section 62: Code Signing & Notarization
+
+**macOS analogue**: `codesign` / Gatekeeper / Notarization  
+**Key files**: `supervisor/src/codesign/` (mod.rs, verifier.rs, revocation.rs, ipc.rs, gatekeeper.rs); `tools/vyoma-sign/` (host-side, not in supervisor binary)  
+**Storage**: `/data/.vyoma/trusted_keys/*.pub.toml`, `/data/.vyoma/revoked_keys.txt`, `/data/.vyoma/gatekeeper.toml`
+
+**Signing format**: 99-byte `.sig` sidecar (magic 2B + version 1B + Ed25519 pubkey 32B + sig 64B). Signs `SHA256("VYOMA_CODE_DIR_V2\0" || SHA256(wasm) || SHA256(canonical_manifest_json) || name)`. Canonical manifest excludes `[window]` section (runtime-mutable). Official keys baked as `const [u8;32]` array in supervisor binary.
+
+**TOCTOU mitigation**: `verify_and_seal()` reads wasm bytes into memory, writes to `memfd_create` + seals (`F_SEAL_WRITE|F_SEAL_GROW|F_SEAL_SHRINK`), passes `/proc/self/fd/<N>` to wasmtime — immutable from verification to exec.
+
+**B1** Canonical manifest subset (`[app]`+`[capabilities]` only, key-sorted JSON) — `[window]` excluded. **B2** `ed25519-dalek` with `features=["alloc","digest"]` + `register_custom_getrandom!` no-op stub (no syscall, no binary bloat). **B3** `memfd_create` sealed fd eliminates TOCTOU between verify and wasmtime exec. **B4** `codesign_admin` capability + sender must be `TrustLevel::Official` to call `codesign-trust-add`. **B5** Sidecar always named `<app.name>.sig` (logical name); `update` requires `<sig_url>` parameter.
+
+---
+
+## Section 63: Secure Enclave & TEE
+
+**macOS analogue**: Secure Enclave / SEP / T-series chip  
+**Key files**: `supervisor/src/tee/` (mod.rs, tpm2_raw.rs, tpm2.rs, software.rs, sealed_key.rs, ipc.rs, measure.rs, recovery.rs)  
+**Storage**: `/data/.vyoma/tee/keychain_master.sealed`, `device_seed`, `measurements.jsonl`, `recovery.sealed`
+
+**Target**: TPM 2.0 HMAC-based key sealing via `/dev/tpm0`. Software fallback (HKDF-SHA256 over `machine_id || device_seed`) for QEMU and RPi4. `TeeBackend` trait with two implementations. `probe_backend()` factory selects at runtime.
+
+**R60 headless unlock**: on boot, `try_headless_unlock()` → `backend.unseal(blob)` → 32-byte master key passed directly to `KeychainManager::open_with_key()`. If TPM absent or PCR fails, falls back to Argon2id passphrase prompt.
+
+**B1** Raw `/dev/tpm0` command framing (`tpm2_raw.rs`) — no `tss-esapi`/OpenSSL C dependency. **B2** `validate_pcr_policy_sanity()` rejects zero PCRs; `device_hmac` field in `SealedKeyBlob` adds machine-binding beyond TPM. **B3** `Mutex<()>` in `Tpm2Backend` + `TeeService` actor thread serializes all TPM commands. **B4** `UnlockResult::NeedsMigration` triggers one-time passphrase + `migrate_blob()` — no silent brick on hardware upgrade. **B5** `RecoveryEnvelope` with 32-byte out-of-band recovery key displayed once at provisioning.
+
+---
+
+## Section 64: Full Disk Encryption
+
+**macOS analogue**: FileVault 2 / APFS encryption  
+**Key files**: `supervisor/src/fde/` (mod.rs, luks.rs, prompt.rs, rescue.rs, ipc.rs)  
+**Kernel additions**: `CONFIG_BLK_DEV_DM=y`, `CONFIG_DM_CRYPT=y`, `CONFIG_CRYPTO_AES=y`, `CONFIG_CRYPTO_XTS=y`  
+**BusyBox addition**: `CONFIG_DMSETUP=y` (static, ~20 KB, no new .so deps)
+
+**Scope**: Encrypts `out/disk.img` (ext4 at `/data`). Kernel/initramfs not encrypted. dm-crypt/LUKS2 with `aes-xts-plain64`, 512-bit VEK, Argon2id PBKDF (m=65536, t=3, p=4).
+
+**Boot flow**: `mount_early()` (proc/sys/dev) → `boot_fde_check()` → `EarlyFb` passphrase prompt (pre-DisplayState, independent mmap of `/dev/fb0`) → `dm_crypt_open()` → `mount_data()`. R63 TPM auto-unlock tried first.
+
+**B1** LUKS2 header parsed directly in `luks.rs`; `dmsetup` BusyBox applet for device activation — no `cryptsetup` binary needed. **B2** `EarlyFb` opens `/dev/fb0` independently via ioctl+mmap before `DisplayState` exists; serial fallback. **B3** `SecretBytes`/`SecretString` newtypes call `libc::explicit_bzero` in `Drop`. **B4** `disk-encrypt-enable` sends `VYOMA_SUSPEND` + waits 3s + `umount2(MNT_FORCE)` before format — no live fds during luksFormat. **B5** Commit-flag: `begin_fde_format()` writes `/boot/fde-pending` before destructive op; `commit_fde_format()` R41-writes `/boot/fde-state` + removes marker; `boot_fde_check()` detects torn format on next boot.
+
+---
+
+## Section 65: App Firewall & Network Policy
+
+**macOS analogue**: ALF / pfctl / NetworkExtension content filter  
+**Key files**: `supervisor/src/firewall/` (mod.rs, policy.rs, audit.rs, prompt.rs, nft.rs, dns_filter.rs, rate_limiter.rs, ipc.rs)  
+**Storage**: `/data/.vyoma/firewall/policy.toml` (R41 via actor), `audit.log`, `dns_block.txt`
+
+**Two-layer enforcement**: (1) IPC intercept layer — `check_connect()` called before every `tcp-connect`/`tcp-connect-host` dial; (2) nftables `meta cgroup` kernel enforcement per-app via cgroup placement at spawn.
+
+**New IPC verb** `tcp-connect-host <hostname> <port>`: DNS filter checked before resolution (blocked hosts never looked up); firewall sees both hostname and resolved IP; non-blocking deferred reply (`pending prompt_id=N conn_id=C`); result pushed as `NOTIFY:tcp-connect <conn_id>`.
+
+**Policy mutations** serialized via single-threaded actor (mpsc channel) with R41 persistence. Rate limiter: token bucket per app. DNS blocklist: wildcard prefix support.
+
+**B1** `place_in_cgroup(app_name, pid)` in `spawn_app`; `CONFIG_CGROUPS=y`/`CONFIG_CGROUP_NET_CLASSID=y`; non-fatal (IPC layer still enforces). **B2** Non-blocking deferred reply — IPC thread freed immediately; connection worker thread dials after user responds. **B3** Policy mutation actor: no concurrent `store.write()`; R41 persistence inside actor. **B4** `tcp-connect-host` verb carries hostname — DNS filter pre-resolution; hostname available for rule matching. **B5** Compositor overlay (`FlushCmd::ShowOverlay`) bypasses focused-app surface routing; serial shell fallback via `NOTIFY:firewall-prompt`.
+
+
+---
+
+## Section 66: Quarantine & Gatekeeper
+
+**macOS analogue**: Gatekeeper / com.apple.quarantine xattr  
+**Key files**: `supervisor/src/quarantine/` (mod.rs, store.rs, check.rs, ipc.rs, prompt.rs)  
+**Storage**: `/data/.vyoma/xattrs/<sha256-of-path>.json` (xattr proxy — 9P lacks native xattr support)
+
+**Scope**: Intercepts app spawns after SHA-256 verification, before `Command::spawn`. Downloads and sideloaded binaries tagged with `QuarantineRecord { path, set_at, set_by, source_url, approved_once }`. Tags survive reboots via R41 atomic xattr proxy writes.
+
+**Decision flow**: `check_and_gate()` returns `SpawnDecision`: `Allow` (no quarantine flag or already approved), `Deny` (policy), or `PendingUserApproval { req_id }`. Overlay prompt: `O` = approve-once (volatile, `approved_once=true`), `C` or 30s timeout = deny. Non-blocking deferred reply: IPC thread returns `REPLY:pending req_id=N` immediately; result pushed as `PERM_RESP:N:allowed|denied` after user interaction.
+
+**B1** xattr proxy: path SHA-256 as filename key prevents path-separator injection. **B2** R41 atomic writes for quarantine records (`.tmp → fsync → rename`). **B3** `check_and_gate()` after SHA-256 verification — no TOCTOU window. **B4** `QUARANTINE_POLICY_TX` mpsc actor serializes policy mutations. **B5** Cargo: `serde_json` promoted from dev-dep to regular dep (already in tree).
+
+---
+
+## Section 67: Audio System
+
+**macOS analogue**: CoreAudio / AudioHAL / AVAudioEngine  
+**Key files**: `supervisor/src/audio/` (mod.rs, alsa.rs, ring.rs, mixer.rs, mic.rs)  
+**Kernel additions**: `CONFIG_SOUND=y`, `CONFIG_SND=y`, `CONFIG_SND_PCM=y`, `CONFIG_SND_VIRTIO=y`, `CONFIG_SND_HDA_INTEL=y`
+
+**VYOMA_AUDIO protocol**: `open:<sid>,<rate>,<fmt>,<ch>` | `write:<sid>,<base64_pcm>` | `close:<sid>` | `set_vol:<sid>,<0-100>` | `mic_open:<req_id>` | `mic_close:`. Pixel data never in-band — apps encode PCM as base64, supervisor decodes inline (no external dep).
+
+**SPSC lock-free StreamRing**: `RING_CAP = 131_072` bytes (power-of-two), `AtomicUsize` write/read indices. Mixer thread: snapshots `Arc<StreamRing>` refs under global lock → drops lock → mixes `PERIOD_FRAMES=1024` frames (~23ms at 44100Hz) → ALSA raw ioctl write. Raw ALSA: `SNDRV_PCM_IOCTL_HW_PARAMS=0xC2504111`, `WRITEI_FRAMES=0xC0105150`, `READI_FRAMES=0xC0105151` via `#[repr(C)]` structs + `libc::ioctl` — no libasound.
+
+**B1** ALSA struct sizes validated with `const _: () = assert!(size_of::<SndrPcmHwParams>() == 608)`. **B2** ABBA prevention: lock snapshot → drop lock → mix outside lock. **B3** `OnceLock` for PCM fd and mixer thread (initialized once in same closure). **B4** Mic: deferred `REPLY:pending req_id=N`, dedicated perm thread blocks 30s, result via `PERM_RESP:N:allowed|denied`. **B5** Inline base64 decode/encode — zero new Cargo deps.
+
+---
+
+## Section 68: Video Playback & Codecs
+
+**macOS analogue**: AVFoundation / VideoToolbox / CoreMedia  
+**Key files**: `supervisor/src/video/` (mod.rs, session.rs, shm.rs, timing.rs, av_sync.rs, protocol.rs)  
+**New Cargo dep**: `memmap2 = "0.9"` (~8 KB impact)
+
+**Shared-memory frame delivery**: `ShmSurface::create()` → `/dev/shm/vyoma_vid_<sid>` via memmap2. `ShmHeader` (64 bytes): `seq_write: AtomicU64`, `seq_read: AtomicU64`. Write protocol: odd seq = frame in progress, even = complete. `has_new_frame()`: `seq_write != seq_read && seq_write % 2 == 0`. Pixel data never crosses IPC channel.
+
+**Timing**: `FrameClock::next_deadline_us()` sent in every `VYOMA_VIDEO:ack` — app never self-times. `AvSyncClock`: `DRIFT_THRESHOLD_US=50_000`, `MAX_CORRECTION_US=500_000`, half-step convergence.
+
+**Codec tiers**: Tier 1 pure-Rust (~100KB), Tier 2 openh264 (~600KB), Tier 3 emerging. `max_wasm_kb` in vyoma.toml enforced by `make check-manifests`. Capability: `video_decode = true`.
+
+**B1** memfd double-buffer handoff via odd/even seq atomics. **B2** `FrameClock` prevents drift via supervisor-driven deadlines. **B3** `AvSyncClock` half-step correction bounds divergence. **B4** `max_wasm_kb` manifest enforcement prevents oversized codec bundles. **B5** `seq_write % 2 == 0` invariant documented and enforced at write site.
+
+---
+
+## Section 69: Camera & Capture Pipeline
+
+**macOS analogue**: AVCaptureSession / IIDCFamily  
+**Key files**: `supervisor/src/camera/` (mod.rs, v4l2.rs, frame_shm.rs, permission.rs, permission_store.rs, indicator.rs)  
+**Kernel additions**: `CONFIG_MEDIA_SUPPORT=y`, `CONFIG_VIDEO_DEV=y`, `CONFIG_USB_VIDEO_CLASS=y`, `CONFIG_USB_EHCI_HCD=y`
+
+**V4L2 pipeline**: `VIDIOC_QUERYCAP → S_FMT → REQBUFS (NUM_BUFS=4) → QUERYBUF → QBUF×4 → STREAMON → DQBUF loop`. All via raw `libc::ioctl` with `#[repr(C)]` structs (no libv4l2). `PixelFormat`: `Yuyv` (`YUYV`) or `Mjpeg` (`MJPG`).
+
+**Frame delivery**: `FrameShm` — `memfd_create` without `MFD_CLOEXEC` (fd must be inheritable), 4-slot ring, 64-byte aligned slots. `write_volatile` + `Release` fence for lock-free handoff. App receives `VYOMA_SYSTEM:cam-shm-fd:<fd>` once, then per-frame `VYOMA_CAMERA:frame:<seq>:<w>:<h>:<fmt>` notifications. App mmaps fd for pixel reads — no pixel data in IPC.
+
+**Permission**: `handle_cam_open` → `REPLY:cam-pending req_id=N` → overlay → mouse hit-test on Allow/Deny rects. `PENDING_OPEN_PARAMS` table cleaned on deny/timeout. Persistent grants via `/data/.vyoma/camera/permissions.json` (R41 writes). Camera indicator: `CAM_ACTIVE_COLOR=0x30D158FF` green disc + "REC" in menu bar. QEMU: `make run-cam` with `-device usb-ehci,id=ehci0 -device usb-webcam,bus=ehci0.0`; graceful ENOENT fallback.
+
+**B1** `MFD_CLOEXEC` omitted — fd must survive exec into Wasmtime. **B2** `write_volatile` + Release fence (no mutex in hot path). **B3** `V4l2Buffer` size validated: `const _: () = assert!(size_of::<V4l2Buffer>() == 88)`. **B4** `PENDING_OPEN_PARAMS` removed on deny/timeout (no memory leak). **B5** `make run-cam` target + graceful ENOENT → empty device list, no crash.
+
+---
+
+## Section 70: MIDI & Pro Audio
+
+**macOS analogue**: CoreMIDI / AudioUnit / AU Lab  
+**Key files**: `supervisor/src/midi/` (mod.rs, device.rs, enumerate.rs, event.rs, router.rs, plugin.rs, protocol.rs)  
+**New Cargo dep**: `bytemuck = { version = "1.14", features = ["derive"] }`  
+**Kernel additions**: `CONFIG_SND_RAWMIDI=y`, `CONFIG_SND_VIRMIDI=y`, `CONFIG_VIRTIO_SND=y`
+
+**Event model**: `MonotonicNs(u64)` timestamp via `CLOCK_MONOTONIC` tagged at `read(2)` completion. `MidiEvent` enum: NoteOn/NoteOff/CC/PitchBend/ProgramChange/SysEx/Clock/Start/Stop/Continue/Raw. `from_raw_bytes()`: NoteOn with velocity=0 treated as NoteOff (running status). `to_ipc_line()`: e.g. `VYOMA_MIDI:note_on:0,60,127,1234567890`.
+
+**Router**: `MAX_ROUTE_DEPTH=4`, depth counter in `in_flight` HashMap prevents cycles. Apps IPC verbs: `NoteOn`, `CC`, `Subscribe`, `DeclareSource`, `RegisterPlugin`, `ListPorts`. Scheduler loop: 500µs sleep, ≤1ms jitter, supervisor-side `schedule_ns` for future events.
+
+**WASM Plugin ABI**: `process(in_ptr, out_ptr, frames)`, `midi_event(status, b1, b2, ts_hi, ts_lo)`, `init(sample_rate, max_frames)`. `PluginChain`: ping-pong scratch_a/scratch_b. One Wasmtime JIT call per 256-frame block. `in_offset=65536`, `out_offset=in_offset+frames*4*2`.
+
+**B1** `midi_message_len(status)` correctly handles running status. **B2** `MAX_ROUTE_DEPTH=4` prevents routing loops. **B3** `MonotonicNs` tagged at read completion (not dispatch) — accurate timestamps. **B4** 500µs scheduler loop gives ≤1ms jitter for MIDI output. **B5** Plugin scratch buffers never alias (ping-pong) — no UB on concurrent access.
+
+## Section 71: Image Processing Pipeline
+
+**macOS analogue**: CoreImage / vImage / Accelerate  
+**Key files**: `supervisor/src/imgproc/` (mod.rs, shm.rs, filter.rs, ops_color.rs, ops_resize.rs, ops_blur.rs, ops_composite.rs)  
+**New Cargo dep**: (none — rayon must already be in tree; memfd via libc)  
+**Capability**: `image_processing = true` in vyoma.toml
+
+**Protocol**: `VYOMA_IMAGE:alloc|<w>|<h>|<fmt>` → `VYOMA_IMAGE:allocated|<fd_path>|<size>`. `VYOMA_IMAGE:submit|<req_id>|<sw>|<sh>|<dw>|<dh>|<ops>` → `VYOMA_IMAGE:done|<req_id>|<dw>|<dh>`. Filter chain `<ops>` is semicolon-separated: `resize:bilinear`, `blur:<r>`, `brightness:<d>`, `contrast:<f>`, `saturation:<f>`, `greyscale`, `rgba_to_yuv420`, `src_over:<alpha>`.
+
+**Memory**: Shared buffer via memfd (no MFD_CLOEXEC — must be inheritable). Buffer split: first `src_bytes` = input, remainder = output. Zero-copy WASM ↔ supervisor. Per-app reader thread executes filters inline; long ops (resize >1MP, blur radius ≥5) spawn short-lived rayon task.
+
+**Algorithms**: Bilinear resize uses fixed-point shift=16 `((src_y * (src_h-1)) << 16) / (dst_h-1)`. Gaussian blur: pre-built KERNELS const for radius 1–7 (3×3 to 15×15), separable horizontal then vertical pass. BT.601 color conversions. Composite modes: src-over, dst-over, multiply.
+
+**B1** add `image_processing: Option<bool>` to Capabilities before deploying handler. **B2** shm split at exactly `src_bytes` (not max(src,dst)) to prevent overlap corruption. **B3** bilinear edge: clamp `x1 = min(src_w-1, x0+1)` — never OOB on right/bottom edges. **B4** rayon: spawn only when `frames > RAYON_THRESHOLD`; always rejoin before replying. **B5** format `rgba_to_yuv420` writes 3/2 × pixels — allocate `w*h*3/2` output bytes, not `w*h*4`.
+
+## Section 72: PDF Rendering Engine
+
+**macOS analogue**: PDFKit / Quartz PDF engine  
+**Key files**: `supervisor/src/pdf/` (mod.rs, parser.rs, page.rs, renderer.rs, shm.rs, text_render.rs)  
+**New Cargo deps**: `zune-jpeg = { version = "0.4", default-features = false }`, `miniz_oxide = { version = "0.8", default-features = false, features = ["with-alloc"] }`  
+**Capabilities**: `pdf_render = true` AND `filesystem = true`
+
+**Protocol**: App→supervisor: `VYOMA_PDF:load:<req_id>,<path>`, `VYOMA_PDF:render:<req_id>,<page>,<w>,<h>,<dpi>`, `VYOMA_PDF:close:<req_id>`. Supervisor→app: `VYOMA_SYSTEM:pdf-shm-fd:<fd>  w=<w> h=<h>`, `VYOMA_PDF:render-done:<req_id>:<page>`, `VYOMA_PDF:page-count:<req_id>:<n>`, `VYOMA_PDF:error:<req_id>:<reason>`. One worker thread per active `req_id` blocked on `mpsc::Receiver<PdfCmd>`.
+
+**Parser**: `XrefTable` handles both classic `xref` keyword (PDF ≤1.4) and compressed xref streams (PDF 1.5+, W array field widths, binary entries). `PdfObj` enum: Null/Bool/Int/Real/Name/Str/Array/Dict/Stream/Ref. Stream decode via FlateDecode (`miniz_oxide`) and DCTDecode (`zune-jpeg`).
+
+**Renderer**: `GfxState` with CTM stack, `PathBuilder` for Bézier→scan-line fill, `user_to_pixel(x, y, ctm, sx, sy, page_h)` applies CTM first then Y-flip. `TextState`: Tf operator builds `[u8;256]→char` encoding map from WinAnsiEncoding/MacRomanEncoding/StandardEncoding/Differences. Output via `ShmSurface` (memfd + `pidfd_getfd`); `AppState.pidfd: Option<RawFd>` opened at child spawn.
+
+**B1** `AppState.pidfd` must be opened immediately after child spawn via `syscall(SYS_pidfd_open, pid, 0)`. **B2** compressed xref: detect stream object at startxref offset (not `xref` keyword), parse W+Index arrays, decompress binary entries. **B3** Y-flip after CTM — never inline in operators. **B4** font encoding map built at Tf time — raw `byte as char` gives wrong glyphs for non-ASCII. **B5** `PdfEngine::close_all_for_app(name)` sends `PdfCmd::Close` to all workers keyed `"{app}/{req_id}"`; called on app exit.
+
+## Section 73: Notification Center
+
+**macOS analogue**: UNUserNotificationCenter / NSUserNotification  
+**Key files**: `supervisor/src/notify/` (mod.rs, store.rs, banner.rs, panel.rs); existing `toast.rs` unchanged  
+**New Cargo dep**: (none)  
+**Capability**: `notifications = true` in vyoma.toml
+
+**Protocol**: `VYOMA_NOTIFY:post|<id>|<title>|<body>|<actions>`, `VYOMA_NOTIFY:cancel|<id>`, `VYOMA_NOTIFY:clear_all`, `VYOMA_NOTIFY:register_category|<cat>|<actions>`, `VYOMA_NOTIFY:dnd_on`, `VYOMA_NOTIFY:dnd_off`. Supervisor→app: `VYOMA_NOTIFY:action|<id>|<action>`, `VYOMA_NOTIFY:dismissed|<id>`.
+
+**Banner**: 320×80 px top-right, Z=254 (below cursor Z=255). Slide-in 320 ms ease-out cubic `t³*(10 - 15t + 6t²)`. Auto-dismiss after 5 s. `BannerRenderSnapshot { title, body, progress_x }` taken under `NOTIFY.lock()` before acquiring framebuffer lock — prevents ABBA deadlock with flush path.
+
+**Panel**: 340 px width, slides in from right. History grouped by app name (Vec<Vec<Notification>>), max 50 per app. Toggle via notification bell icon in menu bar right side.
+
+**Persistence**: `/data/.vyoma/notifications/history.json` and `pending.json` via R41 atomic write-then-rename. `parse_json_array_raw` replaced by `serde_json::from_str` to handle embedded `},{` in message text.
+
+**B1** add `pub notifications: bool` to Capabilities with `#[serde(default)]` before any manifest uses it. **B2** `BannerRenderSnapshot` pattern — snapshot data under NOTIFY lock before FB lock, never hold both simultaneously. **B3** use `serde_json` for history JSON (not hand-built parser). **B4** `history_insert` enforces 50-entry cap with `vec.truncate(50)` at call site. **B5** action delivery uses direct `inbox.send()` (not `send_reply`) — app receives bare `VYOMA_NOTIFY:action:...` without `REPLY:` prefix.
+
+## Section 74: Launch Services & App Registry
+
+**macOS analogue**: LaunchServices / LSRegisterURL  
+**Key files**: `supervisor/src/launch_services/` (mod.rs, record.rs, scanner.rs, handlers.rs, watcher.rs, state.rs)  
+**New Cargo dep**: (none)  
+**Global**: `LAUNCH_REGISTRY: OnceLock<Arc<Mutex<LaunchRegistry>>>` in main.rs
+
+**Registry**: `AppRecord { name, display_name, wasm_path, icon_path, mime_types, file_extensions, url_schemes, capabilities, manifest_path }`. Populated by `scan_installed()` from `/data/apps/` at boot. `launch-watcher` thread polls every 2 s for hot-reload. `[launch]` section parsed as raw `toml::Value` (not struct field) to avoid `deny_unknown_fields` conflicts.
+
+**Protocol**: `VYOMA_LAUNCH:open_url|<url>`, `VYOMA_LAUNCH:open_file|<path>`, `VYOMA_LAUNCH:set_default|<ext>|<app>`, `VYOMA_LAUNCH:list_apps`, `VYOMA_LAUNCH:query|<ext_or_mime>`. Supervisor→app: `VYOMA_LAUNCH:app_list|<json>`, `VYOMA_LAUNCH:default_for|<ext>|<app>`.
+
+**Extension normalization**: `normalize_ext(s)` → lowercase, ensure leading dot. Applied at all lookup sites — `.PDF` and `pdf` both resolve to `.pdf` key. Recent docs: last 10 per app, stored in `/data/.vyoma/launch-services/recent-docs.json`.
+
+**B1** `[launch]` parsed via `raw_toml.get("launch")` as `Option<toml::Value>` — never as Capabilities field. **B2** `get_or_init()` used for LAUNCH_REGISTRY to handle install-path access before explicit init. **B3** extension case normalization at every lookup site. **B4** watcher thread uses `Arc::clone` of registry, not raw pointer. **B5** `open_file` falls back to first registered app if no default set — never silently drops the request.
+
+## Section 75: App Distribution & Updates
+
+**macOS analogue**: Mac App Store / Sparkle / SUUpdater  
+**Key files**: `supervisor/src/update/` (mod.rs, appcast.rs, version.rs, verifier.rs, delta.rs, installer.rs, rollback.rs, store_index.rs)  
+**New Cargo deps**: `ed25519-dalek = { version = "2.1", default-features = false, features = ["alloc"] }`; `serde_json` moved from dev-dependencies to `[dependencies]`  
+**Global**: `UPDATE_MANAGER: OnceLock<Arc<Mutex<UpdateManager>>>` in main.rs
+
+**Version check**: Background thread wakes every 86400 s. Appcast feed JSON: `{ app, version, url, sha256, sig, min_os_ver, delta_url, delta_sha256, delta_sig }`. `SemVer { major, minor, patch }` with `Ord` impl. `is_update_available(installed, remote)`: true when `remote > installed`. `min_os_ver` gate checked against supervisor version string.
+
+**Delta format (VYDIFF01)**: 40-byte header (`VYDIFF01` magic + new_size + ctrl_len + diff_len + extra_len) + 3 raw blocks. Apply: ADD phase (old[pos]+diff[i]), COPY phase (verbatim extra), SEEK phase (advance old_pos by i32 skip). Use delta when `patch.len() < full_size * 30 / 100`.
+
+**Atomic install**: tmp download → SHA-256 verify → Ed25519 verify → `.bak` backup of old `.wasm` → atomic `rename` tmp→dst → quarantine clear → R74 re-register → restart app. All paths under `/data/apps/` (same mount, no EXDEV).
+
+**Rollback**: `register_update_time(app)` on post-install start. `check_and_rollback(app)`: if exit within 60 s of update, restore `.bak`, clear update timestamp, log crash. Called from app_threads waiter thread on unexpected exit.
+
+**B1** extract `pub fn restart_app_by_name(name, registry, inbox)` from ipc_handlers.rs — shared by installer and rollback. **B2** `ed25519-dalek` with `default-features = false, features = ["alloc"]` — no getrandom, pure computation on musl. **B3** `serde_json` in `[dependencies]` (not dev). **B4** router.rs dispatches `VYOMA_UPDATE:` lines to `update::handle_update_line` before IPC broker fallthrough. **B5** assert `tmp_path.parent() == dst_path.parent()` before rename — documents same-mount invariant.
+
+## Section 76: WASM App Framework (AppKit equiv.)
+
+**macOS analogue**: AppKit / UIKit / SwiftUI  
+**Key files**: `libs/vyoma-ui/src/` (lib.rs, event.rs, draw.rs, theme.rs, layout/mod.rs, widget/mod.rs, widget/button.rs, widget/label.rs, widget/text_input.rs, widget/container.rs, widget/scroll.rs)  
+**New Cargo dep**: (none — stdlib only)  
+**Location**: Client-side crate linked into WASM apps — NO supervisor changes
+
+**App trait**: `pub trait App { fn on_event(&mut self, event: Event, ctx: &mut DrawCtx); fn render(&self, ctx: &mut DrawCtx); }`. Entry: `vyoma_ui::run(app)` — blocking loop: `read_line → parse Event → on_event → render → ctx.flush()`. No threads, no Arc<Mutex<_>>.
+
+**Widget system**: `Widget` trait with `handle_event(&mut self, event: &Event, bounds: Rect) -> Option<Event>` + `render(&self, ctx: &DrawCtx, bounds: Rect)`. `WidgetId(u32)` for focus. `FocusManager` tracks keyboard focus. Widgets: Button, Label, TextInput (cursor + blink by frame counter), Container (VStack/HStack), ScrollView.
+
+**Layout**: Two-pass — measure (bottom-up, `Constraint { min_w, max_w, min_h, max_h }`) then place (top-down with offsets). `BoxLayout::vertical(spacing)` / `BoxLayout::horizontal(spacing)`. `FlexLayout` with `flex_grow` weights. `LayoutCache { rects, dirty }` — invalidated on `Event::Resize`, avoids recompute every frame.
+
+**DrawCtx**: Wraps VYOMA_DRAW stdout. `fill_rect`, `draw_text`, `draw_rounded_rect` (software corner arcs), `push_clip`/`pop_clip`. `flush()` calls `stdout().flush()` after `println!("VYOMA_DRAW:flush")` — mandatory to push frames on WASM.
+
+**Theme**: `ColorTheme { background: 0x1E1E2EFF, surface: 0x313244FF, text: 0xCDD6F4FF, accent: 0x89B4FAFF, border: 0x45475AFF, button_hover: 0x585B70FF }`. `dark_theme()` / `light_theme()`.
+
+**B1** `stdout().flush()` after every VYOMA_DRAW:flush (WASM stdout is fully buffered). **B2** `BufReader::read_line` blocks — emit `VYOMA_DRAW:flush` first, then block on next line; Tick events generated by frame counter on Paint. **B3** cursor blink needs `&mut self` — move blink state to App, pass `blink_on: bool` into render. **B4** draw order: background → fill → border (border last, not erased by fill). **B5** `LayoutCache` invalidated on `Event::Resize` prevents stale rects after window resize.
+
+## Section 77: Terminal & Shell
+
+**macOS analogue**: Terminal.app / zsh / bash  
+**Key files**: `apps/terminal/src/` (main.rs, emulator.rs, shell.rs, input.rs, render.rs)  
+**New Cargo dep**: (none)  
+**Supervisor addition**: `VYOMA_SYSTEM:terminal-resize:<cols>,<rows>` emitted from display.rs on focused window resize
+
+**Emulator**: `Cell { ch: char, fg: u32, bg: u32, attrs: u8 }` (bit 0=bold, 1=underline, 2=reverse). `Screen { grid: Vec<Vec<Cell>>, scrollback: Vec<Vec<Cell>> (ring 1000), cursor_x, cursor_y, escape_buf: String }`. ANSI sequences: cursor move (ESC[H/A/B/C/D), colors (ESC[30-37m/40-47m), ESC[K (clear line), ESC[2J (clear screen), ESC[0m/1m. `write_str(s)` processes string with escape parser.
+
+**Shell**: Built-in commands — `cd`, `ls`, `pwd`, `echo`, `cat`, `clear`, `exit`, `ps`→`@supervisor: list`, `spawn <app>`→`@supervisor: spawn <app>`, `kill <app>`, `log <app>`. Command history: Vec<String>, up/down arrows, persisted to `/data/.vyoma/terminal/history.txt` (max 500 entries). Tab completion: WASI readdir for paths, `@supervisor: list` for app names.
+
+**Rendering**: 8×16 medium font ('m'). `cols = (window_w - 8) / 8`, `rows = (window_h - 32) / 16`. Full redraw each frame (no dirty tracking). Cursor: filled rect at cursor pos, blinks by frame count. Prompt: `$ ` in 0xA6E3A1FF green. ANSI color palette: 8 standard colors as RGBA u32 constants.
+
+**B1** `stdout().flush()` after every VYOMA_DRAW:flush. **B2** stdin blocks — read one line at a time; cursor blink by frame counter incremented each Paint event. **B3** ANSI escape split across reads — accumulate in `escape_buf: String` until `[a-zA-Z~]` terminator seen. **B4** strip `REPLY:` prefix from supervisor IPC responses before writing to screen buffer. **B5** recompute `cols`/`rows` on `VYOMA_SYSTEM:terminal-resize:` event, then redraw.
+
+## Section 78: System Preferences & Settings
+
+**macOS analogue**: System Preferences / System Settings  
+**Key files**: `supervisor/src/prefs/` (mod.rs, store.rs, schema.rs, handlers.rs); `apps/settings/src/` (main.rs, panels/mod.rs, panels/display.rs, panels/sound.rs, panels/network.rs, panels/general.rs)  
+**New Cargo dep**: (none — serde_json already in tree)  
+**Global**: `PREFS_STORE: OnceLock<Arc<Mutex<PrefsStore>>>` in prefs/mod.rs
+
+**Protocol**: App→supervisor: `VYOMA_PREFS:get|<key>`, `VYOMA_PREFS:set|<key>|<value>`, `VYOMA_PREFS:list`, `VYOMA_PREFS:reset|<key>`, `VYOMA_PREFS:watch|<key>`, `VYOMA_PREFS:unwatch|<key>`. Supervisor→app: `VYOMA_PREFS:value|<key>|<value>`, `VYOMA_PREFS:changed|<key>|<value>` (pushed to all watchers), `VYOMA_PREFS:error|<key>|<reason>`.
+
+**Schema**: `PrefKey` enum → string key mapping. Keys: `display.brightness` (u8 0-100), `display.theme` (String "dark"|"light"), `audio.output_volume` (u8), `audio.input_volume` (u8), `audio.muted` (bool), `notif.dnd` (bool), `notif.sound` (bool), `locale.language` (String "en-US"), `locale.timezone` (String), `locale.time_format` (String "24h"|"12h"), `keyboard.repeat_rate` (u32 ms), `keyboard.repeat_delay` (u32 ms). `PrefValue` enum: `Bool/U8/U32/Str`. Defaults baked into `schema.rs`.
+
+**Storage**: `/data/.vyoma/prefs/prefs.json` as flat JSON object. R41 atomic write-then-rename. Loaded at supervisor startup. Integration: `audio.output_volume` change calls `AudioMixer::set_master_volume()`; `notif.dnd` change updates `NotifyCenter::dnd`; `locale.language` triggers R80 locale reload.
+
+**Settings app UI**: Sidebar (200px) + content area. Panels: Display (brightness slider, theme toggle), Sound (volume sliders, mute toggle), Notifications (DND toggle), Network (read-only IP/status), Keyboard (repeat sliders), General (language, timezone, time format). Slider drag: `dragging: Option<(String, i32)>` with `MouseDown`→track→`MouseUp` state machine.
+
+**B1** add `pub preferences: bool` with `#[serde(default)]` to Capabilities (no-op gate — all apps read; only `preferences=true` apps write). **B2** watcher notification: collect `(key, value, watcher_names)` under lock, drop lock, then send — prevents lock inversion. **B3** `serde_json::Value` used for mixed-type JSON (Bool/U8/U32 all serialize correctly). **B4** slider drag tracks `mouse_captured_by: Option<PrefKey>` — only that widget receives MouseMove events. **B5** `Mutex<PrefsStore>` prevents concurrent set races; disk write inside lock before watcher dispatch preserves consistency.
+
+## Section 79: Browser & WebView Engine
+
+**macOS analogue**: Safari / WebKit / WKWebView  
+**Key files**: `apps/browser/src/` (main.rs, net.rs, history.rs, html/mod.rs, html/dom.rs, html/layout.rs, html/render.rs, html/css.rs); `supervisor/src/webview.rs`  
+**New Cargo dep**: (none)  
+**Capabilities**: `network = true`, `display = true`, `filesystem = true`, `mouse = true`
+
+**HTML tokenizer**: States: Data/TagOpen/TagName/BeforeAttrName/AttrName/AttrValue(DQ/SQ/Unquoted)/EndTag/Comment. Tags: div/p/h1-h6/a/img/ul/ol/li/pre/code/strong/em/b/i/br/hr/span/table/tr/td/th; `script` contents silently skipped. `Token` enum: `StartTag { name, attrs, self_closing }`, `EndTag { name }`, `Text(String)`, `Doctype`.
+
+**DOM + Layout**: `Node { Element { tag, attrs, children }, Text(String), Comment }`. Layout boxes: `BlockBox { x, y, w, h, children }` (div/p/h1-h6/li/etc.), `InlineBox { text, style, x, y, w, h }`. Two-pass layout: measure → place. Word-wrap: split on spaces, 8px/char at 'm' size, wrap at `available_w`. Recursion depth capped at 50 to prevent stack overflow on deeply nested HTML.
+
+**CSS subset**: `ComputedStyle { color: u32, background: u32, font_size: u32, font_weight: u32, margin: [u32;4], padding: [u32;4], display: Display }`. Inline styles only (`style=""` attr). `ComputedStyle::inherit(parent)` propagates color/font-size/font-weight. Colors: `#RGB`, `#RRGGBB`, 8 named colors. `resolve_url(base, href)` handles relative paths.
+
+**Rendering**: `fill_rect` for backgrounds, `draw_text` for text (size based on font_size), links in 0x89B4FAFF with 1px underline rect, `<hr>` as 1px fill_rect, `<img>` as placeholder rect. Flush after full page render.
+
+**VYOMA_WEBVIEW protocol** (supervisor-side): `VYOMA_WEBVIEW:create|<id>|<x>|<y>|<w>|<h>`, `VYOMA_WEBVIEW:load|<id>|<url>`, `VYOMA_WEBVIEW:load_html|<id>|<b64>`, `VYOMA_WEBVIEW:destroy|<id>`. Supervisor→app: `VYOMA_WEBVIEW:loaded|<id>|<title>`, `VYOMA_WEBVIEW:error|<id>|<reason>`, `VYOMA_WEBVIEW:navigate|<id>|<url>`.
+
+**B1** `decode_entities(s)` converts `&amp;/&lt;/&gt;/&nbsp;/&quot;` in all text nodes. **B2** layout recursion capped at depth 50 with `fn layout_node(node, depth: u32)` guard. **B3** check `Content-Type` header; skip render if not `text/html` or `text/plain`. **B4** `resolve_url(base: &str, href: &str) -> String` — handles `./`, `../`, scheme-relative `//`, absolute paths. **B5** `ComputedStyle::inherit(parent)` called top-down during layout tree build.
+
+## Section 80: Localization & Internationalization
+
+**macOS analogue**: NSLocale / CFLocale / Foundation i18n  
+**Key files**: `supervisor/src/locale/` (mod.rs, catalog.rs, format.rs, tz.rs, schema.rs, sys_strings.rs)  
+**New Cargo dep**: (none)  
+**Global**: `LOCALE: OnceLock<Arc<Mutex<LocaleState>>>` in locale/mod.rs
+
+**Protocol**: App→supervisor: `VYOMA_LOCALE:t|<key>`, `VYOMA_LOCALE:tf|<key>|<arg1>|...`, `VYOMA_LOCALE:format_date|<unix_ts>|<fmt>`, `VYOMA_LOCALE:format_num|<value>|<decimals>`, `VYOMA_LOCALE:format_currency|<cents>|<code>`, `VYOMA_LOCALE:get_locale`, `VYOMA_LOCALE:plural|<n>|<key_one>|<key_many>`. Supervisor→app: `VYOMA_LOCALE:str|<key>|<value>`, `VYOMA_LOCALE:date|<formatted>`, `VYOMA_LOCALE:num|<formatted>`, `VYOMA_LOCALE:locale|<lang>|<tz>|<fmt>`.
+
+**Catalog format**: `/data/.vyoma/locales/<lang>/messages.strings` — `"key" = "value";` lines with `%s`/`%d`/`%f` printf substitution. BOM-stripped on load. Fallback chain: `ja-JP → ja → en-US`. `Catalog` pre-loaded at startup into `HashMap<String, String>` — no on-demand I/O.
+
+**Date/time**: Pure Gregorian algorithm (no libc) converts Unix timestamp → `(year, month, day, hour, min, sec, weekday)`. Handles leap years (400/100/4 rules; 2000-03-01 boundary tested). Format patterns: `%Y %m %d %H %I %M %S %p %A %B`. Locale default formats: en-US `%B %d, %Y` / `%I:%M %p`; de-DE `%d.%m.%Y` / `%H:%M`; ja-JP `%Y年%m月%d日` / `%H:%M`.
+
+**Number/currency**: `NumberFormat { decimal_sep, thousands_sep, decimal_places }`. en-US: `.`/`,`; de-DE: `,`/`.`; fr-FR: `,`/` `. Currency symbols: USD=$, EUR=€, GBP=£, JPY=¥. Negative: sign before symbol (`-$5.00`, not `$-5.00`). Timezone table: 11 static `TzEntry { name, offset_minutes }` entries (UTC + major zones). No DST (MVP, documented).
+
+**Plural rules**: `plural_rule(n, lang) -> PluralRule`. en/de: One if n==1 else Other. fr: One if n≤1 else Other. ja/zh: always Other (no plurals). Integration: R78 `locale.language` change → `LOCALE.lock().reload(new_lang)` + push `VYOMA_LOCALE:locale_changed|<lang>` to all watching apps.
+
+**B0** add `#[serde(default)] pub locale_write: bool` to Capabilities for apps that write locale files (catalog reads need no cap). **B1** strip UTF-8 BOM with `content.trim_start_matches('\u{FEFF}')` before parsing. **B2** Gregorian leap year: 400/100/4 rule; test vector 2000-03-01 = day 60 of year 2000. **B3** negative currency: `let sign = if cents < 0 { "-" } else { "" }; format!("{sign}{symbol}{}", abs_val)`. **B4** all locale data loaded into memory at `init()` time — `t()` lookup is pure HashMap get, never blocks on I/O.
+
+---
+
+# SPECIFICATION COMPLETE
+
+**Date**: 2026-05-30  
+**Total Subsystems**: 80 / 80  
+**Status**: ALL COMPLETED
+
+## Coverage Summary
+
+| Category | Subsystems | Range |
+|----------|-----------|-------|
+| Kernel & Hardware | 10 | R01–R10 |
+| Display & Graphics | 11 | R11–R21 |
+| Window Management | 7 | R21–R27 |
+| Input System | 9 | R31–R39 |
+| File System | 10 | R41–R50 |
+| Networking & Security | 16 | R51–R66 |
+| Media (Audio/Video/Camera) | 4 | R67–R70 |
+| Data & Content | 5 | R71–R75 |
+| App Platform | 5 | R76–R80 |
+
+## Key Architectural Decisions Across All 80 Specs
+
+1. **Zero-dependency kernel interfaces**: Raw ioctls (ALSA, V4L2, DRM) via `libc::ioctl` + `#[repr(C)]` structs — no libX wrappers
+2. **ABBA deadlock prevention**: Snapshot pattern — collect data under one lock, drop lock, then acquire second lock or send IPC
+3. **OnceLock<Arc<Mutex<T>>>** for all supervisor-side globals
+4. **R41 atomic writes** for all persistence: write `.tmp` → `fsync` → `rename`
+5. **memfd + pidfd_getfd** (Linux 5.6+) for zero-copy shared memory to WASM apps
+6. **deny_unknown_fields** pattern: every new capability field added to `Capabilities` struct with `#[serde(default)]`
+7. **500-line file limit**: every module split into focused subfiles
+8. **No new Cargo deps** unless truly unavoidable; exact `version + features` specified
+9. **SPSC ring buffers** (AtomicUsize indices, power-of-two capacity) for high-throughput streams (audio, camera)
+10. **WASM single-thread constraints** respected: `libs/vyoma-ui` is purely synchronous, event loop blocks on stdin, cursor blink via frame counter not wall-clock timer
+
+## Implementation Phases
+
+- **P18**: R76 (vyoma-ui), R77 (Terminal), R78 (System Prefs), R80 (L10n) — app platform foundation
+- **P19**: R71 (Image Processing), R72 (PDF), R73 (Notifications), R74 (Launch Services) — content + system services  
+- **P20**: R75 (App Distribution), R79 (Browser), remaining integration — distribution + web
+- **P21+**: Multi-display, performance tuning, mobile platform profiles
