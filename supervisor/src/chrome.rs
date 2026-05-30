@@ -27,7 +27,7 @@ const _: () = assert!(Z_DESKTOP < Z_APP && Z_APP < Z_DOCK && Z_DOCK < Z_OVERLAY)
 
 pub const MENUBAR_H:    u32 = 24;   // global menu bar height
 pub const TITLEBAR_H:   u32 = 28;   // per-window title bar height
-const TL_DOT:           u32 = 13;   // traffic-light dot size (px) — Apple spec
+const TL_DOT:           u32 = 12;   // traffic-light dot diameter (px) — radius 6
 
 const MAC_MENUBAR:      u32 = 0x2A2A2AFF; // system background (menubar)
 const MAC_TITLE_ACT:    u32 = 0x323232FF; // active window title bar
@@ -36,9 +36,9 @@ const MAC_TITLE_HOVER:  u32 = 0x383838FF; // hovered title bar (slightly lighter
 const MAC_SEP:          u32 = 0x3A3A3CFF; // separator line
 const MAC_LABEL:        u32 = 0xEBEBEBFF; // primary label (near-white)
 const MAC_LABEL2:       u32 = 0x8E8E93FF; // secondary label (gray)
-const TL_CLOSE:         u32 = 0xFF6159FF; // traffic light red
-const TL_MINIMIZE:      u32 = 0xFFBD2EFF; // traffic light yellow
-const TL_MAXIMIZE:      u32 = 0x28C941FF; // traffic light green
+const TL_CLOSE:         u32 = 0xFF5F57FF; // traffic light red
+const TL_MINIMIZE:      u32 = 0xFFBD2DFF; // traffic light yellow
+const TL_MAXIMIZE:      u32 = 0x28C840FF; // traffic light green
 const TL_GRAY:          u32 = 0x4D4D4DFF; // inactive traffic lights
 
 // ── Focus helpers ─────────────────────────────────────────────────────────────
@@ -194,9 +194,9 @@ pub fn draw_titlebar(
         use crate::display::draw_rounded_rect;
         let r = TL_DOT / 2;
         let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-        draw_rounded_rect(&mut fb.back, wx +  9, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
-        draw_rounded_rect(&mut fb.back, wx + 30, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
-        draw_rounded_rect(&mut fb.back, wx + 51, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx +  6, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 22, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 38, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
     }
 
     // App name centered — 13pt regular Inter
@@ -430,20 +430,17 @@ pub fn draw_focus_ring(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32,
 
 // ── T056: Animation alpha stub ────────────────────────────────────────────────
 
-/// Sample the current animation alpha for an app state.
+/// Sample the current animation alpha and clear completed animations.
 /// Returns 255 (fully opaque) when no animation is active.
-/// Full layer-alpha blending requires a compositor not yet built;
-/// this helper is the integration point for future frame-tick use.
-#[allow(dead_code)]
-pub fn sample_anim_alpha(anim: &Option<crate::display::animator::Animation>) -> u8 {
-    match anim {
-        None => 255,
-        Some(a) => {
-            let elapsed = crate::display::animator::now_ms()
-                .saturating_sub(a.start_ms);
-            a.sample(elapsed).alpha
-        }
-    }
+pub fn sample_and_clear_anim(anim: &mut Option<crate::display::animator::Animation>) -> u8 {
+    let a = match anim.as_ref() {
+        None => return 255,
+        Some(a) => a,
+    };
+    let elapsed = crate::display::animator::now_ms().saturating_sub(a.start_ms);
+    let state = a.sample(elapsed);
+    if state.done { *anim = None; }
+    state.alpha
 }
 
 // ── T059–T064: Dropdown menu state ───────────────────────────────────────────

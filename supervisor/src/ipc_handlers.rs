@@ -2,7 +2,6 @@
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
 //! @supervisor IPC command handler — process management commands (P12T03, P13T01, P16T01).
-//!
 //! Extended commands (pkg-*, wallpaper, resize, tcp-*, …) are handled in `ipc_commands`.
 
 use std::{fs, sync::Arc};
@@ -203,6 +202,11 @@ pub fn handle_supervisor_command(
             }
             match pid {
                 Some(pid) => {
+                    // T054: enqueue Close animation before killing
+                    if let Some(st) = app_registry.lock().unwrap().get(&app_name) {
+                        use crate::display::animator::{Animation, AnimKind, now_ms};
+                        st.lock().unwrap().pending_anim = Some(Animation::new(AnimKind::Close, now_ms()));
+                    }
                     #[cfg(target_os = "linux")]
                     unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
                     log_info!(Subsystem::Lifecycle, Some(app_name.as_str()), "killed {app_name} (pid {pid})");

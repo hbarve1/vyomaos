@@ -30,19 +30,19 @@ pub enum TrafficLight {
 /// whose top-left corner is at `(wx, wy)`, or `None` if no button was hit.
 ///
 /// Layout (matches `draw_titlebar`):
-///   close    at wx+ 8, tl_y  (12×12 px)
-///   minimize at wx+24, tl_y  (12×12 px)
-///   maximize at wx+40, tl_y  (12×12 px)
-/// where tl_y = wy + (TITLEBAR_H − TL_DOT) / 2 = wy + 8.
+///   close    circle center (wx+12, title_center), radius 6 → rect (wx+ 6, tl_y, 12, 12)
+///   minimize circle center (wx+28, title_center), radius 6 → rect (wx+22, tl_y, 12, 12)
+///   maximize circle center (wx+44, title_center), radius 6 → rect (wx+38, tl_y, 12, 12)
+/// where tl_y = wy + (TITLEBAR_H − 12) / 2 = wy + 8.
 pub fn traffic_light_hit(cx: i32, cy: i32, wx: u32, wy: u32) -> Option<TrafficLight> {
     let tl_y = wy as i32 + 8; // (TITLEBAR_H=28 - TL_DOT=12) / 2 = 8
     if cy < tl_y || cy >= tl_y + 12 {
         return None;
     }
     let wx = wx as i32;
-    if cx >= wx + 8  && cx < wx + 20  { return Some(TrafficLight::Close);    }
-    if cx >= wx + 24 && cx < wx + 36  { return Some(TrafficLight::Minimize); }
-    if cx >= wx + 40 && cx < wx + 52  { return Some(TrafficLight::Maximize); }
+    if cx >= wx + 6  && cx < wx + 18  { return Some(TrafficLight::Close);    }
+    if cx >= wx + 22 && cx < wx + 34  { return Some(TrafficLight::Minimize); }
+    if cx >= wx + 38 && cx < wx + 50  { return Some(TrafficLight::Maximize); }
     None
 }
 
@@ -234,11 +234,19 @@ pub fn dispatch_mouse(
         if let Some((name, dot)) = tl_hit {
             match dot {
                 TrafficLight::Close => {
-                    // Exit watcher in app_threads.rs handles reflow + focus transfer on app death.
+                    // T054: enqueue Close animation before killing
                     let pid = {
                         let reg = app_registry.lock().unwrap();
-                        reg.get(&name).and_then(|st| st.lock().unwrap().child_pid)
+                        if let Some(st) = reg.get(&name) {
+                            use crate::display::animator::{Animation, AnimKind, now_ms};
+                            let mut st = st.lock().unwrap();
+                            st.pending_anim = Some(Animation::new(AnimKind::Close, now_ms()));
+                            st.child_pid
+                        } else {
+                            None
+                        }
                     };
+                    // Exit watcher in app_threads.rs handles reflow + focus transfer on app death.
                     if let Some(pid) = pid {
                         unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
                         log_info!(Subsystem::Lifecycle, Some(name.as_str()), "traffic-light close: killed {name} (pid {pid})");
