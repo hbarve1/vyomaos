@@ -252,11 +252,29 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                             _ => {}
                         }
                     }
+                } else if buf[0] == 0x03 {
+                    // Ctrl+C: send copy signal to focused app
+                    if let Some(name) = focused.lock().unwrap().clone() {
+                        let msg = supervisor::ipc::format_copy_signal();
+                        if let Some(tx) = inbox.lock().unwrap().get(&name) {
+                            let _ = tx.send(msg);
+                        }
+                    }
+                } else if buf[0] == 0x16 {
+                    // Ctrl+V: paste clipboard contents to focused app
+                    if let Some(name) = focused.lock().unwrap().clone() {
+                        let text = crate::CLIPBOARD.get()
+                            .map(|c| c.lock().unwrap().clone())
+                            .unwrap_or_default();
+                        let msg = supervisor::ipc::format_paste_message(&text);
+                        if let Some(tx) = inbox.lock().unwrap().get(&name) {
+                            let _ = tx.send(msg);
+                        }
+                    }
                 } else {
                     let msg: Option<String> = match buf[0] {
                         0x0D | 0x0A => Some(String::new()),
                         0x7F | 0x08 => Some("\x7f".to_string()),
-                        0x03        => Some("\x03".to_string()),
                         0x20..=0x7E => Some(String::from(buf[0] as char)),
                         _           => None,
                     };
