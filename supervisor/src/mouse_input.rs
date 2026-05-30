@@ -16,8 +16,6 @@ use supervisor::logging::Subsystem;
 #[cfg(target_os = "linux")]
 use crate::display;
 
-// ── Traffic-light ─────────────────────────────────────────────────────────────
-
 /// Which traffic-light button was hit.
 #[derive(Debug, PartialEq)]
 pub enum TrafficLight {
@@ -46,19 +44,11 @@ pub fn traffic_light_hit(cx: i32, cy: i32, wx: u32, wy: u32) -> Option<TrafficLi
     None
 }
 
-// ── Mouse device discovery ────────────────────────────────────────────────────
-
 /// Find the first /dev/input/eventN that supports pointer events (EV_REL or EV_ABS).
-/// Uses EVIOCGBIT(0, 1) ioctl — returns 1 byte of event-type capability bitmask.
-/// Bit 2 = EV_REL (relative mouse), bit 3 = EV_ABS (absolute pointer, virtio-mouse-pci).
-/// Returns None on headless boot where no pointer input devices exist.
 #[cfg(target_os = "linux")]
 pub fn open_mouse_device() -> Option<std::fs::File> {
     use std::os::unix::io::AsRawFd;
-    // EVIOCGBIT(0, 1) = _IOC(_IOC_READ=2, 'E'=0x45, nr=0x20, size=1)
-    //                 = (2<<30)|(0x45<<8)|0x20|(1<<16) = 0x80014520
-    // libc::Ioctl is i32 on musl/x86-64 and u64 on glibc — use `as _` to coerce.
-    const EVIOCGBIT_TYPE: u32 = 0x80014520u32;
+    const EVIOCGBIT_TYPE: u32 = 0x80014520u32; // EVIOCGBIT(0,1)
     for i in 0..8u32 {
         let path = format!("/dev/input/event{i}");
         let Ok(f) = std::fs::File::open(&path) else { continue };
@@ -77,8 +67,6 @@ pub fn open_mouse_device() -> Option<std::fs::File> {
     }
     None
 }
-
-// ── Mouse event dispatch ──────────────────────────────────────────────────────
 
 /// Dispatch a mouse event:
 ///  P32 — check close-button hit for all display apps; send VYOMA_SYSTEM:window_event:close
@@ -100,7 +88,7 @@ pub fn dispatch_mouse(
         .map(|m| m.lock().unwrap().clone())
         .unwrap_or_default();
 
-    // ── Title-bar hover highlight (motion only, no button press) ─────────────
+    // Title-bar hover highlight (motion only, no button press)
     if btn == 0 {
         let new_hover: Option<String> = {
             let reg = app_registry.lock().unwrap();
@@ -155,9 +143,7 @@ pub fn dispatch_mouse(
         }
     }
 
-    // Menu-bar click: if the user clicks inside the MENUBAR_H-pixel band at the
-    // top of the screen on an app-name label, raise and focus that app without
-    // also triggering window hit-test or mouse-event dispatch.
+    // Menu-bar click: raise and focus the app whose label was clicked.
     if btn != 0 && cy >= 0 && cy < crate::chrome::MENUBAR_H as i32 {
         use supervisor::windows::menubar_hit_app;
         let display_apps: Vec<String> = {
@@ -199,19 +185,16 @@ pub fn dispatch_mouse(
         }
     }
 
-    // T064: Dismiss context menu on any click outside its bounds.
     if btn != 0 && crate::chrome::is_context_menu_open() {
         if crate::chrome::dismiss_context_menu_if_outside(cx, cy) {
             return;
         }
     }
 
-    // T064: Dismiss dropdown on any click outside (simple: close on any click).
     if btn != 0 && crate::chrome::is_dropdown_open() {
         crate::chrome::close_dropdown();
     }
 
-    // T063: Right-click on desktop (not on any window) → show context menu.
     if btn & 2 != 0 {
         let over_window = {
             let reg = app_registry.lock().unwrap();
@@ -230,7 +213,6 @@ pub fn dispatch_mouse(
     }
 
     // Minimized-strip restore: check before traffic-light hit-test.
-    // If the cursor lands on a minimized app's strip, restore it and return early.
     if btn != 0 && crate::win_actions::try_restore_minimized(cx, cy, app_registry, focused) {
         return;
     }
@@ -354,6 +336,31 @@ pub fn dispatch_mouse(
     }
 }
 
+/// Initiate a title-bar drag if the cursor is on a title bar (excluding traffic lights).
+#[cfg(target_os = "linux")]
+fn try_begin_titlebar_drag(cx: i32, cy: i32, registry: &AppRegistry) {
+    let z_snap: Vec<String> = crate::Z_ORDER.get()
+        .map(|m| m.lock().unwrap().clone()).unwrap_or_default();
+    let reg = registry.lock().unwrap();
+    for name in &z_snap {
+        let Some(st_arc) = reg.get(name) else { continue };
+        let st = st_arc.lock().unwrap();
+        let Some((wx, wy, ww, _wh)) = st.win_region else { continue };
+        if cy >= wy as i32 && cy < (wy + TITLEBAR_H) as i32
+            && cx >= wx as i32 && cx < (wx + ww) as i32
+            && traffic_light_hit(cx, cy, wx, wy).is_none()
+        {
+            let region = st.win_region.unwrap();
+            drop(st);
+            drop(reg);
+            *drag_state().lock().unwrap() = Some(DragState {
+                app_name: name.clone(), cursor_start: (cx, cy), win_start: region,
+            });
+            return;
+        }
+    }
+}
+
 /// P22: body of the mouse-input thread — /dev/input/eventN → dispatch.
 ///
 /// Only compiled on Linux.
@@ -447,30 +454,9 @@ pub fn run_mouse_input(inbox: Inbox, focused: FocusedApp, registry: AppRegistry)
                 if pending_click_mask != 0 {
                     if pending_click_mask & 1 != 0 {
                         *crate::mouse_drag_start().lock().unwrap() = Some((cx, cy));
-                        // Initiate drag: find title-bar app under cursor (excluding traffic lights)
-                        let z_snap: Vec<String> = crate::Z_ORDER.get()
-                            .map(|m| m.lock().unwrap().clone()).unwrap_or_default();
-                        let dragged: Option<(String, (u32, u32, u32, u32))> = {
-                            let reg = registry.lock().unwrap();
-                            let mut found = None;
-                            for name in &z_snap {
-                                let Some(st_arc) = reg.get(name) else { continue };
-                                let st = st_arc.lock().unwrap();
-                                let Some((wx, wy, ww, _wh)) = st.win_region else { continue };
-                                if cy >= wy as i32 && cy < (wy + TITLEBAR_H) as i32
-                                    && cx >= wx as i32 && cx < (wx + ww) as i32
-                                    && traffic_light_hit(cx, cy, wx, wy).is_none()
-                                {
-                                    found = Some((name.clone(), st.win_region.unwrap()));
-                                    break;
-                                }
-                            }
-                            found
-                        };
-                        if let Some((name, region)) = dragged {
-                            *drag_state().lock().unwrap() = Some(DragState {
-                                app_name: name, cursor_start: (cx, cy), win_start: region,
-                            });
+                        // Check resize edge first, then titlebar drag
+                        if !crate::resize::try_begin_resize_from_click(cx, cy, &registry) {
+                            try_begin_titlebar_drag(cx, cy, &registry);
                         }
                     }
                     btn_held |= pending_click_mask;
@@ -478,17 +464,27 @@ pub fn run_mouse_input(inbox: Inbox, focused: FocusedApp, registry: AppRegistry)
                     pending_click_mask = 0;
                 } else if pos_changed {
                     if btn_held & 1 != 0 {
-                        crate::win_actions::apply_drag_update(
-                            cx, cy, screen_w, screen_h, &registry, &focused,
-                        );
+                        if crate::resize::is_resizing() {
+                            crate::resize::apply_resize_update(
+                                cx, cy, screen_w, screen_h, &registry, &focused,
+                            );
+                        } else {
+                            crate::win_actions::apply_drag_update(
+                                cx, cy, screen_w, screen_h, &registry, &focused,
+                            );
+                        }
                     }
                     dispatch_mouse(cx, cy, 0, &inbox, &registry, &focused);
                 }
                 if pending_release_mask != 0 {
                     if pending_release_mask & 1 != 0 {
                         *crate::mouse_drag_start().lock().unwrap() = None;
-                        // Drag release: snap to nearest tiled slot if within 40 px
-                        crate::win_actions::finish_drag_snap(screen_w, screen_h, &registry, &focused);
+                        if crate::resize::is_resizing() {
+                            crate::resize::finish_resize(&registry, &focused, &inbox);
+                        } else {
+                            // Drag release: snap to nearest tiled slot if within 40 px
+                            crate::win_actions::finish_drag_snap(screen_w, screen_h, &registry, &focused);
+                        }
                     }
                     btn_held &= !pending_release_mask;
                     pending_release_mask = 0;

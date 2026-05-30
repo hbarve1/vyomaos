@@ -33,6 +33,7 @@ mod mgmt_server;
 mod mgmt_handlers;
 mod router;
 mod ota_update;
+mod resize;
 mod win_actions;
 
 use std::{
