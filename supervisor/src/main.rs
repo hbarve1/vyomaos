@@ -154,6 +154,12 @@ fn flush_counts() -> &'static Mutex<HashMap<String, (u64, std::time::Instant)>> 
 }
 /// Gate: false = suppress menu bar rendering on non-desktop profiles.
 pub static SHOW_MENU_BAR: OnceLock<bool> = OnceLock::new();
+/// Gate: false = suppress dock strip rendering on profiles without a dock.
+pub static SHOW_DOCK: OnceLock<bool> = OnceLock::new();
+/// Gate: false = single-app fullscreen mode (phone, watch, TV profiles).
+pub static WINDOWED_MODE: OnceLock<bool> = OnceLock::new();
+/// Gate: true = draw a focus ring around the focused window (TV/Vision).
+pub static FOCUS_RING: OnceLock<bool> = OnceLock::new();
 /// Active display profile name broadcast to apps via VYOMA_SYSTEM:display_profile.
 pub static DISPLAY_PROFILE: OnceLock<String> = OnceLock::new();
 
@@ -199,7 +205,6 @@ const USER_BOOT_PATH:    &str = "/data/installed.txt";
 const DATA_APPS_DIR:     &str = "/data/apps";
 const LOG_DIR:           &str = "/data/logs";
 const LOG_TAIL_LINES:    usize = 30;
-
 
 // ── T017: Platform profile loader ────────────────────────────────────────────
 
@@ -266,6 +271,9 @@ fn main() {
     let _active_profile = load_platform_profile();
     if let Some(ref p) = _active_profile {
         let _ = SHOW_MENU_BAR.set(p.display.show_menu_bar);
+        let _ = SHOW_DOCK.set(p.display.show_dock);
+        let _ = WINDOWED_MODE.set(p.display.windowed_mode);
+        let _ = FOCUS_RING.set(p.display.focus_ring);
         let _ = DISPLAY_PROFILE.set(p.display.profile.clone());
     }
 
@@ -485,16 +493,8 @@ fn main() {
 // ── IPC router + display dispatcher — delegated to router.rs ──────────────────
 
 fn route_or_print(
-    line:         &str,
-    sender:       &str,
-    inbox:        &Inbox,
-    has_display:  bool,
-    win_region:   Option<(u32, u32, u32, u32)>,
-    focused:      &FocusedApp,
-    app_registry: &AppRegistry,
-) {
-    router::route_or_print(line, sender, inbox, has_display, win_region, focused, app_registry);
-}
+    line: &str, sender: &str, inbox: &Inbox, has_display: bool,
+    win_region: Option<(u32, u32, u32, u32)>, focused: &FocusedApp, app_registry: &AppRegistry,
+) { router::route_or_print(line, sender, inbox, has_display, win_region, focused, app_registry); }
 
 fn send_reply(target: &str, msg: &str, inbox: &Inbox) { router::send_reply(target, msg, inbox); }
-

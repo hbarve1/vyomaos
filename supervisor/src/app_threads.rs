@@ -84,11 +84,12 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
     if apps.is_empty() { return; }
 
     // Partition: system-layer (dock, overlay) vs. regular tiled apps.
+    let show_dock = crate::SHOW_DOCK.get().copied().unwrap_or(true);
     let (pinned, tiled): (Vec<_>, Vec<_>) = apps.iter().partition(|(_, z, _, _)| *z >= Z_DOCK);
 
-    // Assign pinned apps to the reserved bottom strip.
-    let dock_h_reserved: u32 = if pinned.is_empty() { 0 } else { DOCK_STRIP_H };
-    {
+    // Assign pinned apps to the reserved bottom strip (skipped when dock is hidden).
+    let dock_h_reserved: u32 = if pinned.is_empty() || !show_dock { 0 } else { DOCK_STRIP_H };
+    if show_dock {
         let reg = registry.lock().unwrap();
         for (name, _, _, _) in &pinned {
             if let Some(st) = reg.get(name.as_str()) {
@@ -105,13 +106,19 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
 
     // Tile remaining apps in usable area above the dock strip.
     if tiled.is_empty() { return; }
-    let usable_h = sh.saturating_sub(MENUBAR_H).saturating_sub(dock_h_reserved);
-    let min_sizes: Vec<(u32, u32)> = tiled.iter().map(|(_, _, mw, mh)| (*mw, *mh)).collect();
-    let regions: Vec<(u32, u32, u32, u32)> =
+    let windowed = crate::WINDOWED_MODE.get().copied().unwrap_or(true);
+    let menubar_h = if crate::SHOW_MENU_BAR.get().copied().unwrap_or(true) { MENUBAR_H } else { 0 };
+    let usable_h = sh.saturating_sub(menubar_h).saturating_sub(dock_h_reserved);
+    let regions: Vec<(u32, u32, u32, u32)> = if !windowed {
+        // Fullscreen mode: every app gets the full usable area (only focused is visible).
+        tiled.iter().map(|_| (0, menubar_h, sw, usable_h)).collect()
+    } else {
+        let min_sizes: Vec<(u32, u32)> = tiled.iter().map(|(_, _, mw, mh)| (*mw, *mh)).collect();
         compute_tiling_with_hints(tiled.len(), sw, usable_h, &min_sizes)
             .into_iter()
-            .map(|(x, y, w, h)| (x, y + MENUBAR_H, w, h))
-            .collect();
+            .map(|(x, y, w, h)| (x, y + menubar_h, w, h))
+            .collect()
+    };
     {
         let reg = registry.lock().unwrap();
         for (i, (name, _, _, _)) in tiled.iter().enumerate() {
