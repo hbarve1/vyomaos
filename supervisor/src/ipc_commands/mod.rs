@@ -485,6 +485,14 @@ pub fn handle_extended_command(
         "update-local" => {
             crate::ota_update::handle_update_local(parts, sender, inbox, focused, app_registry);
         }
+
+        // Auto-update: check catalog and apply updates
+        "check-updates" => {
+            crate::auto_update::handle_check_updates(sender, inbox, app_registry);
+        }
+        "auto-update" => {
+            crate::auto_update::handle_auto_update(parts, sender, inbox, focused, app_registry);
+        }
         // Audio subsystem IPC commands
         "volume" | "volume-get" | "mute" | "unmute" => {
             return audio_ipc::handle_audio_ipc(verb, parts, sender, inbox);
