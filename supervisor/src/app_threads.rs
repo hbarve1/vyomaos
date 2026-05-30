@@ -367,6 +367,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         // T053: pending_anim set below after construction
         pending_anim:        None,
         surface:             None,
+        frame_ready:         false,
         menu_items,
         log_subscribers:     Vec::new(),
     }));
