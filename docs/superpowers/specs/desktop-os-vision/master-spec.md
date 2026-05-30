@@ -2032,3 +2032,28 @@ Boot walk: rate-limited to 20 file-stat/sec; separate 5 snippet-read/sec budget.
 
 ### Spotlight UI
 Cmd+Space invokes the spotlight WASM app (toggle if already open). 600×400px centered panel, R16 open animation (scale 0.92→1.0, 200ms). Keyboard: printable chars re-query, Up/Down navigate, Enter opens result, Tab cycles categories, Escape clears/dismisses. On result open: issues `@supervisor: spotlight-open <path_b64>`; supervisor grants R41 `BookmarkToken` to handler app. Focus restored to pre-spotlight app on dismiss.
+
+---
+
+## Section 43: File Coordination & Locking
+
+**macOS analogue**: `NSFileCoordinator` / `NSFilePresenter`  
+**Status**: FINAL
+
+### Problem
+R41 write tokens guarantee single-app atomicity but not multi-app coordination: two apps can each get a WriteToken for the same file (second commit silently wins), reads can interleave with truncates, renames invalidate open ReadTokens. R43 adds a supervisor-brokered will_change/ack handshake before any mutation.
+
+### Presenter Registration
+`VYOMA_COORD:present:<path_b64>:<intent>:<presenter_token_hex>`. Intent flags: `read` (open for read, wants will_change), `write` (open for write), `monitor` (notifications only). Requires `file_coordination = true` manifest capability. Access-checked against `file_access_grants` — paths under `/data/.vyoma/` always rejected.
+
+### Coordination Flow
+`VYOMA_COORD:begin:<coord_id>:<op>:<path_b64>` → supervisor sends `VYOMA_COORD:will_change` to all read/write presenters (2000ms deadline, max 5000ms) → ack collected via fast-path before display queue (B1 fix) → `VYOMA_COORD:granted:<coord_id>:<write_token>` with expiry set at grant time (B3 fix). After commit/abort: `VYOMA_COORD:did_change` to all monitors. Unresponsive presenters: 3 strikes → downgraded to monitor-only.
+
+### Locking & Deadlock (B2 + B5 Fix)
+`LOCK_TABLE` + `WaitForGraph` merged into single `CoordLockState` mutex (eliminates TOCTOU gap). Deadlock DFS runs on snapshot cloned under lock then released — no O(V+E) work inside critical section. Depth capped at 16; `catch_unwind` prevents mutex poisoning. Write token extension: `VYOMA_COORD:extend_write:<token>` (one-time +30s).
+
+### Crash Recovery (B4 Fix)
+`purge_instance()` saves dead instance's registered paths in per-app_name hint table. New instance receives `VYOMA_COORD:re_present_hint:<path_b64>:<intent>` at startup — closes the unprotected window between crash and re-registration.
+
+### Group Operations
+`VYOMA_COORD:group_begin/add/commit` → acquire all path locks in sorted lexicographic order → collect acks from all presenters across all paths → `group_granted:<group_id>:<tokens>`. `group_write_commit` fsyncs all tmp files then renames all. Max 16 paths per group.

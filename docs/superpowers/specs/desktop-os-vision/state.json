@@ -1,7 +1,7 @@
 {
   "session_start": "2026-05-29",
   "target": "Full macOS-like Desktop OS (DesktopOS first, then Mobile, then embedded)",
-  "current_round": 43,
+  "current_round": 44,
   "status": "in_progress",
   "subsystems": [
     {"id": 1,  "name": "Kernel & Process Model",              "status": "completed",   "file": "01-kernel-process.md",         "macos_equiv": "XNU kernel / launchd"},
@@ -46,7 +46,7 @@
     {"id": 40, "name": "Clipboard & Pasteboard",               "status": "completed",   "file": "40-clipboard.md",              "macos_equiv": "NSPasteboard / UIPasteboard"},
     {"id": 41, "name": "File Manager (Finder equivalent)",     "status": "completed",   "file": "41-file-manager.md",           "macos_equiv": "Finder / NSOpenPanel"},
     {"id": 42, "name": "Spotlight & Metadata Search",          "status": "completed",   "file": "42-spotlight.md",              "macos_equiv": "Spotlight / MDQuery / NSMetadataQuery"},
-    {"id": 43, "name": "File Coordination & Locking",          "status": "pending",     "file": "43-file-coordination.md",      "macos_equiv": "NSFileCoordinator / NSFilePresenter"},
+    {"id": 43, "name": "File Coordination & Locking",          "status": "completed",   "file": "43-file-coordination.md",      "macos_equiv": "NSFileCoordinator / NSFilePresenter"},
     {"id": 44, "name": "Cloud Storage Sync",                   "status": "pending",     "file": "44-cloud-storage.md",          "macos_equiv": "iCloud Drive / NSUbiquitousKeyValueStore"},
     {"id": 45, "name": "Time Machine & Snapshots",             "status": "pending",     "file": "45-snapshots.md",              "macos_equiv": "Time Machine / APFS snapshots"},
     {"id": 46, "name": "Disk Management & Formatting",         "status": "pending",     "file": "46-disk-management.md",        "macos_equiv": "Disk Utility / DiskArbitration"},
