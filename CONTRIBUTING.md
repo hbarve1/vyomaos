@@ -221,12 +221,17 @@ The best way to learn the system and make a meaningful contribution. Pick someth
 
 ## Submitting Changes
 
-1. Fork the repo and create a branch: `git checkout -b feat/my-feature`
-2. Make your changes; build and boot to verify
-3. Open a pull request against `develop` with a clear description of what and why
-4. For new apps: include a brief description in the PR of what the app does and what keys it handles
+See **[docs/git-workflow.md](docs/git-workflow.md)** for the full Git Flow
+branching model, commit conventions, and best practices.
 
-**Commit message format** (for consistency with the auto-build log):
+**Quick version**:
+
+1. Fork the repo and create a branch from `develop`: `git checkout -b feat/my-feature`
+2. Make your changes; build and boot to verify (`make unit-test`)
+3. Open a pull request **targeting `develop`** (not `main`) with a clear description
+4. For new apps: include a brief description of what the app does and what keys it handles
+
+**Commit message format** — [Conventional Commits](https://www.conventionalcommits.org/):
 ```
 feat(app-name): one-line description
 
