@@ -230,7 +230,7 @@ pub fn draw_menubar(
     let ty = (MENUBAR_H / 2) as i32; // vertical center baseline for 12pt font
 
     // Left: brand — 12pt regular
-    draw_glyph_str(fb, "VyomaOS", 12, ty, mac_label(), 12, false, false);
+    draw_glyph_str(fb, crate::i18n::t("brand"), 12, ty, mac_label(), 12, false, false);
 
     // Workspace indicator (e.g. "● ○ ○ ○") right after brand
     {
