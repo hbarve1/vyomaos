@@ -350,11 +350,15 @@ pub fn handle_extended_command(
         "clipboard-set" => {
             let text = parts.get(1).unwrap_or(&"").trim().to_string();
             *CLIPBOARD.get().unwrap().lock().unwrap() = text;
-            send_reply(sender, "REPLY:clipboard-set ok", inbox);
+            send_reply(sender, &supervisor::ipc::format_clipboard_set_reply(), inbox);
         }
         "clipboard-get" => {
             let text = CLIPBOARD.get().unwrap().lock().unwrap().clone();
-            send_reply(sender, &format!("REPLY:clipboard {text}"), inbox);
+            send_reply(sender, &supervisor::ipc::format_clipboard_get_reply(&text), inbox);
+        }
+        "clipboard-clear" => {
+            CLIPBOARD.get().unwrap().lock().unwrap().clear();
+            send_reply(sender, "REPLY:clipboard-clear ok", inbox);
         }
 
         // P51: screenshot <path>

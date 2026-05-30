@@ -76,3 +76,28 @@ pub fn format_pong_reply(ms: u64) -> String {
 pub fn validate_kill_target<'a>(name: &str, running_names: &'a [&'a str]) -> bool {
     running_names.iter().any(|&n| n == name)
 }
+
+// ── Clipboard helpers ────────────────────────────────────────────────────────
+
+/// Format the paste message sent to an app when the user presses Ctrl+V.
+/// Returns `"VYOMA_SYSTEM:paste:<text>"`.
+pub fn format_paste_message(text: &str) -> String {
+    format!("VYOMA_SYSTEM:paste:{text}")
+}
+
+/// Format the copy signal sent to the focused app when the user presses Ctrl+C.
+/// The app should respond with `@supervisor: clipboard-set <selected_text>`.
+pub fn format_copy_signal() -> String {
+    "VYOMA_SYSTEM:copy".to_string()
+}
+
+/// Format the reply sent to an app after a successful clipboard-set.
+pub fn format_clipboard_set_reply() -> String {
+    "REPLY:clipboard-set ok".to_string()
+}
+
+/// Format the reply sent to an app for clipboard-get.
+/// Returns `"REPLY:clipboard:<text>"`.
+pub fn format_clipboard_get_reply(text: &str) -> String {
+    format!("REPLY:clipboard:{text}")
+}
