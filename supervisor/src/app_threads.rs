@@ -225,7 +225,10 @@ pub fn launch_app_threads(
 
     #[cfg(target_os = "linux")]
     if has_display {
-        if let Some((w, h)) = crate::display::screen_size() {
+        // P29: send screen size from cached SCREEN_SIZE static, fall back to live query.
+        let size = crate::SCREEN_SIZE.get().copied()
+            .or_else(|| crate::display::screen_size());
+        if let Some((w, h)) = size {
             if let Some(tx) = inbox.lock().unwrap().get(&name) {
                 let _ = tx.send(format!("VYOMA_SYSTEM:screen:{w},{h}"));
             }
