@@ -2,11 +2,11 @@
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
 //! Extended @supervisor IPC commands: pkg-*, wallpaper, resize, tcp-*, clipboard,
-//! session-*, display, network helpers, uptime, loglevel, ping, version (P14–P55).
+//! session-*, display, network helpers, uptime, loglevel, ping, version, workspace.
 
 mod audio_ipc;
 mod tcp;
-
+mod workspace_cmd;
 use std::{fs, path::Path, sync::Arc, thread};
 
 use crate::{
@@ -31,8 +31,7 @@ pub fn handle_extended_command(
     app_registry: &AppRegistry,
 ) -> bool {
     match verb {
-        // ── P14T01: package manager commands ─────────────────────────────────
-
+        // P14T01: package manager commands
         "pkg-list" => {
             let installed = read_installed_apps();
             let rows: Vec<String> = PACKAGES.iter().map(|(name, ver, desc)| {
@@ -95,7 +94,7 @@ pub fn handle_extended_command(
             }
         }
 
-        // P35: wallpaper <rgba_hex> — fill screen with solid color
+        // P35: wallpaper <rgba_hex>
         "wallpaper" => {
             let color_str = parts.get(1).unwrap_or(&"").trim();
             let rgba = color_str
@@ -114,7 +113,6 @@ pub fn handle_extended_command(
             send_reply(sender, &format!("REPLY:wallpaper {rgba:#010x}"), inbox);
         }
 
-        // P33: raise/lower window in Z-order
         "raise" => {
             let app_name = match parts.get(1).map(|s| s.trim()) {
                 Some(n) if !n.is_empty() => n.to_string(),
@@ -197,7 +195,6 @@ pub fn handle_extended_command(
             });
         }
 
-        // T067: notify <title>|<body> — enqueue banner + legacy toast overlay
         "notify" => {
             let rest = parts.get(1).unwrap_or(&"").trim().to_string();
             let (title, msg) = rest.split_once('|')
@@ -493,6 +490,13 @@ pub fn handle_extended_command(
         // Audio subsystem IPC commands
         "volume" | "volume-get" | "mute" | "unmute" => {
             return audio_ipc::handle_audio_ipc(verb, parts, sender, inbox);
+        }
+
+        // Workspace commands
+        "workspace" | "workspace-move" | "workspace-get" => {
+            return workspace_cmd::handle_workspace_command(
+                verb, parts, sender, inbox, focused, app_registry,
+            );
         }
         _ => return false,
     }

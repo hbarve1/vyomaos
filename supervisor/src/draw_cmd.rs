@@ -425,6 +425,7 @@ pub fn handle_draw_command(
 }
 
 /// Blit all app surfaces in Z-order onto the framebuffer back-buffer.
+/// Only surfaces for apps visible on the current workspace are composited.
 #[cfg(target_os = "linux")]
 fn blit_all_surfaces(fb: &mut display::Framebuffer, registry: &AppRegistry) {
     let mut apps_sorted: Vec<(u32, String, (u32, u32, u32, u32))> = {
@@ -434,6 +435,7 @@ fn blit_all_surfaces(fb: &mut display::Framebuffer, registry: &AppRegistry) {
                 let st = st.lock().unwrap();
                 st.win_region.map(|r| (st.win_z, name.clone(), r))
             })
+            .filter(|(_, name, _)| crate::workspace::is_visible(name, registry))
             .collect()
     };
     apps_sorted.sort_by_key(|(z, _, _)| *z);

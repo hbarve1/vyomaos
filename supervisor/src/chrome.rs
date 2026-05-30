@@ -224,6 +224,13 @@ pub fn draw_menubar(
     // Left: brand — 12pt regular
     draw_glyph_str(fb, "VyomaOS", 12, ty, MAC_LABEL, 12, false, false);
 
+    // Workspace indicator (e.g. "● ○ ○ ○") right after brand
+    {
+        let ws_indicator = crate::workspace::indicator_string();
+        let ws_x = 80i32; // after "VyomaOS" label
+        draw_glyph_str(fb, &ws_indicator, ws_x, ty, MAC_LABEL2, 10, false, false);
+    }
+
     // App-switcher labels: drawn immediately after the brand name.
     // Highlighted (white) when focused, dimmed otherwise.
     let mut lx = MENUBAR_APPS_START_X as i32;
@@ -353,6 +360,8 @@ pub fn draw_chrome_onto(
     };
     for (name, (wx, wy, ww, wh)) in &regions {
         if *ww < 60 { continue; }
+        // Skip windows not on the current workspace.
+        if !crate::workspace::is_visible(name, registry) { continue; }
         let is_focused = focused_name.as_deref() == Some(name.as_str());
         let is_hovered = hovered_name.as_deref() == Some(name.as_str());
         let is_system = {
