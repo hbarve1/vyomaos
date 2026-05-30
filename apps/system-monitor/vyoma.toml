@@ -1,6 +1,6 @@
 [app]
 name    = "system-monitor"
-version = "0.1.0"
+version = "0.2.0"
 wasm    = "system-monitor.wasm"
 
 [capabilities]
@@ -8,8 +8,7 @@ stdio      = true
 filesystem = false
 network    = false
 display    = true
-shell      = true   # keyboard focus so user can press q to quit
-mouse      = true
+shell      = true   # needed for kill/restart/focus/log commands
 
 [window]
 x = 720
