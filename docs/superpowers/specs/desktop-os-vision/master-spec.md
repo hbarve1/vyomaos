@@ -2500,3 +2500,77 @@ Argon2id: `m=65536 KiB, t=3, p=1` (~400ms on RPi4). Master key ephemeral (`Zeroi
 
 ### Brute-Force Rate Limit (B5)
 `AtomicU32 UNLOCK_FAIL_COUNT` + `AtomicU64 UNLOCK_LOCKED_UNTIL_SECS`. Exponential backoff on each failure. `check_unlock_rate_limit()` called before PIN is decoded — no Argon2 computation during lockout.
+
+---
+
+## Section 61: Permissions & Privacy (TCC)
+
+**macOS analogue**: TCC / Privacy system preferences  
+**Key files**: `supervisor/src/permissions/` (mod.rs, db.rs, prompt.rs, audit.rs, ipc.rs)  
+**Storage**: `/data/.vyoma/permissions/db.toml` (R41 atomic), `audit.jsonl` (append-only)
+
+**Categories**: Camera, Microphone, ScreenRecording, Clipboard, Accessibility, Location, Contacts, Notifications, InputMonitoring. Apps must declare each category in `[capabilities.privacy]` manifest section; undeclared = denied without prompt.
+
+**Flow**: `perm-request <category>` returns immediately with `allowed`, `denied`, or `pending req_id=<N>`. Prompt rendered via compositor overlay (Z-order independent of focused app). User response pushed as `PERM_RESP:<N>:allowed|denied`. 60-second auto-deny on timeout. Privacy audit log written on every access decision.
+
+**B1** R41 atomic write for `db.toml` (`.tmp`→`fsync`→`rename`). **B2** Non-blocking prompt via deferred reply + overlay. **B3** Overlay layer in compositor bypasses focused-app surface routing. **B4** Manifest gate: undeclared categories denied without DB lookup. **B5** Append-only `audit.jsonl` on every `check_permission()` call.
+
+---
+
+## Section 62: Code Signing & Notarization
+
+**macOS analogue**: `codesign` / Gatekeeper / Notarization  
+**Key files**: `supervisor/src/codesign/` (mod.rs, verifier.rs, revocation.rs, ipc.rs, gatekeeper.rs); `tools/vyoma-sign/` (host-side, not in supervisor binary)  
+**Storage**: `/data/.vyoma/trusted_keys/*.pub.toml`, `/data/.vyoma/revoked_keys.txt`, `/data/.vyoma/gatekeeper.toml`
+
+**Signing format**: 99-byte `.sig` sidecar (magic 2B + version 1B + Ed25519 pubkey 32B + sig 64B). Signs `SHA256("VYOMA_CODE_DIR_V2\0" || SHA256(wasm) || SHA256(canonical_manifest_json) || name)`. Canonical manifest excludes `[window]` section (runtime-mutable). Official keys baked as `const [u8;32]` array in supervisor binary.
+
+**TOCTOU mitigation**: `verify_and_seal()` reads wasm bytes into memory, writes to `memfd_create` + seals (`F_SEAL_WRITE|F_SEAL_GROW|F_SEAL_SHRINK`), passes `/proc/self/fd/<N>` to wasmtime — immutable from verification to exec.
+
+**B1** Canonical manifest subset (`[app]`+`[capabilities]` only, key-sorted JSON) — `[window]` excluded. **B2** `ed25519-dalek` with `features=["alloc","digest"]` + `register_custom_getrandom!` no-op stub (no syscall, no binary bloat). **B3** `memfd_create` sealed fd eliminates TOCTOU between verify and wasmtime exec. **B4** `codesign_admin` capability + sender must be `TrustLevel::Official` to call `codesign-trust-add`. **B5** Sidecar always named `<app.name>.sig` (logical name); `update` requires `<sig_url>` parameter.
+
+---
+
+## Section 63: Secure Enclave & TEE
+
+**macOS analogue**: Secure Enclave / SEP / T-series chip  
+**Key files**: `supervisor/src/tee/` (mod.rs, tpm2_raw.rs, tpm2.rs, software.rs, sealed_key.rs, ipc.rs, measure.rs, recovery.rs)  
+**Storage**: `/data/.vyoma/tee/keychain_master.sealed`, `device_seed`, `measurements.jsonl`, `recovery.sealed`
+
+**Target**: TPM 2.0 HMAC-based key sealing via `/dev/tpm0`. Software fallback (HKDF-SHA256 over `machine_id || device_seed`) for QEMU and RPi4. `TeeBackend` trait with two implementations. `probe_backend()` factory selects at runtime.
+
+**R60 headless unlock**: on boot, `try_headless_unlock()` → `backend.unseal(blob)` → 32-byte master key passed directly to `KeychainManager::open_with_key()`. If TPM absent or PCR fails, falls back to Argon2id passphrase prompt.
+
+**B1** Raw `/dev/tpm0` command framing (`tpm2_raw.rs`) — no `tss-esapi`/OpenSSL C dependency. **B2** `validate_pcr_policy_sanity()` rejects zero PCRs; `device_hmac` field in `SealedKeyBlob` adds machine-binding beyond TPM. **B3** `Mutex<()>` in `Tpm2Backend` + `TeeService` actor thread serializes all TPM commands. **B4** `UnlockResult::NeedsMigration` triggers one-time passphrase + `migrate_blob()` — no silent brick on hardware upgrade. **B5** `RecoveryEnvelope` with 32-byte out-of-band recovery key displayed once at provisioning.
+
+---
+
+## Section 64: Full Disk Encryption
+
+**macOS analogue**: FileVault 2 / APFS encryption  
+**Key files**: `supervisor/src/fde/` (mod.rs, luks.rs, prompt.rs, rescue.rs, ipc.rs)  
+**Kernel additions**: `CONFIG_BLK_DEV_DM=y`, `CONFIG_DM_CRYPT=y`, `CONFIG_CRYPTO_AES=y`, `CONFIG_CRYPTO_XTS=y`  
+**BusyBox addition**: `CONFIG_DMSETUP=y` (static, ~20 KB, no new .so deps)
+
+**Scope**: Encrypts `out/disk.img` (ext4 at `/data`). Kernel/initramfs not encrypted. dm-crypt/LUKS2 with `aes-xts-plain64`, 512-bit VEK, Argon2id PBKDF (m=65536, t=3, p=4).
+
+**Boot flow**: `mount_early()` (proc/sys/dev) → `boot_fde_check()` → `EarlyFb` passphrase prompt (pre-DisplayState, independent mmap of `/dev/fb0`) → `dm_crypt_open()` → `mount_data()`. R63 TPM auto-unlock tried first.
+
+**B1** LUKS2 header parsed directly in `luks.rs`; `dmsetup` BusyBox applet for device activation — no `cryptsetup` binary needed. **B2** `EarlyFb` opens `/dev/fb0` independently via ioctl+mmap before `DisplayState` exists; serial fallback. **B3** `SecretBytes`/`SecretString` newtypes call `libc::explicit_bzero` in `Drop`. **B4** `disk-encrypt-enable` sends `VYOMA_SUSPEND` + waits 3s + `umount2(MNT_FORCE)` before format — no live fds during luksFormat. **B5** Commit-flag: `begin_fde_format()` writes `/boot/fde-pending` before destructive op; `commit_fde_format()` R41-writes `/boot/fde-state` + removes marker; `boot_fde_check()` detects torn format on next boot.
+
+---
+
+## Section 65: App Firewall & Network Policy
+
+**macOS analogue**: ALF / pfctl / NetworkExtension content filter  
+**Key files**: `supervisor/src/firewall/` (mod.rs, policy.rs, audit.rs, prompt.rs, nft.rs, dns_filter.rs, rate_limiter.rs, ipc.rs)  
+**Storage**: `/data/.vyoma/firewall/policy.toml` (R41 via actor), `audit.log`, `dns_block.txt`
+
+**Two-layer enforcement**: (1) IPC intercept layer — `check_connect()` called before every `tcp-connect`/`tcp-connect-host` dial; (2) nftables `meta cgroup` kernel enforcement per-app via cgroup placement at spawn.
+
+**New IPC verb** `tcp-connect-host <hostname> <port>`: DNS filter checked before resolution (blocked hosts never looked up); firewall sees both hostname and resolved IP; non-blocking deferred reply (`pending prompt_id=N conn_id=C`); result pushed as `NOTIFY:tcp-connect <conn_id>`.
+
+**Policy mutations** serialized via single-threaded actor (mpsc channel) with R41 persistence. Rate limiter: token bucket per app. DNS blocklist: wildcard prefix support.
+
+**B1** `place_in_cgroup(app_name, pid)` in `spawn_app`; `CONFIG_CGROUPS=y`/`CONFIG_CGROUP_NET_CLASSID=y`; non-fatal (IPC layer still enforces). **B2** Non-blocking deferred reply — IPC thread freed immediately; connection worker thread dials after user responds. **B3** Policy mutation actor: no concurrent `store.write()`; R41 persistence inside actor. **B4** `tcp-connect-host` verb carries hostname — DNS filter pre-resolution; hostname available for rule matching. **B5** Compositor overlay (`FlushCmd::ShowOverlay`) bypasses focused-app surface routing; serial shell fallback via `NOTIFY:firewall-prompt`.
+
