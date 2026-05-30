@@ -2367,3 +2367,136 @@ nl80211 scan takes 2-5s on real hardware. Dedicated `wifi_worker_thread` driven 
 
 ### DHCP Client (B5)
 Kernel `ip=dhcp` only runs at boot on boot interface. After `NL80211_CMD_CONNECT` success, `wifi/dhcp.rs` runs userspace DHCP: poll `/sys/class/net/<iface>/operstate` until "up" (max 3s), then DISCOVER→OFFER→REQUEST→ACK via `AF_PACKET` raw socket, configure via `SIOCSIFADDR`/`SIOCADDRT` ioctls. Timeout (10s): `VYOMA_WIFI:connect_failed:<ssid>:dhcp_failed`.
+
+---
+
+## Section 56: AirDrop & P2P File Transfer
+
+**macOS analogue**: `AirDrop` / `AWDL`  
+**Depends on**: R51, R52 (mDNS), R49 (sandbox FS)  
+**Status**: FINAL
+
+### Discovery
+Supervisor advertises `_vyoma-drop._tcp.local.` via mDNS (224.0.0.251:5353), announces every 30s, expires peers after 90s. New `airdrop: bool` capability in manifest.
+
+### Wire Protocol (TCP port 7474)
+`MAGIC(5) | version(1) | auth_handshake(Ed25519 TOFU) | sender_name | filename | file_size | ACK | chunks(4B_len + data) | SHA-256(32B)`. Hard cap: 512 MB. Max 4 concurrent transfers (semaphore — B2).
+
+### Per-Transfer-ID Accept/Reject (B1)
+`TransferId`-keyed `HashMap<u64, mpsc::Sender<bool>>` replaces single `PENDING` slot. UI message includes id; `airdrop-accept <id>` keyed. Concurrent arrivals each get their own channel.
+
+### Path Sanitization (B3)
+`Path::file_name()` extracts basename only; allow-list chars; verify `candidate.parent() == dest_dir`. No traversal escapes landing zone.
+
+### Chunked Send (B4)
+`file.read(&mut buf)` loop with 64 KB chunks. Peak heap bounded regardless of file size — no `fs::read()` into Vec.
+
+### TOFU Authentication (B5)
+Ed25519 keypair at `/data/.vyoma/airdrop/identity.key`. Challenge-response in handshake. Trust store at `trusted_peers.toml`. Unknown pubkey shows 8-byte fingerprint in accept prompt.
+
+---
+
+## Section 57: Network Sharing & Tethering
+
+**macOS analogue**: Internet Sharing / Personal Hotspot  
+**Platform scope**: `mobile`, `iot-edge` only  
+**Status**: FINAL
+
+### Kernel Delta
+`CONFIG_NETFILTER=y`, `CONFIG_NF_TABLES=y`, `CONFIG_NFT_MASQ=y`, `CONFIG_USB_GADGET=y`, `CONFIG_USB_G_NCM=y`. No iptables — nftables only.
+
+### ip_forward Reference Counter (B4)
+`AtomicU32 IP_FORWARD_REFS`; `acquire_ip_forward("hotspot")` / `release_ip_forward("hotspot")`. Forward only disabled when all subsystems (hotspot + VPN) have released. Prevents VPN blackhole when hotspot tears down last.
+
+### Interface Name Validation + nftables (B1)
+`validate_iface_name()` + `validate_nft_table_name()` allowlist `[a-zA-Z0-9_-]` only before any interpolation into nft script piped to `nft -f -`.
+
+### AP Mode Settle Wait (B2)
+`iw disconnect` → `wait_for_iface_down(3s)` poll → `verify_iface_type("AP")` via `iw dev info` → `verify_hostapd_running(3s)` ctrl socket check. Prevents silent broken AP from driver race.
+
+### DHCP Server (B3)
+In-process DHCP server (no dnsmasq). `socket2::Socket` with `SO_REUSEPORT` + `SO_BINDTODEVICE=wlan0`. Pool `192.168.42.100–200`. Isolated from upstream interface — no DHCP storm.
+
+### WPA2 Passphrase Shredding (B5)
+`OpenOptions::mode(0o600)` at CREATE time (no TOCTOU). Conf shredded with zeros + deleted after hostapd exec. `SharingMode::Hotspot` stores only `ssid` — passphrase never persisted.
+
+---
+
+## Section 58: TLS & Certificate Store
+
+**macOS analogue**: `Security.framework` / Keychain cert store  
+**Depends on**: R51, R52, R59 (capability gate), R60 (private keys)  
+**Status**: FINAL
+
+### Architecture
+Pure-Rust stack: `webpki`, `webpki-roots`, `rustls-pemfile`, `x509-parser`, `rcgen`. Cert store at `/data/.vyoma/certs/{roots,user,mtls,pins,crl}/`. No system PEM file needed — compiled-in Mozilla bundle (B5).
+
+### Scope Validation (B1)
+`validate_scope()` allowlist `["roots","user","mtls","pins","crl"]`; `validate_alias()` rejects separators and `..`; `write_atomic` canonicalizes parent to verify no escape from store root.
+
+### Capability Gate (B2)
+`has_tls: bool` on `AppState`; all `tls-*`/`cert-*` commands gated before dispatch. Without `tls = true` in manifest, commands return error at the IPC router.
+
+### No Private Keys Over IPC (B3)
+`cert-selfgen` returns only cert PEM; key stored in supervisor's `mtls/` store only. mTLS performed supervisor-side via `tls-connect-mtls <host:port> <cert-name>` — app uses `tls-send`/`tls-recv` with a `conn_id`.
+
+### CRL Integration (B4)
+`verify_chain` always receives `crl_cache` parameter; `is_revoked(serial_hex)` checked after chain validation succeeds. CRL snapshot taken under lock, dropped before webpki call (ABBA prevention).
+
+### Compiled-in Root Bundle (B5)
+`webpki_roots::TLS_SERVER_ROOTS` is the authoritative baseline — always ≥150 anchors. User store is additive. Zero-anchors condition is impossible.
+
+---
+
+## Section 59: Sandboxing & Capability Model
+
+**macOS analogue**: App Sandbox / entitlements / TCC  
+**Depends on**: R03, R49, R50–R55  
+**Status**: FINAL
+
+### Entitlement System
+`EntitlementSet { entries: Vec<Entitlement>, trust: TrustLevel }` stored on `AppState`. `TrustLevel::System` only for `/etc/vyoma/boot.toml` entries. `ShellCommand` enum scopes `shell = true` — User trust gets `[Ps, Log, Logf, Logs, Focus, Notify]` only; System gets `Any`.
+
+### Broadcast Rate Limit (B1)
+Token-bucket 200 msg/s per sender in `router.rs` before any `@` routing. Broadcast requires explicit `IpcSend { targets: ["broadcast"] }` entitlement — not granted by default to any app.
+
+### `run` Command Scope (B2)
+`run` requires `ShellCommand::Run` (System trust default); path must match `/apps/`, `/data/apps/`, `/etc/vyoma/`; `wasm_sha256` required; `is_system_entry: bool = false` for all runtime-spawned apps.
+
+### Temporal Grant Persistence (B3)
+Temporal grants persisted to `/data/caps/<app>.grants` with expiry timestamps; reloaded at spawn; `VYOMA_SYSTEM:caps_restored` sent on restart. Crash no longer silently strips runtime-granted permissions.
+
+### Seccomp Allowlist (B4)
+Default-deny `SECCOMP_RET_KILL_PROCESS`. Allowlist: `WASMTIME_BASE` (~40 syscalls) + `NETWORK_SYSCALLS` if `network=true` + `FILESYSTEM_EXTRA` if `filesystem=true`. Added `sigaltstack(131)`, `futex(202)`, `memfd_create(319)` for wasmtime-fiber. `VYOMA_SECCOMP_AUDIT=1` for dev mode.
+
+### IPC Token — Confused Deputy Prevention (B5)
+128-bit per-spawn token generated from `/dev/urandom`, delivered on app stdin as `VYOMA_SYSTEM:token:<hex>`. All `@supervisor:` commands must include `TOKEN:<hex>` prefix. Constant-time comparison. Relay attack fails — relayed commands carry wrong/absent token.
+
+---
+
+## Section 60: Keychain & Secret Storage
+
+**macOS analogue**: Keychain Services / `SecItem`  
+**Depends on**: R49, R53 (VPN key ref), R55 (Wi-Fi PMK), R58 (TLS keys), R59 (capability)  
+**Status**: FINAL
+
+### Storage Format
+Encrypted flat files at `/data/.vyoma/keychain/<namespace>/<label>`. Format: `nonce(12) || AES-256-GCM(owner_prefix + payload) || tag(16)`. Owner inside ciphertext — tampered ownership invalidates GCM tag. `meta.toml` holds Argon2id KDF params + salt (plaintext).
+
+### Key Derivation
+Argon2id: `m=65536 KiB, t=3, p=1` (~400ms on RPi4). Master key ephemeral (`ZeroizingKey` — overwrites on drop). After supervisor restart: keychain locked; privileged app calls `keychain-unlock <pin>` to re-derive.
+
+### Zeroize on Delivery (B1)
+`Zeroizing<Vec<u8>>` and `Zeroizing<[u8;32]>` for all plaintext and base64 intermediates. Stack copy guaranteed zeroed when scope exits.
+
+### Atomic Key Snapshot (B2)
+`snapshot_key()` acquires `MASTER_KEY` mutex, copies bytes to `Zeroizing<[u8;32]>`, drops mutex — single critical section, no TOCTOU with idle lock timer.
+
+### Secret Redaction + Out-of-Band Routing (B3)
+`router.rs` intercepts `keychain-*` before `LAST_SENDER` update or logging. `log_buf` skips `keychain-secret` lines. `keychain-unlock` PIN handled in `Zeroizing` buffer, never logged. Exponential backoff on failed unlock (2^(n-1) seconds, max 3600s).
+
+### Path Traversal Prevention (B4)
+`secret_path()`: reject `..`, allowlist `[a-zA-Z0-9-_/.]`, enforce single-slash depth, canonical prefix check against `KEYCHAIN_ROOT`.
+
+### Brute-Force Rate Limit (B5)
+`AtomicU32 UNLOCK_FAIL_COUNT` + `AtomicU64 UNLOCK_LOCKED_UNTIL_SECS`. Exponential backoff on each failure. `check_unlock_rate_limit()` called before PIN is decoded — no Argon2 computation during lockout.
