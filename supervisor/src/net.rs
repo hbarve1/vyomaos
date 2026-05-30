@@ -84,39 +84,59 @@ pub fn dns_skip_name(buf: &[u8], mut pos: usize) -> Option<usize> {
     }
 }
 
-/// Minimal HTTP/1.1 GET over plain TCP (P30). Returns the response body.
-/// Only supports `http://` (no TLS). URL format: `http://host[:port]/path`.
-pub fn http_get(url: &str) -> Result<Vec<u8>, String> {
-    use std::io::{Read, Write};
-    use std::net::TcpStream;
-
-    let rest = url.strip_prefix("http://")
-        .ok_or_else(|| "only http:// URLs are supported".to_string())?;
+/// Parse a URL into (scheme, host, port, path). Supports http:// and https://.
+pub fn parse_url(url: &str) -> Result<(bool, String, u16, String), String> {
+    let (is_https, rest) = if let Some(r) = url.strip_prefix("https://") {
+        (true, r)
+    } else if let Some(r) = url.strip_prefix("http://") {
+        (false, r)
+    } else {
+        return Err("URL must start with http:// or https://".to_string());
+    };
 
     let (hostport, path) = if let Some(idx) = rest.find('/') {
-        (&rest[..idx], &rest[idx..])
+        (&rest[..idx], rest[idx..].to_string())
     } else {
-        (rest, "/")
+        (rest, "/".to_string())
     };
+
+    let default_port: u16 = if is_https { 443 } else { 80 };
     let (host, port) = if let Some(c) = hostport.rfind(':') {
         let p: u16 = hostport[c + 1..]
             .parse()
             .map_err(|_| format!("invalid port in '{hostport}'"))?;
-        (&hostport[..c], p)
+        (hostport[..c].to_string(), p)
     } else {
-        (hostport, 80u16)
+        (hostport.to_string(), default_port)
     };
 
-    let mut stream = TcpStream::connect((host, port))
-        .map_err(|e| format!("connect {host}:{port}: {e}"))?;
+    Ok((is_https, host, port, path))
+}
 
-    let req = format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
-    stream.write_all(req.as_bytes())
-        .map_err(|e| format!("request write: {e}"))?;
+/// Minimal HTTP/1.1 GET over plain TCP or TLS (P30/P45). Returns the response body.
+/// Supports both `http://` and `https://` URLs.
+pub fn http_get(url: &str) -> Result<Vec<u8>, String> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+
+    let (is_https, host, port, path) = parse_url(url)?;
+
+    let req = format!(
+        "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+    );
 
     let mut raw = Vec::new();
-    stream.read_to_end(&mut raw)
-        .map_err(|e| format!("response read: {e}"))?;
+
+    if is_https {
+        raw = https_request(&host, port, req.as_bytes())?;
+    } else {
+        let mut stream = TcpStream::connect((&*host, port))
+            .map_err(|e| format!("connect {host}:{port}: {e}"))?;
+        stream.write_all(req.as_bytes())
+            .map_err(|e| format!("request write: {e}"))?;
+        stream.read_to_end(&mut raw)
+            .map_err(|e| format!("response read: {e}"))?;
+    }
 
     let sep = raw.windows(4).position(|w| w == b"\r\n\r\n")
         .ok_or_else(|| "no HTTP header boundary in response".to_string())?;
@@ -136,4 +156,99 @@ pub fn http_get(url: &str) -> Result<Vec<u8>, String> {
     }
 
     Ok(raw[sep + 4..].to_vec())
+}
+
+/// Perform a raw TLS-wrapped request, returning the full response bytes.
+fn https_request(host: &str, port: u16, request: &[u8]) -> Result<Vec<u8>, String> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::sync::Arc;
+
+    let root_store = rustls::RootCertStore::from_iter(
+        webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
+    );
+
+    let config = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+
+    let server_name = rustls::pki_types::ServerName::try_from(host.to_string())
+        .map_err(|e| format!("invalid server name '{host}': {e}"))?;
+
+    let mut conn = rustls::ClientConnection::new(Arc::new(config), server_name)
+        .map_err(|e| format!("TLS init: {e}"))?;
+
+    let mut tcp = TcpStream::connect((&*host, port))
+        .map_err(|e| format!("connect {host}:{port}: {e}"))?;
+    tcp.set_read_timeout(Some(std::time::Duration::from_secs(10))).ok();
+
+    let mut tls = rustls::Stream::new(&mut conn, &mut tcp);
+
+    tls.write_all(request)
+        .map_err(|e| format!("TLS write: {e}"))?;
+
+    let mut raw = Vec::new();
+    loop {
+        let mut buf = [0u8; 8192];
+        match tls.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => raw.extend_from_slice(&buf[..n]),
+            Err(ref e) if e.kind() == std::io::ErrorKind::ConnectionAborted => break,
+            Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(format!("TLS read: {e}")),
+        }
+    }
+
+    Ok(raw)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_url_http() {
+        let (tls, host, port, path) = parse_url("http://example.com/foo").unwrap();
+        assert!(!tls);
+        assert_eq!(host, "example.com");
+        assert_eq!(port, 80);
+        assert_eq!(path, "/foo");
+    }
+
+    #[test]
+    fn parse_url_https_default_port() {
+        let (tls, host, port, path) = parse_url("https://example.com/bar").unwrap();
+        assert!(tls);
+        assert_eq!(host, "example.com");
+        assert_eq!(port, 443);
+        assert_eq!(path, "/bar");
+    }
+
+    #[test]
+    fn parse_url_https_custom_port() {
+        let (tls, host, port, path) = parse_url("https://example.com:8443/baz").unwrap();
+        assert!(tls);
+        assert_eq!(host, "example.com");
+        assert_eq!(port, 8443);
+        assert_eq!(path, "/baz");
+    }
+
+    #[test]
+    fn parse_url_no_path() {
+        let (tls, host, port, path) = parse_url("https://example.com").unwrap();
+        assert!(tls);
+        assert_eq!(host, "example.com");
+        assert_eq!(port, 443);
+        assert_eq!(path, "/");
+    }
+
+    #[test]
+    fn parse_url_invalid_scheme() {
+        assert!(parse_url("ftp://example.com").is_err());
+    }
+
+    #[test]
+    fn parse_url_invalid_port() {
+        assert!(parse_url("http://example.com:notaport/x").is_err());
+    }
 }
