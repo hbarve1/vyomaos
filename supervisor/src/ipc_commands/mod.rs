@@ -4,6 +4,7 @@
 //! Extended @supervisor IPC commands: pkg-*, wallpaper, resize, tcp-*, clipboard,
 //! session-*, display, network helpers, uptime, loglevel, ping, version (P14–P55).
 
+mod audio_ipc;
 mod tcp;
 
 use std::{fs, path::Path, sync::Arc, thread};
@@ -489,7 +490,10 @@ pub fn handle_extended_command(
         "update-local" => {
             crate::ota_update::handle_update_local(parts, sender, inbox, focused, app_registry);
         }
-
+        // Audio subsystem IPC commands
+        "volume" | "volume-get" | "mute" | "unmute" => {
+            return audio_ipc::handle_audio_ipc(verb, parts, sender, inbox);
+        }
         _ => return false,
     }
     true

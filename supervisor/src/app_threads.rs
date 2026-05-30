@@ -278,6 +278,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         if caps.display    { wired.push("display")     } else { skipped.push("display") }
         if caps.shell      { wired.push("shell")       } else { skipped.push("shell") }
         if caps.mouse      { wired.push("mouse")       } else { skipped.push("mouse") }
+        if caps.audio      { wired.push("audio")       } else { skipped.push("audio") }
         let net_note = if caps.network { format!(" (port={net_port})") } else { String::new() };
         log_info!(Subsystem::Capability, Some(name.as_str()),
             "wired: {}{net_note}; skipped: {}", wired.join(" "), skipped.join(" "));
@@ -362,6 +363,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         watchdog_backoff: Arc::new(Mutex::new(0u64)),
         has_mouse:        caps.mouse,
         has_display:      caps.display,
+        has_audio:        caps.audio,
         win_region:       None,
         win_z:            manifest.window.as_ref().map(|w| w.z).unwrap_or(chrome::Z_APP),
         min_size,
@@ -387,7 +389,6 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
     Some(SpawnedApp { entry: entry.clone(), name, child, msg_rx, child_stdin, child_stdout,
                       has_display: caps.display, is_shell: caps.shell })
 }
-
 // ── wait_app ──────────────────────────────────────────────────────────────────
 
 pub fn wait_app(
@@ -467,7 +468,6 @@ pub fn wait_app(
 
     let _ = LAST_SENDER.get().and_then(|m| m.lock().ok()).map(|mut m| m.remove(&name));
 }
-
 /// P19: watchdog loop — kills any app that has been silent longer than its
 /// configured `watchdog_secs`.  Runs forever in its own named thread.
 pub fn run_watchdog(registry: AppRegistry) {

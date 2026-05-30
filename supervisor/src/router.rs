@@ -41,6 +41,23 @@ pub fn route_or_print(
             return;
         }
     }
+    // VYOMA_AUDIO protocol — apps with audio capability can send audio commands.
+    if let Some(cmd) = line.strip_prefix("VYOMA_AUDIO:") {
+        let has_audio = app_registry.lock().unwrap()
+            .get(sender)
+            .map(|st| st.lock().unwrap().has_audio)
+            .unwrap_or(false);
+        if has_audio {
+            crate::audio::handle_audio_command(cmd, sender);
+        } else {
+            crate::log_warn!(
+                supervisor::logging::Subsystem::Audio, Some(sender),
+                "VYOMA_AUDIO command rejected — app lacks audio capability"
+            );
+        }
+        return;
+    }
+
     let _ = has_display;
     let _ = win_region;
 
