@@ -485,6 +485,7 @@ pub fn run_mouse_input(inbox: Inbox, focused: FocusedApp, registry: AppRegistry)
                             // Drag release: snap to nearest tiled slot if within 40 px
                             crate::win_actions::finish_drag_snap(screen_w, screen_h, &registry, &focused);
                         }
+                        crate::drag_drop::deliver_drop_if_active(cx, cy, &inbox, &registry);
                     }
                     btn_held &= !pending_release_mask;
                     pending_release_mask = 0;

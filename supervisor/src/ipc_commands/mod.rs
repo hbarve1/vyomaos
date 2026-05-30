@@ -5,6 +5,7 @@
 //! session-*, display, network helpers, uptime, loglevel, ping, version, workspace, lock.
 
 mod audio_ipc;
+mod drag_drop_cmd;
 mod lock;
 mod tcp;
 mod workspace_cmd;
@@ -503,6 +504,12 @@ pub fn handle_extended_command(
         "lock" | "unlock" => {
             lock::handle_lock_command(verb, sender, inbox, focused, app_registry);
         }
+
+        // Drag & drop between apps
+        "drag-start" | "drag-cancel" => {
+            return drag_drop_cmd::handle_drag_drop(verb, &parts, sender, inbox);
+        }
+
         _ => return false,
     }
     true
