@@ -27,6 +27,7 @@ mod net;
 mod packages;
 #[cfg(target_os = "linux")]
 mod seccomp;
+mod theme;
 mod toast;
 mod tray;
 mod verify;

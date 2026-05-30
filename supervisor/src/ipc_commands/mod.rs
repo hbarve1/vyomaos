@@ -7,6 +7,7 @@
 mod audio_ipc;
 mod lock;
 mod tcp;
+mod theme_cmd;
 mod workspace_cmd;
 use std::{fs, path::Path, sync::Arc, thread};
 
@@ -498,6 +499,11 @@ pub fn handle_extended_command(
             return workspace_cmd::handle_workspace_command(
                 verb, parts, sender, inbox, focused, app_registry,
             );
+        }
+
+        // Theme switching: theme <dark|light|auto>
+        "theme" => {
+            return theme_cmd::handle_theme_command(parts, sender, inbox, app_registry);
         }
 
         "lock" | "unlock" => {
