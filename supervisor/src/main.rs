@@ -31,11 +31,14 @@ mod ipc_commands;
 mod ipc_handlers;
 mod mount;
 mod mouse_input;
+#[cfg(target_os = "linux")]
+mod namespace;
 mod net;
 mod packages;
 #[cfg(target_os = "linux")]
 mod seccomp;
 mod toast;
+mod verify;
 mod mgmt_protocol;
 mod mgmt_server;
 mod mgmt_handlers;
