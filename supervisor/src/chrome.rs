@@ -23,13 +23,21 @@ pub const MENUBAR_H:    u32 = 24;   // global menu bar height
 pub const TITLEBAR_H:   u32 = 28;   // per-window title bar height
 const TL_DOT:           u32 = 13;   // traffic-light dot diameter (px) — Apple spec
 
-const MAC_MENUBAR:      u32 = 0x2A2A2AFF; // system background (menubar)
-const MAC_TITLE_ACT:    u32 = 0x323232FF; // active window title bar
-const MAC_TITLE_INACT:  u32 = 0x282828FF; // inactive window title bar
-const MAC_TITLE_HOVER:  u32 = 0x383838FF; // hovered title bar (slightly lighter than active)
-const MAC_SEP:          u32 = 0x3A3A3CFF; // separator line
-const MAC_LABEL:        u32 = 0xEBEBEBFF; // primary label (near-white)
-const MAC_LABEL2:       u32 = 0x8E8E93FF; // secondary label (gray)
+fn mac_menubar()     -> u32 { crate::theme::current_theme().menubar }
+fn mac_title_act()   -> u32 { crate::theme::current_theme().title_active }
+fn mac_title_inact() -> u32 { crate::theme::current_theme().title_inactive }
+fn mac_title_hover() -> u32 {
+    // Hover is slightly lighter than active; derive by adding 0x060606 per channel.
+    let t = crate::theme::current_theme().title_active;
+    let r = ((t >> 24) & 0xFF).saturating_add(6);
+    let g = ((t >> 16) & 0xFF).saturating_add(6);
+    let b = ((t >>  8) & 0xFF).saturating_add(6);
+    let a =  t & 0xFF;
+    (r << 24) | (g << 16) | (b << 8) | a
+}
+fn mac_sep()         -> u32 { crate::theme::current_theme().border }
+fn mac_label()       -> u32 { crate::theme::current_theme().text }
+fn mac_label2()      -> u32 { crate::theme::current_theme().dim }
 const TL_CLOSE:         u32 = 0xFF5F57FF; // traffic light red
 const TL_MINIMIZE:      u32 = 0xFFBD2DFF; // traffic light yellow
 const TL_MAXIMIZE:      u32 = 0x28C840FF; // traffic light green
@@ -143,9 +151,9 @@ fn draw_window_shadow(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, 
 ///
 /// Pure function — no side-effects, no global state reads.
 pub fn titlebar_color_for_state(focused: bool, hovered: bool) -> u32 {
-    if hovered      { MAC_TITLE_HOVER } // hover — slightly lighter for affordance
-    else if focused { MAC_TITLE_ACT   } // active window
-    else            { MAC_TITLE_INACT } // inactive window
+    if hovered      { mac_title_hover() } // hover — slightly lighter for affordance
+    else if focused { mac_title_act()   } // active window
+    else            { mac_title_inact() } // inactive window
 }
 
 /// Draw a macOS-style title bar at (wx, wy, ww, TITLEBAR_H).
@@ -167,7 +175,7 @@ pub fn draw_titlebar(
         let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
         draw_rounded_rect(&mut fb.back, wx, wy, ww, TITLEBAR_H, bg, 10, fs, sw, sh);
     }
-    fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
+    fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, mac_sep());
 
     // Traffic lights — circles (radius = TL_DOT/2), left-aligned, vertically centered
     let tl_y = wy + (TITLEBAR_H - TL_DOT) / 2;
@@ -193,7 +201,7 @@ pub fn draw_titlebar(
     if ww > name_w_est + 60 {
         let nx = (wx + (ww - name_w_est) / 2) as i32;
         let ny = (wy + TITLEBAR_H / 2) as i32;
-        let col = if is_focused { MAC_LABEL } else { MAC_LABEL2 };
+        let col = if is_focused { mac_label() } else { mac_label2() };
         draw_glyph_str(fb, display_name, nx, ny, col, 13, false, false);
     }
 }
@@ -216,19 +224,19 @@ pub fn draw_menubar(
     if !crate::SHOW_MENU_BAR.get().copied().unwrap_or(true) { return; }
     use supervisor::windows::{MENUBAR_APPS_START_X, menubar_label_width};
 
-    fb.fill_rect(0, 0, sw, MENUBAR_H, MAC_MENUBAR);
-    fb.fill_rect(0, MENUBAR_H - 1, sw, 1, MAC_SEP);
+    fb.fill_rect(0, 0, sw, MENUBAR_H, mac_menubar());
+    fb.fill_rect(0, MENUBAR_H - 1, sw, 1, mac_sep());
 
     let ty = (MENUBAR_H / 2) as i32; // vertical center baseline for 12pt font
 
     // Left: brand — 12pt regular
-    draw_glyph_str(fb, "VyomaOS", 12, ty, MAC_LABEL, 12, false, false);
+    draw_glyph_str(fb, "VyomaOS", 12, ty, mac_label(), 12, false, false);
 
     // Workspace indicator (e.g. "● ○ ○ ○") right after brand
     {
         let ws_indicator = crate::workspace::indicator_string();
         let ws_x = 80i32; // after "VyomaOS" label
-        draw_glyph_str(fb, &ws_indicator, ws_x, ty, MAC_LABEL2, 10, false, false);
+        draw_glyph_str(fb, &ws_indicator, ws_x, ty, mac_label2(), 10, false, false);
     }
 
     // App-switcher labels: drawn immediately after the brand name.
@@ -236,7 +244,7 @@ pub fn draw_menubar(
     let mut lx = MENUBAR_APPS_START_X as i32;
     for app in apps {
         let is_focused = focused.map_or(false, |f| f == app.as_str());
-        let color = if is_focused { MAC_LABEL } else { MAC_LABEL2 };
+        let color = if is_focused { mac_label() } else { mac_label2() };
         draw_glyph_str(fb, app, lx + 8, ty, color, 12, false, false);
         lx += menubar_label_width(app.len()) as i32;
     }
@@ -248,7 +256,7 @@ pub fn draw_menubar(
         let name_w_est = crate::font_cache().lock().unwrap()
             .measure_str(display_name, 12, false, false);
         let nx = sw.saturating_sub(name_w_est) / 2;
-        draw_glyph_str(fb, display_name, nx as i32, ty, MAC_LABEL, 12, false, false);
+        draw_glyph_str(fb, display_name, nx as i32, ty, mac_label(), 12, false, false);
     }
 
     // Right: clock HH:MM:SS — 12pt regular (rightmost element)
@@ -260,12 +268,12 @@ pub fn draw_menubar(
         .measure_str(&clock, 12, false, false);
     let clock_x = if sw > cw + 12 { sw - cw - 12 } else { 0 };
     if clock_x > 0 {
-        draw_glyph_str(fb, &clock, clock_x as i32, ty, MAC_LABEL2, 12, false, false);
+        draw_glyph_str(fb, &clock, clock_x as i32, ty, mac_label2(), 12, false, false);
     }
 
     // Tray indicators: rendered right-to-left, to the left of the clock
     let tray_items = crate::tray::collect_items();
-    let tray_gap = 12_u32; // gap between tray items
+    let tray_gap = 12_u32;
     let mut tray_x = clock_x.saturating_sub(tray_gap);
     for item in tray_items.iter().rev() {
         let tw = crate::font_cache().lock().unwrap()
