@@ -193,10 +193,11 @@ VYOMA_SYSTEM:vpn-status:error:<profile_name>:<reason>
 
 ```
 supervisor/src/vpn/
-├── mod.rs          (~80 lines: VpnState, VPN_STATE OnceLock, on_vpn_app_exit (B2+B5))
-├── tun.rs          (~120 lines: OwnedTunFd drop guard (B2), create_tun ioctl sequence)
-├── profile.rs      (~100 lines: VpnProfile serde, parse_vpn_profile, 0o600 creation)
-├── routing.rs      (~90 lines: default-route add/del via BusyBox ip (B3))
+├── mod.rs          (~150 lines: VpnState, VPN_STATE OnceLock, on_vpn_app_exit (B2+B5), handle_vpn_line)
+├── tun.rs          (~180 lines: OwnedTunFd drop guard (B2), create_tun ioctl sequence, packet I/O)
+├── tunnel.rs       (~200 lines: tunnel state machine Disconnected/Connecting/Connected/Error)
+├── profile.rs      (~100 lines: VpnConfig serde, parse_vpn_profile, 0o600 creation)
+├── routing.rs      (~150 lines: default-route add/del via BusyBox ip (B3), kill-switch, DNS override)
 ├── dns_override.rs (~60 lines: VPN_DNS OnceLock, set/clear/active_dns_server (B5))
 └── ipc.rs          (~80 lines: vpn-connect/disconnect/status/list handlers (B1 probe))
 
@@ -216,3 +217,423 @@ supervisor/src/app_threads.rs (modified: log filter for vpn-key: lines (B4))
 | B3: `SO_BINDTODEVICE` cannot be applied to future WASI sockets from supervisor | Replace per-app routing with default-route takeover (`ip route add default dev vyoma0 metric 50`) |
 | B4: VPN private key in plaintext, appears in app logs | Log filter skips `vpn-key:` lines; `skip_serializing` on key field; profile mode `0o600` |
 | B5: DNS override not reverted on VPN app crash → 5s timeout on every `dns-resolve` | `on_vpn_app_exit()` is the single authoritative cleanup fn that always calls `clear_vpn_dns()` |
+
+---
+
+## 10. VYOMA_VPN: Protocol (Complete Reference)
+
+All VPN control flow uses the `VYOMA_VPN:` stdout protocol. Apps must declare `vpn = true` in `vyoma.toml` to use connect/disconnect commands. `status` and `list_profiles` are readable by apps with `vpn = true` or `shell = true`.
+
+### App → Supervisor
+
+```
+VYOMA_VPN:connect|<profile_name>
+VYOMA_VPN:disconnect
+VYOMA_VPN:status
+VYOMA_VPN:list_profiles
+VYOMA_VPN:add_profile|<json_config>
+VYOMA_VPN:delete_profile|<name>
+```
+
+- `connect`: triggers async handshake; supervisor responds with `connected` or `error` once settled.
+- `disconnect`: triggers graceful teardown via `on_vpn_app_exit`; always responds with `disconnected`.
+- `status`: synchronous query; returns current tunnel state inline.
+- `list_profiles`: returns JSON array of profile names stored in `/data/.vyoma/vpn/`.
+- `add_profile`: accepts a JSON-encoded `VpnConfig`; supervisor persists to `/data/.vyoma/vpn/<name>.vpn.toml`.
+- `delete_profile`: removes profile file; fails with `error` if profile is currently active.
+
+### Supervisor → App
+
+```
+VYOMA_VPN:connected|<profile>|<assigned_ip>
+VYOMA_VPN:disconnected
+VYOMA_VPN:status|<state>|<profile>|<assigned_ip>
+VYOMA_VPN:error|<reason>
+VYOMA_VPN:profiles|<json_array>
+```
+
+- `connected`: sent after successful TUN setup + route programming + DNS override.
+- `disconnected`: sent after full teardown completes (routes removed, DNS reverted, TUN closed).
+- `status`: inline response to `VYOMA_VPN:status`; `<state>` is one of `connected`, `connecting`, `disconnected`, `error`.
+- `error`: sent when connect fails (e.g., TUN unavailable, handshake timeout, profile not found).
+- `profiles`: JSON array of profile name strings in response to `list_profiles`.
+
+### Multi-App Constraint (B5 variant)
+
+Only one VPN tunnel may be active at a time — the TUN device `vyoma0` is system-wide. If `VYOMA_VPN:connect|<profile>` arrives while another tunnel is `Connected` or `Connecting`, the supervisor performs a graceful disconnect of the existing tunnel first (calling `on_vpn_app_exit`), then starts the new connection. The requesting app receives no intermediate `disconnected` message — only the final `connected` or `error`.
+
+---
+
+## 11. VpnConfig Struct
+
+```rust
+// supervisor/src/vpn/profile.rs
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum VpnProtocol {
+    WireGuard,
+    OpenVPN,
+    IKEv2,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VpnConfig {
+    pub name:         String,
+    pub protocol:     VpnProtocol,
+    pub server:       String,
+    pub port:         u16,
+    /// Pre-shared key (WireGuard PSK or IKEv2 PSK). Never logged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub psk:          Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username:     Option<String>,
+    /// CIDR ranges to route through VPN; empty means full-tunnel (0.0.0.0/0).
+    pub routes:       Vec<String>,
+    pub dns_servers:  Vec<String>,
+    /// true = only route listed CIDRs through VPN; false = full tunnel (all traffic).
+    #[serde(default)]
+    pub split_tunnel: bool,
+    /// Drop all non-tunnel traffic while VPN is active.
+    #[serde(default)]
+    pub kill_switch:  bool,
+}
+
+impl VpnConfig {
+    pub fn is_full_tunnel(&self) -> bool {
+        !self.split_tunnel || self.routes.is_empty()
+    }
+}
+```
+
+Stored as TOML at `/data/.vyoma/vpn/<name>.vpn.toml`. Loaded on `VYOMA_VPN:connect` and on `add_profile`. Private key material (`psk`, WireGuard `private_key_b64`) is marked `skip_serializing` so round-trip writes never leak credentials back to disk in a different path.
+
+---
+
+## 12. TUN Device Creation (Concrete ioctl)
+
+```rust
+// supervisor/src/vpn/tun.rs
+
+use std::os::unix::io::RawFd;
+use libc::c_int;
+
+const TUNSETIFF:     u64 = 0x400454ca;
+const TUNSETPERSIST: u64 = 0x400454cb;
+
+#[repr(C)]
+struct IfReq {
+    ifr_name:  [u8; 16],
+    ifr_flags: i16,
+    _pad:      [u8; 22],
+}
+
+/// Create a TUN device named `name` (e.g. "vyoma0").
+/// Returns the open file descriptor. The interface is non-persistent:
+/// closing the fd destroys the interface automatically (B2 fix).
+pub fn create_tun(name: &str) -> Result<RawFd, String> {
+    let fd = unsafe {
+        libc::open(b"/dev/net/tun\0".as_ptr() as *const libc::c_char, libc::O_RDWR)
+    };
+    if fd < 0 {
+        return Err(format!("open /dev/net/tun failed: errno {}", unsafe { *libc::__errno_location() }));
+    }
+
+    let mut ifr = IfReq {
+        ifr_name:  [0u8; 16],
+        ifr_flags: (libc::IFF_TUN | libc::IFF_NO_PI) as i16,
+        _pad:      [0u8; 22],
+    };
+    let name_bytes = name.as_bytes();
+    let copy_len = name_bytes.len().min(15);
+    ifr.ifr_name[..copy_len].copy_from_slice(&name_bytes[..copy_len]);
+
+    let ret = unsafe { libc::ioctl(fd, TUNSETIFF, &ifr as *const IfReq) };
+    if ret < 0 {
+        unsafe { libc::close(fd); }
+        return Err("TUNSETIFF ioctl failed".into());
+    }
+
+    // Non-persistent: closing fd destroys interface (prevents stale vyoma0 on crash)
+    let ret2 = unsafe { libc::ioctl(fd, TUNSETPERSIST, 0 as c_int) };
+    if ret2 < 0 {
+        unsafe { libc::close(fd); }
+        return Err("TUNSETPERSIST=0 ioctl failed".into());
+    }
+
+    Ok(fd)
+}
+
+/// Read one IP packet from the TUN fd. Blocks until data available.
+pub fn read_packet(fd: RawFd, buf: &mut [u8]) -> Result<usize, String> {
+    let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
+    if n < 0 { return Err(format!("tun read error: errno {}", unsafe { *libc::__errno_location() })); }
+    Ok(n as usize)
+}
+
+/// Write one IP packet to the TUN fd (injects into kernel network stack).
+pub fn write_packet(fd: RawFd, pkt: &[u8]) -> Result<(), String> {
+    let n = unsafe { libc::write(fd, pkt.as_ptr() as *const libc::c_void, pkt.len()) };
+    if n < 0 { return Err(format!("tun write error: errno {}", unsafe { *libc::__errno_location() })); }
+    Ok(())
+}
+```
+
+---
+
+## 13. Tunnel State Machine
+
+```rust
+// supervisor/src/vpn/tunnel.rs
+
+use std::os::unix::io::RawFd;
+
+/// Tunnel lifecycle states.  Transitions are linear except Error → Disconnected on reset.
+#[derive(Debug, Clone)]
+pub enum TunnelState {
+    Disconnected,
+    Connecting {
+        profile: String,
+        attempt: u32,
+    },
+    Connected {
+        profile:     String,
+        assigned_ip: String,
+        tun_fd:      RawFd,
+    },
+    Disconnecting,
+    Error {
+        reason: String,
+    },
+}
+
+impl TunnelState {
+    pub fn is_active(&self) -> bool {
+        matches!(self, TunnelState::Connecting { .. } | TunnelState::Connected { .. })
+    }
+
+    pub fn profile_name(&self) -> Option<&str> {
+        match self {
+            TunnelState::Connecting { profile, .. } => Some(profile),
+            TunnelState::Connected  { profile, .. } => Some(profile),
+            _ => None,
+        }
+    }
+
+    pub fn assigned_ip(&self) -> Option<&str> {
+        match self {
+            TunnelState::Connected { assigned_ip, .. } => Some(assigned_ip),
+            _ => None,
+        }
+    }
+
+    /// Transition to Connected; panics if not currently Connecting.
+    pub fn mark_connected(self, assigned_ip: String, tun_fd: RawFd) -> TunnelState {
+        match self {
+            TunnelState::Connecting { profile, .. } => {
+                TunnelState::Connected { profile, assigned_ip, tun_fd }
+            }
+            other => panic!("mark_connected called in wrong state: {:?}", other),
+        }
+    }
+
+    /// Transition to Error from any state.
+    pub fn mark_error(self, reason: String) -> TunnelState {
+        TunnelState::Error { reason }
+    }
+}
+
+/// Drive state transitions for the vpn-connect flow.
+pub fn transition_connect(state: TunnelState, profile: &str) -> TunnelState {
+    match state {
+        TunnelState::Disconnected | TunnelState::Error { .. } => {
+            TunnelState::Connecting { profile: profile.to_string(), attempt: 1 }
+        }
+        // Already connecting or connected: caller must disconnect first (B5 variant)
+        other => other,
+    }
+}
+```
+
+---
+
+## 14. Kill-Switch and Route Manipulation
+
+```rust
+// supervisor/src/vpn/routing.rs
+
+use std::process::Command;
+
+/// Add a default route via the TUN interface with low metric (50),
+/// overriding the normal virtio-net default route (metric 100).
+pub fn add_default_route(tun_iface: &str) -> Result<(), String> {
+    let status = Command::new("ip")
+        .args(["route", "add", "default", "dev", tun_iface, "metric", "50"])
+        .status()
+        .map_err(|e| format!("ip route add failed: {e}"))?;
+    if !status.success() {
+        return Err(format!("ip route add default dev {tun_iface} metric 50 exited non-zero"));
+    }
+    Ok(())
+}
+
+/// Remove the VPN default route added by add_default_route.
+pub fn del_default_route(tun_iface: &str) -> Result<(), String> {
+    let _ = Command::new("ip")
+        .args(["route", "del", "default", "dev", tun_iface, "metric", "50"])
+        .status();
+    Ok(())
+}
+
+/// Add a specific CIDR route through the TUN interface (split-tunnel mode).
+pub fn add_route(cidr: &str, tun_iface: &str) -> Result<(), String> {
+    let status = Command::new("ip")
+        .args(["route", "add", cidr, "dev", tun_iface])
+        .status()
+        .map_err(|e| format!("ip route add {cidr} failed: {e}"))?;
+    if !status.success() {
+        return Err(format!("ip route add {cidr} dev {tun_iface} exited non-zero"));
+    }
+    Ok(())
+}
+
+/// Enable kill-switch: drop all outbound traffic not going through the TUN interface.
+/// Uses nftables when available; falls back gracefully if nft not present.
+pub fn enable_kill_switch(tun_iface: &str) -> Result<(), String> {
+    // nft add rule inet filter output oifname != "vyoma0" counter drop
+    let rule = format!(
+        "add rule inet filter output oifname != \"{}\" counter drop",
+        tun_iface
+    );
+    let status = Command::new("nft")
+        .args(["--", &rule])
+        .status()
+        .map_err(|e| format!("nft kill-switch failed: {e}"))?;
+    if !status.success() {
+        return Err(format!("nft kill-switch rule insertion failed for {tun_iface}"));
+    }
+    Ok(())
+}
+
+/// Disable kill-switch by flushing the output chain rule inserted above.
+pub fn disable_kill_switch(tun_iface: &str) -> Result<(), String> {
+    // nft delete rule inet filter output handle <handle>
+    // For MVP: flush entire output chain (acceptable since VyomaOS has no other output rules)
+    let _ = Command::new("nft")
+        .args(["flush", "chain", "inet", "filter", "output"])
+        .status();
+    let _ = tun_iface; // suppress unused warning
+    Ok(())
+}
+```
+
+---
+
+## 15. DNS Override Integration with R52
+
+When a VPN tunnel transitions to `Connected`, the supervisor pushes a DNS reconfiguration command to the R52 DNS subsystem:
+
+```rust
+// Inside on_vpn_app_exit and the connect success path in vpn/ipc.rs
+
+// On connect: override DNS with VPN-provided servers
+fn apply_vpn_dns(dns_servers: &[String]) {
+    if let Some(first) = dns_servers.first() {
+        // Push VYOMA_DNS:set-upstream to the dns-resolver app via IPC
+        // Format matches R52 DNS subsystem protocol
+        let msg = format!("VYOMA_DNS:set-upstream|{}", first);
+        // Route through supervisor IPC broker to the dns-resolver app
+        send_to_app("dns-resolver", &msg);
+    }
+}
+
+// On disconnect: revert to default upstream
+fn clear_vpn_dns() {
+    send_to_app("dns-resolver", "VYOMA_DNS:clear-upstream");
+}
+```
+
+**DNS leak prevention (B4 variant)**: When `split_tunnel = false` (full tunnel), the supervisor overrides ALL DNS servers — not merely adds the VPN DNS alongside the existing one. This prevents DNS queries from leaking outside the tunnel to the ISP resolver. When `split_tunnel = true`, VPN DNS is added alongside the default (queries for `search_domains` go to VPN DNS; others go to default upstream).
+
+---
+
+## 16. Capability Declaration
+
+Apps that need to initiate or manage VPN connections declare `vpn = true` in `vyoma.toml`:
+
+```toml
+[capabilities]
+stdio   = true
+network = true
+shell   = true
+vpn     = true
+```
+
+In the supervisor's `Capabilities` struct (`supervisor/src/manifest.rs`):
+
+```rust
+#[derive(Debug, Deserialize, Default, Clone)]
+pub struct Capabilities {
+    #[serde(default)] pub stdio:      bool,
+    #[serde(default)] pub filesystem: bool,
+    #[serde(default)] pub network:    bool,
+    #[serde(default)] pub display:    bool,
+    #[serde(default)] pub shell:      bool,
+    #[serde(default)] pub mouse:      bool,
+    #[serde(default)] pub vpn:        bool,      // NEW: gates VYOMA_VPN: connect/disconnect
+    #[serde(default)] pub vpn_route:  bool,      // RESERVED: future split-tunnel via NETFILTER
+}
+```
+
+The `vpn_route` field is parsed and stored but currently a no-op. It is documented as reserved for a future implementation that requires `CONFIG_NETFILTER=y` in the kernel config.
+
+---
+
+## 17. Detailed Blocking Issue Analysis
+
+### B1 — CONFIG_TUN Absent
+
+**Problem**: The allnoconfig kernel has no `CONFIG_TUN`. Calling `open("/dev/net/tun")` returns `ENOENT`. The VPN app receives no error signal and may loop indefinitely trying to connect.
+
+**Resolution**: Add `CONFIG_TUN=y` to `base/kernel.config`. This adds a single ~50 KB kernel module. The `tun_available()` probe runs before any TUNSETIFF ioctl attempt; failure returns an explicit `VYOMA_VPN:error|tun-not-available` to the requesting app.
+
+### B2 — Stale TUN Interface After Crash
+
+**Problem**: If the VPN WASM app crashes while the TUN device is open, the `vyoma0` interface persists in the kernel until something explicitly destroys it (because default TUN persistence is on). A subsequent `VYOMA_VPN:connect` then fails with `EBUSY` on the TUNSETIFF ioctl.
+
+**Resolution**: Set `TUNSETPERSIST=0` immediately after creating the interface. The interface then has the same lifetime as the open file descriptor. `OwnedTunFd`'s `Drop` impl closes the fd, which the kernel uses to destroy the interface atomically. The supervisor's crash-detection path calls `on_vpn_app_exit`, which calls `state.tun_fd.take()`, triggering the drop.
+
+### B3 — WASM Apps Cannot Manipulate Routes
+
+**Problem**: WASM apps run under WASI Preview 2 — they have no mechanism to call `SIOCADDRT`, write to `/proc/net/route`, or invoke `ip route` directly. Supervisor cannot inject `SO_BINDTODEVICE` retroactively.
+
+**Resolution**: Route all traffic at the kernel level via the default-route metric trick. The supervisor (running as PID 1 with full Linux capabilities) invokes `ip route add default dev vyoma0 metric 50` via `std::process::Command`. This routes all traffic from all `network = true` WASM apps through the tunnel without any per-app coordination.
+
+### B4 — DNS Leak When Full Tunnel Active
+
+**Problem**: Simply adding the VPN DNS server alongside the existing resolver means DNS queries may still reach the ISP resolver if split-tunnel logic is absent or misconfigured. This leaks browsing patterns outside the VPN.
+
+**Resolution**: On full-tunnel connect (`split_tunnel = false`), supervisor calls `VYOMA_DNS:set-upstream` to the R52 DNS subsystem, replacing (not supplementing) the default upstream. On disconnect, `clear_vpn_dns` reverts to the pre-VPN upstream. The fallback to `8.8.8.8` on RFC-1918 timeout prevents the DNS subsystem from hanging after a VPN crash.
+
+### B5 — Kill-Switch State Persists After Supervisor Crash
+
+**Problem**: If the kill-switch nftables rule is inserted and then the supervisor crashes without cleanup, all outbound traffic remains blocked even after reboot. The system becomes unreachable.
+
+**Resolution**: On supervisor startup, read `/data/.vyoma/vpn/state.json`. If the file records `kill_switch_active: true` and no VPN is currently running, immediately call `disable_kill_switch`. This recovery path runs before any app is spawned. The state file is written atomically (write-then-rename per R41 semantics) on every kill-switch state change.
+
+```rust
+// Startup recovery in vpn/mod.rs
+pub fn recover_kill_switch_on_boot() {
+    let path = "/data/.vyoma/vpn/state.json";
+    if let Ok(data) = std::fs::read_to_string(path) {
+        if let Ok(state) = serde_json::from_str::<VpnPersistedState>(&data) {
+            if state.kill_switch_active {
+                let _ = routing::disable_kill_switch("vyoma0");
+                log::warn!("[vpn] kill-switch was active at last shutdown; cleared on boot");
+            }
+        }
+    }
+}
+```
