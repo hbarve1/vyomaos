@@ -30,19 +30,19 @@ pub enum TrafficLight {
 /// whose top-left corner is at `(wx, wy)`, or `None` if no button was hit.
 ///
 /// Layout (matches `draw_titlebar`):
-///   close    circle center (wx+12, title_center), radius 6 → rect (wx+ 6, tl_y, 12, 12)
-///   minimize circle center (wx+28, title_center), radius 6 → rect (wx+22, tl_y, 12, 12)
-///   maximize circle center (wx+44, title_center), radius 6 → rect (wx+38, tl_y, 12, 12)
-/// where tl_y = wy + (TITLEBAR_H − 12) / 2 = wy + 8.
+///   close    rect (wx+ 9, tl_y, 13, 13)
+///   minimize rect (wx+30, tl_y, 13, 13)
+///   maximize rect (wx+51, tl_y, 13, 13)
+/// where tl_y = wy + (TITLEBAR_H − 13) / 2 = wy + 7.
 pub fn traffic_light_hit(cx: i32, cy: i32, wx: u32, wy: u32) -> Option<TrafficLight> {
-    let tl_y = wy as i32 + 8; // (TITLEBAR_H=28 - TL_DOT=12) / 2 = 8
-    if cy < tl_y || cy >= tl_y + 12 {
+    let tl_y = wy as i32 + 7; // (TITLEBAR_H=28 - TL_DOT=13) / 2 = 7
+    if cy < tl_y || cy >= tl_y + 13 {
         return None;
     }
     let wx = wx as i32;
-    if cx >= wx + 6  && cx < wx + 18  { return Some(TrafficLight::Close);    }
-    if cx >= wx + 22 && cx < wx + 34  { return Some(TrafficLight::Minimize); }
-    if cx >= wx + 38 && cx < wx + 50  { return Some(TrafficLight::Maximize); }
+    if cx >= wx + 9  && cx < wx + 22  { return Some(TrafficLight::Close);    }
+    if cx >= wx + 30 && cx < wx + 43  { return Some(TrafficLight::Minimize); }
+    if cx >= wx + 51 && cx < wx + 64  { return Some(TrafficLight::Maximize); }
     None
 }
 

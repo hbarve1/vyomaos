@@ -8,83 +8,83 @@ enum TrafficLight {
     Maximize,
 }
 
-/// Mirror of `traffic_light_hit` from main.rs.
+/// Mirror of `traffic_light_hit` from mouse_input.rs.
 ///
-/// Layout: tl_y = wy + 8, dot size = 12×12
-///   close    at wx+ 8 .. wx+20
-///   minimize at wx+24 .. wx+36
-///   maximize at wx+40 .. wx+52
+/// Layout: tl_y = wy + 7, dot size = 13×13
+///   close    at wx+ 9 .. wx+22
+///   minimize at wx+30 .. wx+43
+///   maximize at wx+51 .. wx+64
 fn traffic_light_hit(cx: i32, cy: i32, wx: u32, wy: u32) -> Option<TrafficLight> {
-    let tl_y = wy as i32 + 8;
-    if cy < tl_y || cy >= tl_y + 12 {
+    let tl_y = wy as i32 + 7;
+    if cy < tl_y || cy >= tl_y + 13 {
         return None;
     }
     let wx = wx as i32;
-    if cx >= wx + 8  && cx < wx + 20  { return Some(TrafficLight::Close);    }
-    if cx >= wx + 24 && cx < wx + 36  { return Some(TrafficLight::Minimize); }
-    if cx >= wx + 40 && cx < wx + 52  { return Some(TrafficLight::Maximize); }
+    if cx >= wx + 9  && cx < wx + 22  { return Some(TrafficLight::Close);    }
+    if cx >= wx + 30 && cx < wx + 43  { return Some(TrafficLight::Minimize); }
+    if cx >= wx + 51 && cx < wx + 64  { return Some(TrafficLight::Maximize); }
     None
 }
 
 #[test]
 fn test_traffic_light_hit_detection() {
-    // Window at wx=100, wy=50 → tl_y = 58
+    // Window at wx=100, wy=50 → tl_y = 57
     let (wx, wy): (u32, u32) = (100, 50);
 
-    // Close dot: x in [108,120), y in [58,70)
-    assert_eq!(traffic_light_hit(108, 58, wx, wy), Some(TrafficLight::Close));
-    assert_eq!(traffic_light_hit(119, 69, wx, wy), Some(TrafficLight::Close));
-    assert_eq!(traffic_light_hit(113, 63, wx, wy), Some(TrafficLight::Close)); // center
+    // Close dot: x in [109,122), y in [57,70)
+    assert_eq!(traffic_light_hit(109, 57, wx, wy), Some(TrafficLight::Close));
+    assert_eq!(traffic_light_hit(121, 69, wx, wy), Some(TrafficLight::Close));
+    assert_eq!(traffic_light_hit(115, 63, wx, wy), Some(TrafficLight::Close)); // center
 
-    // Minimize dot: x in [124,136), y in [58,70)
-    assert_eq!(traffic_light_hit(124, 58, wx, wy), Some(TrafficLight::Minimize));
-    assert_eq!(traffic_light_hit(135, 69, wx, wy), Some(TrafficLight::Minimize));
-    assert_eq!(traffic_light_hit(129, 63, wx, wy), Some(TrafficLight::Minimize)); // center
+    // Minimize dot: x in [130,143), y in [57,70)
+    assert_eq!(traffic_light_hit(130, 57, wx, wy), Some(TrafficLight::Minimize));
+    assert_eq!(traffic_light_hit(142, 69, wx, wy), Some(TrafficLight::Minimize));
+    assert_eq!(traffic_light_hit(136, 63, wx, wy), Some(TrafficLight::Minimize)); // center
 
-    // Maximize dot: x in [140,152), y in [58,70)
-    assert_eq!(traffic_light_hit(140, 58, wx, wy), Some(TrafficLight::Maximize));
-    assert_eq!(traffic_light_hit(151, 69, wx, wy), Some(TrafficLight::Maximize));
-    assert_eq!(traffic_light_hit(145, 63, wx, wy), Some(TrafficLight::Maximize)); // center
+    // Maximize dot: x in [151,164), y in [57,70)
+    assert_eq!(traffic_light_hit(151, 57, wx, wy), Some(TrafficLight::Maximize));
+    assert_eq!(traffic_light_hit(163, 69, wx, wy), Some(TrafficLight::Maximize));
+    assert_eq!(traffic_light_hit(157, 63, wx, wy), Some(TrafficLight::Maximize)); // center
 
     // Title bar but between / outside dots — not a traffic-light hit
     assert_eq!(traffic_light_hit(100, 63, wx, wy), None); // left of close
-    assert_eq!(traffic_light_hit(120, 63, wx, wy), None); // gap between close and minimize
-    assert_eq!(traffic_light_hit(152, 63, wx, wy), None); // right of maximize
+    assert_eq!(traffic_light_hit(122, 63, wx, wy), None); // gap between close and minimize
+    assert_eq!(traffic_light_hit(164, 63, wx, wy), None); // right of maximize
 
     // Above the dot row (y < tl_y)
-    assert_eq!(traffic_light_hit(113, 57, wx, wy), None);
+    assert_eq!(traffic_light_hit(115, 56, wx, wy), None);
 
-    // Below the dot row (y >= tl_y + 12)
-    assert_eq!(traffic_light_hit(113, 70, wx, wy), None);
+    // Below the dot row (y >= tl_y + 13)
+    assert_eq!(traffic_light_hit(115, 70, wx, wy), None);
 
     // Well below the title bar (content area)
-    assert_eq!(traffic_light_hit(113, 100, wx, wy), None);
+    assert_eq!(traffic_light_hit(115, 100, wx, wy), None);
 }
 
 #[test]
 fn traffic_light_close_right_edge_excluded() {
-    // x=120 is the first pixel NOT in the close dot
-    assert_eq!(traffic_light_hit(120, 63, 100, 50), None);
+    // x=122 is the first pixel NOT in the close dot (wx=100, dot at 109..122)
+    assert_eq!(traffic_light_hit(122, 63, 100, 50), None);
 }
 
 #[test]
 fn traffic_light_minimize_left_edge_inclusive() {
-    assert_eq!(traffic_light_hit(124, 63, 100, 50), Some(TrafficLight::Minimize));
+    assert_eq!(traffic_light_hit(130, 63, 100, 50), Some(TrafficLight::Minimize));
 }
 
 #[test]
 fn traffic_light_maximize_left_edge_inclusive() {
-    assert_eq!(traffic_light_hit(140, 63, 100, 50), Some(TrafficLight::Maximize));
+    assert_eq!(traffic_light_hit(151, 63, 100, 50), Some(TrafficLight::Maximize));
 }
 
 #[test]
 fn traffic_light_y_row_boundaries() {
     let (wx, wy): (u32, u32) = (0, 0);
-    // tl_y = 8; dot spans y in [8, 20)
-    assert_eq!(traffic_light_hit(8, 7,  wx, wy), None);  // one above
-    assert_eq!(traffic_light_hit(8, 8,  wx, wy), Some(TrafficLight::Close)); // first row
-    assert_eq!(traffic_light_hit(8, 19, wx, wy), Some(TrafficLight::Close)); // last row
-    assert_eq!(traffic_light_hit(8, 20, wx, wy), None);  // one below
+    // tl_y = 7; dot spans y in [7, 20)
+    assert_eq!(traffic_light_hit(9, 6,  wx, wy), None);  // one above
+    assert_eq!(traffic_light_hit(9, 7,  wx, wy), Some(TrafficLight::Close)); // first row
+    assert_eq!(traffic_light_hit(9, 19, wx, wy), Some(TrafficLight::Close)); // last row
+    assert_eq!(traffic_light_hit(9, 20, wx, wy), None);  // one below
 }
 
 /// Returns true if screen point (mx, my) is inside window (wx, wy, ww, wh).

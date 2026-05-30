@@ -21,7 +21,7 @@ const _: () = assert!(Z_DESKTOP < Z_APP && Z_APP < Z_DOCK && Z_DOCK < Z_OVERLAY)
 
 pub const MENUBAR_H:    u32 = 24;   // global menu bar height
 pub const TITLEBAR_H:   u32 = 28;   // per-window title bar height
-const TL_DOT:           u32 = 12;   // traffic-light dot diameter (px) — radius 6
+const TL_DOT:           u32 = 13;   // traffic-light dot diameter (px) — Apple spec
 
 const MAC_MENUBAR:      u32 = 0x2A2A2AFF; // system background (menubar)
 const MAC_TITLE_ACT:    u32 = 0x323232FF; // active window title bar
@@ -180,9 +180,9 @@ pub fn draw_titlebar(
         use crate::display::draw_rounded_rect;
         let r = TL_DOT / 2;
         let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-        draw_rounded_rect(&mut fb.back, wx +  6, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
-        draw_rounded_rect(&mut fb.back, wx + 22, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
-        draw_rounded_rect(&mut fb.back, wx + 38, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx +  9, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 30, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 51, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
     }
 
     // App name centered — 13pt regular Inter
