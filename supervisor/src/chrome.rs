@@ -445,11 +445,18 @@ pub fn draw_focus_ring(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32,
 
 /// Sample the current animation alpha and clear completed animations.
 /// Returns 255 (fully opaque) when no animation is active.
+/// When reduce-motion accessibility is enabled, animations are skipped
+/// (immediately completed) and 255 is returned.
 pub fn sample_and_clear_anim(anim: &mut Option<crate::display::animator::Animation>) -> u8 {
     let a = match anim.as_ref() {
         None => return 255,
         Some(a) => a,
     };
+    // Accessibility: skip animations when reduce-motion is enabled.
+    if !crate::accessibility::animation_enabled() {
+        *anim = None;
+        return 255;
+    }
     let elapsed = crate::display::animator::now_ms().saturating_sub(a.start_ms);
     let state = a.sample(elapsed);
     if state.done { *anim = None; }
