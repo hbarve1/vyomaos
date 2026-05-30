@@ -1982,3 +1982,28 @@ Removed `clipboard_read_unattended`. Non-Cmd+V reads require chrome banner conse
 
 ### Secure Clipboard
 `:secure[:ttl]` suffix on `commit`. TTL default 60s, max 120s. Never enters history. Consume-on-read. Zeroed on expiry (overwrite + fsync + unlink). Sweep runs at 1 Hz and on every focus change.
+
+---
+
+## Section 41: File Manager (Finder Equivalent)
+
+**macOS analogue**: `Finder` / `NSOpenPanel` / `NSSavePanel`  
+**Status**: FINAL
+
+### Architecture
+Two cooperating pieces: `file-manager` WASM app (space-0, z=65528) renders the browser UI; `panel_service` (supervisor) handles system-modal open/save sheets with path traversal guard and worker pools. Apps needing file pickers send `VYOMA_PANEL:open/save` to supervisor — they never spawn their own file browser.
+
+### Open/Save Panel (B1 Fix)
+`VYOMA_PANEL:open:<request_id>:<options_b64>` / `VYOMA_PANEL:save:...`. Supervisor keys panels by `app_instance_id: u64` (supervisor-assigned, incremented on spawn) — NOT by `app_name`. On any app exit: `purge_instance(id)` revokes all PanelGrants, ReadTokens, and WriteTokens. Result delivered: `VYOMA_PANEL:result:<request_id>:ok:<grant_token_hex>:<paths_b64>`.
+
+### Worker Pools (B2 Fix)
+Three isolated pools: `fs_io` (2 workers, per-app fair-queue, 256 KB chunk re-enqueue — prevents one giant copy from starving others), `fs_meta` (1 worker, FIFO, fast ops), `fs_quicklook` (1 worker, cancellable). `VYOMA_FS:cancel:<job_id>` preempts quicklook and chunked copy.
+
+### Capability Tokens (B3 Fix)
+Read tokens auto-revoke when full file size delivered. Write tokens require explicit `VYOMA_FS:write_commit:<token>` (fsync + rename tmp over real path). `BookmarkToken` for persistent access: user sees chrome banner + Settings → Privacy → File Access revoke UI; tokens stored in `/data/capability-grants.toml`.
+
+### Drag, Trash & Tags (B4 Fix)
+Open panel registers as R38 drop target — dropping a file populates the filename field. `vyoma://trash` virtual path → `/data/.vyoma/trash/` with `Put Back` support. `VYOMA_FS:tag/<path>/<add|remove>/<tag>` with sidecar SQLite DB at `/data/.vyoma/tags.db`. `VYOMA_FS:watch/<path>/<depth>` + `VYOMA_FS:notify_change` push live updates to `filesystem=true` apps.
+
+### Listing & Column View (B5 Fix)
+`VYOMA_FS:list` supports `sort_by`, `sort_dir`, `offset`, `limit`, `prefetch_thumb_size`; first NDJSON line is `{"type":"meta","total_count":N}` for scrollbar. `VYOMA_FS:list_paths` returns filenames only for fast column-view population. Quick Look: cache at `/data/.vyoma/quicklook/<sha256>-<mtime>.png`, 512 MB LRU cap.
