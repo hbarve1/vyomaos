@@ -1938,7 +1938,8 @@ All `VYOMA_DRAG:` commands verified: `start` = sender==capture-owner; `upload_do
 ## Section 39: Text Input & Selection Model
 
 **macOS analogue**: `NSTextView` / `TSM` / `TextKit` / `NSTextInputClient`  
-**Status**: FINAL
+**Status**: FINAL  
+**Key files**: `supervisor/src/text_input/`
 
 ### Architecture (Thin Model)
 Supervisor owns a `TextContextSnapshot` per focused field — NOT the text buffer or undo ring. Per-field `ArcSwap<TextContextSnapshot>` for wait-free reads by AX/IME threads (B1 fix). `TextRegistry { fields: RwLock<HashMap>, focused: ArcSwap }`.
@@ -1963,7 +1964,8 @@ Spell check (WASM service, 250ms debounce), smart substitution (inline rewrite b
 ## Section 40: Clipboard & Pasteboard
 
 **macOS analogue**: `NSPasteboard` / `UIPasteboard` / clipboard history  
-**Status**: FINAL
+**Status**: FINAL  
+**Key files**: `supervisor/src/clipboard/`
 
 ### Architecture
 Four named pasteboards: `general`(16 history), `find`(1), `drag`(1, unified with R38 token dirs), `ruler`(4). Each backed by `ArcSwap<PasteboardState>`. `TOKEN_REFS: Mutex<HashMap<[u8;16], u32>>` tracks reader lifetimes for GC (B4 fix).
@@ -2064,7 +2066,8 @@ R41 write tokens guarantee single-app atomicity but not multi-app coordination: 
 
 **macOS analogue**: `iCloud Drive` / `NSUbiquitousKeyValueStore`  
 **Depends on**: R41, R43, R60 (placeholder)  
-**Status**: FINAL
+**Status**: FINAL  
+**Key files**: `supervisor/src/cloud_sync/`
 
 ### Architecture
 Two-layer split: `cloud-sync` WASM coordinator (`restart = "always"`) handles sync engine, queue, policy, conflict resolution; per-provider plugin WASM apps (`cloud-sync-s3`, `cloud-sync-webdav`) handle HTTP transport to a single declared endpoint only (NO filesystem access). Supervisor owns KV store, credential proxy, path enrollment validation.
@@ -2093,7 +2096,8 @@ Credentials via R60 Keychain (interim: AES-256-GCM `creds.enc`). Delivered to pl
 
 **macOS analogue**: `Time Machine` / `APFS snapshots` / `tmutil`  
 **Depends on**: R04, R41, R43, R46  
-**Status**: FINAL
+**Status**: FINAL  
+**Key files**: `supervisor/src/snapshot/`
 
 ### Snapshot Primitive
 Hardlink-tree copy on ext4 (`cp -al` model) — NOT btrfs/APFS CoW, NOT tar. Snapshots are real directory trees enabling O(1) single-file browse/restore. All hardlinks within `/backup/snapshots/` (same ext4 volume); `/data` side never hardlinked.
@@ -2119,10 +2123,19 @@ Separate ext4 `out/backup.img` (256 MB), mounted `/backup` with `MS_NODEV|MS_NOE
 
 **macOS analogue**: `Disk Utility` / `DiskArbitration` / `diskutil`  
 **Depends on**: R04, R21, R41, R43  
-**Status**: FINAL
+**Status**: FINAL  
+**Key files**: `supervisor/src/disk/`
 
 ### Disk Discovery
-Poll `/sys/block/` every 2 seconds. `DiskDevice` struct: name, path, serial, size_bytes, removable, model, fs_type, partitions. Superblock probe: pure Rust (ext4 `0x53EF`, vfat `"FAT"`, GPT `"EFI PART"`, MBR `0x55AA`).
+Poll `/sys/block/` every 2 seconds. `DiskDevice` struct: name, path, serial, size_bytes, removable, model, fs_type, partitions. Superblock probe: pure Rust reads first 4096 bytes; magic bytes table:
+
+| Filesystem | Offset | Magic |
+|------------|--------|-------|
+| ext2/3/4   | 0x438  | `0x53 0xEF` (s_magic LE) |
+| FAT32      | 0x52   | `"FAT32   "` (8-byte ASCII) |
+| FAT16/12   | 0x36   | `"FAT"` prefix |
+| GPT        | 0x200  | `"EFI PART"` |
+| MBR        | 0x1FE  | `0x55 0xAA` |
 
 ### Boot Disk Identity (B4)
 Boot disk identified by virtio serial `"vyoma-data-disk"` (Makefile `-drive ...,serial=vyoma-data-disk`), NOT `/dev/vda` node. `DiskDevice.serial` read from `/sys/block/<name>/device/serial`.
@@ -2148,19 +2161,26 @@ Single-partition scope for R46. `mkpart:<device>:mbr` writes MBR (512-byte pure 
 
 **macOS analogue**: `Finder tags` / `xattrs` / `NSMetadataItem`  
 **Depends on**: R04, R41, R42  
-**Status**: FINAL
+**Status**: FINAL  
+**Key files**: `supervisor/src/file_tags/`
 
 ### Storage
-Two SQLite databases: `tags.db` (tag_names + file_tags) and `xattrs.db` (xattrs + app_meta). Both in WAL mode. Writer connection exclusive to writer thread; read-only reader connection for parallel queries (B2 fix: splits `Mutex<Connection>` into writer + reader).
+Two complementary layers: (1) **xattr layer** — per-file inode via `setxattr`; `user.vyoma.tags` xattr holds a JSON array of tag name strings; `user.vyoma.meta` holds a JSON object of custom metadata. (2) **Central index** — `TagIndex` struct (inverted map tag→paths) backed by `/data/.vyoma/tags/index.json`; loaded into memory at supervisor init, flushed atomically (`.tmp` → rename) after every mutation batch.
+
+### SQLite (Extended Attributes + App Metadata)
+Two WAL-mode SQLite databases: `tags.db` (tag_names + file_tags tables) and `xattrs.db` (xattrs + app_meta tables). Writer connection exclusive to writer thread; read-only reader connection for parallel queries (B2 fix).
 
 ### rusqlite musl Compilation (B1)
 `rusqlite bundled` feature compiles SQLite C source. Requires `CC_x86_64_unknown_linux_musl=musl-gcc` in `.cargo/config.toml` and Makefile Docker env passthrough.
+
+### TagColor Enum
+7 variants: `Red`, `Orange`, `Yellow`, `Green`, `Blue`, `Purple`, `Gray`. Each carries a hex color constant (`#FF3B30`…`#8E8E93`) for GUI rendering. Serialized by name in `index.json`.
 
 ### Namespace Model
 `vyoma.*` (supervisor-only write), `user.*` (any filesystem app), `com.<bundle>.*` (app-scoped). Enforcement uses `bundle_id: Option<String>` from `AppState` (from `vyoma.toml [app] bundle_id`), NOT unqualified app name (B5 fix).
 
 ### Router Dispatch (B4)
-`router.rs` previously had NO `VYOMA_FS:` arm — all opcodes silently dropped. Fix: add arm before draw block dispatching `tag/`, `xattr/`, `app_meta/` to `meta_store::ipc_handler`. `META_STORE: OnceLock<MetaStore>` initialized in main().
+`router.rs` arm dispatches `tag/`, `xattr/`, `app_meta/` opcodes to `meta_store::ipc_handler`. `META_STORE: OnceLock<MetaStore>` initialized in `main()`.
 
 ### Tag Rename (B3)
 `BEGIN IMMEDIATE` transaction + pre-check for target name existence before UPDATE. Prevents ghost `tag_names` rows from concurrent renames to the same target name.
@@ -2173,26 +2193,27 @@ Tag changes send `IndexCmd::Reindex(path)` to Spotlight indexer. `xattrs.db` rea
 ## Section 48: Document Model & Recent Files
 
 **macOS analogue**: `NSDocument` / `NSDocumentController`  
-**Depends on**: R04, R41, R43  
-**Status**: FINAL
+**Depends on**: R04, R41, R43, R74  
+**Status**: FINAL  
+**Key files**: `supervisor/src/document/` (registry.rs, recents.rs, versions.rs, autosave.rs, close.rs, ipc_handler.rs, mod.rs)
 
 ### Document Lifecycle
 `VYOMA_DOC:open/close/dirty/clean/autosave_ack/should_close_response` protocol. `@supervisor: doc_open <path> <display_name>` → `REPLY:doc_id:<id>`. Routed in `router.rs` before draw block.
 
 ### Document Registry
-`DocEntry` per open document: doc_id, path, display_name, owner_app, is_dirty, opened_at, `doc_signal: mpsc::Sender<DocSignal>`. `sweep_stale_docs(app_name)` on SIGCHLD: drains all entries for exiting app, flushes dirty ones to autosave shadow (B1 fix).
+`DocumentRecord` per open document: doc_id, path, app_name, owner_app, is_modified, last_opened, last_dirtied, autosave_path, `doc_signal: mpsc::Sender<DocSignal>`. Primary index: canonical path → record; secondary index: app_name → Vec<DocId>. `sweep_stale_docs(app_name)` on SIGCHLD drains all entries, flushes dirty ones to autosave shadow (B1 fix).
 
 ### should_close Channel (B3)
 `should_close` delivered via per-doc `doc_signal` channel (NOT blocking IPC handler thread). Signal thread sends `DocSignal::ShouldClose { reply_tx: oneshot::Sender<CloseDecision> }`, delivers `VYOMA_DOC:should_close` to app, waits on oneshot with 5-second timeout before forcing close.
 
 ### Recent Files Store
-SQLite `recents.db` at `/data/.vyoma/recents.db`. Per-app cap 10, system cap 100. `PRAGMA wal_autocheckpoint=10` for non-desktop profiles (B2). `document-model` Cargo feature excluded for mcu-minimal (B2). `recent_files: bool` capability gates system-wide access.
+Flat JSON files (NOT SQLite): system-wide at `/data/.vyoma/documents/recents_system.json`; per-app at `/data/.vyoma/documents/recents_<app>.json`. System cap 50, per-app cap 20. `RecentEntry { path, display_name, app_name, last_opened_secs }`. Deduplication by canonical path. `document-model` Cargo feature excluded for mcu-minimal profile (B2).
 
 ### Version Snapshots
-Gzip-compressed snaps at `/data/.vyoma/versions/<hex16>/v000N_<ts>.snap`. Max 20 per path; oldest pruned. Written on `VYOMA_DOC:clean` only. Restore requires `filesystem = true` + `BookmarkToken` + existing DocEntry history for that path (B4 fix — prevents arbitrary file access).
+Gzip-compressed snaps at `/data/.vyoma/versions/<hex16>/v000N_<ts>.snap`. Max 20 per path; oldest pruned. Written on `VYOMA_DOC:clean` only. Restore requires `filesystem = true` + `BookmarkToken` + existing DocEntry history for that path (B4 fix).
 
 ### Autosave Shadow Files (B5)
-`/data/.vyoma/autosave/<hex16>.shadow` written via R41 atomic-rename (write `.tmp`, fsync, rename). Directory mode `0o777`. Supervisor scans for orphaned shadows at startup and offers recovery to relevant app on next open.
+`/data/.vyoma/autosave/<hex16>.shadow` written via R41 atomic-rename (write `.tmp`, fsync, rename). Supervisor scans for orphaned shadows at startup and offers recovery to relevant app on next open.
 
 ---
 
@@ -2200,10 +2221,17 @@ Gzip-compressed snaps at `/data/.vyoma/versions/<hex16>/v000N_<ts>.snap`. Max 20
 
 **macOS analogue**: `App Sandbox` / container directories  
 **Depends on**: R04, R41, R48, R50  
-**Status**: FINAL
+**Status**: FINAL  
+**Key files**: `supervisor/src/sandbox/`
 
 ### Container Layout
-Per-app container at `/data/apps/<app_name>/` with subdirs: `support/`, `cache/`, `documents/`, `preferences/`, `tmp/`. Shared containers at `/data/shared/<group_id>/` for apps declaring the same `shared_groups` in vyoma.toml. `/data/.vyoma/` never granted to apps.
+Per-app container at `/data/apps/<app_name>/` with subdirs: `support/`, `cache/`, `documents/`, `preferences/`, `tmp/`. Shared containers at `/data/shared/<group_id>/` for apps declaring the same `shared_groups` in vyoma.toml. Read-only system assets at `/data/.shared/` (fonts, icons, themes). `/data/.vyoma/` never granted to apps.
+
+### SandboxPolicy Struct
+`SandboxPolicy { app_name, allowed_paths: Vec<PathBuf>, allow_writes: bool, quota_bytes: Option<u64>, shared_groups: Vec<String> }`. Derived from `vyoma.toml` at spawn time; stored in `AppState`; immutable for process lifetime.
+
+### Three-Layer Path Defense
+Every 9P path request passes: (1) dotdot reject — any `..` component rejected immediately; (2) canonical prefix check — `std::fs::canonicalize` result must have an `allowed_paths` entry as prefix; (3) symlink escape guard — resolved canonical path re-checked after canonicalization to prevent symlink escape.
 
 ### Automatic Grant Wiring (B1)
 At spawn: atomic `DELETE WHERE app_name=? AND grant_type='auto'` + INSERT in single transaction. No window with zero grants or stale grants. `grant_type='bookmark'` rows (user-granted via Open panel) are preserved across respawns.
@@ -2252,7 +2280,8 @@ Three-file swap: write `wasm.new` → `state='swap-pending'` in DB → rename `w
 
 **macOS analogue**: `CFNetwork` / `Network.framework`  
 **Depends on**: R03, R49  
-**Status**: FINAL
+**Status**: FINAL  
+**Key files**: `supervisor/src/networking/` (mod.rs, dns.rs, dns_cache.rs, policy.rs, monitor.rs, accounting.rs, netns.rs)
 
 ### Kernel Config (B1)
 Add to `base/kernel.config`: `CONFIG_IP_PNP=y`, `CONFIG_IP_PNP_DHCP=y` (eth0 self-configures to 10.0.2.15 before PID 1), `CONFIG_NET_LOOPBACK=y`, `CONFIG_RTNETLINK=y`, `CONFIG_NET_CORE=y`, `CONFIG_BPF=y`, `CONFIG_BPF_SYSCALL=y`. Add `ip=dhcp` to kernel cmdline in Makefile.
@@ -2266,6 +2295,9 @@ Add to `base/kernel.config`: `CONFIG_IP_PNP=y`, `CONFIG_IP_PNP_DHCP=y` (eth0 sel
 ### Net-Status Detection (B4)
 Use `carrier=1 AND IP-in-fib_trie` as "up" — not `operstate` (always `unknown` on QEMU user-mode). Broadcast `VYOMA_SYSTEM:net-change:eth0:up:10.0.2.15` on change via netlink `RTMGRP_LINK`.
 
+### Per-App Network Policy
+`AppNetworkPolicy { allowed_hosts: Vec<String>, allowed_ports: Vec<u16>, max_connections: u32 }` stored in `AppState`. Connection tracking via `AppNetStats { active_connections, bytes_sent, bytes_recv }` in `accounting.rs`.
+
 ### Port Conflict (B5)
 At spawn: check AppRegistry for existing app with same `network_port`; reject second app with error.
 
@@ -2275,7 +2307,8 @@ At spawn: check AppRegistry for existing app with same `network_port`; reject se
 
 **macOS analogue**: `mDNSResponder` / Bonjour  
 **Depends on**: R51  
-**Status**: FINAL
+**Status**: FINAL  
+**Key files**: `supervisor/src/dns/` (mod.rs, cache.rs, resolver.rs, mdns.rs, sd.rs, packet.rs)
 
 ### Stub Resolver
 UDP/53 to `10.0.2.3` (QEMU forwarder). In-flight dedup: `DNS_INFLIGHT: Mutex<HashMap<String, Vec<Sender<ResolveResult>>>>` — check + register in single lock acquisition (B3 fix). LRU cache (256 entries, min 30s / max 300s TTL, negative 30s).
@@ -2286,8 +2319,14 @@ UDP/53 to `10.0.2.3` (QEMU forwarder). In-flight dedup: `DNS_INFLIGHT: Mutex<Has
 ### Panic-Safe Parser (B4)
 `parse_mdns_query` uses `Option`-propagation throughout (`get(i)?`). `dns_skip_name_safe` has 128-iteration cap + visited-offset bitmask guard against pointer loops. Malformed packets silently dropped — supervisor never crashes on bad mDNS.
 
-### Service Registry (B5)
-Registrations persisted to `/data/.vyoma/mdns-services.toml` (R41 atomic-rename). Loaded at `dns::init()`. SIGTERM sends RFC 6762 TTL=0 Goodbye packets before supervisor restarts.
+### DNS-SD Service Registry (B5)
+`ServiceRecord` struct in `sd.rs` tracks registered local services. Registrations persisted to `/data/.vyoma/dns/mdns-services.toml` (R41 atomic-rename). Loaded at `dns::init()`. On SIGTERM: `send_goodbye()` emits RFC 6762 TTL=0 Goodbye packets for all registered services before supervisor exits.
+
+### DnsCache (cache.rs)
+LRU eviction, 256-entry cap, per-entry TTL (min 30s, max 300s). `insert_negative(host)` stores negative cache entries with 30s TTL to prevent thundering re-queries. `evict_expired()` sweeps on every cache read. State restored from `/data/.vyoma/dns/cache.json` at init (TTL-valid entries only).
+
+### Packet Codec (packet.rs)
+`parse_mdns_query` uses `Option`-propagation (`get(i)?`) throughout — malformed packets silently dropped, supervisor never panics. `dns_skip_name_safe` has a 128-hop pointer guard + visited-offset bitmask to prevent infinite loops on compressed label pointer cycles.
 
 ---
 
@@ -2295,7 +2334,8 @@ Registrations persisted to `/data/.vyoma/mdns-services.toml` (R41 atomic-rename)
 
 **macOS analogue**: `NetworkExtension` / VPN profiles  
 **Depends on**: R51, R52  
-**Status**: FINAL
+**Status**: FINAL  
+**Key files**: `supervisor/src/vpn/`
 
 ### Kernel Delta (B1)
 `CONFIG_TUN=y` only (one line). No `CONFIG_WIREGUARD` — userspace WireGuard WASM app handles crypto. Boot probe: `vpn-connect` checks `/dev/net/tun` exists and returns error if not.
