@@ -1,5 +1,5 @@
 [package]
-name    = "app-store"
+name = "app-store"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,6 +9,6 @@ path = "src/main.rs"
 
 [profile.release]
 opt-level = "z"
-strip     = true
+strip = true
 
 [workspace]
