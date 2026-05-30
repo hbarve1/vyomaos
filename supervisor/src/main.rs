@@ -37,6 +37,7 @@ mod mgmt_server;
 mod mgmt_handlers;
 mod router;
 mod ota_update;
+mod auto_update;
 mod resize;
 mod drag_drop;
 mod session;
@@ -483,6 +484,9 @@ fn main() {
             .spawn(move || app_threads::run_watchdog(registry_wd))
             .expect("spawn watchdog thread");
     }
+
+    // ── Auto-update background checker (hourly) ─────────────────────────────
+    auto_update::spawn_background_checker(&inbox, &app_registry);
 
     // ── P31: compositor tick thread — polls frame_ready flags and recomposites ──
     #[cfg(target_os = "linux")]
