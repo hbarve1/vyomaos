@@ -16,6 +16,7 @@ mod app_threads;
 mod audio;
 mod chrome;
 mod draw_cmd;
+mod i18n;
 mod menus;
 mod input_keys;
 mod ipc_commands;

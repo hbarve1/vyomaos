@@ -482,6 +482,38 @@ pub fn handle_extended_command(
             return drag_drop_cmd::handle_drag_drop(verb, &parts, sender, inbox);
         }
 
+        // i18n: switch active locale
+        "locale" => {
+            let code = parts.get(1).unwrap_or(&"").trim();
+            if code.is_empty() {
+                let cur = crate::i18n::current_locale();
+                let all = crate::i18n::supported_locales().join(", ");
+                send_reply(sender, &format!("REPLY:locale {cur} (available: {all})"), inbox);
+            } else if crate::i18n::set_locale(code) {
+                log_info!(Subsystem::Ipc, None, "locale switched to {code} by {sender}");
+                send_reply(sender, &format!("REPLY:locale set to {code}"), inbox);
+                // Broadcast locale change to all running apps.
+                let msg = format!("VYOMA_SYSTEM:locale:{code}");
+                let reg = app_registry.lock().unwrap();
+                let inb = inbox.lock().unwrap();
+                for (name, state_arc) in reg.iter() {
+                    let st = state_arc.lock().unwrap();
+                    if matches!(st.status, crate::AppStatus::Running) {
+                        if let Some(tx) = inb.get(name) {
+                            let _ = tx.send(msg.clone());
+                        }
+                    }
+                }
+            } else {
+                let all = crate::i18n::supported_locales().join(", ");
+                send_reply(
+                    sender,
+                    &format!("REPLY:error: unknown locale '{code}' (available: {all})"),
+                    inbox,
+                );
+            }
+        }
+
         // Accessibility commands
         "a11y" => {
             return crate::accessibility::handle_a11y_command(
