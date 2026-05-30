@@ -2007,3 +2007,28 @@ Open panel registers as R38 drop target — dropping a file populates the filena
 
 ### Listing & Column View (B5 Fix)
 `VYOMA_FS:list` supports `sort_by`, `sort_dir`, `offset`, `limit`, `prefetch_thumb_size`; first NDJSON line is `{"type":"meta","total_count":N}` for scrollbar. `VYOMA_FS:list_paths` returns filenames only for fast column-view population. Quick Look: cache at `/data/.vyoma/quicklook/<sha256>-<mtime>.png`, 512 MB LRU cap.
+
+---
+
+## Section 42: Spotlight & Metadata Search
+
+**macOS analogue**: `Spotlight` / `MDQuery` / `NSMetadataQuery`  
+**Status**: FINAL
+
+### Architecture
+Native indexer thread in supervisor (not WASM) + `apps/spotlight/` WASM app (space-0, z=150). Indexer owns SQLite write-connection; query threads open separate read-only connections (B1 fix — boot-walk write batches of 100 rows, max ~5s lock-hold). Index at `/data/.vyoma/spotlight/index.db` (WAL mode) with FTS5 virtual table over `display_name` + `content_snippet`. Tags joined from `/data/.vyoma/tags.db` via `ATTACH DATABASE`.
+
+### Indexer Pipeline (B4 Fix)
+Boot walk: rate-limited to 20 file-stat/sec; separate 5 snippet-read/sec budget. Hard cap: `Read::take(512)` for snippets regardless of file size — blocks indexer for at most 1 read call. Extension allowlist skips binaries (`.wasm`, `.png`, `.db`). Snippet-fill deferred pass after boot walk. Live updates via R41 `VYOMA_FS:notify_change` events (100ms drain interval). Commits in batches of 100; FTS5 `rebuild` after boot walk bulk insert.
+
+### Query Protocol (B2 Fix)
+`VYOMA_SPOTLIGHT:query/<rid>/<query_b64>` processed in `router.rs` **unconditionally** — NOT inside `if has_display` guard. Non-`spotlight` capability apps receive `VYOMA_SPOTLIGHT:error:<rid>:no-spotlight-capability` rather than silent drop. Results: `VYOMA_SPOTLIGHT:result:<rid>:<total>:<json_b64>` (pages), then `result_end:<rid>`. Stateless pagination via re-execution. FTS5 BM25 rank × launch-frequency `score_boost` (capped at 2.5×).
+
+### Access Control (B3 Fix)
+`file_access_grants` table keyed on `(app_name, path_prefix)` — NOT `app_instance_id`. Atomic `DELETE + INSERT` on every `spawn_app` (grants survive restart correctly). Collision detection rejects two apps claiming the same `path_prefix`. Spotlight WASM app (no `filesystem`) sees `kind='app'` only; file results gated on caller's grants.
+
+### App Removal (B5 Fix)
+`pkg-remove` sends `IndexCmd::AppRemoved { name }` → indexer deletes `entries`, `file_access_grants`, and `app_meta` rows for that app in one write transaction. Prevents stale catalog entries and grant inheritance by reinstalled apps.
+
+### Spotlight UI
+Cmd+Space invokes the spotlight WASM app (toggle if already open). 600×400px centered panel, R16 open animation (scale 0.92→1.0, 200ms). Keyboard: printable chars re-query, Up/Down navigate, Enter opens result, Tab cycles categories, Escape clears/dismisses. On result open: issues `@supervisor: spotlight-open <path_b64>`; supervisor grants R41 `BookmarkToken` to handler app. Focus restored to pre-spotlight app on dismiss.
