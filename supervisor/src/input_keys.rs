@@ -44,7 +44,7 @@ pub fn classify_input_sequence(bytes: &[u8]) -> InputAction {
 ///
 /// Pure function — no side effects, no allocation.
 pub fn shortcut_help_text() -> &'static str {
-    "Alt+Tab: next window  Alt+W: close  Alt+F: snap  Alt+?: help"
+    "Alt+Tab: next  Alt+W: close  Alt+F: snap  Ctrl+S: screenshot  Alt+?: help"
 }
 
 /// Draw a 3-second shortcut-help toast in the bottom-right corner of the screen.
@@ -337,6 +337,28 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                         crate::chrome::z_order_push_front("screen-lock");
                         *focused.lock().unwrap() = Some("screen-lock".to_string());
                         log_info!(Subsystem::Lifecycle, None, "screen locked via Ctrl+L");
+                    }
+                } else if buf[0] == 0x13 {
+                    // Ctrl+S: capture screenshot (PNG to /data/screenshots/)
+                    #[cfg(target_os = "linux")]
+                    {
+                        use crate::display;
+                        if let Some(fb_lock) = display::get() {
+                            let fb = fb_lock.lock().unwrap();
+                            match crate::screenshot::capture_screenshot(&fb) {
+                                Ok(path) => {
+                                    log_info!(Subsystem::Display, None, "screenshot saved to {path}");
+                                    crate::toast::enqueue_banner(
+                                        "supervisor",
+                                        "Screenshot",
+                                        &format!("Saved to {path}"),
+                                    );
+                                }
+                                Err(e) => {
+                                    log_error!(Subsystem::Display, None, "screenshot failed: {e}");
+                                }
+                            }
+                        }
                     }
                 } else if buf[0] == 0x16 {
                     // Ctrl+V: paste clipboard contents to focused app
