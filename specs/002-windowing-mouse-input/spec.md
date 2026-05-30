@@ -1,3 +1,5 @@
+> **Status: Archive** — This is an early design exploration document. The implemented code is the source of truth. See [docs/INDEX.md](../../docs/INDEX.md) for current documentation.
+
 # Feature Specification: Windowing System and Mouse Input
 
 **Feature Branch**: `002-windowing-mouse-input`

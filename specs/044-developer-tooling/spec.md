@@ -1,3 +1,5 @@
+> **Status: Archive** — This is an early design exploration document. The implemented code is the source of truth. See [docs/INDEX.md](../../docs/INDEX.md) for current documentation.
+
 # Feature Specification: VyomaOS Developer Tooling (vyoma CLI)
 
 **Feature Branch**: `044-developer-tooling`

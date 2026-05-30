@@ -17,7 +17,7 @@ Current state (Phase 17): Boots in QEMU under 5 seconds to a Rust supervisor run
 ```
 Linux 5.10 kernel (allnoconfig, 2.3 MB)
   ↓
-Rust supervisor (PID 1, 697 KB static musl)
+Rust supervisor (PID 1, ~2.9 MB static musl)
   ├─ Manifest parser (TOML capabilities)
   ├─ Concurrent scheduler (one thread per app)
   ├─ IPC broker (route @<app>: messages)
@@ -44,11 +44,11 @@ WASM apps (wasm32-wasip2 binaries, 1–10 KB each)
 - Capabilities not declared are not wired up (no filtering layer needed)
 - Restart policies: `never` (one-shot), `always` (restart on exit)
 
-**Display System** (`supervisor/src/display.rs`):
+**Display System** (`supervisor/src/display/mod.rs`):
 - Opens `/dev/fb0` (or virtio-gpu framebuffer)
-- Parses `VYOMA_DRAW:` protocol from app stdout
-- Commands: `fill_rect`, `draw_text`, `flush`
-- 8×16 bitmap font rendering (`supervisor/src/font.rs`)
+- Parses `VYOMA_DRAW:` protocol v2 from app stdout
+- Commands: `fill_rect`, `draw_text`, `draw_glyph`, `draw_image`, `fill_rect_r`, `flush`
+- Scalable font rendering via fontdue (`supervisor/src/font/`), PNG icons via lodepng (`supervisor/src/image/`)
 
 **IPC Broker**:
 - Apps write `@<app>: <message>` to stdout
@@ -71,9 +71,9 @@ WASM apps (wasm32-wasip2 binaries, 1–10 KB each)
 
 **Build artifacts**:
 - `out/bzImage`: Linux kernel (2.3 MB)
-- `out/initramfs.cpio.gz`: Compressed rootfs (18 MB) with Wasmtime + BusyBox + supervisor
+- `out/initramfs.cpio.gz`: Compressed rootfs (~34 MB) with Wasmtime + BusyBox + supervisor + 77+ apps
 - `out/disk.img`: ext4 data disk (64 MB, created once, persists across reboots)
-- `supervisor/target/x86_64-unknown-linux-musl/release/supervisor`: Binary
+- `target/x86_64-unknown-linux-musl/release/supervisor`: Binary (workspace root)
 - `apps/*/target/wasm32-wasip2/release/*.wasm`: App binaries
 
 ## Common Commands
@@ -265,12 +265,18 @@ Full specification: [`docs/vyoma-draw-protocol.md`](docs/vyoma-draw-protocol.md)
 
 Apps write line-oriented commands to stdout. Colors are packed `u32`: `(R<<24)|(G<<16)|(B<<8)|A` printed as decimal.
 
+Core v1 commands:
 ```
 VYOMA_DRAW:fill_rect:<x>,<y>,<w>,<h>,<rgba>
 VYOMA_DRAW:draw_text:<x>,<y>,<rgba>,<size>,<text>   # size: s=4×8  m=8×16  l=16×32
 VYOMA_DRAW:draw_text_wrap:<x>,<y>,<max_w>,<rgba>,<size>,<text>
 VYOMA_DRAW:flush
 ```
+
+v2 extensions (see [`docs/vyoma-draw-protocol.md`](docs/vyoma-draw-protocol.md) for full details):
+- `fill_rect_r:<x>,<y>,<w>,<h>,<rgba>,<radius>` — rounded rectangle
+- `draw_glyph:<x>,<y>,<rgba>,<size>,<codepoint>` — single Unicode glyph
+- `draw_image:<x>,<y>,<w>,<h>,<format>,<base64data>` — inline image blit
 
 Example (Rust):
 ```rust
@@ -299,7 +305,7 @@ Receiving app reads stdin line-by-line; supervisor strips `@sender:` prefix befo
 - `base/`: Kernel config + rootfs build scripts
 - `docker/`: Dockerfile for hermetic build environment
 - `docs/`: Manifest schema, comparison matrix, design docs for future phases
-- `.context/plans/`: Phased implementation roadmap (P01–P17 complete, P18+ planned)
+- `.context/plans/`: Phased implementation roadmap (P01–P77+ complete)
 
 ## Code Size Rule
 
@@ -369,7 +375,10 @@ make apps                 # only hello-world recompiles
 | P09–P10 | Display (DRM/virtio-gpu) + bitmap font | ✅ complete |
 | P11–P12 | Networking (HTTP server) + interactive shell + keyboard routing | ✅ complete |
 | P13–P17 | Process management, package manager, persistent logs, real-time TTY | ✅ complete |
-| P18+ | Future phases (font scaling, windowing, mouse input, watchdog) | 📋 planned |
+| P18–P30 | Font scaling, windowing, mouse input, watchdog, window management | ✅ complete |
+| P31–P45 | Shell UX, multi-platform profiles, HAL, OTA, modular supervisor | ✅ complete |
+| P46–P77 | Apple UI fidelity (Menu Bar, Dock, Spotlight, Mission Control, 77+ apps) | ✅ complete |
+| P78+ | Ongoing refinement and new features | 🔄 active |
 
 See `.context/plans/plan-vyomaos/` for detailed phase specs and task breakdowns.
 
