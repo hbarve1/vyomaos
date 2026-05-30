@@ -2651,3 +2651,82 @@ Argon2id: `m=65536 KiB, t=3, p=1` (~400ms on RPi4). Master key ephemeral (`Zeroi
 **WASM Plugin ABI**: `process(in_ptr, out_ptr, frames)`, `midi_event(status, b1, b2, ts_hi, ts_lo)`, `init(sample_rate, max_frames)`. `PluginChain`: ping-pong scratch_a/scratch_b. One Wasmtime JIT call per 256-frame block. `in_offset=65536`, `out_offset=in_offset+frames*4*2`.
 
 **B1** `midi_message_len(status)` correctly handles running status. **B2** `MAX_ROUTE_DEPTH=4` prevents routing loops. **B3** `MonotonicNs` tagged at read completion (not dispatch) — accurate timestamps. **B4** 500µs scheduler loop gives ≤1ms jitter for MIDI output. **B5** Plugin scratch buffers never alias (ping-pong) — no UB on concurrent access.
+
+## Section 71: Image Processing Pipeline
+
+**macOS analogue**: CoreImage / vImage / Accelerate  
+**Key files**: `supervisor/src/imgproc/` (mod.rs, shm.rs, filter.rs, ops_color.rs, ops_resize.rs, ops_blur.rs, ops_composite.rs)  
+**New Cargo dep**: (none — rayon must already be in tree; memfd via libc)  
+**Capability**: `image_processing = true` in vyoma.toml
+
+**Protocol**: `VYOMA_IMAGE:alloc|<w>|<h>|<fmt>` → `VYOMA_IMAGE:allocated|<fd_path>|<size>`. `VYOMA_IMAGE:submit|<req_id>|<sw>|<sh>|<dw>|<dh>|<ops>` → `VYOMA_IMAGE:done|<req_id>|<dw>|<dh>`. Filter chain `<ops>` is semicolon-separated: `resize:bilinear`, `blur:<r>`, `brightness:<d>`, `contrast:<f>`, `saturation:<f>`, `greyscale`, `rgba_to_yuv420`, `src_over:<alpha>`.
+
+**Memory**: Shared buffer via memfd (no MFD_CLOEXEC — must be inheritable). Buffer split: first `src_bytes` = input, remainder = output. Zero-copy WASM ↔ supervisor. Per-app reader thread executes filters inline; long ops (resize >1MP, blur radius ≥5) spawn short-lived rayon task.
+
+**Algorithms**: Bilinear resize uses fixed-point shift=16 `((src_y * (src_h-1)) << 16) / (dst_h-1)`. Gaussian blur: pre-built KERNELS const for radius 1–7 (3×3 to 15×15), separable horizontal then vertical pass. BT.601 color conversions. Composite modes: src-over, dst-over, multiply.
+
+**B1** add `image_processing: Option<bool>` to Capabilities before deploying handler. **B2** shm split at exactly `src_bytes` (not max(src,dst)) to prevent overlap corruption. **B3** bilinear edge: clamp `x1 = min(src_w-1, x0+1)` — never OOB on right/bottom edges. **B4** rayon: spawn only when `frames > RAYON_THRESHOLD`; always rejoin before replying. **B5** format `rgba_to_yuv420` writes 3/2 × pixels — allocate `w*h*3/2` output bytes, not `w*h*4`.
+
+## Section 72: PDF Rendering Engine
+
+**macOS analogue**: PDFKit / Quartz PDF engine  
+**Key files**: `supervisor/src/pdf/` (mod.rs, parser.rs, page.rs, renderer.rs, shm.rs, text_render.rs)  
+**New Cargo deps**: `zune-jpeg = { version = "0.4", default-features = false }`, `miniz_oxide = { version = "0.8", default-features = false, features = ["with-alloc"] }`  
+**Capabilities**: `pdf_render = true` AND `filesystem = true`
+
+**Protocol**: App→supervisor: `VYOMA_PDF:load:<req_id>,<path>`, `VYOMA_PDF:render:<req_id>,<page>,<w>,<h>,<dpi>`, `VYOMA_PDF:close:<req_id>`. Supervisor→app: `VYOMA_SYSTEM:pdf-shm-fd:<fd>  w=<w> h=<h>`, `VYOMA_PDF:render-done:<req_id>:<page>`, `VYOMA_PDF:page-count:<req_id>:<n>`, `VYOMA_PDF:error:<req_id>:<reason>`. One worker thread per active `req_id` blocked on `mpsc::Receiver<PdfCmd>`.
+
+**Parser**: `XrefTable` handles both classic `xref` keyword (PDF ≤1.4) and compressed xref streams (PDF 1.5+, W array field widths, binary entries). `PdfObj` enum: Null/Bool/Int/Real/Name/Str/Array/Dict/Stream/Ref. Stream decode via FlateDecode (`miniz_oxide`) and DCTDecode (`zune-jpeg`).
+
+**Renderer**: `GfxState` with CTM stack, `PathBuilder` for Bézier→scan-line fill, `user_to_pixel(x, y, ctm, sx, sy, page_h)` applies CTM first then Y-flip. `TextState`: Tf operator builds `[u8;256]→char` encoding map from WinAnsiEncoding/MacRomanEncoding/StandardEncoding/Differences. Output via `ShmSurface` (memfd + `pidfd_getfd`); `AppState.pidfd: Option<RawFd>` opened at child spawn.
+
+**B1** `AppState.pidfd` must be opened immediately after child spawn via `syscall(SYS_pidfd_open, pid, 0)`. **B2** compressed xref: detect stream object at startxref offset (not `xref` keyword), parse W+Index arrays, decompress binary entries. **B3** Y-flip after CTM — never inline in operators. **B4** font encoding map built at Tf time — raw `byte as char` gives wrong glyphs for non-ASCII. **B5** `PdfEngine::close_all_for_app(name)` sends `PdfCmd::Close` to all workers keyed `"{app}/{req_id}"`; called on app exit.
+
+## Section 73: Notification Center
+
+**macOS analogue**: UNUserNotificationCenter / NSUserNotification  
+**Key files**: `supervisor/src/notify/` (mod.rs, store.rs, banner.rs, panel.rs); existing `toast.rs` unchanged  
+**New Cargo dep**: (none)  
+**Capability**: `notifications = true` in vyoma.toml
+
+**Protocol**: `VYOMA_NOTIFY:post|<id>|<title>|<body>|<actions>`, `VYOMA_NOTIFY:cancel|<id>`, `VYOMA_NOTIFY:clear_all`, `VYOMA_NOTIFY:register_category|<cat>|<actions>`, `VYOMA_NOTIFY:dnd_on`, `VYOMA_NOTIFY:dnd_off`. Supervisor→app: `VYOMA_NOTIFY:action|<id>|<action>`, `VYOMA_NOTIFY:dismissed|<id>`.
+
+**Banner**: 320×80 px top-right, Z=254 (below cursor Z=255). Slide-in 320 ms ease-out cubic `t³*(10 - 15t + 6t²)`. Auto-dismiss after 5 s. `BannerRenderSnapshot { title, body, progress_x }` taken under `NOTIFY.lock()` before acquiring framebuffer lock — prevents ABBA deadlock with flush path.
+
+**Panel**: 340 px width, slides in from right. History grouped by app name (Vec<Vec<Notification>>), max 50 per app. Toggle via notification bell icon in menu bar right side.
+
+**Persistence**: `/data/.vyoma/notifications/history.json` and `pending.json` via R41 atomic write-then-rename. `parse_json_array_raw` replaced by `serde_json::from_str` to handle embedded `},{` in message text.
+
+**B1** add `pub notifications: bool` to Capabilities with `#[serde(default)]` before any manifest uses it. **B2** `BannerRenderSnapshot` pattern — snapshot data under NOTIFY lock before FB lock, never hold both simultaneously. **B3** use `serde_json` for history JSON (not hand-built parser). **B4** `history_insert` enforces 50-entry cap with `vec.truncate(50)` at call site. **B5** action delivery uses direct `inbox.send()` (not `send_reply`) — app receives bare `VYOMA_NOTIFY:action:...` without `REPLY:` prefix.
+
+## Section 74: Launch Services & App Registry
+
+**macOS analogue**: LaunchServices / LSRegisterURL  
+**Key files**: `supervisor/src/launch_services/` (mod.rs, record.rs, scanner.rs, handlers.rs, watcher.rs, state.rs)  
+**New Cargo dep**: (none)  
+**Global**: `LAUNCH_REGISTRY: OnceLock<Arc<Mutex<LaunchRegistry>>>` in main.rs
+
+**Registry**: `AppRecord { name, display_name, wasm_path, icon_path, mime_types, file_extensions, url_schemes, capabilities, manifest_path }`. Populated by `scan_installed()` from `/data/apps/` at boot. `launch-watcher` thread polls every 2 s for hot-reload. `[launch]` section parsed as raw `toml::Value` (not struct field) to avoid `deny_unknown_fields` conflicts.
+
+**Protocol**: `VYOMA_LAUNCH:open_url|<url>`, `VYOMA_LAUNCH:open_file|<path>`, `VYOMA_LAUNCH:set_default|<ext>|<app>`, `VYOMA_LAUNCH:list_apps`, `VYOMA_LAUNCH:query|<ext_or_mime>`. Supervisor→app: `VYOMA_LAUNCH:app_list|<json>`, `VYOMA_LAUNCH:default_for|<ext>|<app>`.
+
+**Extension normalization**: `normalize_ext(s)` → lowercase, ensure leading dot. Applied at all lookup sites — `.PDF` and `pdf` both resolve to `.pdf` key. Recent docs: last 10 per app, stored in `/data/.vyoma/launch-services/recent-docs.json`.
+
+**B1** `[launch]` parsed via `raw_toml.get("launch")` as `Option<toml::Value>` — never as Capabilities field. **B2** `get_or_init()` used for LAUNCH_REGISTRY to handle install-path access before explicit init. **B3** extension case normalization at every lookup site. **B4** watcher thread uses `Arc::clone` of registry, not raw pointer. **B5** `open_file` falls back to first registered app if no default set — never silently drops the request.
+
+## Section 75: App Distribution & Updates
+
+**macOS analogue**: Mac App Store / Sparkle / SUUpdater  
+**Key files**: `supervisor/src/update/` (mod.rs, appcast.rs, version.rs, verifier.rs, delta.rs, installer.rs, rollback.rs, store_index.rs)  
+**New Cargo deps**: `ed25519-dalek = { version = "2.1", default-features = false, features = ["alloc"] }`; `serde_json` moved from dev-dependencies to `[dependencies]`  
+**Global**: `UPDATE_MANAGER: OnceLock<Arc<Mutex<UpdateManager>>>` in main.rs
+
+**Version check**: Background thread wakes every 86400 s. Appcast feed JSON: `{ app, version, url, sha256, sig, min_os_ver, delta_url, delta_sha256, delta_sig }`. `SemVer { major, minor, patch }` with `Ord` impl. `is_update_available(installed, remote)`: true when `remote > installed`. `min_os_ver` gate checked against supervisor version string.
+
+**Delta format (VYDIFF01)**: 40-byte header (`VYDIFF01` magic + new_size + ctrl_len + diff_len + extra_len) + 3 raw blocks. Apply: ADD phase (old[pos]+diff[i]), COPY phase (verbatim extra), SEEK phase (advance old_pos by i32 skip). Use delta when `patch.len() < full_size * 30 / 100`.
+
+**Atomic install**: tmp download → SHA-256 verify → Ed25519 verify → `.bak` backup of old `.wasm` → atomic `rename` tmp→dst → quarantine clear → R74 re-register → restart app. All paths under `/data/apps/` (same mount, no EXDEV).
+
+**Rollback**: `register_update_time(app)` on post-install start. `check_and_rollback(app)`: if exit within 60 s of update, restore `.bak`, clear update timestamp, log crash. Called from app_threads waiter thread on unexpected exit.
+
+**B1** extract `pub fn restart_app_by_name(name, registry, inbox)` from ipc_handlers.rs — shared by installer and rollback. **B2** `ed25519-dalek` with `default-features = false, features = ["alloc"]` — no getrandom, pure computation on musl. **B3** `serde_json` in `[dependencies]` (not dev). **B4** router.rs dispatches `VYOMA_UPDATE:` lines to `update::handle_update_line` before IPC broker fallthrough. **B5** assert `tmp_path.parent() == dst_path.parent()` before rename — documents same-mount invariant.
