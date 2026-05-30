@@ -72,7 +72,7 @@ pub fn handle_draw_command(
         let (fb_w, fb_h) = (fb.width, fb.height);
 
         // ── Compositor pass ──────────────────────────────────────────────
-        fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
+        render_wallpaper(&mut *fb, fb_w, fb_h);
         blit_all_surfaces(&mut *fb, app_registry);
         draw_chrome_onto(&mut *fb, app_registry, focused);
 
@@ -424,6 +424,27 @@ pub fn handle_draw_command(
     log_warn!(Subsystem::Display, Some(sender), "unknown command: {cmd}");
 }
 
+/// Render the desktop wallpaper (solid color or scaled PNG image) onto the framebuffer.
+#[cfg(target_os = "linux")]
+fn render_wallpaper(fb: &mut display::Framebuffer, fb_w: u32, fb_h: u32) {
+    match crate::wallpaper::current() {
+        crate::wallpaper::Wallpaper::SolidColor(rgba) => {
+            fb.fill_rect(0, 0, fb_w, fb_h, rgba);
+        }
+        crate::wallpaper::Wallpaper::Image(ref path) => {
+            // Fill with dark fallback first, then overlay the image.
+            fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
+            let mut ic = crate::image_cache().lock().unwrap();
+            if let Some(img) = ic.get(path) {
+                let (iw, ih, rgba_data) = (img.width, img.height, img.rgba.clone());
+                drop(ic);
+                let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
+                display::blit_image(&mut fb.back, &rgba_data, iw, ih, 0, 0, fw, fh, fs, fw, fh);
+            }
+        }
+    }
+}
+
 /// Blit all app surfaces in Z-order onto the framebuffer back-buffer.
 /// Only surfaces for apps visible on the current workspace are composited.
 #[cfg(target_os = "linux")]
@@ -465,7 +486,7 @@ pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
     let Some(fb_lock) = display::get() else { return };
     let mut fb = fb_lock.lock().unwrap();
     let (fb_w, fb_h) = (fb.width, fb.height);
-    fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
+    render_wallpaper(&mut *fb, fb_w, fb_h);
     blit_all_surfaces(&mut *fb, registry);
     draw_chrome_onto(&mut *fb, registry, focused);
     crate::chrome::render_dropdown_if_open(&mut *fb);
