@@ -178,9 +178,13 @@ pub fn handle_extended_command(
             send_reply(sender, &format!("REPLY:resized {app_name} to {nx},{ny},{nw}x{nh}"), inbox);
         }
 
-        // P41: shutdown / reboot
+        // P41: shutdown / reboot (auto-save session before executing)
         "shutdown" => {
             log_info!(Subsystem::Lifecycle, None, "shutdown requested by {sender}");
+            match crate::session::save_session(app_registry, focused) {
+                Ok(bytes) => log_info!(Subsystem::Lifecycle, None, "auto-saved session ({bytes} bytes) before shutdown"),
+                Err(e) => log_warn!(Subsystem::Lifecycle, None, "session auto-save failed: {e}"),
+            }
             send_reply(sender, "REPLY:shutting down...", inbox);
             thread::spawn(|| {
                 thread::sleep(std::time::Duration::from_millis(500));
@@ -190,6 +194,10 @@ pub fn handle_extended_command(
         }
         "reboot" => {
             log_info!(Subsystem::Lifecycle, None, "reboot requested by {sender}");
+            match crate::session::save_session(app_registry, focused) {
+                Ok(bytes) => log_info!(Subsystem::Lifecycle, None, "auto-saved session ({bytes} bytes) before reboot"),
+                Err(e) => log_warn!(Subsystem::Lifecycle, None, "session auto-save failed: {e}"),
+            }
             send_reply(sender, "REPLY:rebooting...", inbox);
             thread::spawn(|| {
                 thread::sleep(std::time::Duration::from_millis(500));
@@ -222,64 +230,22 @@ pub fn handle_extended_command(
             send_reply(sender, "REPLY:notified", inbox);
         }
 
-        // P42: session-save / session-restore
+        // P42: session-save / session-restore (delegated to session module)
         "session-save" => {
-            let mut toml_out = String::new();
-            {
-                let reg = app_registry.lock().unwrap();
-                for (name, state_arc) in reg.iter() {
-                    let st = state_arc.lock().unwrap();
-                    if let Some((x, y, w, h)) = st.win_region {
-                        toml_out.push_str(&format!(
-                            "[[window]]\nname = \"{name}\"\nx = {x}\ny = {y}\nw = {w}\nh = {h}\n\n"
-                        ));
-                    }
+            match crate::session::save_session(app_registry, focused) {
+                Ok(bytes) => {
+                    log_info!(Subsystem::Lifecycle, None, "session saved ({bytes} bytes)");
+                    send_reply(sender, "REPLY:session saved", inbox);
+                }
+                Err(e) => {
+                    log_warn!(Subsystem::Lifecycle, None, "session save failed: {e}");
+                    send_reply(sender, &format!("REPLY:error: session save failed: {e}"), inbox);
                 }
             }
-            let _ = fs::write("/data/session.toml", &toml_out);
-            log_info!(Subsystem::Lifecycle, None, "session saved ({} bytes)", toml_out.len());
-            send_reply(sender, "REPLY:session saved", inbox);
         }
         "session-restore" => {
-            let content = fs::read_to_string("/data/session.toml").unwrap_or_default();
-            let mut windows: Vec<(String, u32, u32, u32, u32)> = Vec::new();
-            let (mut cur_name, mut cx, mut cy, mut cw, mut ch, mut in_win) =
-                (String::new(), 0u32, 0u32, 0u32, 0u32, false);
-            for line in content.lines() {
-                let l = line.trim();
-                if l == "[[window]]" {
-                    if in_win && !cur_name.is_empty() {
-                        windows.push((cur_name.clone(), cx, cy, cw, ch));
-                    }
-                    cur_name.clear();
-                    (cx, cy, cw, ch, in_win) = (0, 0, 0, 0, true);
-                } else if in_win {
-                    if let Some(v) = l.strip_prefix("name = ") {
-                        cur_name = v.trim_matches('"').to_string();
-                    } else if let Some(v) = l.strip_prefix("x = ") { cx = v.parse().unwrap_or(0); }
-                    else if let Some(v) = l.strip_prefix("y = ")  { cy = v.parse().unwrap_or(0); }
-                    else if let Some(v) = l.strip_prefix("w = ")  { cw = v.parse().unwrap_or(0); }
-                    else if let Some(v) = l.strip_prefix("h = ")  { ch = v.parse().unwrap_or(0); }
-                }
-            }
-            if in_win && !cur_name.is_empty() {
-                windows.push((cur_name, cx, cy, cw, ch));
-            }
-            let mut restored = 0usize;
-            for (name, x, y, w, h) in windows {
-                let updated = {
-                    let reg = app_registry.lock().unwrap();
-                    if let Some(state_arc) = reg.get(&name) {
-                        let mut st = state_arc.lock().unwrap();
-                        st.win_region = Some((x, y, w, h));
-                        true
-                    } else { false }
-                };
-                if updated {
-                    send_reply(&name, &format!("VYOMA_SYSTEM:resize:{w},{h}"), inbox);
-                    restored += 1;
-                }
-            }
+            let entries = crate::session::restore_session();
+            let restored = crate::session::apply_session(&entries, app_registry, focused, inbox);
             log_info!(Subsystem::Lifecycle, None, "session restored {restored} windows");
             send_reply(sender, &format!("REPLY:restored {restored} windows"), inbox);
         }

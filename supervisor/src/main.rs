@@ -39,6 +39,7 @@ mod router;
 mod ota_update;
 mod resize;
 mod drag_drop;
+mod session;
 mod win_actions;
 mod workspace;
 
@@ -382,6 +383,15 @@ fn main() {
             log_info!(Subsystem::Input, Some(name.as_str()), "keyboard focus → {name}");
         }
         *focused.lock().unwrap() = shell_name;
+    }
+
+    // ── Boot-time session restore — apply saved window positions ─────────────
+    {
+        let entries = session::restore_session();
+        if !entries.is_empty() {
+            let restored = session::apply_session(&entries, &app_registry, &focused, &inbox);
+            log_info!(Subsystem::Lifecycle, None, "boot session restore: {restored} window(s) applied");
+        }
     }
 
     // ── P17T01: input-router thread — /dev/tty0 → focused app (raw mode) ─────
