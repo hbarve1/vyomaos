@@ -41,10 +41,6 @@ const TL_MINIMIZE:      u32 = 0xFFBD2EFF; // traffic light yellow
 const TL_MAXIMIZE:      u32 = 0x28C941FF; // traffic light green
 const TL_GRAY:          u32 = 0x4D4D4DFF; // inactive traffic lights
 
-// Kept for repaint compat; unused after chrome redesign.
-#[allow(dead_code)] const BORDER_FOCUSED:   u32 = 0x89B4FAFF;
-#[allow(dead_code)] const BORDER_UNFOCUSED: u32 = 0x45475AFF;
-
 // ── Focus helpers ─────────────────────────────────────────────────────────────
 
 /// Return all windowed app names (those with `win_region = Some(_)`) sorted alphabetically.
@@ -313,11 +309,14 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     {
         let Some(fb_lock) = display::get() else { return };
         let mut fb = fb_lock.lock().unwrap();
-        for (name, (wx, wy, ww, _wh)) in &regions {
+        for (name, (wx, wy, ww, wh)) in &regions {
             if *ww < 60 { continue; }
             let is_focused = focused_name.as_deref() == Some(name.as_str());
             let is_hovered = hovered_name.as_deref() == Some(name.as_str());
             draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, is_hovered, name);
+            if is_focused {
+                draw_focus_ring(&mut *fb, *wx, *wy, *ww, *wh);
+            }
         }
         let sw = fb.width;
         let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
@@ -366,7 +365,7 @@ pub fn draw_chrome_onto(
         let regions = regions_with_z.into_iter().map(|(_, n, r)| (n, r)).collect();
         (regions, display_apps)
     };
-    for (name, (wx, wy, ww, _wh)) in &regions {
+    for (name, (wx, wy, ww, wh)) in &regions {
         if *ww < 60 { continue; }
         let is_focused = focused_name.as_deref() == Some(name.as_str());
         let is_hovered = hovered_name.as_deref() == Some(name.as_str());
@@ -377,10 +376,56 @@ pub fn draw_chrome_onto(
         if !is_system {
             draw_titlebar(fb, *wx, *wy, *ww, is_focused, is_hovered, name);
         }
+        // Draw focus ring for focused window (TV/Vision profiles).
+        if is_focused {
+            draw_focus_ring(fb, *wx, *wy, *ww, *wh);
+        }
     }
     let sw = fb.width;
     let elapsed = BOOT_INSTANT.get().map(|i| i.elapsed().as_secs()).unwrap_or(0);
     draw_menubar(fb, sw, elapsed, focused_name.as_deref(), &display_apps);
+}
+
+// ── Focus ring (TV / Vision profiles) ─────────────────────────────────────────
+
+/// Draw a 3 px highlight border around the focused window when `FOCUS_RING` is enabled.
+/// Uses `draw_rounded_rect` with a transparent fill to outline only.
+#[cfg(target_os = "linux")]
+pub fn draw_focus_ring(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, wh: u32) {
+    if !crate::FOCUS_RING.get().copied().unwrap_or(false) { return; }
+    const RING_W: u32 = 3;
+    const RING_COLOR: u32 = 0x0A84FFFF; // system blue
+    let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
+    // Top edge
+    if wy >= RING_W {
+        crate::display::draw_rounded_rect(
+            &mut fb.back, wx.saturating_sub(RING_W), wy.saturating_sub(RING_W),
+            ww + RING_W * 2, RING_W, RING_COLOR, 6, fs, sw, sh,
+        );
+    }
+    // Bottom edge
+    let by = wy + wh;
+    if by + RING_W <= sh {
+        crate::display::draw_rounded_rect(
+            &mut fb.back, wx.saturating_sub(RING_W), by,
+            ww + RING_W * 2, RING_W, RING_COLOR, 6, fs, sw, sh,
+        );
+    }
+    // Left edge
+    if wx >= RING_W {
+        crate::display::draw_rounded_rect(
+            &mut fb.back, wx.saturating_sub(RING_W), wy,
+            RING_W, wh, RING_COLOR, 6, fs, sw, sh,
+        );
+    }
+    // Right edge
+    let rx = wx + ww;
+    if rx + RING_W <= sw {
+        crate::display::draw_rounded_rect(
+            &mut fb.back, rx, wy,
+            RING_W, wh, RING_COLOR, 6, fs, sw, sh,
+        );
+    }
 }
 
 // ── T056: Animation alpha stub ────────────────────────────────────────────────
