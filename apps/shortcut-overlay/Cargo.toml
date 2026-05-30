@@ -1,0 +1,12 @@
+[package]
+name    = "shortcut-overlay"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "shortcut-overlay"
+path = "src/main.rs"
+
+[workspace]
+
+[dependencies]
