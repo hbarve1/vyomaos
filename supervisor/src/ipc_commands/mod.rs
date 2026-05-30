@@ -348,22 +348,31 @@ pub fn handle_extended_command(
             send_reply(sender, "REPLY:clipboard-clear ok", inbox);
         }
 
-        // P51: screenshot <path>
+        // P51: screenshot [path] — PNG to /data/screenshots/ (auto) or given path
         "screenshot" => {
-            let path = parts.get(1).unwrap_or(&"").trim().to_string();
-            if path.is_empty() {
-                send_reply(sender, "REPLY:screenshot error no-path", inbox);
-                return true;
-            }
             #[cfg(target_os = "linux")]
             {
                 match crate::display::get() {
                     Some(fb_lock) => {
                         let fb = fb_lock.lock().unwrap();
-                        match fb.screenshot(&path) {
-                            Ok(()) => {
-                                log_info!(Subsystem::Display, None, "screenshot saved to {path}");
-                                send_reply(sender, &format!("REPLY:screenshot ok {path}"), inbox);
+                        let explicit_path = parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty());
+                        let result = if let Some(p) = explicit_path {
+                            // Legacy PPM path for explicit destinations
+                            fb.screenshot(p).map(|()| p.to_string())
+                        } else {
+                            // Auto PNG capture via screenshot module
+                            crate::screenshot::capture_screenshot(&fb)
+                        };
+                        match result {
+                            Ok(saved_path) => {
+                                log_info!(Subsystem::Display, None, "screenshot saved to {saved_path}");
+                                send_reply(sender, &format!("REPLY:screenshot ok {saved_path}"), inbox);
+                                // Fire a notification banner
+                                crate::toast::enqueue_banner(
+                                    "supervisor",
+                                    "Screenshot",
+                                    &format!("Saved to {saved_path}"),
+                                );
                             }
                             Err(e) => send_reply(sender, &format!("REPLY:screenshot error {e}"), inbox),
                         }
