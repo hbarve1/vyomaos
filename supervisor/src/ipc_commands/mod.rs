@@ -516,6 +516,13 @@ pub fn handle_extended_command(
             return drag_drop_cmd::handle_drag_drop(verb, &parts, sender, inbox);
         }
 
+        // Accessibility commands
+        "a11y" => {
+            return crate::accessibility::handle_a11y_command(
+                parts, sender, inbox, app_registry,
+            );
+        }
+
         _ => return false,
     }
     true

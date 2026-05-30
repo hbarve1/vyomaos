@@ -11,6 +11,7 @@ mod display;
 mod font;
 mod image;
 
+mod accessibility;
 mod app_threads;
 mod audio;
 mod chrome;
