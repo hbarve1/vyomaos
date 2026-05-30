@@ -131,6 +131,10 @@ static TCP_CONNS: OnceLock<Mutex<std::collections::HashMap<u32, std::net::TcpStr
     OnceLock::new();
 static TCP_NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 static CLIPBOARD: OnceLock<Mutex<String>> = OnceLock::new();
+/// Lock screen state: when true, keyboard input is only routed to screen-lock.
+pub static LOCKED: OnceLock<Mutex<bool>> = OnceLock::new();
+pub fn is_locked() -> bool { *LOCKED.get_or_init(|| Mutex::new(false)).lock().unwrap() }
+pub fn set_locked(v: bool) { *LOCKED.get_or_init(|| Mutex::new(false)).lock().unwrap() = v; }
 static FONT_SIZE: OnceLock<Mutex<String>> = OnceLock::new();
 static MOUSE_DRAG_START: OnceLock<Mutex<Option<(i32, i32)>>> = OnceLock::new();
 fn mouse_drag_start() -> &'static Mutex<Option<(i32, i32)>> {

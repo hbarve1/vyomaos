@@ -15,6 +15,8 @@ pub enum InputAction {
     AltW,         // Alt+W        — close focused window
     AltF,         // Alt+F        — maximize focused window (stub)
     AltQuestion,  // Alt+?        — show keyboard shortcut overlay toast
+    #[allow(dead_code)]
+    CtrlL,        // Ctrl+L       — lock the screen (handled as raw 0x0c byte)
     PassThrough,  // Everything else: forward to the focused app as-is
 }
 
@@ -143,6 +145,22 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                         // Send the menu action as IPC to the app
                         let msg = format!("VYOMA_SYSTEM:menu_action:{action}");
                         if let Some(tx) = inbox.lock().unwrap().get(&app) {
+                            let _ = tx.send(msg);
+                        }
+                    }
+                    continue;
+                }
+
+                // When locked, route all input to screen-lock only (except Ctrl+L)
+                if crate::is_locked() && buf[0] != 0x0c {
+                    let msg: Option<String> = match buf[0] {
+                        0x0D | 0x0A => Some(String::new()),
+                        0x7F | 0x08 => Some("\x7f".to_string()),
+                        0x20..=0x7E => Some(String::from(buf[0] as char)),
+                        _           => None,
+                    };
+                    if let Some(msg) = msg {
+                        if let Some(tx) = inbox.lock().unwrap().get("screen-lock") {
                             let _ = tx.send(msg);
                         }
                     }
@@ -290,6 +308,35 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                         if let Some(tx) = inbox.lock().unwrap().get(&name) {
                             let _ = tx.send(msg);
                         }
+                    }
+                } else if buf[0] == 0x0c {
+                    // Ctrl+L: lock screen
+                    if !crate::is_locked() {
+                        // Synthesize a lock command via IPC
+                        if let Some(tx) = inbox.lock().unwrap().values().next().cloned() {
+                            // Route lock through supervisor command handler directly
+                            drop(tx);
+                        }
+                        crate::set_locked(true);
+                        // Launch screen-lock app
+                        let entry = supervisor::manifest::BootEntry {
+                            manifest: "/apps/screen-lock/vyoma.toml".to_string(),
+                            restart: "never".to_string(),
+                        };
+                        let already_running = {
+                            let reg = registry.lock().unwrap();
+                            reg.get("screen-lock").map(|st| {
+                                matches!(st.lock().unwrap().status, crate::AppStatus::Running)
+                            }).unwrap_or(false)
+                        };
+                        if !already_running {
+                            if let Some(app) = crate::app_threads::spawn_app(&entry, &inbox, &registry) {
+                                crate::app_threads::launch_app_threads(app, &inbox, &focused, &registry);
+                            }
+                        }
+                        crate::chrome::z_order_push_front("screen-lock");
+                        *focused.lock().unwrap() = Some("screen-lock".to_string());
+                        log_info!(Subsystem::Lifecycle, None, "screen locked via Ctrl+L");
                     }
                 } else if buf[0] == 0x16 {
                     // Ctrl+V: paste clipboard contents to focused app
