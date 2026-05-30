@@ -97,23 +97,43 @@ pub fn handle_extended_command(
             }
         }
 
-        // P35: wallpaper <rgba_hex>
+        // P35: wallpaper <rgba_hex> or wallpaper <path_to_png>
         "wallpaper" => {
-            let color_str = parts.get(1).unwrap_or(&"").trim();
-            let rgba = color_str
-                .strip_prefix("0x").or_else(|| color_str.strip_prefix("0X"))
-                .and_then(|hex| u32::from_str_radix(hex, 16).ok())
-                .or_else(|| color_str.parse::<u32>().ok())
-                .unwrap_or(0x0D1117FF);
-            #[cfg(target_os = "linux")]
-            if let Some(fb_lock) = crate::display::get() {
-                let mut fb = fb_lock.lock().unwrap();
-                let (w, h) = (fb.width, fb.height);
-                fb.fill_rect(0, 0, w, h, rgba);
-                fb.flush();
+            let arg = parts.get(1).unwrap_or(&"").trim();
+            match crate::wallpaper::parse_arg(arg) {
+                Some(wp @ crate::wallpaper::Wallpaper::SolidColor(rgba)) => {
+                    crate::wallpaper::set(wp);
+                    #[cfg(target_os = "linux")]
+                    if let Some(fb_lock) = crate::display::get() {
+                        let mut fb = fb_lock.lock().unwrap();
+                        let (w, h) = (fb.width, fb.height);
+                        fb.fill_rect(0, 0, w, h, rgba);
+                        fb.flush();
+                    }
+                    log_info!(Subsystem::Display, None, "wallpaper set to {rgba:#010x}");
+                    send_reply(sender, &format!("REPLY:wallpaper {rgba:#010x}"), inbox);
+                }
+                Some(crate::wallpaper::Wallpaper::Image(ref path)) => {
+                    let reply_path = path.clone();
+                    crate::wallpaper::set(crate::wallpaper::Wallpaper::Image(reply_path.clone()));
+                    log_info!(Subsystem::Display, None, "wallpaper set to image {reply_path}");
+                    send_reply(sender, &format!("REPLY:wallpaper {reply_path}"), inbox);
+                }
+                None => {
+                    // Fallback to default solid color
+                    let rgba = 0x0D1117FFu32;
+                    crate::wallpaper::set(crate::wallpaper::Wallpaper::SolidColor(rgba));
+                    #[cfg(target_os = "linux")]
+                    if let Some(fb_lock) = crate::display::get() {
+                        let mut fb = fb_lock.lock().unwrap();
+                        let (w, h) = (fb.width, fb.height);
+                        fb.fill_rect(0, 0, w, h, rgba);
+                        fb.flush();
+                    }
+                    log_info!(Subsystem::Display, None, "wallpaper set to {rgba:#010x}");
+                    send_reply(sender, &format!("REPLY:wallpaper {rgba:#010x}"), inbox);
+                }
             }
-            log_info!(Subsystem::Display, None, "wallpaper set to {rgba:#010x}");
-            send_reply(sender, &format!("REPLY:wallpaper {rgba:#010x}"), inbox);
         }
 
         "raise" => {

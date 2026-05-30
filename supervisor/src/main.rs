@@ -41,6 +41,7 @@ mod resize;
 mod drag_drop;
 mod session;
 mod win_actions;
+mod wallpaper;
 mod workspace;
 
 use std::{
