@@ -1,0 +1,14 @@
+[app]
+name = "download-manager"
+version = "0.1.0"
+wasm = "download-manager.wasm"
+
+[capabilities]
+stdio = true
+display = true
+shell = true
+filesystem = true
+network = true
+
+[window]
+title = "Downloads"
