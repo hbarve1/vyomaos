@@ -37,6 +37,7 @@ mod mgmt_handlers;
 mod router;
 mod ota_update;
 mod resize;
+mod drag_drop;
 mod win_actions;
 mod workspace;
 
