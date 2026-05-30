@@ -112,6 +112,8 @@ pub struct Capabilities {
     pub watchdog_secs: u32,
     #[serde(default)]
     pub mouse: bool,
+    #[serde(default)]
+    pub audio: bool,
 }
 
 // ── Parse + validate functions ────────────────────────────────────────────────

@@ -12,6 +12,7 @@ mod font;
 mod image;
 
 mod app_threads;
+mod audio;
 mod chrome;
 mod draw_cmd;
 mod menus;
@@ -92,6 +93,7 @@ struct AppState {
     watchdog_backoff: Arc<Mutex<u64>>,   // seconds until next restart allowed
     has_mouse:   bool,
     has_display: bool,
+    has_audio:   bool,
     win_region:  Option<(u32, u32, u32, u32)>,  // supervisor-assigned; updated by apply_tiling_layout
     win_z:       u32,  // z-layer; 0=desktop, 10=default, 100=dock, 200+=system
     min_size:    (u32, u32),                     // (min_w, min_h) hint from manifest [window]
