@@ -1,66 +1,63 @@
+"""Pytest fixtures for VyomaOS E2E tests.
+
+Provides session-scoped VM fixture that boots QEMU and function-scoped
+screenshot fixture that captures the current display state.
+"""
+
 import os
-import subprocess
+import sys
 import time
 import pytest
+
+# Ensure the tests/e2e directory is on the path for local imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from harness import QmpClient
 
 
-def _tail_log(path: str, n: int = 20) -> str:
-    try:
-        with open(path) as f:
-            return "".join(f.readlines()[-n:])
-    except FileNotFoundError:
-        return "(serial log not found)"
-
-
 @pytest.fixture(scope="session")
-def vm(tmp_path_factory):
-    tmp        = tmp_path_factory.mktemp("vyoma")
-    qmp_sock   = str(tmp / "qmp.sock")
-    serial_log = str(tmp / "serial.log")
-    screenshot = str(tmp / "screen.ppm")
+def vm():
+    """Boot a VyomaOS QEMU VM, wait for all apps to spawn, yield the QmpClient.
 
-    bzimage   = os.environ.get("BZIMAGE",   "out/bzImage")
-    initramfs = os.environ.get("INITRAMFS", "out/initramfs.cpio.gz")
+    Environment variables:
+        BZIMAGE: Path to kernel image (default: out/bzImage)
+        INITRAMFS: Path to initramfs (default: out/initramfs.cpio.gz)
+        DISK: Path to data disk image (optional)
+    """
+    kernel = os.environ.get("BZIMAGE", "out/bzImage")
+    initrd = os.environ.get("INITRAMFS", "out/initramfs.cpio.gz")
+    disk = os.environ.get("DISK", None)
 
-    proc = subprocess.Popen(
-        [
-            "qemu-system-x86_64",
-            "-kernel",  bzimage,
-            "-initrd",  initramfs,
-            "-m",       "512M",
-            "-no-reboot",
-            "-append",  "console=ttyS0 quiet",
-            "-device",  "virtio-vga",
-            "-display", "none",
-            "-qmp",     f"unix:{qmp_sock},server,nowait",
-            "-serial",  f"file:{serial_log}",
-        ],
-        stderr=subprocess.DEVNULL,
-    )
+    if not os.path.exists(kernel):
+        pytest.skip(f"Kernel not found: {kernel} (run 'make build' first)")
+    if not os.path.exists(initrd):
+        pytest.skip(f"Initramfs not found: {initrd} (run 'make build' first)")
 
-    time.sleep(5)
-    if proc.returncode is not None:
-        raise RuntimeError(
-            f"QEMU failed to start (exit {proc.returncode})\n" + _tail_log(serial_log)
-        )
+    client = QmpClient(kernel=kernel, initrd=initrd, disk=disk)
+    client.start()
 
-    client = QmpClient(qmp_sock, serial_log, screenshot)
     try:
-        client.wait_log(r"\[lifecycle\].*all apps spawned", timeout=45)
+        client.wait_for_serial(r"\[lifecycle\].*all apps spawned", timeout=30)
     except TimeoutError:
-        proc.terminate()
-        proc.wait(timeout=5)
+        client.shutdown()
         raise RuntimeError(
-            "Boot timeout: '[lifecycle] all apps spawned' not seen within 45s\n"
-            + _tail_log(serial_log)
+            "Boot timeout: '[lifecycle] all apps spawned' not seen within 30s. "
+            f"Check serial log: {client.serial_log_path}"
         )
-
-    time.sleep(3)
-    client.connect()
 
     yield client
 
-    client.close()
-    proc.terminate()
-    proc.wait(timeout=5)
+    client.shutdown()
+
+
+@pytest.fixture(scope="function")
+def screenshot(vm, tmp_path):
+    """Take a screendump from the running VM and return the file path.
+
+    The screenshot is saved as a PPM file in the test's tmp directory.
+    """
+    path = str(tmp_path / "screenshot.ppm")
+    vm.screendump(path)
+    # Give QEMU a moment to flush the file
+    time.sleep(0.2)
+    return path
