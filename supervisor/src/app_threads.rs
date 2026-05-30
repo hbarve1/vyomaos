@@ -14,8 +14,6 @@ use std::{
     time::Instant,
 };
 
-use sha2::{Digest, Sha256};
-
 use crate::{
     log_error, log_info, log_warn,
     AppRegistry, AppState, AppStatus, FocusedApp, Inbox, SpawnedApp,
@@ -285,18 +283,17 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         .join(&manifest.app.wasm);
 
     if let Some(expected) = &manifest.app.wasm_sha256 {
-        match fs::read(&wasm_path) {
-            Ok(bytes) => {
-                let actual = format!("{:x}", Sha256::digest(&bytes));
-                if actual != expected.to_lowercase() {
-                    log_error!(Subsystem::Capability, Some(name.as_str()),
-                        "SECURITY: {name} rejected — SHA-256 mismatch\n  expected {expected}\n  actual   {actual}");
-                    inbox.lock().unwrap().remove(&name);
-                    return None;
-                }
-                log_info!(Subsystem::Capability, Some(name.as_str()), "[security] {name} wasm_sha256 verified OK");
+        match crate::verify::verify_wasm_binary(wasm_path.to_str().unwrap_or(""), expected) {
+            Ok(()) => {
+                log_info!(Subsystem::Capability, Some(name.as_str()),
+                    "[security] {name} wasm_sha256 verified OK");
             }
-            Err(e) => log_warn!(Subsystem::Capability, Some(name.as_str()), "cannot read wasm for hash check: {e}"),
+            Err(e) => {
+                log_error!(Subsystem::Capability, Some(name.as_str()),
+                    "SECURITY: {name} rejected — {e}");
+                inbox.lock().unwrap().remove(&name);
+                return None;
+            }
         }
     }
 
@@ -315,7 +312,17 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
     {
         use std::os::unix::process::CommandExt;
         let filter = crate::seccomp::build();
-        unsafe { cmd.pre_exec(move || crate::seccomp::apply(&filter)); }
+        unsafe {
+            cmd.pre_exec(move || {
+                // P27: namespace isolation — call before seccomp (which denies unshare).
+                if let Err(e) = crate::namespace::setup_app_namespace() {
+                    // Non-fatal: log to stderr and continue without isolation.
+                    eprintln!("[warn] [namespace] setup_app_namespace failed: {e}");
+                }
+                // P08: seccomp BPF denylist.
+                crate::seccomp::apply(&filter)
+            });
+        }
     }
 
     let mut child = match cmd.spawn() {
