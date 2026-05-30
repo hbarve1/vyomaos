@@ -1,43 +1,38 @@
 // Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
-//! VyomaOS file manager (P24)
+//! VyomaOS file manager (P43)
 //!
-//! Two-pane state machine:
-//!   List view  — scrollable /data directory; ↑/↓ navigate, Enter open, q quit
-//!   File view  — first 100 lines of selected file; ↑/↓ scroll, q/Backspace back
-//!
-//! Launched on demand: `run file-manager` from the shell.
-//! Window region covers the full screen (1440×900); declared in vyoma.toml.
+//! Functional file browser for /data with navigation, preview, and file ops.
+//!   List view  — scrollable directory listing; arrows navigate, Enter opens
+//!   File view  — first 20 lines of selected file; arrows scroll, Backspace back
+//!   Input mode — text prompt for new-file / rename operations
+//!   Confirm    — y/n confirmation for delete
 
 use std::fs;
 use std::io::{BufRead, Write};
-use std::path::Path;
+use std::path::PathBuf;
 
 // ── Screen / panel geometry ──────────────────────────────────────────────────
 
 const W: u32 = 1440;
 const H: u32 = 900;
-
 const PX: u32 = 32;
 const PY: u32 = 32;
 const PW: u32 = W - 64;
 const PH: u32 = H - 64;
-
 const TITLE_H: u32 = 28;
 const STATUS_H: u32 = 20;
 const INNER_X: u32 = PX + 14;
 const INNER_Y: u32 = PY + TITLE_H + 6;
 const INNER_W: u32 = PW - 28;
-// content area height: panel minus title bar, status bar and margins
 const INNER_H: u32 = PH - TITLE_H - STATUS_H - 12;
 const ITEM_H: u32 = 18;
 const MAX_VISIBLE: usize = (INNER_H / ITEM_H) as usize;
-
 const SCROLLBAR_W: u32 = 6;
 const LIST_W: u32 = INNER_W - SCROLLBAR_W - 4;
 
-// ── Colours ───────────────────────────────────────────────────────────────────
+// ── Colours ─────────────────────────────────────────────────────────────────
 
 const C_BG: u32 = 0x0D1117FF;
 const C_PANEL: u32 = 0x161B22FF;
@@ -48,9 +43,8 @@ const C_DIM: u32 = 0x8B949EFF;
 const C_SELECT: u32 = 0x1F3A5FFF;
 const C_GREEN: u32 = 0x3FB950FF;
 const C_YELLOW: u32 = 0xE3B341FF;
-const C_RED: u32 = 0xF85149FF;
 
-// ── Data model ────────────────────────────────────────────────────────────────
+// ── Data model ──────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
 struct Entry {
@@ -59,60 +53,53 @@ struct Entry {
     size: u64,
 }
 
-enum View {
-    List {
-        entries: Vec<Entry>,
-        selected: usize,
-        scroll: usize,
-    },
-    File {
-        name: String,
-        lines: Vec<String>,
-        scroll: usize,
-    },
-    Error {
-        message: String,
-    },
+enum InputMode {
+    None,
+    NewFile { buf: String },
+    Rename { old_name: String, buf: String },
+    ConfirmDelete { name: String, is_dir: bool },
 }
 
-// ── Entry point ───────────────────────────────────────────────────────────────
+enum View {
+    List { entries: Vec<Entry>, selected: usize, scroll: usize },
+    File { name: String, lines: Vec<String>, scroll: usize },
+}
+
+struct State { cwd: PathBuf, view: View, input: InputMode, status_msg: Option<String> }
+
+// ── Entry point ─────────────────────────────────────────────────────────────
 
 fn main() {
-    let data_path = Path::new("/data");
-    let mut view = make_list_view(data_path);
-    draw(&view);
-
+    let root = PathBuf::from("/data");
+    let mut st = State { view: make_list_view(&root), cwd: root,
+        input: InputMode::None, status_msg: None };
+    draw(&st);
     let stdin = std::io::stdin();
     for raw in stdin.lock().lines() {
-        let raw = match raw {
-            Ok(l) => l,
-            Err(_) => break,
-        };
-        if handle_input(raw, &mut view, data_path) {
-            break;
-        }
-        draw(&view);
+        let line = match raw { Ok(l) => l, Err(_) => break };
+        if handle_input(&line, &mut st) { break; }
+        draw(&st);
     }
 }
 
-// ── Input handler — returns true when the app should exit ─────────────────────
+// ── Input handling ──────────────────────────────────────────────────────────
 
-fn handle_input(raw: String, view: &mut View, data_path: &Path) -> bool {
-    match view {
-        View::List { entries, selected, scroll } => match raw.as_str() {
+fn handle_input(raw: &str, st: &mut State) -> bool {
+    // If in an input mode, route there first
+    if !matches!(st.input, InputMode::None) {
+        return handle_input_mode(raw, st);
+    }
+
+    match &mut st.view {
+        View::List { entries, selected, scroll } => match raw {
             "q" | "\x03" => return true,
-
             "\x1b[A" => {
-                // Up arrow
                 if *selected > 0 {
                     *selected -= 1;
-                    if *selected < *scroll {
-                        *scroll = *selected;
-                    }
+                    if *selected < *scroll { *scroll = *selected; }
                 }
             }
             "\x1b[B" => {
-                // Down arrow
                 if !entries.is_empty() && *selected + 1 < entries.len() {
                     *selected += 1;
                     if *selected >= *scroll + MAX_VISIBLE {
@@ -121,61 +108,146 @@ fn handle_input(raw: String, view: &mut View, data_path: &Path) -> bool {
                 }
             }
             "" => {
-                // Enter — open selected entry
-                if let Some(entry) = entries.get(*selected).cloned() {
-                    if !entry.is_dir {
-                        let path = data_path.join(&entry.name);
-                        *view = open_file(&entry.name, &path);
+                // Enter: open file or navigate into directory
+                if let Some(e) = entries.get(*selected).cloned() {
+                    if e.is_dir {
+                        st.cwd.push(&e.name);
+                        st.view = make_list_view(&st.cwd);
+                    } else {
+                        let path = st.cwd.join(&e.name);
+                        st.view = open_file(&e.name, &path);
                     }
                 }
             }
+            "\x7f" | "\x1b[D" => {
+                // Backspace or Left arrow: go up (stop at /data)
+                go_up(st);
+            }
+            "n" => {
+                st.input = InputMode::NewFile { buf: String::new() };
+                st.status_msg = Some("New file name (Enter to create, Esc to cancel):".into());
+            }
+            "d" => {
+                if let Some(e) = entries.get(*selected).cloned() {
+                    st.input = InputMode::ConfirmDelete {
+                        name: e.name.clone(),
+                        is_dir: e.is_dir,
+                    };
+                    let kind = if e.is_dir { "directory" } else { "file" };
+                    st.status_msg =
+                        Some(format!("Delete {kind} '{}'? (y/n)", e.name));
+                }
+            }
+            "r" => {
+                if let Some(e) = entries.get(*selected).cloned() {
+                    st.input = InputMode::Rename {
+                        old_name: e.name.clone(),
+                        buf: String::new(),
+                    };
+                    st.status_msg =
+                        Some(format!("Rename '{}' to (Enter to confirm, Esc cancel):", e.name));
+                }
+            }
             _ => {}
         },
-
-        View::File { lines, scroll, .. } => match raw.as_str() {
+        View::File { lines, scroll, .. } => match raw {
             "q" | "\x7f" | "\x03" => {
-                *view = make_list_view(data_path);
+                st.view = make_list_view(&st.cwd);
             }
-            "\x1b[A" => {
-                if *scroll > 0 {
-                    *scroll -= 1;
-                }
-            }
-            "\x1b[B" => {
-                if *scroll + MAX_VISIBLE < lines.len() {
-                    *scroll += 1;
-                }
-            }
-            _ => {}
-        },
-
-        View::Error { .. } => match raw.as_str() {
-            "q" | "\x03" | "\x7f" => return true,
+            "\x1b[A" => { if *scroll > 0 { *scroll -= 1; } }
+            "\x1b[B" => { if *scroll + MAX_VISIBLE < lines.len() { *scroll += 1; } }
             _ => {}
         },
     }
     false
 }
 
-// ── State builders ────────────────────────────────────────────────────────────
+fn handle_input_mode(raw: &str, st: &mut State) -> bool {
+    match &mut st.input {
+        InputMode::NewFile { buf } => match raw {
+            "\x1b" => { st.input = InputMode::None; st.status_msg = None; }
+            "" => {
+                let name = buf.clone();
+                st.input = InputMode::None;
+                if !name.is_empty() {
+                    let path = st.cwd.join(&name);
+                    match fs::File::create(&path) {
+                        Ok(_) => st.status_msg = Some(format!("Created '{name}'")),
+                        Err(e) => st.status_msg = Some(format!("Error: {e}")),
+                    }
+                    st.view = make_list_view(&st.cwd);
+                } else {
+                    st.status_msg = None;
+                }
+            }
+            "\x7f" => { buf.pop(); }
+            _ => buf.push_str(raw),
+        },
+        InputMode::Rename { old_name, buf } => match raw {
+            "\x1b" => { st.input = InputMode::None; st.status_msg = None; }
+            "" => {
+                let new_name = buf.clone();
+                let old = old_name.clone();
+                st.input = InputMode::None;
+                if !new_name.is_empty() {
+                    let from = st.cwd.join(&old);
+                    let to = st.cwd.join(&new_name);
+                    match fs::rename(&from, &to) {
+                        Ok(_) => st.status_msg = Some(format!("Renamed '{old}' -> '{new_name}'")),
+                        Err(e) => st.status_msg = Some(format!("Error: {e}")),
+                    }
+                    st.view = make_list_view(&st.cwd);
+                } else {
+                    st.status_msg = None;
+                }
+            }
+            "\x7f" => { buf.pop(); }
+            _ => buf.push_str(raw),
+        },
+        InputMode::ConfirmDelete { name, is_dir } => {
+            let n = name.clone();
+            let dir = *is_dir;
+            st.input = InputMode::None;
+            if raw == "y" {
+                let path = st.cwd.join(&n);
+                let res = if dir {
+                    fs::remove_dir_all(&path)
+                } else {
+                    fs::remove_file(&path)
+                };
+                match res {
+                    Ok(_) => st.status_msg = Some(format!("Deleted '{n}'")),
+                    Err(e) => st.status_msg = Some(format!("Error: {e}")),
+                }
+                st.view = make_list_view(&st.cwd);
+            } else {
+                st.status_msg = Some("Delete cancelled".into());
+            }
+        }
+        InputMode::None => {}
+    }
+    false
+}
 
-fn make_list_view(data_path: &Path) -> View {
-    View::List {
-        entries: read_dir(data_path),
-        selected: 0,
-        scroll: 0,
+fn go_up(st: &mut State) {
+    let root = PathBuf::from("/data");
+    if st.cwd != root {
+        st.cwd.pop();
+        st.view = make_list_view(&st.cwd);
     }
 }
 
-fn read_dir(path: &Path) -> Vec<Entry> {
+// ── State builders ──────────────────────────────────────────────────────────
+
+fn make_list_view(dir: &PathBuf) -> View {
+    View::List { entries: read_dir(dir), selected: 0, scroll: 0 }
+}
+
+fn read_dir(path: &PathBuf) -> Vec<Entry> {
     let rd = match fs::read_dir(path) {
         Ok(r) => r,
         Err(e) => {
-            return vec![Entry {
-                name: format!("(error: {e})"),
-                is_dir: false,
-                size: 0,
-            }]
+            return vec![Entry { name: format!("(error: {e})"), is_dir: false, size: 0 }];
         }
     };
     let mut entries: Vec<Entry> = rd
@@ -190,7 +262,6 @@ fn read_dir(path: &Path) -> Vec<Entry> {
             }
         })
         .collect();
-    // Directories first, then alphabetical
     entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
         (true, false) => std::cmp::Ordering::Less,
         (false, true) => std::cmp::Ordering::Greater,
@@ -199,59 +270,60 @@ fn read_dir(path: &Path) -> Vec<Entry> {
     entries
 }
 
-fn open_file(name: &str, path: &Path) -> View {
+fn open_file(name: &str, path: &PathBuf) -> View {
     let lines = match fs::read_to_string(path) {
-        Ok(content) => content
-            .lines()
-            .take(200)
-            .map(|s| s.to_string())
-            .collect(),
+        Ok(content) => content.lines().take(20).map(|s| s.to_string()).collect(),
         Err(e) => vec![format!("Cannot read file: {e}")],
     };
-    View::File {
-        name: name.to_string(),
-        lines,
-        scroll: 0,
-    }
+    View::File { name: name.to_string(), lines, scroll: 0 }
 }
 
-// ── Rendering ─────────────────────────────────────────────────────────────────
+// ── Rendering ───────────────────────────────────────────────────────────────
 
-fn draw(view: &View) {
+fn draw(st: &State) {
     fill(0, 0, W, H, C_BG);
     fill(PX, PY, PW, PH, C_PANEL);
 
-    match view {
+    match &st.view {
         View::List { entries, selected, scroll } => {
-            draw_list_title(entries.len());
+            draw_list_title(&st.cwd, entries.len());
             draw_list_body(entries, *selected, *scroll);
-            draw_status("↑/↓ navigate   Enter open   q quit");
+            // Draw input prompt or status
+            match &st.input {
+                InputMode::NewFile { buf } => {
+                    draw_input_bar(&st.status_msg, buf);
+                }
+                InputMode::Rename { buf, .. } => {
+                    draw_input_bar(&st.status_msg, buf);
+                }
+                InputMode::ConfirmDelete { .. } => {
+                    draw_status_with_msg(&st.status_msg);
+                }
+                InputMode::None => {
+                    if let Some(msg) = &st.status_msg {
+                        draw_status(msg);
+                    } else {
+                        let hint = "Arrows:nav  Enter:open  Bksp:up  n:new  d:del  r:rename  q:quit";
+                        draw_status(hint);
+                    }
+                }
+            }
         }
         View::File { name, lines, scroll } => {
             draw_file_title(name, lines.len());
             draw_file_body(lines, *scroll);
-            draw_status("↑/↓ scroll   Backspace/q back to list");
-        }
-        View::Error { message } => {
-            draw_error_title();
-            text(INNER_X + 8, INNER_Y + 8, C_RED, message);
-            draw_status("q quit");
+            draw_status("Up/Down scroll   Backspace/q back to list");
         }
     }
-
     flush();
 }
 
-fn draw_list_title(count: usize) {
+fn draw_list_title(cwd: &PathBuf, count: usize) {
     fill(PX, PY, PW, TITLE_H, C_TITLE);
     fill(PX, PY + TITLE_H, PW, 2, C_ACCENT);
     text(PX + 10, PY + 6, C_ACCENT, "File Manager");
-    text(
-        PX + 130,
-        PY + 6,
-        C_DIM,
-        &format!("/data  ({count} items)"),
-    );
+    let path_str = cwd.to_string_lossy();
+    text(PX + 130, PY + 6, C_DIM, &format!("{path_str}  ({count} items)"));
     border(PX, PY, PW, PH, C_ACCENT);
 }
 
@@ -259,20 +331,9 @@ fn draw_file_title(name: &str, line_count: usize) {
     fill(PX, PY, PW, TITLE_H, C_TITLE);
     fill(PX, PY + TITLE_H, PW, 2, C_GREEN);
     text(PX + 10, PY + 6, C_GREEN, name);
-    text(
-        PX + 10 + name.len() as u32 * 8 + 12,
-        PY + 6,
-        C_DIM,
-        &format!("({line_count} lines shown)"),
-    );
+    let nx = PX + 10 + name.len() as u32 * 8 + 12;
+    text(nx, PY + 6, C_DIM, &format!("({line_count} lines)"));
     border(PX, PY, PW, PH, C_GREEN);
-}
-
-fn draw_error_title() {
-    fill(PX, PY, PW, TITLE_H, C_TITLE);
-    fill(PX, PY + TITLE_H, PW, 2, C_RED);
-    text(PX + 10, PY + 6, C_RED, "File Manager — Error");
-    border(PX, PY, PW, PH, C_RED);
 }
 
 fn draw_status(hint: &str) {
@@ -282,13 +343,33 @@ fn draw_status(hint: &str) {
     text(INNER_X, sy + 3, C_DIM, hint);
 }
 
+fn draw_status_with_msg(msg: &Option<String>) {
+    let sy = PY + PH - STATUS_H;
+    fill(PX, sy, PW, STATUS_H, C_TITLE);
+    if let Some(m) = msg { text(INNER_X, sy + 3, C_YELLOW, m); }
+}
+
+fn draw_input_bar(prompt: &Option<String>, buf: &str) {
+    let sy = PY + PH - STATUS_H;
+    fill(PX, sy, PW, STATUS_H, C_BG);
+    fill(PX, sy, PW, 1, C_ACCENT);
+    let prompt_str = prompt.as_deref().unwrap_or("Input:");
+    text(INNER_X, sy + 3, C_ACCENT, prompt_str);
+    // Draw the input buffer after the prompt
+    let buf_x = INNER_X + prompt_str.len() as u32 * 8 + 8;
+    text(buf_x, sy + 3, C_WHITE, buf);
+    // Cursor indicator
+    let cur_x = buf_x + buf.len() as u32 * 8;
+    text(cur_x, sy + 3, C_ACCENT, "_");
+}
+
 fn draw_list_body(entries: &[Entry], selected: usize, scroll: usize) {
-    clear_region(INNER_X, INNER_Y, INNER_W, INNER_H);
+    fill(INNER_X, INNER_Y, INNER_W, INNER_H, C_PANEL);
 
     if entries.is_empty() {
         let cx = INNER_X + INNER_W / 2 - 80;
         let cy = INNER_Y + INNER_H / 2 - 8;
-        text(cx, cy, C_DIM, "(empty — /data has no files)");
+        text(cx, cy, C_DIM, "(empty directory)");
         return;
     }
 
@@ -301,26 +382,19 @@ fn draw_list_body(entries: &[Entry], selected: usize, scroll: usize) {
             fill(INNER_X, iy, LIST_W, ITEM_H, C_SELECT);
         }
 
-        let (color, tag) = if entry.is_dir {
-            (C_YELLOW, "DIR")
-        } else {
-            (C_WHITE, "   ")
-        };
+        let (color, tag) = if entry.is_dir { (C_YELLOW, "DIR") } else { (C_WHITE, "   ") };
 
-        // Tag column (DIR / blank)
         text(INNER_X + 4, iy + 1, color, tag);
 
-        // File name — truncate if too long for available width
         let name_x = INNER_X + 36;
         let max_chars = (LIST_W.saturating_sub(200) / 8) as usize;
         let display_name = if entry.name.len() > max_chars {
-            format!("{}…", &entry.name[..max_chars.saturating_sub(1)])
+            format!("{}...", &entry.name[..max_chars.saturating_sub(3)])
         } else {
             entry.name.clone()
         };
         text(name_x, iy + 1, color, &display_name);
 
-        // Size column (right-aligned)
         if !entry.is_dir {
             let size_str = format_size(entry.size);
             let sx = INNER_X + LIST_W - 88;
@@ -342,7 +416,7 @@ fn draw_list_body(entries: &[Entry], selected: usize, scroll: usize) {
 }
 
 fn draw_file_body(lines: &[String], scroll: usize) {
-    clear_region(INNER_X, INNER_Y, INNER_W, INNER_H);
+    fill(INNER_X, INNER_Y, INNER_W, INNER_H, C_PANEL);
 
     let line_no_w: u32 = 40;
     let content_x = INNER_X + line_no_w + 4;
@@ -353,7 +427,6 @@ fn draw_file_body(lines: &[String], scroll: usize) {
         let ln = scroll + i + 1;
         let iy = INNER_Y + i as u32 * ITEM_H;
         text(INNER_X + 2, iy + 1, C_DIM, &format!("{ln:4}"));
-        // Draw a thin separator between line numbers and content
         fill(INNER_X + line_no_w, iy, 1, ITEM_H, 0x30363DFF);
         text_wrap(content_x, iy + 1, content_w, C_WHITE, line);
     }
@@ -362,7 +435,6 @@ fn draw_file_body(lines: &[String], scroll: usize) {
         text(INNER_X + 8, INNER_Y + 8, C_DIM, "(empty file)");
     }
 
-    // Scrollbar
     if lines.len() > MAX_VISIBLE {
         let bar_x = INNER_X + INNER_W - SCROLLBAR_W;
         fill(bar_x, INNER_Y, SCROLLBAR_W, INNER_H, C_TITLE);
@@ -375,7 +447,7 @@ fn draw_file_body(lines: &[String], scroll: usize) {
     }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn format_size(bytes: u64) -> String {
     if bytes < 1_024 {
@@ -389,7 +461,7 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-// ── VYOMA_DRAW protocol helpers ───────────────────────────────────────────────
+// ── VYOMA_DRAW protocol helpers ─────────────────────────────────────────────
 
 #[inline]
 fn fill(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
@@ -404,11 +476,6 @@ fn text(x: u32, y: u32, rgba: u32, s: &str) {
 #[inline]
 fn border(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
     println!("VYOMA_DRAW:rect_border:{x},{y},{w},{h},{rgba}");
-}
-
-#[inline]
-fn clear_region(x: u32, y: u32, w: u32, h: u32) {
-    println!("VYOMA_DRAW:clear_region:{x},{y},{w},{h}");
 }
 
 #[inline]
