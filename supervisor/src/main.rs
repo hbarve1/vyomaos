@@ -28,6 +28,7 @@ mod packages;
 #[cfg(target_os = "linux")]
 mod seccomp;
 mod toast;
+mod tray;
 mod verify;
 mod mgmt_protocol;
 mod mgmt_server;
