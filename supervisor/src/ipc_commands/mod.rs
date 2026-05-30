@@ -481,6 +481,11 @@ pub fn handle_extended_command(
             send_reply(sender, &reply, inbox);
         }
 
+        // P30: update-local <app> <wasm_path> — hot-swap WASM from local file
+        "update-local" => {
+            crate::ota_update::handle_update_local(parts, sender, inbox, focused, app_registry);
+        }
+
         _ => return false,
     }
     true

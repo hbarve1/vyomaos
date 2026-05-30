@@ -3,19 +3,8 @@
 
 //! VyomaOS supervisor — PID 1
 //!
-//! Responsibilities:
-//!   P03T01 — scaffold: print banner
-//!   P03T02 — mount /proc, /sys, /dev
-//!   P05T03 — read /etc/vyoma/boot.toml and launch apps via capability manifests
-//!   P06T01 — concurrent scheduler: one thread per app, per-app restart policy
-//!   P07T01 — IPC broker: route @<app>: <msg> lines between app stdio pipes
-//!   P08T01 — security: seccomp BPF denylist applied to every wasmtime child
-//!   P08T02 — security: capability audit log + manifest unknown-field rejection
-//!   P09T01 — display: open /dev/fb0, mmap framebuffer; dispatch VYOMA_DRAW: commands
-//!   P17T01 — input thread: raw tty mode, per-keypress routing to focused app
-//!   P12T02 — focus manager: shell capability, focused_app state
-//!   P12T03 — @supervisor: IPC command handler (list, status, focus, run)
-//!   P13T01 — process management: ps, kill, restart, reload, log
+//! Boots apps, routes IPC, manages display, input, process lifecycle,
+//! OTA updates (P29/P30), and dynamic resolution detection.
 
 #[cfg(target_os = "linux")]
 mod display;
@@ -43,6 +32,7 @@ mod mgmt_protocol;
 mod mgmt_server;
 mod mgmt_handlers;
 mod router;
+mod ota_update;
 mod win_actions;
 
 use std::{
@@ -168,6 +158,8 @@ pub static WINDOWED_MODE: OnceLock<bool> = OnceLock::new();
 pub static FOCUS_RING: OnceLock<bool> = OnceLock::new();
 /// Active display profile name broadcast to apps via VYOMA_SYSTEM:display_profile.
 pub static DISPLAY_PROFILE: OnceLock<String> = OnceLock::new();
+/// P29: cached screen resolution set once during display init, queried by broadcast.
+pub static SCREEN_SIZE: OnceLock<(u32, u32)> = OnceLock::new();
 
 // ── T023: Scalable font cache (Linux-only) ────────────────────────────────────
 #[cfg(target_os = "linux")]
@@ -286,6 +278,8 @@ fn main() {
     #[cfg(target_os = "linux")]
     if display::init() {
         log_info!(Subsystem::Display, None, "display ready");
+        // P29: cache screen resolution for broadcast to display apps
+        if let Some(sz) = display::screen_size() { let _ = SCREEN_SIZE.set(sz); }
         // P35: paint default desktop background before any app draws
         if let Some(fb_lock) = display::get() {
             let mut fb = fb_lock.lock().unwrap();
