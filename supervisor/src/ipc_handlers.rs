@@ -117,6 +117,7 @@ pub fn handle_supervisor_command(
                 Some(app) => {
                     let app_name = app.name.clone();
                     launch_app_threads(app, inbox, focused, app_registry);
+                    crate::undo::capture_run(&app_name, &path);
                     send_reply(sender, &format!("REPLY:launched {app_name}"), inbox);
                 }
                 None => {
@@ -124,9 +125,7 @@ pub fn handle_supervisor_command(
                 }
             }
         }
-
         // ── P13T01 process management commands ───────────────────────────────
-
         // ps-raw — machine-readable: name:status:uptime_secs:restarts per entry
         "ps-raw" => {
             let entries: Vec<String> = {
@@ -188,11 +187,13 @@ pub fn handle_supervisor_command(
                     return;
                 }
             };
-            let (pid, running_names) = {
+            let (pid, running_names, manifest_path) = {
                 let reg = app_registry.lock().unwrap();
-                let pid = reg.get(&app_name).and_then(|st| st.lock().unwrap().child_pid);
-                let names: Vec<String> = reg.keys().cloned().collect();
-                (pid, names)
+                let (pid, mfst) = reg.get(&app_name).map(|st| {
+                    let s = st.lock().unwrap();
+                    (s.child_pid, s.entry.manifest.clone())
+                }).unwrap_or((None, String::new()));
+                (pid, reg.keys().cloned().collect::<Vec<_>>(), mfst)
             };
             let running_refs: Vec<&str> = running_names.iter().map(|s| s.as_str()).collect();
             if !supervisor::ipc::validate_kill_target(&app_name, &running_refs) {
@@ -210,6 +211,7 @@ pub fn handle_supervisor_command(
                     #[cfg(target_os = "linux")]
                     unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
                     log_info!(Subsystem::Lifecycle, Some(app_name.as_str()), "killed {app_name} (pid {pid})");
+                    crate::undo::capture_kill(&app_name, &manifest_path);
                     send_reply(sender, &format!("REPLY:killed {app_name}"), inbox);
                 }
                 None => {
@@ -218,7 +220,6 @@ pub fn handle_supervisor_command(
                 }
             }
         }
-
         // restart <app> — kill + re-spawn an app
         "restart" => {
             let app_name = match parts.get(1).map(|s| s.trim()) {
@@ -497,4 +498,3 @@ pub fn handle_supervisor_command(
         }
     }
 }
-

@@ -23,7 +23,9 @@ pub fn handle_workspace_command(
                 let ws = crate::workspace::current();
                 send_reply(sender, &format!("REPLY:workspace {ws}"), inbox);
             } else if let Ok(idx) = idx_str.parse::<usize>() {
+                let old_ws = crate::workspace::current();
                 let actual = crate::workspace::switch_to(idx);
+                crate::undo::capture_workspace(old_ws, actual);
                 log_info!(Subsystem::Display, None, "workspace switched to {actual} by {sender}");
                 send_reply(sender, &format!("REPLY:workspace {actual}"), inbox);
                 #[cfg(target_os = "linux")]
