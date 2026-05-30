@@ -2057,3 +2057,139 @@ R41 write tokens guarantee single-app atomicity but not multi-app coordination: 
 
 ### Group Operations
 `VYOMA_COORD:group_begin/add/commit` → acquire all path locks in sorted lexicographic order → collect acks from all presenters across all paths → `group_granted:<group_id>:<tokens>`. `group_write_commit` fsyncs all tmp files then renames all. Max 16 paths per group.
+
+---
+
+## Section 44: Cloud Storage Sync
+
+**macOS analogue**: `iCloud Drive` / `NSUbiquitousKeyValueStore`  
+**Depends on**: R41, R43, R60 (placeholder)  
+**Status**: FINAL
+
+### Architecture
+Two-layer split: `cloud-sync` WASM coordinator (`restart = "always"`) handles sync engine, queue, policy, conflict resolution; per-provider plugin WASM apps (`cloud-sync-s3`, `cloud-sync-webdav`) handle HTTP transport to a single declared endpoint only (NO filesystem access). Supervisor owns KV store, credential proxy, path enrollment validation.
+
+### Sync Metadata Storage (B3)
+No SQLite in coordinator WASM (WAL corruption risk on hard kill). Flat JSON records per file at `/data/.vyoma/sync/records/<sha256_of_path>.json`, each written via R41 write_commit (fsync + atomic rename). Fields: path, provider_id, remote_key, local_mtime, local_size, content_hash, remote_etag, sync_state, conflict_mode, enrolled_by.
+
+### Lock-Safe Delivery (B1)
+`notify_path_change` snapshots watcher list under AppRegistry lock then drops before delivering to inbox. AppState gains `sync_watch_paths: Vec<String>` set on `VYOMA_SYNC:enroll`.
+
+### Plugin Backpressure (B2)
+Bounded `mpsc::sync_channel(8)` per plugin. Coordinator sends file chunks via `@cloud-sync-s3: chunk:<job_id>:<base64>` with `SYNC_CHUNK_ACK` protocol before each next chunk — prevents 100 MB files from buffering 1600 messages.
+
+### Key-Value Store (B4)
+KV handled entirely in supervisor (`cloud_sync/kv_store.rs`). `push_changed` gated on `is_sync_coordinator` flag (keyed on `app_instance_id`, never app_name). Storage: `/data/.vyoma/kv/<app_name>.kv`, line-oriented `<key>=<url_encoded_value>`, max 64 KB.
+
+### Conflict Resolution (B5)
+When app inbox absent: fallback to KeepBoth (no data loss) + queue in `pending_conflicts.json`. Delivered as `VYOMA_SYNC:conflict:<path>:<provider>` at app next spawn alongside `VYOMA_SYSTEM:screen`.
+
+### Security
+Credentials via R60 Keychain (interim: AES-256-GCM `creds.enc`). Delivered to plugins as 128-bit random proxy tokens (in-memory only, never on disk). `/backup` not preopened in any app WASI sandbox.
+
+---
+
+## Section 45: Time Machine & Snapshots
+
+**macOS analogue**: `Time Machine` / `APFS snapshots` / `tmutil`  
+**Depends on**: R04, R41, R43, R46  
+**Status**: FINAL
+
+### Snapshot Primitive
+Hardlink-tree copy on ext4 (`cp -al` model) — NOT btrfs/APFS CoW, NOT tar. Snapshots are real directory trees enabling O(1) single-file browse/restore. All hardlinks within `/backup/snapshots/` (same ext4 volume); `/data` side never hardlinked.
+
+### Change Detection (B1)
+9P mtime unreliable with `security_model=mapped-xattr`. Journal at `/data/.tm/journal.toml`: `path → (size, sha256_first_4KB)`. Small files (<256KB): content-hash. Large: size-only. Journal updated atomically after each snapshot via R41 write_commit.
+
+### Schedule & Space (B3)
+`snapshot-timer` thread wakes every 60s. Prune runs BEFORE new snapshot. Free space check via `statvfs` — skip if <10% of backup volume, emit `VYOMA_SNAP:disk-full`. Retention: all hourlies 24h, one daily 30d, one weekly 52w. `prune_failed: bool` retry flag in scheduler.
+
+### Restore Protocol (B2 + B4)
+`AppState.quiesced: bool` — watchdog skips quiesced apps (B2). Restore runs in dedicated `snapshot-restore` thread with `RESTORE_ACK_TX: OnceLock<Mutex<Option<mpsc::Sender<String>>>>` collecting acks from IPC handler (B4). Protocol: `VYOMA_SYSTEM:quiesce` → `fs-quiesce-ack` (5s) → bulk copy → SIGCONT → `restore-done`.
+
+### App Exclusions (B5)
+`[backup]` as **top-level** table in AppManifest (NOT inside `[capabilities]` — avoids `deny_unknown_fields` conflict). Paths stored at `/data/.tm/exclusions.toml`; `..` components rejected.
+
+### Backup Destination
+Separate ext4 `out/backup.img` (256 MB), mounted `/backup` with `MS_NODEV|MS_NOEXEC|MS_NOSUID`. `try_mount_backup()` probes `/dev/vdb`, `/dev/vdc`, `/dev/sdb`.
+
+---
+
+## Section 46: Disk Management & Formatting
+
+**macOS analogue**: `Disk Utility` / `DiskArbitration` / `diskutil`  
+**Depends on**: R04, R21, R41, R43  
+**Status**: FINAL
+
+### Disk Discovery
+Poll `/sys/block/` every 2 seconds. `DiskDevice` struct: name, path, serial, size_bytes, removable, model, fs_type, partitions. Superblock probe: pure Rust (ext4 `0x53EF`, vfat `"FAT"`, GPT `"EFI PART"`, MBR `0x55AA`).
+
+### Boot Disk Identity (B4)
+Boot disk identified by virtio serial `"vyoma-data-disk"` (Makefile `-drive ...,serial=vyoma-data-disk`), NOT `/dev/vda` node. `DiskDevice.serial` read from `/sys/block/<name>/device/serial`.
+
+### Protocol Routing (B1)
+`VYOMA_DISK:` routed in `router.rs` (NOT `draw_cmd.rs` — would exceed 500 lines and lack global handles). `disk_manage: bool` capability gate; missing cap → `VYOMA_DISK_REPLY:error:EPERM`.
+
+### Format Token Flow (B3)
+`Mutex<HashMap<[u8;16], PendingFormat>>` (NOT Vec). Atomic `remove()` prevents concurrent double-confirm. One-in-flight limit per app: reject with `EBUSY` if pending token exists. Two-leg flow: `format` → `format_token:<hex>` → user confirmation → `format_confirm:<token>` → worker thread calls `mkfs.ext4` / `mkfs.vfat` after `is_block_device()` check.
+
+### mkfs Binaries (B2)
+`rootfs.sh` copies `mkfs.ext4` and `mkfs.vfat` from builder image. Dockerfile ensures `e2fsprogs` + `dosfstools` installed.
+
+### Lock Safety (B5)
+Disk handlers snapshot state then release disk locks before calling `send_reply(inbox)`. Never hold `MOUNT_TABLE` or `PENDING_FORMATS` lock while acquiring inbox.
+
+### Partition Management
+Single-partition scope for R46. `mkpart:<device>:mbr` writes MBR (512-byte pure Rust). `mkpart:<device>:gpt` writes GPT protective MBR + header. `rmpart` uses same two-leg token flow as format. Mount points at `/media/<sanitized_device_name>/` (only `[a-z0-9]`, max 16 chars).
+
+---
+
+## Section 47: File Tagging & Metadata
+
+**macOS analogue**: `Finder tags` / `xattrs` / `NSMetadataItem`  
+**Depends on**: R04, R41, R42  
+**Status**: FINAL
+
+### Storage
+Two SQLite databases: `tags.db` (tag_names + file_tags) and `xattrs.db` (xattrs + app_meta). Both in WAL mode. Writer connection exclusive to writer thread; read-only reader connection for parallel queries (B2 fix: splits `Mutex<Connection>` into writer + reader).
+
+### rusqlite musl Compilation (B1)
+`rusqlite bundled` feature compiles SQLite C source. Requires `CC_x86_64_unknown_linux_musl=musl-gcc` in `.cargo/config.toml` and Makefile Docker env passthrough.
+
+### Namespace Model
+`vyoma.*` (supervisor-only write), `user.*` (any filesystem app), `com.<bundle>.*` (app-scoped). Enforcement uses `bundle_id: Option<String>` from `AppState` (from `vyoma.toml [app] bundle_id`), NOT unqualified app name (B5 fix).
+
+### Router Dispatch (B4)
+`router.rs` previously had NO `VYOMA_FS:` arm — all opcodes silently dropped. Fix: add arm before draw block dispatching `tag/`, `xattr/`, `app_meta/` to `meta_store::ipc_handler`. `META_STORE: OnceLock<MetaStore>` initialized in main().
+
+### Tag Rename (B3)
+`BEGIN IMMEDIATE` transaction + pre-check for target name existence before UPDATE. Prevents ghost `tag_names` rows from concurrent renames to the same target name.
+
+### Spotlight Integration
+Tag changes send `IndexCmd::Reindex(path)` to Spotlight indexer. `xattrs.db` readable by indexer thread via reader connection, enabling `tag:red` queries.
+
+---
+
+## Section 48: Document Model & Recent Files
+
+**macOS analogue**: `NSDocument` / `NSDocumentController`  
+**Depends on**: R04, R41, R43  
+**Status**: FINAL
+
+### Document Lifecycle
+`VYOMA_DOC:open/close/dirty/clean/autosave_ack/should_close_response` protocol. `@supervisor: doc_open <path> <display_name>` → `REPLY:doc_id:<id>`. Routed in `router.rs` before draw block.
+
+### Document Registry
+`DocEntry` per open document: doc_id, path, display_name, owner_app, is_dirty, opened_at, `doc_signal: mpsc::Sender<DocSignal>`. `sweep_stale_docs(app_name)` on SIGCHLD: drains all entries for exiting app, flushes dirty ones to autosave shadow (B1 fix).
+
+### should_close Channel (B3)
+`should_close` delivered via per-doc `doc_signal` channel (NOT blocking IPC handler thread). Signal thread sends `DocSignal::ShouldClose { reply_tx: oneshot::Sender<CloseDecision> }`, delivers `VYOMA_DOC:should_close` to app, waits on oneshot with 5-second timeout before forcing close.
+
+### Recent Files Store
+SQLite `recents.db` at `/data/.vyoma/recents.db`. Per-app cap 10, system cap 100. `PRAGMA wal_autocheckpoint=10` for non-desktop profiles (B2). `document-model` Cargo feature excluded for mcu-minimal (B2). `recent_files: bool` capability gates system-wide access.
+
+### Version Snapshots
+Gzip-compressed snaps at `/data/.vyoma/versions/<hex16>/v000N_<ts>.snap`. Max 20 per path; oldest pruned. Written on `VYOMA_DOC:clean` only. Restore requires `filesystem = true` + `BookmarkToken` + existing DocEntry history for that path (B4 fix — prevents arbitrary file access).
+
+### Autosave Shadow Files (B5)
+`/data/.vyoma/autosave/<hex16>.shadow` written via R41 atomic-rename (write `.tmp`, fsync, rename). Directory mode `0o777`. Supervisor scans for orphaned shadows at startup and offers recovery to relevant app on next open.
