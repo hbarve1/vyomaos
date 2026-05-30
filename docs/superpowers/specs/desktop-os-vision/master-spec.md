@@ -2574,3 +2574,80 @@ Argon2id: `m=65536 KiB, t=3, p=1` (~400ms on RPi4). Master key ephemeral (`Zeroi
 
 **B1** `place_in_cgroup(app_name, pid)` in `spawn_app`; `CONFIG_CGROUPS=y`/`CONFIG_CGROUP_NET_CLASSID=y`; non-fatal (IPC layer still enforces). **B2** Non-blocking deferred reply — IPC thread freed immediately; connection worker thread dials after user responds. **B3** Policy mutation actor: no concurrent `store.write()`; R41 persistence inside actor. **B4** `tcp-connect-host` verb carries hostname — DNS filter pre-resolution; hostname available for rule matching. **B5** Compositor overlay (`FlushCmd::ShowOverlay`) bypasses focused-app surface routing; serial shell fallback via `NOTIFY:firewall-prompt`.
 
+
+---
+
+## Section 66: Quarantine & Gatekeeper
+
+**macOS analogue**: Gatekeeper / com.apple.quarantine xattr  
+**Key files**: `supervisor/src/quarantine/` (mod.rs, store.rs, check.rs, ipc.rs, prompt.rs)  
+**Storage**: `/data/.vyoma/xattrs/<sha256-of-path>.json` (xattr proxy — 9P lacks native xattr support)
+
+**Scope**: Intercepts app spawns after SHA-256 verification, before `Command::spawn`. Downloads and sideloaded binaries tagged with `QuarantineRecord { path, set_at, set_by, source_url, approved_once }`. Tags survive reboots via R41 atomic xattr proxy writes.
+
+**Decision flow**: `check_and_gate()` returns `SpawnDecision`: `Allow` (no quarantine flag or already approved), `Deny` (policy), or `PendingUserApproval { req_id }`. Overlay prompt: `O` = approve-once (volatile, `approved_once=true`), `C` or 30s timeout = deny. Non-blocking deferred reply: IPC thread returns `REPLY:pending req_id=N` immediately; result pushed as `PERM_RESP:N:allowed|denied` after user interaction.
+
+**B1** xattr proxy: path SHA-256 as filename key prevents path-separator injection. **B2** R41 atomic writes for quarantine records (`.tmp → fsync → rename`). **B3** `check_and_gate()` after SHA-256 verification — no TOCTOU window. **B4** `QUARANTINE_POLICY_TX` mpsc actor serializes policy mutations. **B5** Cargo: `serde_json` promoted from dev-dep to regular dep (already in tree).
+
+---
+
+## Section 67: Audio System
+
+**macOS analogue**: CoreAudio / AudioHAL / AVAudioEngine  
+**Key files**: `supervisor/src/audio/` (mod.rs, alsa.rs, ring.rs, mixer.rs, mic.rs)  
+**Kernel additions**: `CONFIG_SOUND=y`, `CONFIG_SND=y`, `CONFIG_SND_PCM=y`, `CONFIG_SND_VIRTIO=y`, `CONFIG_SND_HDA_INTEL=y`
+
+**VYOMA_AUDIO protocol**: `open:<sid>,<rate>,<fmt>,<ch>` | `write:<sid>,<base64_pcm>` | `close:<sid>` | `set_vol:<sid>,<0-100>` | `mic_open:<req_id>` | `mic_close:`. Pixel data never in-band — apps encode PCM as base64, supervisor decodes inline (no external dep).
+
+**SPSC lock-free StreamRing**: `RING_CAP = 131_072` bytes (power-of-two), `AtomicUsize` write/read indices. Mixer thread: snapshots `Arc<StreamRing>` refs under global lock → drops lock → mixes `PERIOD_FRAMES=1024` frames (~23ms at 44100Hz) → ALSA raw ioctl write. Raw ALSA: `SNDRV_PCM_IOCTL_HW_PARAMS=0xC2504111`, `WRITEI_FRAMES=0xC0105150`, `READI_FRAMES=0xC0105151` via `#[repr(C)]` structs + `libc::ioctl` — no libasound.
+
+**B1** ALSA struct sizes validated with `const _: () = assert!(size_of::<SndrPcmHwParams>() == 608)`. **B2** ABBA prevention: lock snapshot → drop lock → mix outside lock. **B3** `OnceLock` for PCM fd and mixer thread (initialized once in same closure). **B4** Mic: deferred `REPLY:pending req_id=N`, dedicated perm thread blocks 30s, result via `PERM_RESP:N:allowed|denied`. **B5** Inline base64 decode/encode — zero new Cargo deps.
+
+---
+
+## Section 68: Video Playback & Codecs
+
+**macOS analogue**: AVFoundation / VideoToolbox / CoreMedia  
+**Key files**: `supervisor/src/video/` (mod.rs, session.rs, shm.rs, timing.rs, av_sync.rs, protocol.rs)  
+**New Cargo dep**: `memmap2 = "0.9"` (~8 KB impact)
+
+**Shared-memory frame delivery**: `ShmSurface::create()` → `/dev/shm/vyoma_vid_<sid>` via memmap2. `ShmHeader` (64 bytes): `seq_write: AtomicU64`, `seq_read: AtomicU64`. Write protocol: odd seq = frame in progress, even = complete. `has_new_frame()`: `seq_write != seq_read && seq_write % 2 == 0`. Pixel data never crosses IPC channel.
+
+**Timing**: `FrameClock::next_deadline_us()` sent in every `VYOMA_VIDEO:ack` — app never self-times. `AvSyncClock`: `DRIFT_THRESHOLD_US=50_000`, `MAX_CORRECTION_US=500_000`, half-step convergence.
+
+**Codec tiers**: Tier 1 pure-Rust (~100KB), Tier 2 openh264 (~600KB), Tier 3 emerging. `max_wasm_kb` in vyoma.toml enforced by `make check-manifests`. Capability: `video_decode = true`.
+
+**B1** memfd double-buffer handoff via odd/even seq atomics. **B2** `FrameClock` prevents drift via supervisor-driven deadlines. **B3** `AvSyncClock` half-step correction bounds divergence. **B4** `max_wasm_kb` manifest enforcement prevents oversized codec bundles. **B5** `seq_write % 2 == 0` invariant documented and enforced at write site.
+
+---
+
+## Section 69: Camera & Capture Pipeline
+
+**macOS analogue**: AVCaptureSession / IIDCFamily  
+**Key files**: `supervisor/src/camera/` (mod.rs, v4l2.rs, frame_shm.rs, permission.rs, permission_store.rs, indicator.rs)  
+**Kernel additions**: `CONFIG_MEDIA_SUPPORT=y`, `CONFIG_VIDEO_DEV=y`, `CONFIG_USB_VIDEO_CLASS=y`, `CONFIG_USB_EHCI_HCD=y`
+
+**V4L2 pipeline**: `VIDIOC_QUERYCAP → S_FMT → REQBUFS (NUM_BUFS=4) → QUERYBUF → QBUF×4 → STREAMON → DQBUF loop`. All via raw `libc::ioctl` with `#[repr(C)]` structs (no libv4l2). `PixelFormat`: `Yuyv` (`YUYV`) or `Mjpeg` (`MJPG`).
+
+**Frame delivery**: `FrameShm` — `memfd_create` without `MFD_CLOEXEC` (fd must be inheritable), 4-slot ring, 64-byte aligned slots. `write_volatile` + `Release` fence for lock-free handoff. App receives `VYOMA_SYSTEM:cam-shm-fd:<fd>` once, then per-frame `VYOMA_CAMERA:frame:<seq>:<w>:<h>:<fmt>` notifications. App mmaps fd for pixel reads — no pixel data in IPC.
+
+**Permission**: `handle_cam_open` → `REPLY:cam-pending req_id=N` → overlay → mouse hit-test on Allow/Deny rects. `PENDING_OPEN_PARAMS` table cleaned on deny/timeout. Persistent grants via `/data/.vyoma/camera/permissions.json` (R41 writes). Camera indicator: `CAM_ACTIVE_COLOR=0x30D158FF` green disc + "REC" in menu bar. QEMU: `make run-cam` with `-device usb-ehci,id=ehci0 -device usb-webcam,bus=ehci0.0`; graceful ENOENT fallback.
+
+**B1** `MFD_CLOEXEC` omitted — fd must survive exec into Wasmtime. **B2** `write_volatile` + Release fence (no mutex in hot path). **B3** `V4l2Buffer` size validated: `const _: () = assert!(size_of::<V4l2Buffer>() == 88)`. **B4** `PENDING_OPEN_PARAMS` removed on deny/timeout (no memory leak). **B5** `make run-cam` target + graceful ENOENT → empty device list, no crash.
+
+---
+
+## Section 70: MIDI & Pro Audio
+
+**macOS analogue**: CoreMIDI / AudioUnit / AU Lab  
+**Key files**: `supervisor/src/midi/` (mod.rs, device.rs, enumerate.rs, event.rs, router.rs, plugin.rs, protocol.rs)  
+**New Cargo dep**: `bytemuck = { version = "1.14", features = ["derive"] }`  
+**Kernel additions**: `CONFIG_SND_RAWMIDI=y`, `CONFIG_SND_VIRMIDI=y`, `CONFIG_VIRTIO_SND=y`
+
+**Event model**: `MonotonicNs(u64)` timestamp via `CLOCK_MONOTONIC` tagged at `read(2)` completion. `MidiEvent` enum: NoteOn/NoteOff/CC/PitchBend/ProgramChange/SysEx/Clock/Start/Stop/Continue/Raw. `from_raw_bytes()`: NoteOn with velocity=0 treated as NoteOff (running status). `to_ipc_line()`: e.g. `VYOMA_MIDI:note_on:0,60,127,1234567890`.
+
+**Router**: `MAX_ROUTE_DEPTH=4`, depth counter in `in_flight` HashMap prevents cycles. Apps IPC verbs: `NoteOn`, `CC`, `Subscribe`, `DeclareSource`, `RegisterPlugin`, `ListPorts`. Scheduler loop: 500µs sleep, ≤1ms jitter, supervisor-side `schedule_ns` for future events.
+
+**WASM Plugin ABI**: `process(in_ptr, out_ptr, frames)`, `midi_event(status, b1, b2, ts_hi, ts_lo)`, `init(sample_rate, max_frames)`. `PluginChain`: ping-pong scratch_a/scratch_b. One Wasmtime JIT call per 256-frame block. `in_offset=65536`, `out_offset=in_offset+frames*4*2`.
+
+**B1** `midi_message_len(status)` correctly handles running status. **B2** `MAX_ROUTE_DEPTH=4` prevents routing loops. **B3** `MonotonicNs` tagged at read completion (not dispatch) — accurate timestamps. **B4** 500µs scheduler loop gives ≤1ms jitter for MIDI output. **B5** Plugin scratch buffers never alias (ping-pong) — no UB on concurrent access.
