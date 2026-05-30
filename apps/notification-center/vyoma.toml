@@ -4,11 +4,13 @@ version = "0.1.0"
 wasm    = "notification-center.wasm"
 
 [capabilities]
-stdio   = true
-display = true
-shell   = true
+stdio      = true
+display    = true
+shell      = true
+filesystem = true
 
 [window]
+title = "Notifications"
 x = 1040
 y = 28
 w = 400
