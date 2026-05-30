@@ -1,18 +1,20 @@
 // Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
-//! VyomaOS interactive shell
+//! VyomaOS interactive shell with multi-tab support
 //!
 //! Reads keyboard input from stdin (forwarded by the supervisor input thread
 //! from /dev/tty0 in raw mode).  Each keypress arrives as a separate message:
 //!
-//!   ""       — Enter key   → execute current_input as a command
-//!   "\x7f"   — Backspace   → remove last character from current_input
-//!   "\x03"   — Ctrl+C      → clear current_input
-//!   "\x01"   — Ctrl+A      → move cursor to start of line
-//!   "\x05"   — Ctrl+E      → move cursor to end of line
-//!   "\x0C"   — Ctrl+L      → clear screen output and redraw prompt
-//!   one char — printable   → append to current_input
+//!   ""       — Enter key   -> execute current_input as a command
+//!   "\x7f"   — Backspace   -> remove last character from current_input
+//!   "\x03"   — Ctrl+C      -> clear current_input
+//!   "\x01"   — Ctrl+A      -> move cursor to start of line
+//!   "\x05"   — Ctrl+E      -> move cursor to end of line
+//!   "\x0C"   — Ctrl+L      -> clear screen output and redraw prompt
+//!   "\x14"   — Ctrl+T      -> new tab (max 8)
+//!   "\x17"   — Ctrl+W      -> close current tab (keep at least 1)
+//!   one char — printable   -> append to current_input
 //!   multi-ch — legacy line mode (headless / non-raw fallback)
 //!
 //! Supervisor reply protocol:
@@ -31,28 +33,51 @@ mod ui;
 
 use commands::{handle_command, is_clear_cmd, tab_complete, path_completions, push_line, DATA_ENTRIES};
 use history::{load_history, append_history};
-use ui::draw_panel;
+use ui::draw_shell;
+
+const MAX_TABS: usize = 8;
+
+/// Per-tab state: independent history index, output, and input buffer.
+pub struct Tab {
+    pub output_lines: Vec<String>,
+    pub input_buf: String,
+    pub cursor: usize,
+    pub cwd: String,
+    pub hist_idx: usize,
+    pub saved_input: String,
+}
+
+impl Tab {
+    fn new() -> Self {
+        Self {
+            output_lines: Vec::new(),
+            input_buf: String::new(),
+            cursor: 0,
+            cwd: "~".to_string(),
+            hist_idx: 0,
+            saved_input: String::new(),
+        }
+    }
+}
 
 fn main() {
-    let mut lines: Vec<String> = Vec::new();
-    let mut current_input = String::new();
-    let mut cursor_pos: usize = 0;
+    let mut tabs: Vec<Tab> = vec![Tab::new()];
+    let mut active: usize = 0;
     let mut history: Vec<String> = load_history();
-    let mut hist_idx: usize = 0;
-    let mut saved_input = String::new();
-    // Runtime screen width — updated when VYOMA_SYSTEM:screen: arrives.
+
+    // Runtime screen dimensions — updated when VYOMA_SYSTEM:screen: arrives.
     let mut sw: u32 = ui::DEFAULT_SW;
     let mut sh: u32 = ui::DEFAULT_SH;
-    // Draw panel first, then overlay the welcome banner.
-    // The banner is naturally cleared on the next draw_panel call (first keypress).
-    draw_panel(&lines, &current_input, cursor_pos, sw, sh);
+
+    // Initial draw + welcome banner.
+    redraw(&tabs, active, sw, sh);
     banner::draw_banner(sw);
 
     let stdin = std::io::stdin();
     for raw in stdin.lock().lines() {
         let raw = match raw { Ok(l) => l, Err(_) => break };
 
-        // ── Screen dimension notification ─────────────────────────────────────
+        // -- Screen dimension notification ----------------------------------------
         if let Some(dims) = raw.strip_prefix("VYOMA_SYSTEM:screen:") {
             if let Some((ws, hs)) = dims.split_once(',') {
                 if let (Ok(w), Ok(h)) = (ws.parse::<u32>(), hs.parse::<u32>()) {
@@ -62,130 +87,211 @@ fn main() {
             continue;
         }
 
-        // ── Supervisor reply ──────────────────────────────────────────────────
+        // -- Supervisor reply -----------------------------------------------------
         if let Some(reply) = raw.strip_prefix("REPLY:") {
+            let tab = &mut tabs[active];
             for item in reply.split('|') {
                 let item = item.trim();
                 if !item.is_empty() {
-                    push_line(&mut lines, item.to_string());
+                    push_line(&mut tab.output_lines, item.to_string());
                 }
             }
-            draw_panel(&lines, &current_input, cursor_pos, sw, sh);
+            redraw(&tabs, active, sw, sh);
             continue;
         }
 
-        // ── Raw tty mode: single-char messages ───────────────────────────────
+        // -- Tab switching: Ctrl+1..8 arrive as "\x1b[<49..56>~" -----------------
+        if let Some(rest) = raw.strip_prefix("\x1b[") {
+            if let Some(num_s) = rest.strip_suffix('~') {
+                if let Ok(code) = num_s.parse::<u32>() {
+                    if (49..=56).contains(&code) {
+                        let idx = (code - 49) as usize;
+                        if idx < tabs.len() {
+                            active = idx;
+                            redraw(&tabs, active, sw, sh);
+                        }
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // -- Raw tty mode: single-char messages -----------------------------------
         match raw.as_str() {
+            // Ctrl+T — new tab
+            "\x14" => {
+                if tabs.len() < MAX_TABS {
+                    tabs.push(Tab::new());
+                    active = tabs.len() - 1;
+                }
+                redraw(&tabs, active, sw, sh);
+            }
+            // Ctrl+W — close current tab (keep at least 1)
+            "\x17" => {
+                if tabs.len() > 1 {
+                    tabs.remove(active);
+                    if active >= tabs.len() {
+                        active = tabs.len() - 1;
+                    }
+                }
+                redraw(&tabs, active, sw, sh);
+            }
+            // Ctrl+C — clear input
             "\x03" => {
-                current_input.clear();
-                cursor_pos = 0;
-                hist_idx = 0;
-                saved_input.clear();
-                draw_panel(&lines, &current_input, cursor_pos, sw, sh);
+                let tab = &mut tabs[active];
+                tab.input_buf.clear();
+                tab.cursor = 0;
+                tab.hist_idx = 0;
+                tab.saved_input.clear();
+                redraw(&tabs, active, sw, sh);
             }
+            // Ctrl+A — cursor to start
             "\x01" => {
-                cursor_pos = 0;
-                draw_panel(&lines, &current_input, cursor_pos, sw, sh);
+                tabs[active].cursor = 0;
+                redraw(&tabs, active, sw, sh);
             }
+            // Ctrl+E — cursor to end
             "\x05" => {
-                cursor_pos = current_input.len();
-                draw_panel(&lines, &current_input, cursor_pos, sw, sh);
+                let tab = &mut tabs[active];
+                tab.cursor = tab.input_buf.len();
+                redraw(&tabs, active, sw, sh);
             }
+            // Ctrl+L — clear output
             "\x0C" => {
-                lines.clear();
-                draw_panel(&lines, &current_input, cursor_pos, sw, sh);
+                tabs[active].output_lines.clear();
+                redraw(&tabs, active, sw, sh);
             }
+            // Backspace
             "\x7f" => {
-                current_input.pop();
-                cursor_pos = current_input.len();
-                draw_panel(&lines, &current_input, cursor_pos, sw, sh);
+                let tab = &mut tabs[active];
+                if tab.cursor > 0 {
+                    tab.input_buf.remove(tab.cursor - 1);
+                    tab.cursor -= 1;
+                }
+                redraw(&tabs, active, sw, sh);
             }
+            // Enter
             "" => {
-                let cmd = current_input.trim().to_string();
-                current_input.clear();
-                cursor_pos = 0;
-                hist_idx = 0;
-                if !cmd.is_empty() {
-                    if history.last().map(|s| s.as_str()) != Some(cmd.as_str()) {
-                        if history.len() >= 50 { history.remove(0); }
-                        history.push(cmd.clone());
-                        append_history(&cmd);
-                    }
-                }
-                if cmd.is_empty() {
-                    draw_panel(&lines, &current_input, cursor_pos, sw, sh);
-                } else if is_clear_cmd(&cmd) {
-                    lines.clear();
-                    draw_panel(&lines, &current_input, cursor_pos, sw, sh);
-                } else {
-                    push_line(&mut lines, format!("> {cmd}"));
-                    handle_command(&cmd, &mut lines);
-                    draw_panel(&lines, &current_input, cursor_pos, sw, sh);
-                }
+                handle_enter(&mut tabs[active], &mut history);
+                redraw(&tabs, active, sw, sh);
             }
+            // Arrow up — history back
             "\x1b[A" => {
-                if !history.is_empty() {
-                    if hist_idx == 0 { saved_input = current_input.clone(); }
-                    hist_idx = (hist_idx + 1).min(history.len());
-                    current_input = history[history.len() - hist_idx].clone();
-                    cursor_pos = current_input.len();
-                    draw_panel(&lines, &current_input, cursor_pos, sw, sh);
-                }
+                handle_history_up(&mut tabs[active], &history);
+                redraw(&tabs, active, sw, sh);
             }
+            // Arrow down — history forward
             "\x1b[B" => {
-                if hist_idx > 0 {
-                    hist_idx -= 1;
-                    current_input = if hist_idx == 0 {
-                        saved_input.clone()
-                    } else {
-                        history[history.len() - hist_idx].clone()
-                    };
-                    cursor_pos = current_input.len();
-                    draw_panel(&lines, &current_input, cursor_pos, sw, sh);
-                }
+                handle_history_down(&mut tabs[active], &history);
+                redraw(&tabs, active, sw, sh);
             }
+            // Tab — completion
             "\x09" => {
-                // Tab — /data/ path completion takes priority, then command completion
-                const DATA_PREFIX: &str = "/data/";
-                if let Some(suffix) = current_input.strip_prefix(DATA_PREFIX) {
-                    let matches = path_completions(suffix, DATA_ENTRIES);
-                    if matches.len() == 1 {
-                        current_input = format!("{}{}", DATA_PREFIX, matches[0]);
-                    } else if matches.is_empty() {
-                        push_line(&mut lines, format!("no /data/ match for '{suffix}'"));
-                    } else {
-                        let hint = matches.join("  ");
-                        push_line(&mut lines, format!("candidates: {hint}"));
-                    }
-                } else if let Some(completed) = tab_complete(&current_input) {
-                    current_input = completed.to_string();
-                }
-                draw_panel(&lines, &current_input, cursor_pos, sw, sh);
+                handle_tab_complete(&mut tabs[active]);
+                redraw(&tabs, active, sw, sh);
             }
+            // Printable ASCII
             s if s.len() == 1
                 && s.bytes().next().map(|b| (0x20..=0x7E).contains(&b)).unwrap_or(false) =>
             {
-                current_input.push_str(s);
-                cursor_pos = current_input.len();
-                draw_panel(&lines, &current_input, cursor_pos, sw, sh);
+                let tab = &mut tabs[active];
+                tab.input_buf.insert_str(tab.cursor, s);
+                tab.cursor += 1;
+                redraw(&tabs, active, sw, sh);
             }
-            // ── Legacy / line mode fallback ───────────────────────────────────
+            // Legacy / line mode fallback
             other => {
-                let cmd = other.trim().to_string();
-                if cmd.is_empty() {
-                    draw_panel(&lines, &current_input, cursor_pos, sw, sh);
-                } else if is_clear_cmd(&cmd) {
-                    current_input.clear();
-                    cursor_pos = 0;
-                    lines.clear();
-                    draw_panel(&lines, &current_input, cursor_pos, sw, sh);
-                } else {
-                    current_input.clear();
-                    cursor_pos = 0;
-                    push_line(&mut lines, format!("> {cmd}"));
-                    handle_command(&cmd, &mut lines);
-                    draw_panel(&lines, &current_input, cursor_pos, sw, sh);
-                }
+                handle_legacy(other, &mut tabs[active], &mut history);
+                redraw(&tabs, active, sw, sh);
+            }
+        }
+    }
+}
+
+fn redraw(tabs: &[Tab], active: usize, sw: u32, sh: u32) {
+    let tab = &tabs[active];
+    draw_shell(tabs, active, &tab.output_lines, &tab.input_buf, tab.cursor, sw, sh);
+}
+
+fn handle_enter(tab: &mut Tab, history: &mut Vec<String>) {
+    let cmd = tab.input_buf.trim().to_string();
+    tab.input_buf.clear();
+    tab.cursor = 0;
+    tab.hist_idx = 0;
+    if !cmd.is_empty() {
+        if history.last().map(|s| s.as_str()) != Some(cmd.as_str()) {
+            if history.len() >= 50 { history.remove(0); }
+            history.push(cmd.clone());
+            append_history(&cmd);
+        }
+    }
+    if cmd.is_empty() {
+        // no-op, just redraw
+    } else if is_clear_cmd(&cmd) {
+        tab.output_lines.clear();
+    } else {
+        push_line(&mut tab.output_lines, format!("> {cmd}"));
+        handle_command(&cmd, &mut tab.output_lines);
+    }
+}
+
+fn handle_history_up(tab: &mut Tab, history: &[String]) {
+    if !history.is_empty() {
+        if tab.hist_idx == 0 { tab.saved_input = tab.input_buf.clone(); }
+        tab.hist_idx = (tab.hist_idx + 1).min(history.len());
+        tab.input_buf = history[history.len() - tab.hist_idx].clone();
+        tab.cursor = tab.input_buf.len();
+    }
+}
+
+fn handle_history_down(tab: &mut Tab, history: &[String]) {
+    if tab.hist_idx > 0 {
+        tab.hist_idx -= 1;
+        tab.input_buf = if tab.hist_idx == 0 {
+            tab.saved_input.clone()
+        } else {
+            history[history.len() - tab.hist_idx].clone()
+        };
+        tab.cursor = tab.input_buf.len();
+    }
+}
+
+fn handle_tab_complete(tab: &mut Tab) {
+    const DATA_PREFIX: &str = "/data/";
+    if let Some(suffix) = tab.input_buf.strip_prefix(DATA_PREFIX) {
+        let matches = path_completions(suffix, DATA_ENTRIES);
+        if matches.len() == 1 {
+            tab.input_buf = format!("{}{}", DATA_PREFIX, matches[0]);
+        } else if matches.is_empty() {
+            push_line(&mut tab.output_lines, format!("no /data/ match for '{suffix}'"));
+        } else {
+            let hint = matches.join("  ");
+            push_line(&mut tab.output_lines, format!("candidates: {hint}"));
+        }
+    } else if let Some(completed) = tab_complete(&tab.input_buf) {
+        tab.input_buf = completed.to_string();
+    }
+}
+
+fn handle_legacy(other: &str, tab: &mut Tab, history: &mut Vec<String>) {
+    let cmd = other.trim().to_string();
+    if cmd.is_empty() {
+        // no-op
+    } else if is_clear_cmd(&cmd) {
+        tab.input_buf.clear();
+        tab.cursor = 0;
+        tab.output_lines.clear();
+    } else {
+        tab.input_buf.clear();
+        tab.cursor = 0;
+        push_line(&mut tab.output_lines, format!("> {cmd}"));
+        handle_command(&cmd, &mut tab.output_lines);
+        // Add to history
+        if !cmd.is_empty() {
+            if history.last().map(|s| s.as_str()) != Some(cmd.as_str()) {
+                if history.len() >= 50 { history.remove(0); }
+                history.push(cmd.clone());
+                append_history(&cmd);
             }
         }
     }
