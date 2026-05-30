@@ -71,44 +71,8 @@ pub fn handle_draw_command(
         let mut fb = fb_lock.lock().unwrap();
         let (fb_w, fb_h) = (fb.width, fb.height);
 
-        // ── Compositor pass ──────────────────────────────────────────────
-        // 1. Clear to desktop background
         fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
-
-        // 2. Blit all app surfaces in Z-order
-        let apps_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = {
-            let reg = app_registry.lock().unwrap();
-            reg.iter()
-                .filter_map(|(name, st)| {
-                    let st = st.lock().unwrap();
-                    st.win_region.map(|r| (st.win_z, name.clone(), r))
-                })
-                .collect()
-        };
-        let mut apps_sorted = apps_with_z;
-        apps_sorted.sort_by_key(|(z, _, _)| *z);
-        let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
-        for (z, name, (wx, wy, ww, _wh)) in &apps_sorted {
-            let surface_arc = {
-                let reg = app_registry.lock().unwrap();
-                reg.get(name.as_str()).and_then(|st| st.lock().unwrap().surface.clone())
-            };
-            if let Some(arc) = surface_arc {
-                let surface = arc.lock().unwrap();
-                let is_sys = *z >= Z_DOCK;
-                let blit_y = if is_sys { *wy } else { wy + TITLEBAR_H };
-                if *ww > 0 {
-                    display::blit_surface(&mut fb.back, &surface, *wx, blit_y, 255, fs, fw, fh);
-                }
-            }
-        }
-
-        // 3. Draw chrome on top of composited surfaces
-        draw_chrome_onto(&mut *fb, app_registry, focused);
-
-        // 4. Draw context menu overlay (always topmost)
-        crate::context_menu::render_context_menu_if_open(&mut *fb);
-
+        blit_surfaces_and_overlays(&mut *fb, app_registry, focused);
         fb.flush();
 
         // FPS tracking
@@ -457,39 +421,48 @@ pub fn handle_draw_command(
     log_warn!(Subsystem::Display, Some(sender), "unknown command: {cmd}");
 }
 
-/// Full compositor pass for supervisor-side repaints (drag, snap) that bypass
-/// the normal app `flush` path.
+/// Shared compositor pass: blit surfaces in Z-order then draw all overlays.
+/// Called by both `handle_draw_command` (flush) and `force_repaint`.
 #[cfg(target_os = "linux")]
-pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
-    let Some(fb_lock) = display::get() else { return };
-    let mut fb = fb_lock.lock().unwrap();
-    let (fb_w, fb_h, fb_s) = (fb.width, fb.height, fb.stride);
-    fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
+fn blit_surfaces_and_overlays(fb: &mut display::Framebuffer, registry: &AppRegistry, focused: &FocusedApp) {
     let mut apps_sorted: Vec<(u32, String, (u32, u32, u32, u32))> = {
         let reg = registry.lock().unwrap();
-        reg.iter()
-            .filter_map(|(name, st)| {
-                let st = st.lock().unwrap();
-                st.win_region.map(|r| (st.win_z, name.clone(), r))
-            })
-            .collect()
+        reg.iter().filter_map(|(name, st)| {
+            let st = st.lock().unwrap();
+            st.win_region.map(|r| (st.win_z, name.clone(), r))
+        }).collect()
     };
     apps_sorted.sort_by_key(|(z, _, _)| *z);
+    let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
     for (z, name, (wx, wy, ww, _wh)) in &apps_sorted {
-        let surface_arc = {
+        let (surface_arc, anim_alpha) = {
             let reg = registry.lock().unwrap();
-            reg.get(name.as_str()).and_then(|st| st.lock().unwrap().surface.clone())
+            if let Some(st_arc) = reg.get(name.as_str()) {
+                let st = st_arc.lock().unwrap();
+                let alpha = crate::chrome::sample_anim_alpha(&st.pending_anim);
+                (st.surface.clone(), alpha)
+            } else { (None, 255u8) }
         };
         if let Some(arc) = surface_arc {
             let surface = arc.lock().unwrap();
             let blit_y = if *z >= Z_DOCK { *wy } else { wy + TITLEBAR_H };
-            if *ww > 0 {
-                display::blit_surface(&mut fb.back, &surface, *wx, blit_y, 255, fb_s, fb_w, fb_h);
-            }
+            if *ww > 0 { display::blit_surface(&mut fb.back, &surface, *wx, blit_y, anim_alpha, fs, fw, fh); }
         }
     }
-    draw_chrome_onto(&mut *fb, registry, focused);
-    crate::context_menu::render_context_menu_if_open(&mut *fb);
+    draw_chrome_onto(fb, registry, focused);
+    crate::chrome::render_dropdown_if_open(fb);
+    crate::context_menu::render_context_menu_if_open(fb);
+    crate::toast::render_banners(fb);
+}
+
+/// Full compositor pass for supervisor-side repaints (drag, snap).
+#[cfg(target_os = "linux")]
+pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
+    let Some(fb_lock) = display::get() else { return };
+    let mut fb = fb_lock.lock().unwrap();
+    let (fb_w, fb_h) = (fb.width, fb.height);
+    fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
+    blit_surfaces_and_overlays(&mut *fb, registry, focused);
     fb.flush();
 }
 
