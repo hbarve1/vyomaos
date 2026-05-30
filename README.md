@@ -4,6 +4,12 @@ A **WASM-first operating system** with the long-term goal of becoming a lightwei
 
 > **This is an open research project. We're actively looking for contributors.** See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
 
+## Documentation
+
+- [docs/INDEX.md](docs/INDEX.md) — Full documentation index
+- [CONTRIBUTING.md](CONTRIBUTING.md) — How to contribute
+- [docs/git-workflow.md](docs/git-workflow.md) — Git branching model
+
 ## Universal OS Positioning
 
 VyomaOS is the only operating system designed from the ground up to deploy the same `.wasm` application binary across all seven major computing segments — microcontrollers, IoT edge devices, robotics platforms, mobile/tablet, desktop, server, and supercomputer — with a single unified security and capability model at every scale. Unlike Linux distributions (which require architecture-specific builds), Android (which exposes native C userland), or FreeRTOS/Zephyr (which are locked to constrained hardware), VyomaOS delivers structural security (WASM sandbox, not bolted-on filters), deterministic binaries (byte-identical across builds and architectures), and language-agnostic application development (any language that compiles to WASM targets works). The same manifest-declared capability model that enforces network isolation on an MCU also enforces filesystem isolation on a cloud server.
