@@ -2,9 +2,10 @@
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
 //! Extended @supervisor IPC commands: pkg-*, wallpaper, resize, tcp-*, clipboard,
-//! session-*, display, network helpers, uptime, loglevel, ping, version, workspace.
+//! session-*, display, network helpers, uptime, loglevel, ping, version, workspace, lock.
 
 mod audio_ipc;
+mod lock;
 mod tcp;
 mod workspace_cmd;
 use std::{fs, path::Path, sync::Arc, thread};
@@ -497,6 +498,10 @@ pub fn handle_extended_command(
             return workspace_cmd::handle_workspace_command(
                 verb, parts, sender, inbox, focused, app_registry,
             );
+        }
+
+        "lock" | "unlock" => {
+            lock::handle_lock_command(verb, sender, inbox, focused, app_registry);
         }
         _ => return false,
     }
