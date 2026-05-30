@@ -418,13 +418,8 @@ pub fn handle_draw_command(
         return;
     }
 
-    if let Some(args) = cmd.strip_prefix("set_layer_alpha:") {
-        if let Ok(alpha) = args.trim().parse::<u8>() {
-            // TODO US4: apply animation alpha to compositor layer
-            let _ = alpha;
-        }
-        return;
-    }
+    // set_layer_alpha: animation alpha applied automatically by blit_all_surfaces.
+    if cmd.starts_with("set_layer_alpha:") { return; }
 
     log_warn!(Subsystem::Display, Some(sender), "unknown command: {cmd}");
 }
@@ -485,7 +480,10 @@ pub fn run_compositor_tick(registry: &AppRegistry, focused: &FocusedApp) {
         std::thread::sleep(std::time::Duration::from_millis(16)); // ~60 Hz
         let any_dirty = {
             let reg = registry.lock().unwrap();
-            reg.values().any(|st| st.lock().unwrap().frame_ready)
+            reg.values().any(|st| {
+                let s = st.lock().unwrap();
+                s.frame_ready || s.pending_anim.is_some()
+            })
         };
         if !any_dirty { continue; }
         {
