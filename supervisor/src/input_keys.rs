@@ -156,6 +156,37 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                     if b1[0] == 0x5B {
                         let mut b2 = [0u8; 1];
                         if tty.read(&mut b2).unwrap_or(0) == 0 { continue; }
+
+                        // Ctrl+Arrow: \x1b[1;5C (right) / \x1b[1;5D (left)
+                        // Read extended CSI: b2='1', then ';', '5', final char
+                        if b2[0] == b'1' {
+                            let mut ext = [0u8; 3];
+                            let n = tty.read(&mut ext).unwrap_or(0);
+                            if n == 3 && ext[0] == b';' && ext[1] == b'5' {
+                                match ext[2] {
+                                    b'C' => {
+                                        // Ctrl+Right → next workspace
+                                        let ws = crate::workspace::switch_next();
+                                        log_info!(Subsystem::Input, None,
+                                            "ctrl+right: workspace → {}", ws);
+                                        crate::draw_cmd::force_repaint(&registry, &focused);
+                                        continue;
+                                    }
+                                    b'D' => {
+                                        // Ctrl+Left → previous workspace
+                                        let ws = crate::workspace::switch_prev();
+                                        log_info!(Subsystem::Input, None,
+                                            "ctrl+left: workspace → {}", ws);
+                                        crate::draw_cmd::force_repaint(&registry, &focused);
+                                        continue;
+                                    }
+                                    _ => {} // unknown modifier combo, fall through
+                                }
+                            }
+                            // Not a recognized Ctrl+Arrow, discard consumed bytes
+                            continue;
+                        }
+
                         let fwd: Option<&str> = match b2[0] {
                             0x41 => Some("\x1b[A"),
                             0x42 => Some("\x1b[B"),

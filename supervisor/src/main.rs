@@ -36,6 +36,7 @@ mod router;
 mod ota_update;
 mod resize;
 mod win_actions;
+mod workspace;
 
 use std::{
     collections::{HashMap, VecDeque},

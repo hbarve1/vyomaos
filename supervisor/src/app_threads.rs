@@ -48,8 +48,6 @@ fn init_surface_for_region(st: &mut AppState, region: (u32, u32, u32, u32)) {
     }
 }
 
-// ── apply_tiling_layout ───────────────────────────────────────────────────────
-
 /// Recompute tiled regions for all running display apps and write them into
 /// the registry.  Called on every display-app spawn or exit.
 ///
@@ -385,6 +383,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
             Some(Animation::new(AnimKind::Open, now_ms()));
     }
     app_registry.lock().unwrap().insert(name.clone(), state);
+    crate::workspace::register_app(&name);
 
     Some(SpawnedApp { entry: entry.clone(), name, child, msg_rx, child_stdin, child_stdout,
                       has_display: caps.display, is_shell: caps.shell })
