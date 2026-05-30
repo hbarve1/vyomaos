@@ -2193,3 +2193,121 @@ Gzip-compressed snaps at `/data/.vyoma/versions/<hex16>/v000N_<ts>.snap`. Max 20
 
 ### Autosave Shadow Files (B5)
 `/data/.vyoma/autosave/<hex16>.shadow` written via R41 atomic-rename (write `.tmp`, fsync, rename). Directory mode `0o777`. Supervisor scans for orphaned shadows at startup and offers recovery to relevant app on next open.
+
+---
+
+## Section 49: App Sandbox & Container FS
+
+**macOS analogue**: `App Sandbox` / container directories  
+**Depends on**: R04, R41, R48, R50  
+**Status**: FINAL
+
+### Container Layout
+Per-app container at `/data/apps/<app_name>/` with subdirs: `support/`, `cache/`, `documents/`, `preferences/`, `tmp/`. Shared containers at `/data/shared/<group_id>/` for apps declaring the same `shared_groups` in vyoma.toml. `/data/.vyoma/` never granted to apps.
+
+### Automatic Grant Wiring (B1)
+At spawn: atomic `DELETE WHERE app_name=? AND grant_type='auto'` + INSERT in single transaction. No window with zero grants or stale grants. `grant_type='bookmark'` rows (user-granted via Open panel) are preserved across respawns.
+
+### Temporary Files (B3)
+`tmp/` cleared in `spawn_app()` BEFORE wasmtime launch (handles crash case). Supervisor startup sweep removes files >24h old in all tmp dirs.
+
+### Inter-App Sharing (B2)
+`VYOMA_SANDBOX:share_grant:<path_b64>:<target_app>:<rw|ro>:<ttl>`. Supervisor validates path ownership + inserts target grant in single transaction (no TOCTOU). 128-bit random grant token; TTL-based expiry sweep.
+
+### pkg-remove Ordering (B4)
+Kill + wait FIRST; then revoke grants; then delete container. Prevents running instance from writing after grant revocation. Also calls `bookmark_store::revoke_all(app_name)` (B5 fix: stale BookmarkTokens don't survive uninstall).
+
+---
+
+## Section 50: Package Manager & App Store
+
+**macOS analogue**: `Mac App Store` / Homebrew  
+**Depends on**: R22, R42, R48, R49  
+**Status**: FINAL
+
+### Package Format
+`.vyomapkg` = tar+zst archive: `META-INF/manifest.json` + `META-INF/signature.ed25519` + `app/<name>.wasm` + `app/vyoma.toml` + `assets/`.
+
+### Registry
+SQLite `packages.db` at `/data/.vyoma/packages.db` (WAL). Schema: `packages`, `file_access_grants`, `sources`, `capability_reviews`, `update_history`. Migration from `/data/installed.txt` on first boot.
+
+### Install Atomicity (B1)
+All extraction to `/data/.vyoma/staging/<bundle_id>/`. Atomic `rename` staging → `/data/apps/<name>/` is the commit point. `state='pending'` row in packages.db written PRE-rename; updated to `'active'` post-rename. Startup scan cleans orphaned staging dirs.
+
+### boot.toml Concurrency (B2)
+`BOOT_CONFIG_LOCK: OnceLock<Mutex<()>>` serializes all reads+writes. R41 atomic-rename for write.
+
+### Kill-Before-File-Mutation (B3)
+`stop_app_sync()` (SIGTERM→SIGKILL, wait for confirmed exit) runs before ANY file/grant mutation.
+
+### Signature Verification (B4)
+Ed25519 via `ring` crate (pure Rust). Official keys as `const [u8; 32]` embedded in supervisor binary (not in replaceable files). Sideload bypass tied to `source` field, not caller-supplied flag.
+
+### Update Rollback (B5)
+Three-file swap: write `wasm.new` → `state='swap-pending'` in DB → rename `wasm→wasm.old` → rename `wasm.new→wasm` → `state='health-check'`. Health check deadline stored in DB; survives reboot. On startup with `state='health-check'`: restart timer for remaining duration; rollback if expired.
+
+---
+
+## Section 51: Networking Stack
+
+**macOS analogue**: `CFNetwork` / `Network.framework`  
+**Depends on**: R03, R49  
+**Status**: FINAL
+
+### Kernel Config (B1)
+Add to `base/kernel.config`: `CONFIG_IP_PNP=y`, `CONFIG_IP_PNP_DHCP=y` (eth0 self-configures to 10.0.2.15 before PID 1), `CONFIG_NET_LOOPBACK=y`, `CONFIG_RTNETLINK=y`, `CONFIG_NET_CORE=y`, `CONFIG_BPF=y`, `CONFIG_BPF_SYSCALL=y`. Add `ip=dhcp` to kernel cmdline in Makefile.
+
+### Extended Network Capability
+`NetworkPolicy` enum: `None` | `Loopback` | `Full`. `Loopback` uses `unshare(CLONE_NEWNET)` in `pre_exec` — kernel enforces isolation, WASI socket connects to non-loopback return `ENETUNREACH` (B3 fix). `Full` = `inherit-network` as before.
+
+### Async DNS (B2)
+`dns-resolve` IPC handler sends to `DNS_TX: mpsc::Sender` and returns immediately. Dedicated `supervisor-dns` thread does UDP/53 queries with 5s timeout. Never blocks IPC handler.
+
+### Net-Status Detection (B4)
+Use `carrier=1 AND IP-in-fib_trie` as "up" — not `operstate` (always `unknown` on QEMU user-mode). Broadcast `VYOMA_SYSTEM:net-change:eth0:up:10.0.2.15` on change via netlink `RTMGRP_LINK`.
+
+### Port Conflict (B5)
+At spawn: check AppRegistry for existing app with same `network_port`; reject second app with error.
+
+---
+
+## Section 52: DNS & mDNS / Bonjour
+
+**macOS analogue**: `mDNSResponder` / Bonjour  
+**Depends on**: R51  
+**Status**: FINAL
+
+### Stub Resolver
+UDP/53 to `10.0.2.3` (QEMU forwarder). In-flight dedup: `DNS_INFLIGHT: Mutex<HashMap<String, Vec<Sender<ResolveResult>>>>` — check + register in single lock acquisition (B3 fix). LRU cache (256 entries, min 30s / max 300s TTL, negative 30s).
+
+### mDNS Responder
+`mdns-responder` thread binds UDP `224.0.0.251:5353`. Detects QEMU user-mode via gateway `10.0.2.2` in `/proc/net/route` (B2 fix): logs warning, skips multicast join, uses ARP unicast browse fallback. Records: A, PTR, SRV, TXT.
+
+### Panic-Safe Parser (B4)
+`parse_mdns_query` uses `Option`-propagation throughout (`get(i)?`). `dns_skip_name_safe` has 128-iteration cap + visited-offset bitmask guard against pointer loops. Malformed packets silently dropped — supervisor never crashes on bad mDNS.
+
+### Service Registry (B5)
+Registrations persisted to `/data/.vyoma/mdns-services.toml` (R41 atomic-rename). Loaded at `dns::init()`. SIGTERM sends RFC 6762 TTL=0 Goodbye packets before supervisor restarts.
+
+---
+
+## Section 53: VPN & Network Extensions
+
+**macOS analogue**: `NetworkExtension` / VPN profiles  
+**Depends on**: R51, R52  
+**Status**: FINAL
+
+### Kernel Delta (B1)
+`CONFIG_TUN=y` only (one line). No `CONFIG_WIREGUARD` — userspace WireGuard WASM app handles crypto. Boot probe: `vpn-connect` checks `/dev/net/tun` exists and returns error if not.
+
+### TUN Lifecycle (B2)
+`OwnedTunFd(RawFd)` with `Drop` impl calls `libc::close()`. `TUNSETPERSIST=0` means closing fd automatically destroys `vyoma0` interface. Stored in `VPN_STATE: Mutex<VpnState>`. VPN app crash → waiter thread calls `on_vpn_app_exit()` → drops fd → interface gone.
+
+### Traffic Routing (B3)
+Per-app `SO_BINDTODEVICE` is impossible (can't apply to future WASI sockets). Use default-route takeover: `ip route add default dev vyoma0 metric 50`. All `network=true` app traffic routes through tunnel. `vpn_route = true` reserved for future split-tunnel.
+
+### Authoritative Cleanup (B5)
+`on_vpn_app_exit()` is the ONLY function that: drops TunFd, removes route, calls `clear_vpn_dns()`, clears VPN_STATE, broadcasts `vpn-status:disconnected`. Called from exactly two paths: crash waiter and clean disconnect handler. DNS fallback: retry with `8.8.8.8` if RFC-1918 DNS server times out.
+
+### Credential Security (B4)
+Log filter skips lines containing `vpn-key:`. `private_key_b64` marked `skip_serializing`. Profile created with mode `0o600`. R60 Keychain bridge via `private_key_ref`.
