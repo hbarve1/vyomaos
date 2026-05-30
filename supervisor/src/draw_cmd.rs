@@ -58,57 +58,25 @@ pub fn handle_draw_command(
     let chrome_h = if is_system { 0u32 } else { TITLEBAR_H };
 
     // Mark this app dirty for any draw command other than flush/present.
-    // The flush handler checks and clears this flag before repainting the title bar.
     if cmd != "flush" && cmd != "present" {
-        APP_DIRTY
-            .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
-            .lock()
-            .unwrap()
-            .insert(sender.to_string(), true);
+        APP_DIRTY.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+            .lock().unwrap().insert(sender.to_string(), true);
     }
 
     if cmd == "flush" || cmd == "present" {
+        // P31: mark frame as ready for the compositor tick.
+        if let Some(st) = app_registry.lock().unwrap().get(sender) {
+            st.lock().unwrap().frame_ready = true;
+        }
         let mut fb = fb_lock.lock().unwrap();
         let (fb_w, fb_h) = (fb.width, fb.height);
 
         // ── Compositor pass ──────────────────────────────────────────────
-        // 1. Clear to desktop background
         fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
-
-        // 2. Blit all app surfaces in Z-order
-        let apps_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = {
-            let reg = app_registry.lock().unwrap();
-            reg.iter()
-                .filter_map(|(name, st)| {
-                    let st = st.lock().unwrap();
-                    st.win_region.map(|r| (st.win_z, name.clone(), r))
-                })
-                .collect()
-        };
-        let mut apps_sorted = apps_with_z;
-        apps_sorted.sort_by_key(|(z, _, _)| *z);
-        let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
-        for (z, name, (wx, wy, ww, _wh)) in &apps_sorted {
-            let (surface_arc, alpha) = {
-                let reg = app_registry.lock().unwrap();
-                let st_opt = reg.get(name.as_str());
-                let surface = st_opt.and_then(|st| st.lock().unwrap().surface.clone());
-                let a = st_opt.map(|st| crate::chrome::sample_and_clear_anim(&mut st.lock().unwrap().pending_anim)).unwrap_or(255);
-                (surface, a)
-            };
-            if let Some(arc) = surface_arc {
-                let surface = arc.lock().unwrap();
-                let blit_y = if *z >= Z_DOCK { *wy } else { wy + TITLEBAR_H };
-                if *ww > 0 {
-                    display::blit_surface(&mut fb.back, &surface, *wx, blit_y, alpha, fs, fw, fh);
-                }
-            }
-        }
-
-        // 3. Draw chrome on top of composited surfaces
+        blit_all_surfaces(&mut *fb, app_registry);
         draw_chrome_onto(&mut *fb, app_registry, focused);
 
-        // 4. Draw overlay menus (dropdown, context menu, banners) on top of chrome
+        // Draw overlay menus (dropdown, context menu, banners) on top of chrome
         crate::chrome::render_dropdown_if_open(&mut *fb);
         crate::chrome::render_context_menu_if_open(&mut *fb);
         crate::toast::render_banners(&mut *fb);
@@ -461,14 +429,9 @@ pub fn handle_draw_command(
     log_warn!(Subsystem::Display, Some(sender), "unknown command: {cmd}");
 }
 
-/// Full compositor pass for supervisor-side repaints (drag, snap) that bypass
-/// the normal app `flush` path.
+/// Blit all app surfaces in Z-order onto the framebuffer back-buffer.
 #[cfg(target_os = "linux")]
-pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
-    let Some(fb_lock) = display::get() else { return };
-    let mut fb = fb_lock.lock().unwrap();
-    let (fb_w, fb_h, fb_s) = (fb.width, fb.height, fb.stride);
-    fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
+fn blit_all_surfaces(fb: &mut display::Framebuffer, registry: &AppRegistry) {
     let mut apps_sorted: Vec<(u32, String, (u32, u32, u32, u32))> = {
         let reg = registry.lock().unwrap();
         reg.iter()
@@ -479,6 +442,7 @@ pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
             .collect()
     };
     apps_sorted.sort_by_key(|(z, _, _)| *z);
+    let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
     for (z, name, (wx, wy, ww, _wh)) in &apps_sorted {
         let (surface_arc, alpha) = {
             let reg = registry.lock().unwrap();
@@ -491,15 +455,45 @@ pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
             let surface = arc.lock().unwrap();
             let blit_y = if *z >= Z_DOCK { *wy } else { wy + TITLEBAR_H };
             if *ww > 0 {
-                display::blit_surface(&mut fb.back, &surface, *wx, blit_y, alpha, fb_s, fb_w, fb_h);
+                display::blit_surface(&mut fb.back, &surface, *wx, blit_y, alpha, fs, fw, fh);
             }
         }
     }
+}
+
+/// Full compositor pass for supervisor-side repaints (drag, snap) that bypass
+/// the normal app `flush` path.
+#[cfg(target_os = "linux")]
+pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
+    let Some(fb_lock) = display::get() else { return };
+    let mut fb = fb_lock.lock().unwrap();
+    let (fb_w, fb_h) = (fb.width, fb.height);
+    fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
+    blit_all_surfaces(&mut *fb, registry);
     draw_chrome_onto(&mut *fb, registry, focused);
     crate::chrome::render_dropdown_if_open(&mut *fb);
     crate::chrome::render_context_menu_if_open(&mut *fb);
     crate::toast::render_banners(&mut *fb);
     fb.flush();
+}
+
+/// P31: compositor tick loop — polls `frame_ready` flags and recomposites.
+/// Called from a dedicated thread spawned in `main()`.
+#[cfg(target_os = "linux")]
+pub fn run_compositor_tick(registry: &AppRegistry, focused: &FocusedApp) {
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(16)); // ~60 Hz
+        let any_dirty = {
+            let reg = registry.lock().unwrap();
+            reg.values().any(|st| st.lock().unwrap().frame_ready)
+        };
+        if !any_dirty { continue; }
+        {
+            let reg = registry.lock().unwrap();
+            for st in reg.values() { st.lock().unwrap().frame_ready = false; }
+        }
+        force_repaint(registry, focused);
+    }
 }
 
 #[cfg(not(target_os = "linux"))] fn _dummy_non_linux() { let _ = (TITLEBAR_H, Z_DOCK); }

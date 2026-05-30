@@ -1,12 +1,8 @@
 // Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
-//! VyomaOS framebuffer display module (Linux only)
-//!
-//! Opened once at supervisor startup.  Reader threads call `fill_rect` /
-//! `flush` when they detect `VYOMA_DRAW:` protocol lines from display-capable
-//! apps.  If `/dev/fb0` is absent (headless boot) every call is a silent
-//! no-op.  See `docs/vyoma-draw-protocol.md` for the full command reference.
+//! VyomaOS framebuffer display module (Linux only).
+//! Silent no-op when `/dev/fb0` is absent (headless boot).
 
 mod cursor;
 mod fb_ioctl;
@@ -20,7 +16,7 @@ pub use cursor::{CursorState, CURSOR_W, CURSOR_H, CURSOR_MASK};
 #[allow(unused_imports)] pub use helpers::{blend_alpha, titlebar_color, border_color, app_accent_color, format_fps, wrap_words};
 use fb_ioctl::{FBIOGET_VSCREENINFO, FbVarScreeninfo};
 use super::font;
-#[allow(unused_imports)] pub use compositor::{composite_glyph, blit_image, draw_rounded_rect, rounded_rect_coverage};
+#[allow(unused_imports)] pub use compositor::{composite_glyph, blit_image, draw_rounded_rect, rounded_rect_coverage, composite_frame, CompositeEntry};
 use compositor::{blend_over, read_bgra, write_bgra};
 
 use std::{
@@ -31,8 +27,6 @@ use std::{
     thread,
     time::Duration,
 };
-
-// ── Framebuffer handle ────────────────────────────────────────────────────────
 
 pub struct Framebuffer {
     _file: std::fs::File, // keeps the fd alive
@@ -56,9 +50,7 @@ static FB: OnceLock<Mutex<Framebuffer>> = OnceLock::new();
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/// Open `/dev/fb0`, mmap the pixel buffer.
-/// Retries up to 5× with 200 ms delay to handle DRM async init at boot.
-/// Returns `true` if the display is ready.
+/// Open `/dev/fb0`, mmap the pixel buffer. Retries up to 5x.
 pub fn init() -> bool {
     for attempt in 0..5u32 {
         match open_fb() {
@@ -135,14 +127,8 @@ fn open_fb() -> io::Result<Framebuffer> {
     let buf_len = (stride * height) as usize;
 
     let buf = unsafe {
-        libc::mmap(
-            std::ptr::null_mut(),
-            buf_len,
-            libc::PROT_READ | libc::PROT_WRITE,
-            libc::MAP_SHARED,
-            fd,
-            0,
-        )
+        libc::mmap(std::ptr::null_mut(), buf_len,
+            libc::PROT_READ | libc::PROT_WRITE, libc::MAP_SHARED, fd, 0)
     };
 
     if buf == libc::MAP_FAILED {
@@ -181,8 +167,7 @@ impl Drop for Framebuffer {
 
 // ── Drawing primitives ────────────────────────────────────────────────────────
 impl Framebuffer {
-    /// Fill a rectangle with an RGBA colour (packed 0xRRGGBBAA).
-    /// Alpha < 255 composites via Porter-Duff "over"; alpha == 255 uses a fast path.
+    /// Fill a rectangle with an RGBA colour (packed 0xRRGGBBAA). Alpha-blended.
     pub fn fill_rect(&mut self, x: u32, y: u32, w: u32, h: u32, rgba: u32) {
         if self.bpp != 32 { return; }
         let a = (rgba & 0xFF) as u8;
@@ -223,8 +208,7 @@ impl Framebuffer {
         }
     }
 
-    /// Render a string at (x, y) using the embedded bitmap font.
-    /// Sizes: Small (8×8), Medium (8×16), Large (16×32). Clips at screen edges.
+    /// Render a string at (x, y) using the embedded bitmap font. Clips at edges.
     pub fn draw_text(&mut self, x: u32, y: u32, text: &str, rgba: u32, size: font::FontSize) {
         if self.bpp != 32 { return; }
         let r = ((rgba >> 24) & 0xFF) as u8;
@@ -313,7 +297,7 @@ impl Framebuffer {
         }
     }
 
-    /// Save pixels under cursor hotspot then paint the arrow sprite. No-op when not visible.
+    /// Save pixels under cursor hotspot then paint the arrow sprite.
     pub fn draw_cursor(&mut self) {
         if !self.cursor.visible || self.bpp != 32 { return; }
         let cx = self.cursor.cx as u32;
@@ -361,7 +345,7 @@ impl Framebuffer {
         }
     }
 
-    /// Restore pixels saved by the most recent `draw_cursor()` call. No-op if not drawn.
+    /// Restore pixels saved by the most recent `draw_cursor()` call.
     pub fn restore_under_cursor(&mut self) {
         if !self.cursor.drawn { return; }
         let cx = self.cursor.cx as u32;
@@ -413,6 +397,24 @@ impl Framebuffer {
         self.restore_under_cursor();
     }
 
+    /// Composite surfaces onto the back-buffer and flip to the mmap'd fb.
+    #[allow(dead_code)]
+    pub fn composite_and_flip(
+        &mut self,
+        bg_color: u32,
+        surfaces: &[compositor::CompositeEntry<'_>],
+    ) {
+        let (w, h) = (self.width, self.height);
+        self.fill_rect(0, 0, w, h, bg_color);
+        compositor::composite_frame(
+            &mut self.back, surfaces, self.stride, self.width, self.height,
+        );
+        // Mark entire screen dirty so flush copies everything.
+        self.dirty_top = 0;
+        self.dirty_bottom = self.height;
+        self.flush();
+    }
+
     /// Draw a 1-pixel border rectangle (no fill).
     pub fn rect_border(&mut self, x: u32, y: u32, w: u32, h: u32, rgba: u32) {
         if w == 0 || h == 0 { return; }
@@ -427,8 +429,7 @@ impl Framebuffer {
         self.fill_rect(x, y, w, h, 0x000000FF);
     }
 
-    /// Construct a Framebuffer backed by heap memory (no /dev/fb0 required).
-    /// Used by integration tests.
+    /// Construct a heap-backed Framebuffer for tests (no /dev/fb0 required).
     #[doc(hidden)]
     #[allow(dead_code)]
     pub fn new_for_test(width: u32, height: u32) -> (Self, Vec<u8>) {
@@ -452,7 +453,6 @@ impl Framebuffer {
     }
 
     /// Write the current back-buffer as a raw PPM (P6) file to `path`.
-    /// Pixels are in BGRA order in the back-buffer; output is RGB.
     pub fn screenshot(&self, path: &str) -> Result<(), String> {
         use std::io::Write as IoWrite;
         let mut rgb = Vec::with_capacity(3 * (self.width * self.height) as usize);
@@ -477,8 +477,7 @@ impl Framebuffer {
         Ok(())
     }
 
-    /// Draw word-wrapped text. Each line is `glyph_h` pixels tall.
-    /// `max_w` is the available width in pixels; wraps at character boundaries.
+    /// Draw word-wrapped text within `max_w` pixels.
     pub fn draw_text_wrap(
         &mut self,
         x: u32,

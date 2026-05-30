@@ -111,6 +111,8 @@ struct AppState {
     /// Per-window pixel surface buffer (content area only, no chrome).
     /// None until the first tiling layout assigns a win_region.
     pub surface: Option<std::sync::Arc<std::sync::Mutex<crate::display::Surface>>>,
+    /// P31: set to true when the app sends `present` or `flush`, cleared after composite.
+    pub frame_ready: bool,
     /// Declarative menu items from the app manifest (T058).
     menu_items: Vec<supervisor::manifest::MenuItem>,
     // spec-044: management server live log subscribers
@@ -214,38 +216,20 @@ const LOG_TAIL_LINES:    usize = 30;
 const PLATFORM_PROFILE_DIR: &str = "/etc/vyoma/profiles";
 const DEFAULT_PROFILE_NAME: &str = "desktop-full";
 
-/// Load the active platform profile from disk.
-///
-/// Resolution order:
-/// 1. `PLATFORM` environment variable (e.g. `PLATFORM=iot-edge`)
-/// 2. Default: `desktop-full`
-///
-/// Profile file is looked up at `PLATFORM_PROFILE_DIR/<name>.toml`.
-/// If the file does not exist, logs a warning and returns `None`
-/// (system continues with defaults).
+/// Load the active platform profile (`PLATFORM` env var, default `desktop-full`).
 fn load_platform_profile() -> Option<profile::PlatformProfile> {
     let name = std::env::var("PLATFORM")
         .unwrap_or_else(|_| DEFAULT_PROFILE_NAME.to_string());
     let path = format!("{PLATFORM_PROFILE_DIR}/{name}.toml");
     match profile::load_profile(std::path::Path::new(&path)) {
         Ok(p) => {
-            log_info!(
-                Subsystem::Lifecycle,
-                None,
+            log_info!(Subsystem::Lifecycle, None,
                 "platform profile loaded: {} (runtime={:?}, ram={}KB)",
-                p.platform.name,
-                p.platform.runtime,
-                p.platform.min_ram_kb
-            );
+                p.platform.name, p.platform.runtime, p.platform.min_ram_kb);
             Some(p)
         }
         Err(profile::ProfileError::Io(_)) => {
-            // Profile file absent — acceptable on desktop where no profile is deployed.
-            log_info!(
-                Subsystem::Lifecycle,
-                None,
-                "no platform profile at {path}, using defaults"
-            );
+            log_info!(Subsystem::Lifecycle, None, "no platform profile at {path}, using defaults");
             None
         }
         Err(e) => {
@@ -479,6 +463,17 @@ fn main() {
             .name("watchdog".into())
             .spawn(move || app_threads::run_watchdog(registry_wd))
             .expect("spawn watchdog thread");
+    }
+
+    // ── P31: compositor tick thread — polls frame_ready flags and recomposites ──
+    #[cfg(target_os = "linux")]
+    {
+        let registry_comp = Arc::clone(&app_registry);
+        let focused_comp  = Arc::clone(&focused);
+        thread::Builder::new()
+            .name("compositor-tick".into())
+            .spawn(move || draw_cmd::run_compositor_tick(&registry_comp, &focused_comp))
+            .expect("spawn compositor-tick thread");
     }
 
     drop(inbox);
