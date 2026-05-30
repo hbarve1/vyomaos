@@ -196,36 +196,27 @@ pub fn handle_extended_command(
             });
         }
 
-        // P39: notify <title>|<body> — enqueue banner + legacy toast overlay
+        // T067: notify <title>|<body> — enqueue banner + legacy toast overlay
         "notify" => {
             let rest = parts.get(1).unwrap_or(&"").trim().to_string();
             let (title, msg) = rest.split_once('|')
                 .map(|(a, b)| (a.to_string(), b.to_string()))
                 .or_else(|| rest.split_once(' ').map(|(a, b)| (a.to_string(), b.to_string())))
                 .unwrap_or_else(|| (rest.clone(), String::new()));
-            crate::toast::enqueue_banner(sender, &title, &msg);
-            #[cfg(target_os = "linux")]
-            {
-                use crate::font;
-                const NX: u32 = 1020; const NY: u32 = 10;
-                const NW: u32 = 400;  const NH: u32 = 60;
-                if let Some(fb_lock) = crate::display::get() {
-                    let mut fb = fb_lock.lock().unwrap();
-                    fb.fill_rect(NX, NY, NW, NH, 0x21262DFF);
-                    fb.rect_border(NX, NY, NW, NH, 0x58A6FFFF);
-                    fb.draw_text(NX + 8, NY + 8, &title, 0xFFFFFFFF, font::FontSize::Medium);
-                    fb.draw_text(NX + 8, NY + 28, &msg, 0x8B949EFF, font::FontSize::Medium);
-                    fb.flush();
-                }
-                thread::spawn(move || {
-                    thread::sleep(std::time::Duration::from_secs(3));
-                    if let Some(fb_lock) = crate::display::get() {
-                        let mut fb = fb_lock.lock().unwrap();
-                        fb.fill_rect(NX, NY, NW, NH, 0x0D1117FF);
-                        fb.flush();
-                    }
-                });
-            }
+            // T067: Extract sender icon path from boot entry manifest for banner icon
+            let icon_path: Option<String> = {
+                let reg = app_registry.lock().unwrap();
+                reg.get(sender).and_then(|st| {
+                    let st = st.lock().unwrap();
+                    let manifest_path = &st.entry.manifest;
+                    let raw = std::fs::read_to_string(manifest_path).ok()?;
+                    let m: supervisor::manifest::AppManifest = toml::from_str(&raw).ok()?;
+                    let icon_rel = m.app.icon?;
+                    let parent = std::path::Path::new(manifest_path).parent()?;
+                    Some(parent.join(icon_rel).to_string_lossy().to_string())
+                })
+            };
+            crate::toast::enqueue_banner_with_icon(sender, &title, &msg, icon_path.as_deref());
             log_info!(Subsystem::Display, None, "notify title={title:?} msg={msg:?}");
             send_reply(sender, "REPLY:notified", inbox);
         }

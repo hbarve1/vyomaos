@@ -25,6 +25,7 @@ mod image;
 mod app_threads;
 mod chrome;
 mod draw_cmd;
+mod menus;
 mod input_keys;
 mod ipc_commands;
 mod ipc_handlers;
@@ -110,6 +111,8 @@ struct AppState {
     /// Per-window pixel surface buffer (content area only, no chrome).
     /// None until the first tiling layout assigns a win_region.
     pub surface: Option<std::sync::Arc<std::sync::Mutex<crate::display::Surface>>>,
+    /// Declarative menu items from the app manifest (T058).
+    menu_items: Vec<supervisor::manifest::MenuItem>,
     // spec-044: management server live log subscribers
     log_subscribers: Vec<mpsc::Sender<String>>,
 }
@@ -489,8 +492,6 @@ fn main() {
     log_info!(Subsystem::Lifecycle, None, "all apps completed, idling");
     loop { thread::park(); }
 }
-
-// ── IPC router + display dispatcher — delegated to router.rs ──────────────────
 
 fn route_or_print(
     line: &str, sender: &str, inbox: &Inbox, has_display: bool,

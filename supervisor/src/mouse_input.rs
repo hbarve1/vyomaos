@@ -102,65 +102,44 @@ pub fn dispatch_mouse(
 
     // ── Title-bar hover highlight (motion only, no button press) ─────────────
     if btn == 0 {
-        // Determine which app's title bar the cursor is currently over.
         let new_hover: Option<String> = {
             let reg = app_registry.lock().unwrap();
             let mut found: Option<String> = None;
-            // Check z-order first so topmost window wins.
             for name in &z_snapshot {
                 let Some(state_arc) = reg.get(name) else { continue };
                 let st = state_arc.lock().unwrap();
                 let Some((wx, wy, ww, _wh)) = st.win_region else { continue };
-                // Title bar spans y in [wy, wy + TITLEBAR_H) and x in [wx, wx + ww).
                 if cx >= wx as i32 && cx < (wx + ww) as i32
-                    && cy >= wy as i32 && cy < (wy + TITLEBAR_H) as i32 {
-                    found = Some(name.clone());
-                    break;
-                }
+                    && cy >= wy as i32 && cy < (wy + TITLEBAR_H) as i32
+                { found = Some(name.clone()); break; }
             }
-            // Fallback: apps not in z_order
             if found.is_none() {
                 for (name, state_arc) in reg.iter() {
                     let st = state_arc.lock().unwrap();
                     let Some((wx, wy, ww, _wh)) = st.win_region else { continue };
                     if cx >= wx as i32 && cx < (wx + ww) as i32
-                        && cy >= wy as i32 && cy < (wy + TITLEBAR_H) as i32 {
-                        found = Some(name.clone());
-                        break;
-                    }
+                        && cy >= wy as i32 && cy < (wy + TITLEBAR_H) as i32
+                    { found = Some(name.clone()); break; }
                 }
             }
             found
         };
-
-        let old_hover = {
-            HOVERED_APP
-                .get_or_init(|| Mutex::new(None))
-                .lock()
-                .unwrap()
-                .clone()
-        };
+        let old_hover = HOVERED_APP.get_or_init(|| Mutex::new(None)).lock().unwrap().clone();
 
         if new_hover != old_hover {
-            // Update hover state.
             *HOVERED_APP.get_or_init(|| Mutex::new(None)).lock().unwrap() = new_hover.clone();
-
-            // Collect the regions we need to redraw (previous and new hovered window).
             let focused_name = focused.lock().unwrap().clone();
             let mut to_redraw: Vec<(String, u32, u32, u32)> = Vec::new();
-            {
-                let reg = app_registry.lock().unwrap();
-                for candidate in old_hover.iter().chain(new_hover.iter()) {
-                    if let Some(state_arc) = reg.get(candidate.as_str()) {
-                        let st = state_arc.lock().unwrap();
-                        if let Some((wx, wy, ww, _wh)) = st.win_region {
-                            if ww >= 60 {
-                                to_redraw.push((candidate.clone(), wx, wy, ww));
-                            }
-                        }
+            let reg = app_registry.lock().unwrap();
+            for candidate in old_hover.iter().chain(new_hover.iter()) {
+                if let Some(state_arc) = reg.get(candidate.as_str()) {
+                    let st = state_arc.lock().unwrap();
+                    if let Some((wx, wy, ww, _wh)) = st.win_region {
+                        if ww >= 60 { to_redraw.push((candidate.clone(), wx, wy, ww)); }
                     }
                 }
             }
+            drop(reg);
 
             if !to_redraw.is_empty() {
                 if let Some(fb_lock) = display::get() {
@@ -203,7 +182,49 @@ pub fn dispatch_mouse(
             *focused.lock().unwrap() = Some(name.clone());
             log_info!(Subsystem::Input, Some(name.as_str()), "menubar click: focus → {name}");
             repaint_all_borders(app_registry, focused);
-            crate::chrome::open_dropdown(&name, vec![], cx as u32, crate::chrome::MENUBAR_H);
+            // T061: Load menu_items from app manifest into dropdown
+            let items: Vec<(String, String)> = {
+                let reg = app_registry.lock().unwrap();
+                reg.get(&name)
+                    .map(|st| {
+                        st.lock().unwrap().menu_items.iter()
+                            .filter(|mi| mi.enabled)
+                            .map(|mi| (mi.label.clone(), mi.action.clone()))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            crate::chrome::open_dropdown(&name, items, cx as u32, crate::chrome::MENUBAR_H);
+            return;
+        }
+    }
+
+    // T064: Dismiss context menu on any click outside its bounds.
+    if btn != 0 && crate::chrome::is_context_menu_open() {
+        if crate::chrome::dismiss_context_menu_if_outside(cx, cy) {
+            return;
+        }
+    }
+
+    // T064: Dismiss dropdown on any click outside (simple: close on any click).
+    if btn != 0 && crate::chrome::is_dropdown_open() {
+        crate::chrome::close_dropdown();
+    }
+
+    // T063: Right-click on desktop (not on any window) → show context menu.
+    if btn & 2 != 0 {
+        let over_window = {
+            let reg = app_registry.lock().unwrap();
+            z_snapshot.iter().any(|name| {
+                let Some(state_arc) = reg.get(name) else { return false };
+                let st = state_arc.lock().unwrap();
+                let Some((wx, wy, ww, wh)) = st.win_region else { return false };
+                cx >= wx as i32 && cy >= wy as i32
+                    && cx < (wx + ww) as i32 && cy < (wy + wh) as i32
+            })
+        };
+        if !over_window && cy >= crate::chrome::MENUBAR_H as i32 {
+            crate::chrome::open_context_menu(cx as u32, cy as u32);
             return;
         }
     }
@@ -480,7 +501,4 @@ pub fn run_mouse_input(inbox: Inbox, focused: FocusedApp, registry: AppRegistry)
 
 // Satisfy unused-import warnings on non-Linux builds.
 #[cfg(not(target_os = "linux"))]
-fn _unused_log_error_import() {
-    let _: fn(&str, i32, u32, u32) -> Option<TrafficLight> = traffic_light_hit;
-    let _ = log_error!(Subsystem::Input, None, "placeholder");
-}
+fn _unused() { let _ = traffic_light_hit("", 0, 0, 0); let _ = log_error!(Subsystem::Input, None, ""); }
