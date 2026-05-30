@@ -13,6 +13,7 @@ only the permitted WASI imports.
 | `version`    | string | yes      | SemVer string, e.g. `"0.1.0"`                                         |
 | `wasm`       | string | yes      | Filename of the `.wasm` binary relative to this manifest               |
 | `wasm_sha256`| string | no       | Optional SHA-256 hex digest for binary integrity verification          |
+| `icon`       | string | no       | Relative path to a PNG icon (e.g. `"icon.png"`), resolved from the manifest directory |
 
 ## [capabilities] table (optional)
 
@@ -42,6 +43,7 @@ the app renders. The supervisor clips all draw commands to this region.
 | `y`     | u32    | yes      | Top edge of window region in pixels (0 = top of screen)  |
 | `w`     | u32    | yes      | Width of window region in pixels                         |
 | `h`     | u32    | yes      | Height of window region in pixels                        |
+| `z`     | u32    | no       | Z-layer for window stacking order (default `10`). Well-known layers: `0` = desktop background, `10` = default app, `100` = dock, `200` = menu bar, `255` = overlay |
 | `title` | string | no       | Optional window title for supervisor chrome              |
 | `width` | u32    | no       | Logical width hint (informational, not enforced)         |
 | `height`| u32    | no       | Logical height hint (informational, not enforced)        |
@@ -51,6 +53,60 @@ close button) are painted by the supervisor in the top 20 px of each window;
 apps should not draw in that strip.
 
 For the full rendering protocol see [VYOMA_DRAW Protocol](vyoma-draw-protocol.md).
+
+## [[menu_items]] array of tables (optional)
+
+Declarative menu items shown in the global menu bar when this app is focused.
+Each entry is a `[[menu_items]]` TOML array-of-tables element.
+
+| Key        | Type   | Required | Default | Description                                                  |
+|------------|--------|----------|---------|--------------------------------------------------------------|
+| `label`    | string | yes      | --      | Text displayed in the menu bar                               |
+| `action`   | string | yes      | --      | Action identifier sent to the app via stdin when the item is clicked |
+| `enabled`  | bool   | no       | `true`  | Whether the menu item is clickable                           |
+| `shortcut` | string | no       | --      | Keyboard shortcut hint (e.g. `"Ctrl+S"`), displayed but not enforced by supervisor |
+
+## Peripheral capability sub-tables (optional)
+
+Apps on embedded and robotics platforms may declare hardware peripheral
+capabilities as sub-tables under `[capabilities]`. Each sub-table grants the
+app exclusive access to the specified peripheral. Peripheral sub-tables are
+parsed separately from the flat capability fields and enforced by the
+`PeripheralEnforcer` at spawn time.
+
+### [capabilities.gpio]
+
+| Key         | Type     | Required | Description                                                      |
+|-------------|----------|----------|------------------------------------------------------------------|
+| `pins`      | `[u8]`   | yes      | GPIO pin numbers the app may access (empty array = no pins)      |
+| `direction` | string   | no       | Allowed direction: `"input"`, `"output"`, or omit for both       |
+
+### [capabilities.i2c]
+
+| Key       | Type | Required | Description                                                         |
+|-----------|------|----------|---------------------------------------------------------------------|
+| `bus`     | u8   | yes      | I2C bus number                                                      |
+| `address` | u8  | no       | Device address (`0x00`--`0x7F`); omit to allow any address on the bus |
+
+### [capabilities.spi]
+
+| Key      | Type | Required | Description                                             |
+|----------|------|----------|---------------------------------------------------------|
+| `bus`    | u8   | yes      | SPI bus number                                          |
+| `cs_pin` | u8  | no       | Chip-select pin; omit to allow any CS pin on the bus    |
+
+### [capabilities.uart]
+
+| Key    | Type | Required | Description                                                |
+|--------|------|----------|------------------------------------------------------------|
+| `port` | u8   | yes      | UART port number                                           |
+| `baud` | u32  | no       | Baud rate (e.g. `115200`); omit to allow any baud rate     |
+
+### [capabilities.adc]
+
+| Key        | Type   | Required | Description                                            |
+|------------|--------|----------|--------------------------------------------------------|
+| `channels` | `[u8]` | yes      | ADC channel indices the app may sample                 |
 
 ## Restart policy (boot.toml)
 
@@ -109,4 +165,59 @@ network      = true
 network_port = 8080
 filesystem   = true
 stdio        = true
+```
+
+### App with menu items
+
+```toml
+[app]
+name    = "editor"
+version = "0.1.0"
+wasm    = "editor.wasm"
+icon    = "editor-icon.png"
+
+[capabilities]
+display = true
+stdio   = true
+
+[window]
+x     = 0
+y     = 20
+w     = 960
+h     = 700
+z     = 10
+title = "Editor"
+
+[[menu_items]]
+label    = "Save"
+action   = "file:save"
+shortcut = "Ctrl+S"
+
+[[menu_items]]
+label   = "Undo"
+action  = "edit:undo"
+enabled = true
+```
+
+### Embedded app with peripheral capabilities
+
+```toml
+[app]
+name    = "sensor-reader"
+version = "0.1.0"
+wasm    = "sensor-reader.wasm"
+
+[capabilities]
+stdio = true
+
+[capabilities.gpio]
+pins      = [4, 17]
+direction = "input"
+
+[capabilities.i2c]
+bus     = 1
+address = 0x48
+
+[capabilities.adc]
+channels = [0, 1, 2]
 ```

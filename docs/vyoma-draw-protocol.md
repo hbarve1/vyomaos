@@ -1,6 +1,6 @@
 # Contract: VYOMA_DRAW Protocol
 
-**Version**: 1.0 | **Date**: 2026-05-24 | **Stability**: Stable
+**Version**: 2.0 | **Date**: 2026-05-30 | **Stability**: Stable
 
 ## Overview
 
@@ -130,6 +130,106 @@ println!("VYOMA_DRAW:draw_text_wrap:8,4,400,{},m,Long text wraps at 400px", whit
 
 ---
 
+## v2 Commands
+
+> **Note**: All v1 commands above remain fully supported and unchanged. v2 adds the following new commands. Apps can detect v2 supervisor support by reading `VYOMA_SYSTEM:draw_version:2` from stdin at startup.
+
+### `draw_glyph`
+
+Render text using scalable font rendering (replaces bitmap fonts for high-fidelity UI).
+
+**Format**: `VYOMA_DRAW:draw_glyph:<x>,<y>,<rgba>,<pt>,<weight>,<text>`
+
+| Parameter | Type | Description |
+|---|---|---|
+| `x`, `y` | `u32` | Top-left baseline origin in pixels, relative to app window origin |
+| `rgba` | `u32` | Text color (same packed encoding as `fill_rect`) |
+| `pt` | `u32` | Font size in points (8--96) |
+| `weight` | `str` | Font weight: `regular`, `bold`, or `mono` |
+| `text` | `str` | UTF-8 text to render; no embedded commas (use `draw_glyph_escaped` for commas) |
+
+**Example** (Rust):
+```rust
+let white: u32 = 0xFFFFFFFF;
+println!("VYOMA_DRAW:draw_glyph:40,60,{},16,bold,System Preferences", white);
+```
+
+---
+
+### `draw_image`
+
+Blit a PNG image to the framebuffer, scaled to the specified dimensions.
+
+**Format**: `VYOMA_DRAW:draw_image:<x>,<y>,<w>,<h>,<path>`
+
+| Parameter | Type | Description |
+|---|---|---|
+| `x`, `y` | `u32` | Top-left position on screen, relative to app window origin |
+| `w`, `h` | `u32` | Target width and height in pixels (image is scaled to fit) |
+| `path` | `str` | Absolute path to a PNG file in the initramfs |
+
+**Behavior**:
+- Supervisor decodes PNG on first use and caches the decoded RGBA buffer
+- Image is scaled with nearest-neighbor (speed) or bilinear (quality) based on supervisor config
+- If the path does not exist or is not a valid PNG: log WARN to stderr, skip command
+
+**Example** (Rust):
+```rust
+println!("VYOMA_DRAW:draw_image:8,8,48,48,/apps/settings/icon.png");
+```
+
+---
+
+### `fill_rect_r`
+
+Fill a rounded rectangle with alpha compositing support.
+
+**Format**: `VYOMA_DRAW:fill_rect_r:<x>,<y>,<w>,<h>,<rgba>,<radius>`
+
+| Parameter | Type | Description |
+|---|---|---|
+| `x`, `y` | `u32` | Top-left corner in pixels, relative to app window origin |
+| `w`, `h` | `u32` | Width and height in pixels |
+| `rgba` | `u32` | Fill color with alpha channel (alpha is composited using Porter-Duff "over") |
+| `radius` | `u32` | Corner radius in pixels (0 = square, equivalent to `fill_rect`) |
+
+**Behavior**:
+- Uses distance-field coverage mask for anti-aliased corners
+- Alpha channel is fully supported (unlike v1 `fill_rect` where alpha is ignored)
+- If `radius` exceeds half of `w` or `h`, it is clamped
+
+**Example** (Rust):
+```rust
+// Purple at ~60% alpha with 12px rounded corners
+let purple_alpha: u32 = 0x9900FFFF; // 2566914303 in decimal
+println!("VYOMA_DRAW:fill_rect_r:20,20,400,300,{},12", purple_alpha);
+```
+
+---
+
+### `set_layer_alpha`
+
+Set the alpha multiplier for the app's entire compositing layer, enabling fade-in/fade-out animations.
+
+**Format**: `VYOMA_DRAW:set_layer_alpha:<value>`
+
+| Parameter | Type | Description |
+|---|---|---|
+| `value` | `u8` | Alpha multiplier for the entire app layer (0 = fully transparent, 255 = fully opaque) |
+
+**Behavior**:
+- Affects all content rendered by this app during compositing
+- Can be driven by the supervisor for window animations, or set directly by apps
+- Default is 255 (fully opaque) if never set
+
+**Example** (Rust):
+```rust
+// Fade to 50% opacity
+println!("VYOMA_DRAW:set_layer_alpha:128");
+```
+
+---
+
 ## Coordinate System
 
 - Origin `(0, 0)` is the **top-left corner of the app's window region** (not the physical screen)
@@ -163,10 +263,39 @@ The value is printed as a **decimal integer** (Rust's default `{}` formatter for
 |---|---|
 | Malformed `fill_rect` args (wrong count / non-numeric) | Log WARN to stderr; skip command |
 | Malformed `draw_text` args | Log WARN to stderr; skip command |
-| Unknown command (e.g., `VYOMA_DRAW:blit_image:...`) | Log WARN to stderr; skip command |
+| Malformed `draw_glyph` args (wrong count / invalid weight) | Log WARN to stderr; skip command |
+| Malformed `draw_image` args (missing path / invalid PNG) | Log WARN to stderr; skip command |
+| Malformed `fill_rect_r` args (wrong count / non-numeric) | Log WARN to stderr; skip command |
+| Malformed `set_layer_alpha` value (out of range / non-numeric) | Log WARN to stderr; skip command |
+| Unknown command (e.g., `VYOMA_DRAW:blit_surface:...`) | Log WARN to stderr; skip command |
 | App lacks `display` capability | Entire `VYOMA_DRAW:` line silently ignored |
 | No framebuffer (`/dev/fb0` absent) | All draw commands are silent no-ops |
 
 ## Protocol Versioning
 
-This document describes VYOMA_DRAW **v1.0**. The protocol has no version negotiation handshake; version is implicit. Future additions will be backward-compatible (new command prefixes; existing commands unchanged). Breaking changes will increment the major version and require a supervisor update.
+This document describes VYOMA_DRAW **v2.0**. Apps can detect the protocol version at startup: if the supervisor supports v2, it writes `VYOMA_SYSTEM:draw_version:2` to the app's stdin before normal operation begins. Apps that do not read this line can safely ignore it and continue using v1 commands only.
+
+Future additions will be backward-compatible (new command prefixes; existing commands unchanged). Breaking changes will increment the major version and require a supervisor update.
+
+## Version History
+
+| Version | Date | Changes |
+|---|---|---|
+| **v1.0** | 2026-05-24 | Initial protocol: `fill_rect`, `draw_text`, `draw_text_wrap`, `flush`/`present` |
+| **v2.0** | 2026-05-30 | Added `draw_glyph` (scalable fonts), `draw_image` (PNG blit), `fill_rect_r` (rounded rects with alpha), `set_layer_alpha` (layer compositing). All v1 commands remain fully supported. |
+
+## Supervisor-to-App Protocol Extensions (v2)
+
+At app startup (if `display = true`), the supervisor writes capability broadcasts to the app's stdin:
+
+```
+VYOMA_SYSTEM:draw_version:2
+VYOMA_SYSTEM:screen:1440,900
+VYOMA_SYSTEM:display_profile:desktop
+```
+
+| Field | Description |
+|---|---|
+| `draw_version` | Protocol version supported by the supervisor (integer) |
+| `screen` | Screen dimensions in pixels (`<width>,<height>`) |
+| `display_profile` | Active form factor: `desktop`, `mobile`, `iot-edge`, etc. Apps can adapt layout accordingly. |
