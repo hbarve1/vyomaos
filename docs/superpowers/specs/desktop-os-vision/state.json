@@ -1,7 +1,7 @@
 {
   "session_start": "2026-05-29",
   "target": "Full macOS-like Desktop OS (DesktopOS first, then Mobile, then embedded)",
-  "current_round": 76,
+  "current_round": 81,
   "status": "in_progress",
   "subsystems": [
     {"id": 1,  "name": "Kernel & Process Model",              "status": "completed",   "file": "01-kernel-process.md",         "macos_equiv": "XNU kernel / launchd"},
@@ -79,10 +79,10 @@
     {"id": 73, "name": "Notification Center",                  "status": "completed",   "file": "73-notifications.md",          "macos_equiv": "UNUserNotificationCenter / NSUserNotification"},
     {"id": 74, "name": "Launch Services & App Registry",       "status": "completed",   "file": "74-launch-services.md",        "macos_equiv": "LaunchServices / LSRegisterURL"},
     {"id": 75, "name": "App Distribution & Updates",           "status": "completed",   "file": "75-app-distribution.md",       "macos_equiv": "Mac App Store / Sparkle / SUUpdater"},
-    {"id": 76, "name": "WASM App Framework (AppKit equiv.)",   "status": "pending",     "file": "76-app-framework.md",          "macos_equiv": "AppKit / UIKit / SwiftUI"},
-    {"id": 77, "name": "Terminal & Shell",                     "status": "pending",     "file": "77-terminal.md",               "macos_equiv": "Terminal.app / zsh / bash"},
-    {"id": 78, "name": "System Preferences & Settings",        "status": "pending",     "file": "78-system-prefs.md",           "macos_equiv": "System Preferences / System Settings"},
-    {"id": 79, "name": "Browser & WebView Engine",             "status": "pending",     "file": "79-browser.md",                "macos_equiv": "Safari / WebKit / WKWebView"},
-    {"id": 80, "name": "Localization & Internationalization",  "status": "pending",     "file": "80-l10n.md",                   "macos_equiv": "NSLocale / CFLocale / Foundation i18n"}
+    {"id": 76, "name": "WASM App Framework (AppKit equiv.)",   "status": "completed",   "file": "76-app-framework.md",          "macos_equiv": "AppKit / UIKit / SwiftUI"},
+    {"id": 77, "name": "Terminal & Shell",                     "status": "completed",   "file": "77-terminal.md",               "macos_equiv": "Terminal.app / zsh / bash"},
+    {"id": 78, "name": "System Preferences & Settings",        "status": "completed",   "file": "78-system-prefs.md",           "macos_equiv": "System Preferences / System Settings"},
+    {"id": 79, "name": "Browser & WebView Engine",             "status": "completed",   "file": "79-browser.md",                "macos_equiv": "Safari / WebKit / WKWebView"},
+    {"id": 80, "name": "Localization & Internationalization",  "status": "completed",   "file": "80-l10n.md",                   "macos_equiv": "NSLocale / CFLocale / Foundation i18n"}
   ]
 }
