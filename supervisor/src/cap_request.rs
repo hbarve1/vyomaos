@@ -160,12 +160,16 @@ pub fn handle_request_cap(
         Ok(()) => {
             grant_cap(sender, &cap);
             log_info!(Subsystem::Capability, Some(sender), "request-cap {cap}: granted");
+            // P89: audit capability grant
+            crate::audit::log_audit(sender, "cap-request", &cap, crate::audit::AuditResult::Allowed);
             send_reply(sender, &format!("REPLY:cap-granted {cap}"), inbox);
             // Broadcast capability change to all running apps.
             broadcast_cap_change(sender, &cap, "granted", inbox, app_registry);
         }
         Err(reason) => {
             log_warn!(Subsystem::Capability, Some(sender), "request-cap {cap}: denied — {reason}");
+            // P89: audit capability denial
+            crate::audit::log_audit(sender, "cap-request", &cap, crate::audit::AuditResult::Denied);
             send_reply(
                 sender,
                 &format!("REPLY:cap-denied {cap} {reason}"),

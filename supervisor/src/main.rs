@@ -56,6 +56,7 @@ mod vfs;
 mod encrypted_store;
 mod pkg_registry;
 mod workspace;
+mod audit;
 mod cap_request;
 mod user;
 mod firewall;
