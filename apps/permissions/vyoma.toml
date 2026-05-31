@@ -1,0 +1,15 @@
+[app]
+name    = "permissions"
+version = "0.1.0"
+wasm    = "permissions.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true
+
+[window]
+x = 200
+y = 60
+w = 860
+h = 700
