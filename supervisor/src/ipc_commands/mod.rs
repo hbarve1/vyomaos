@@ -693,6 +693,11 @@ pub fn handle_extended_command(
             return crate::memory::handle_memory_command(verb, sender, inbox, app_registry);
         }
 
+        // P96: CPU governor/frequency management
+        "cpu-info" | "cpu-usage" | "cpu-governor" => {
+            return crate::cpu::handle_cpu_command(verb, parts, sender, inbox);
+        }
+
         // P63: background service commands
         "bg-list" | "bg-start" | "bg-stop" => {
             return crate::bg_service::handle_bg_command(

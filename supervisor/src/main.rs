@@ -61,6 +61,7 @@ mod cap_request;
 mod user;
 mod firewall;
 mod memory;
+mod cpu;
 
 use std::{
     collections::{HashMap, VecDeque},
