@@ -60,6 +60,7 @@ mod workspace;
 mod audit;
 mod cap_request;
 mod user;
+mod user_caps;
 mod firewall;
 mod memory;
 mod cpu;

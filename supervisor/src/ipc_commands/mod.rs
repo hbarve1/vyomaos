@@ -715,6 +715,11 @@ pub fn handle_extended_command(
         | "user-whoami" => {
             return crate::user::handle_user_command(verb, parts, sender, inbox);
         }
+
+        // P86: per-user capability tokens
+        "user-caps" | "user-set-quota" => {
+            return crate::user_caps::handle_user_caps_command(verb, parts, sender, inbox);
+        }
         _ => return false,
     }
     true
