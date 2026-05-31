@@ -743,6 +743,11 @@ pub fn handle_extended_command(
         "boot-manifest-generate" => {
             crate::secure_boot::handle_boot_manifest_generate(sender, inbox);
         }
+
+        // P107: backup and restore
+        "backup-create" | "backup-list" | "backup-restore" | "backup-delete" => {
+            return crate::backup::handle_backup_command(verb, parts, sender, inbox);
+        }
         _ => return false,
     }
     true
