@@ -50,6 +50,7 @@ mod screenshot;
 mod wallpaper;
 mod file_assoc;
 mod vfs;
+mod pkg_registry;
 mod workspace;
 
 use std::{
