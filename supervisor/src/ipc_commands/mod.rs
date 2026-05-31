@@ -717,6 +717,11 @@ pub fn handle_extended_command(
             return crate::battery::handle_battery_command(verb, parts, sender, inbox);
         }
 
+        // P104: ACPI tables, thermal zones, general ACPI info
+        "acpi-tables" | "acpi-thermal" | "acpi-info" => {
+            return crate::acpi::handle_acpi_command(verb, parts, sender, inbox);
+        }
+
         // P63: background service commands
         "bg-list" | "bg-start" | "bg-stop" => {
             return crate::bg_service::handle_bg_command(
