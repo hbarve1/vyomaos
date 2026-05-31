@@ -53,6 +53,7 @@ mod screenshot;
 mod wallpaper;
 mod file_assoc;
 mod vfs;
+mod encrypted_store;
 mod pkg_registry;
 mod workspace;
 mod cap_request;
