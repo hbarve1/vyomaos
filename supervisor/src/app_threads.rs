@@ -321,11 +321,13 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         let filter = crate::seccomp::build();
         unsafe {
             cmd.pre_exec(move || {
-                // P27: namespace isolation — call before seccomp (which denies unshare).
-                if let Err(e) = crate::namespace::setup_app_namespace() {
-                    // Non-fatal: log to stderr and continue without isolation.
-                    eprintln!("[warn] [namespace] setup_app_namespace failed: {e}");
-                }
+                // P27: namespace isolation — disabled pending kernel SMP+namespace
+                // compat fix. Mount namespace (CLONE_NEWNS) breaks wasmtime's
+                // shared library access. Seccomp BPF (below) is the active
+                // security layer.
+                // if let Err(e) = crate::namespace::setup_app_namespace() {
+                //     eprintln!("[warn] [namespace] setup_app_namespace failed: {e}");
+                // }
                 // P08: seccomp BPF denylist.
                 crate::seccomp::apply(&filter)
             });

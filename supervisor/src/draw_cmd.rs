@@ -449,14 +449,23 @@ fn render_wallpaper(fb: &mut display::Framebuffer, fb_w: u32, fb_h: u32) {
 /// Only surfaces for apps visible on the current workspace are composited.
 #[cfg(target_os = "linux")]
 fn blit_all_surfaces(fb: &mut display::Framebuffer, registry: &AppRegistry) {
+    // Collect app info and workspace visibility in a single lock to avoid
+    // deadlock (is_visible also locks registry).
+    let current_ws = crate::workspace::manager().lock().unwrap().current;
     let mut apps_sorted: Vec<(u32, String, (u32, u32, u32, u32))> = {
         let reg = registry.lock().unwrap();
+        let ws_mgr = crate::workspace::manager().lock().unwrap();
         reg.iter()
             .filter_map(|(name, st)| {
                 let st = st.lock().unwrap();
                 st.win_region.map(|r| (st.win_z, name.clone(), r))
             })
-            .filter(|(_, name, _)| crate::workspace::is_visible(name, registry))
+            .filter(|(z, name, _)| {
+                // System apps (dock, overlay) visible on all workspaces
+                if *z >= Z_DOCK { return true; }
+                let app_ws = ws_mgr.app_workspace.get(name.as_str()).copied().unwrap_or(0);
+                app_ws == current_ws
+            })
             .collect()
     };
     apps_sorted.sort_by_key(|(z, _, _)| *z);
