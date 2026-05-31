@@ -56,6 +56,7 @@ mod vfs;
 mod pkg_registry;
 mod workspace;
 mod cap_request;
+mod user;
 
 use std::{
     collections::{HashMap, VecDeque},
