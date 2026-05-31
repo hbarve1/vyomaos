@@ -248,9 +248,9 @@ run: $(BZIMAGE) $(INITRAMFS) data
 # On macOS use: make run-gui DISPLAY_BACKEND=cocoa  (default: sdl)
 #
 # Display notes:
-#   -device virtio-vga,xres=1280,yres=800  — pin the virtual display to exactly
-#     the resolution our apps draw for (avoids a mismatched small window).
-#   zoom-to-fit=on — QEMU scales the fixed 1280×800 surface to fill the window
+#   -device virtio-gpu-pci,xres=1920,yres=1080 — pin the virtual display to
+#     1080p resolution for crisp rendering.
+#   zoom-to-fit=on — QEMU scales the 1920×1080 surface to fill the window
 #     when resized or made fullscreen, instead of trying to reconfigure the
 #     virtual display (which causes "Display output is not active" in fullscreen).
 DISPLAY_BACKEND ?= sdl
@@ -259,7 +259,7 @@ run-gui: $(BZIMAGE) $(INITRAMFS) data
 	  -kernel $(BZIMAGE) \
 	  -initrd $(INITRAMFS) \
 	  -append "console=tty0 console=ttyS0 panic=1 $(PLATFORM_KERNEL_ARG)" \
-	  -device virtio-vga,xres=1440,yres=900 \
+	  -device virtio-gpu-pci,xres=1920,yres=1080 \
 	  -device virtio-mouse-pci \
 	  -display $(DISPLAY_BACKEND),zoom-to-fit=on,full-screen=on \
 	  -serial stdio \
@@ -305,7 +305,7 @@ run-gui-net: $(BZIMAGE) $(INITRAMFS) data
 	  -kernel $(BZIMAGE) \
 	  -initrd $(INITRAMFS) \
 	  -append "console=tty0 console=ttyS0 panic=1 $(PLATFORM_KERNEL_ARG)" \
-	  -device virtio-vga,xres=1440,yres=900 \
+	  -device virtio-gpu-pci,xres=1920,yres=1080 \
 	  -device virtio-mouse-pci \
 	  -display $(DISPLAY_BACKEND),zoom-to-fit=on,full-screen=on \
 	  -serial stdio \

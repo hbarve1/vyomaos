@@ -19,9 +19,9 @@ const _: () = assert!(Z_DESKTOP < Z_APP && Z_APP < Z_DOCK && Z_DOCK < Z_OVERLAY)
 
 // ── macOS-inspired chrome constants ──────────────────────────────────────────
 
-pub const MENUBAR_H:    u32 = 24;   // global menu bar height
-pub const TITLEBAR_H:   u32 = 28;   // per-window title bar height
-const TL_DOT:           u32 = 13;   // traffic-light dot diameter (px) — Apple spec
+pub const MENUBAR_H:    u32 = 32;   // global menu bar height (scaled for 1080p)
+pub const TITLEBAR_H:   u32 = 36;   // per-window title bar height (scaled for 1080p)
+const TL_DOT:           u32 = 15;   // traffic-light dot diameter (px)
 
 fn mac_menubar()     -> u32 { crate::theme::current_theme().menubar }
 fn mac_title_act()   -> u32 { crate::theme::current_theme().title_active }
@@ -193,16 +193,16 @@ pub fn draw_titlebar(
         draw_rounded_rect(&mut fb.back, wx + 51, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
     }
 
-    // App name centered — 13pt regular Inter
+    // App name centered — 16pt regular Inter (scaled for 1080p)
     let nlen = name.len().min(20);
     let display_name = &name[..nlen];
     let name_w_est = crate::font_cache().lock().unwrap()
-        .measure_str(display_name, 13, false, false);
+        .measure_str(display_name, 16, false, false);
     if ww > name_w_est + 60 {
         let nx = (wx + (ww - name_w_est) / 2) as i32;
         let ny = (wy + TITLEBAR_H / 2) as i32;
         let col = if is_focused { mac_label() } else { mac_label2() };
-        draw_glyph_str(fb, display_name, nx, ny, col, 13, false, false);
+        draw_glyph_str(fb, display_name, nx, ny, col, 16, false, false);
     }
 }
 
@@ -227,16 +227,16 @@ pub fn draw_menubar(
     fb.fill_rect(0, 0, sw, MENUBAR_H, mac_menubar());
     fb.fill_rect(0, MENUBAR_H - 1, sw, 1, mac_sep());
 
-    let ty = (MENUBAR_H / 2) as i32; // vertical center baseline for 12pt font
+    let ty = (MENUBAR_H / 2) as i32; // vertical center baseline for 15pt font
 
-    // Left: brand — 12pt regular
-    draw_glyph_str(fb, crate::i18n::t("brand"), 12, ty, mac_label(), 12, false, false);
+    // Left: brand — 15pt regular (scaled for 1080p)
+    draw_glyph_str(fb, crate::i18n::t("brand"), 12, ty, mac_label(), 15, false, false);
 
     // Workspace indicator (e.g. "● ○ ○ ○") right after brand
     {
         let ws_indicator = crate::workspace::indicator_string();
-        let ws_x = 80i32; // after "VyomaOS" label
-        draw_glyph_str(fb, &ws_indicator, ws_x, ty, mac_label2(), 10, false, false);
+        let ws_x = 100i32; // after "VyomaOS" label (wider at 15pt)
+        draw_glyph_str(fb, &ws_indicator, ws_x, ty, mac_label2(), 12, false, false);
     }
 
     // App-switcher labels: drawn immediately after the brand name.
@@ -245,42 +245,42 @@ pub fn draw_menubar(
     for app in apps {
         let is_focused = focused.map_or(false, |f| f == app.as_str());
         let color = if is_focused { mac_label() } else { mac_label2() };
-        draw_glyph_str(fb, app, lx + 8, ty, color, 12, false, false);
+        draw_glyph_str(fb, app, lx + 8, ty, color, 15, false, false);
         lx += menubar_label_width(app.len()) as i32;
     }
 
-    // Center: focused app name — 12pt regular
+    // Center: focused app name — 15pt regular (scaled for 1080p)
     if let Some(name) = focused {
         let nlen = name.len().min(20);
         let display_name = &name[..nlen];
         let name_w_est = crate::font_cache().lock().unwrap()
-            .measure_str(display_name, 12, false, false);
+            .measure_str(display_name, 15, false, false);
         let nx = sw.saturating_sub(name_w_est) / 2;
-        draw_glyph_str(fb, display_name, nx as i32, ty, mac_label(), 12, false, false);
+        draw_glyph_str(fb, display_name, nx as i32, ty, mac_label(), 15, false, false);
     }
 
-    // Right: clock HH:MM:SS — 12pt regular (rightmost element)
+    // Right: clock HH:MM:SS — 13pt regular (status text, scaled for 1080p)
     let h = elapsed_secs / 3600;
     let m = (elapsed_secs % 3600) / 60;
     let s = elapsed_secs % 60;
     let clock = format!("{h:02}:{m:02}:{s:02}");
     let cw = crate::font_cache().lock().unwrap()
-        .measure_str(&clock, 12, false, false);
+        .measure_str(&clock, 13, false, false);
     let clock_x = if sw > cw + 12 { sw - cw - 12 } else { 0 };
     if clock_x > 0 {
-        draw_glyph_str(fb, &clock, clock_x as i32, ty, mac_label2(), 12, false, false);
+        draw_glyph_str(fb, &clock, clock_x as i32, ty, mac_label2(), 13, false, false);
     }
 
     // Tray indicators: rendered right-to-left, to the left of the clock
     let tray_items = crate::tray::collect_items();
-    let tray_gap = 12_u32;
+    let tray_gap = 14_u32;
     let mut tray_x = clock_x.saturating_sub(tray_gap);
     for item in tray_items.iter().rev() {
         let tw = crate::font_cache().lock().unwrap()
-            .measure_str(&item.text, 12, false, false);
+            .measure_str(&item.text, 13, false, false);
         tray_x = tray_x.saturating_sub(tw);
         if tray_x > 0 {
-            draw_glyph_str(fb, &item.text, tray_x as i32, ty, item.color, 12, false, false);
+            draw_glyph_str(fb, &item.text, tray_x as i32, ty, item.color, 13, false, false);
         }
         tray_x = tray_x.saturating_sub(tray_gap);
     }

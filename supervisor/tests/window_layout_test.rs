@@ -271,10 +271,10 @@ fn test_dock_excluded_from_tile_pool() {
     // Pure math test: 1 tiled app should fill the height between menubar and dock strip.
     // The supervisor's apply_tiling_layout is tested via smoke test; this validates math.
     use supervisor::windows::compute_tiling_with_hints;
-    const MENUBAR_H: u32 = 24;
-    const DOCK_STRIP_H: u32 = 64;
-    let sw = 1440u32;
-    let sh = 900u32;
+    const MENUBAR_H: u32 = 32;
+    const DOCK_STRIP_H: u32 = 72;
+    let sw = 1920u32;
+    let sh = 1080u32;
 
     // Only 1 tiled app (desktop); dock excluded before compute_tiling call.
     let usable_h = sh - MENUBAR_H - DOCK_STRIP_H;
@@ -288,17 +288,17 @@ fn test_dock_excluded_from_tile_pool() {
 
     // Dock strip region (computed separately in apply_tiling_layout)
     let dock_region = (0u32, sh - DOCK_STRIP_H, sw, DOCK_STRIP_H);
-    assert_eq!(dock_region.1, 836, "dock top y should be sh - DOCK_STRIP_H");
+    assert_eq!(dock_region.1, 1008, "dock top y should be sh - DOCK_STRIP_H");
     assert_eq!(dock_region.1 + dock_region.3, sh, "dock must reach screen bottom");
 }
 
 #[test]
 fn test_two_regular_apps_with_dock() {
     use supervisor::windows::compute_tiling_with_hints;
-    const MENUBAR_H: u32 = 24;
-    const DOCK_STRIP_H: u32 = 64;
-    let sw = 1440u32;
-    let sh = 900u32;
+    const MENUBAR_H: u32 = 32;
+    const DOCK_STRIP_H: u32 = 72;
+    let sw = 1920u32;
+    let sh = 1080u32;
     let usable_h = sh - MENUBAR_H - DOCK_STRIP_H;
 
     // 2 tiled apps should not extend into the dock strip

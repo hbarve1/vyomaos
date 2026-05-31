@@ -7,8 +7,8 @@ use supervisor::windows::{menubar_hit_app, menubar_label_width, MENUBAR_APPS_STA
 
 // ── Layout constants (mirrored from the production draw_menubar layout) ────────
 
-/// Menu bar height used in production (MENUBAR_H = 24).
-const MENUBAR_H: u32 = 24;
+/// Menu bar height used in production (MENUBAR_H = 32, scaled for 1080p).
+const MENUBAR_H: u32 = 32;
 
 // ── menubar_label_width ────────────────────────────────────────────────────────
 

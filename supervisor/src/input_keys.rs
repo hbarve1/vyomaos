@@ -129,7 +129,7 @@ fn handle_fullscreen_toggle(
 
     let focused_name = focused.lock().unwrap().clone();
     let Some(ref name) = focused_name else { return };
-    let (sw, sh) = display::screen_size().unwrap_or((1440, 900));
+    let (sw, sh) = display::screen_size().unwrap_or((1920, 1080));
 
     let reg = registry.lock().unwrap();
     let Some(st_arc) = reg.get(name) else { return };
