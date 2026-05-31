@@ -626,6 +626,11 @@ pub fn handle_extended_command(
             return crate::vfs::handle_vfs_command(verb, parts, sender, inbox, app_registry);
         }
 
+        // P55: archive support (tar.gz extraction, archive listing)
+        "extract" | "archive-list" => {
+            return crate::archive_ipc::handle_archive_command(verb, parts, sender, inbox);
+        }
+
         // P57: trash (recycle bin)
         "trash" | "trash-list" | "trash-restore" | "trash-empty" | "trash-size" => {
             return crate::trash::handle_trash_command(verb, parts, sender, inbox);

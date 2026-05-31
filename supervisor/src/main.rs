@@ -12,6 +12,7 @@ mod font;
 mod image;
 
 mod accessibility;
+mod archive_ipc;
 mod app_threads;
 mod bg_service;
 mod audio;
