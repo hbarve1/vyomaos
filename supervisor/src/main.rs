@@ -31,6 +31,7 @@ mod namespace;
 mod net;
 mod websocket;
 mod packages;
+mod recovery;
 #[cfg(target_os = "linux")]
 mod seccomp;
 mod theme;
@@ -293,6 +294,10 @@ fn main() {
     mount::mount_filesystems();
     log_info!(Subsystem::Lifecycle, None, "filesystems mounted");
 
+    // ── P106: Recovery mode — increment boot counter, check triggers ─────────
+    recovery::increment_boot_count();
+    recovery::check_recovery_mode();
+
     // ── T017: Load platform profile (PLATFORM env var or default) ────────────
     let _active_profile = load_platform_profile();
     if let Some(ref p) = _active_profile {
@@ -361,6 +366,9 @@ fn main() {
         }
     }
 
+    // ── P106: In recovery mode, restrict to shell app only ─────────────────
+    recovery::enter_recovery_mode(&mut all_entries);
+
     log_info!(Subsystem::Lifecycle, None, "{} app(s) total", all_entries.len());
 
     if all_entries.is_empty() {
@@ -410,6 +418,9 @@ fn main() {
 
     // T022 [FR-003]: canonical ready-signal — smoke test greps for this exact substring.
     log_info!(Subsystem::Lifecycle, None, "all apps spawned");
+
+    // ── P106: Clear boot counter — successful boot confirmed ─────────────────
+    recovery::clear_boot_count();
 
     // ── Set default keyboard focus to the first shell app ────────────────────
     {
