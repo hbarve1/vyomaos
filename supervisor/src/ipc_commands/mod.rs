@@ -9,6 +9,7 @@ mod drag_drop_cmd;
 mod lock;
 mod tcp;
 mod theme_cmd;
+mod websocket;
 mod undo_cmd;
 mod workspace_cmd;
 use std::{fs, path::Path, sync::Arc, thread};
@@ -330,6 +331,11 @@ pub fn handle_extended_command(
         // P47: TCP connection pool — delegated to tcp submodule
         "tcp-connect" | "tcp-send" | "tcp-recv" | "tcp-close" => {
             return tcp::handle_tcp(verb, parts, sender, inbox);
+        }
+
+        // P50: WebSocket connections — delegated to websocket submodule
+        "ws-connect" | "ws-send" | "ws-close" => {
+            return websocket::handle_ws(verb, parts, sender, inbox);
         }
 
         // P50: clipboard

@@ -26,6 +26,7 @@ mod mouse_input;
 #[cfg(target_os = "linux")]
 mod namespace;
 mod net;
+mod websocket;
 mod packages;
 #[cfg(target_os = "linux")]
 mod seccomp;
@@ -140,6 +141,9 @@ static LAST_SENDER: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 static TCP_CONNS: OnceLock<Mutex<std::collections::HashMap<u32, std::net::TcpStream>>> =
     OnceLock::new();
 static TCP_NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+static WS_CONNS: OnceLock<Mutex<std::collections::HashMap<u32, websocket::WsConnection>>> =
+    OnceLock::new();
+static WS_NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 static CLIPBOARD: OnceLock<Mutex<String>> = OnceLock::new();
 /// Lock screen state: when true, keyboard input is only routed to screen-lock.
 pub static LOCKED: OnceLock<Mutex<bool>> = OnceLock::new();
@@ -344,6 +348,7 @@ fn main() {
 
     let _ = Z_ORDER.set(Mutex::new(Vec::new()));
     let _ = TCP_CONNS.set(Mutex::new(std::collections::HashMap::new()));
+    let _ = WS_CONNS.set(Mutex::new(std::collections::HashMap::new()));
     let _ = CLIPBOARD.set(Mutex::new(String::new()));
     let _ = FONT_SIZE.set(Mutex::new("m".to_string()));
     let _ = LAST_SENDER.set(Mutex::new(HashMap::new()));
