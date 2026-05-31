@@ -676,6 +676,12 @@ pub fn handle_extended_command(
             return crate::pkg_registry::handle_registry_command(verb, parts, sender, inbox);
         }
 
+        // P112: app store
+        "store-fetch" | "store-search" | "store-install" | "store-uninstall"
+        | "store-config" => {
+            return crate::store::handle_store_command(verb, parts, sender, inbox);
+        }
+
         // P89: audit log commands
         "audit-list" | "audit-search" | "audit-clear" => {
             return crate::audit::handle_audit_command(verb, &parts, sender, inbox);
