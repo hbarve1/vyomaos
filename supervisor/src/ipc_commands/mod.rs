@@ -688,6 +688,11 @@ pub fn handle_extended_command(
             return crate::firewall::handle_firewall_command(verb, parts, sender, inbox);
         }
 
+        // P94: memory pressure manager commands
+        "memory-info" | "memory-apps" | "memory-pressure" => {
+            return crate::memory::handle_memory_command(verb, sender, inbox, app_registry);
+        }
+
         // P63: background service commands
         "bg-list" | "bg-start" | "bg-stop" => {
             return crate::bg_service::handle_bg_command(

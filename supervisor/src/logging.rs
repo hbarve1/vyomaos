@@ -18,6 +18,7 @@ pub enum Subsystem {
     Display,
     Input,
     Audio,
+    Memory,
 }
 
 impl Level {
@@ -40,6 +41,7 @@ impl Subsystem {
             Subsystem::Display    => "display",
             Subsystem::Input      => "input",
             Subsystem::Audio      => "audio",
+            Subsystem::Memory    => "memory",
         }
     }
 }

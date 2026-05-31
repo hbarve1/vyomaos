@@ -60,6 +60,7 @@ mod audit;
 mod cap_request;
 mod user;
 mod firewall;
+mod memory;
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -512,6 +513,9 @@ fn main() {
             .spawn(move || app_threads::run_watchdog(registry_wd))
             .expect("spawn watchdog thread");
     }
+
+    // ── P94: memory pressure monitor thread ─────────────────────────────────
+    memory::spawn_pressure_monitor(&inbox, &app_registry);
 
     // ── Auto-update background checker (hourly) ─────────────────────────────
     auto_update::spawn_background_checker(&inbox, &app_registry);
