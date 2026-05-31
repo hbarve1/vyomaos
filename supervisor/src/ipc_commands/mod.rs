@@ -635,6 +635,17 @@ pub fn handle_extended_command(
         "registry-search" | "registry-list" | "registry-add" => {
             return crate::pkg_registry::handle_registry_command(verb, parts, sender, inbox);
         }
+
+        // P60: runtime capability requests
+        "request-cap" => {
+            crate::cap_request::handle_request_cap(parts, sender, inbox, app_registry);
+        }
+        "revoke-cap" => {
+            crate::cap_request::handle_revoke_cap(parts, sender, inbox, app_registry);
+        }
+        "list-caps" => {
+            crate::cap_request::handle_list_caps(parts, sender, inbox);
+        }
         _ => return false,
     }
     true
