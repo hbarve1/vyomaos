@@ -137,7 +137,8 @@ pub fn handle_supervisor_command(
                         AppStatus::Running    => "run",
                         AppStatus::Stopped(_) => "stop",
                     };
-                    let entry = format!("{}:{}:{}:{}", name, status, uptime, st.restart_count);
+                    let bg_tag = if st.is_background { "[bg]" } else { "" };
+                    let entry = format!("{}{}:{}:{}:{}", name, bg_tag, status, uptime, st.restart_count);
                     (name.clone(), entry)
                 }).collect();
                 rows.sort_by(|a, b| a.0.cmp(&b.0));
@@ -168,8 +169,9 @@ pub fn handle_supervisor_command(
                         st.draw_ticks,
                         st.last_cpu_reset.elapsed().as_millis() as u64,
                     );
+                    let bg_tag = if st.is_background { " [bg]" } else { "" };
                     let base = format_ps_line(name, pid, &state_str, st.restart_count);
-                    let info = format!("{}{} up:{} cpu:{}", base, wd_tag, uptime_str, cpu);
+                    let info = format!("{}{}{} up:{} cpu:{}", base, wd_tag, bg_tag, uptime_str, cpu);
                     (name.clone(), info)
                 }).collect();
                 rows.sort_by(|a, b| a.0.cmp(&b.0));

@@ -114,6 +114,8 @@ pub struct Capabilities {
     pub mouse: bool,
     #[serde(default)]
     pub audio: bool,
+    #[serde(default)]
+    pub background: bool,
 }
 
 // ── Parse + validate functions ────────────────────────────────────────────────

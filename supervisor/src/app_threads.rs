@@ -72,7 +72,7 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
         let mut v: Vec<(String, u32, u32, u32)> = reg.iter()
             .filter_map(|(name, st)| {
                 let st = st.lock().unwrap();
-                if st.has_display && matches!(st.status, AppStatus::Running) {
+                if st.has_display && !st.is_background && matches!(st.status, AppStatus::Running) {
                     Some((name.clone(), st.win_z, st.min_size.0, st.min_size.1))
                 } else { None }
             })
@@ -277,6 +277,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         if caps.shell      { wired.push("shell")       } else { skipped.push("shell") }
         if caps.mouse      { wired.push("mouse")       } else { skipped.push("mouse") }
         if caps.audio      { wired.push("audio")       } else { skipped.push("audio") }
+        if caps.background { wired.push("background")  } else { skipped.push("background") }
         let net_note = if caps.network { format!(" (port={net_port})") } else { String::new() };
         log_info!(Subsystem::Capability, Some(name.as_str()),
             "wired: {}{net_note}; skipped: {}", wired.join(" "), skipped.join(" "));
@@ -364,6 +365,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         has_mouse:        caps.mouse,
         has_display:      caps.display,
         has_audio:        caps.audio,
+        is_background:    caps.background,
         win_region:       None,
         win_z:            manifest.window.as_ref().map(|w| w.z).unwrap_or(chrome::Z_APP),
         min_size,

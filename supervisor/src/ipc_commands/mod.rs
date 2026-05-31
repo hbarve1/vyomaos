@@ -646,6 +646,13 @@ pub fn handle_extended_command(
         "list-caps" => {
             crate::cap_request::handle_list_caps(parts, sender, inbox);
         }
+
+        // P63: background service commands
+        "bg-list" | "bg-start" | "bg-stop" => {
+            return crate::bg_service::handle_bg_command(
+                verb, parts, sender, inbox, focused, app_registry,
+            );
+        }
         _ => return false,
     }
     true

@@ -128,5 +128,44 @@ wasm    = "app.wasm"
     assert!(!m.capabilities.display,    "display should default false");
     assert!(!m.capabilities.shell,      "shell should default false");
     assert!(!m.capabilities.mouse,      "mouse should default false");
+    assert!(!m.capabilities.background, "background should default false");
     assert_eq!(m.capabilities.watchdog_secs, 0, "watchdog_secs should default 0");
+}
+
+// (8) P63: background = true parses correctly
+#[test]
+fn test_background_capability_parses_ok() {
+    let f = write_toml(r#"
+[app]
+name    = "bg-service"
+version = "0.1.0"
+wasm    = "bg-service.wasm"
+
+[capabilities]
+stdio      = true
+background = true
+"#);
+    let result = supervisor::manifest::parse_manifest(f.path());
+    assert!(result.is_ok(), "background=true should be valid: {:?}", result);
+    let m = result.unwrap();
+    assert!(m.capabilities.background, "background should be true");
+    assert!(m.capabilities.stdio, "stdio should be true");
+}
+
+// (9) P63: background defaults to false when not specified
+#[test]
+fn test_background_defaults_false() {
+    let f = write_toml(r#"
+[app]
+name    = "normal-app"
+version = "0.1.0"
+wasm    = "normal-app.wasm"
+
+[capabilities]
+stdio = true
+"#);
+    let result = supervisor::manifest::parse_manifest(f.path());
+    assert!(result.is_ok());
+    let m = result.unwrap();
+    assert!(!m.capabilities.background, "background should default to false");
 }
