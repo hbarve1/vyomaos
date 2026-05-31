@@ -774,6 +774,11 @@ pub fn handle_extended_command(
                 verb, parts, sender, inbox, app_registry,
             );
         }
+
+        // P98: UEFI boot support
+        "uefi-info" | "uefi-entries" => {
+            return crate::uefi::handle_uefi_command(verb, sender, inbox);
+        }
         _ => return false,
     }
     true
