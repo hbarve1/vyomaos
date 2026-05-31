@@ -73,6 +73,7 @@ mod installer;
 mod jit_config;
 mod backup;
 mod uefi;
+mod virtualization;
 
 use std::{
     collections::{HashMap, VecDeque},
