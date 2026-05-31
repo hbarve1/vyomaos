@@ -68,6 +68,7 @@ mod firewall;
 mod memory;
 mod cpu;
 mod jit_config;
+mod backup;
 
 use std::{
     collections::{HashMap, VecDeque},
