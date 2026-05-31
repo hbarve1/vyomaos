@@ -38,6 +38,7 @@ def vm():
 
     try:
         client.wait_for_serial(r"\[lifecycle\].*all apps spawned", timeout=30)
+        client.mark_boot_done()
     except TimeoutError:
         client.shutdown()
         raise RuntimeError(

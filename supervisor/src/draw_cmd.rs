@@ -24,15 +24,12 @@ fn get_surface(sender: &str, app_registry: &AppRegistry)
 }
 
 /// Parse a u32 that may be decimal ("218169855") or hex ("0x0d1117ff" / "0X0D1117FF").
+///
+/// Delegates to the platform-independent `supervisor::parse_color` in the library crate.
 #[cfg(target_os = "linux")]
 #[inline]
 pub fn parse_color(s: &str) -> Option<u32> {
-    let s = s.trim();
-    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-        u32::from_str_radix(hex, 16).ok()
-    } else {
-        s.parse().ok()
-    }
+    supervisor::parse_color(s)
 }
 
 #[cfg(target_os = "linux")]
