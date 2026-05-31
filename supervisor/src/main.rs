@@ -1,3 +1,4 @@
+#![allow(unused_imports, unused_variables)]
 // Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
@@ -11,13 +12,13 @@ mod display;
 mod font;
 mod image;
 
-mod accessibility;
+#[allow(dead_code)] mod accessibility;
 mod archive_ipc;
 mod app_threads;
-mod bg_service;
-mod audio;
-mod acpi;
-mod battery;
+#[allow(dead_code)] mod bg_service;
+#[allow(dead_code)] mod audio;
+#[allow(dead_code)] mod acpi;
+#[allow(dead_code)] mod battery;
 mod chrome;
 mod draw_cmd;
 mod i18n;
@@ -28,54 +29,54 @@ mod ipc_handlers;
 mod mount;
 mod mouse_input;
 #[cfg(target_os = "linux")]
-mod namespace;
+#[allow(dead_code)] mod namespace;
 mod net;
 mod websocket;
 mod packages;
-mod recovery;
+#[allow(dead_code)] mod recovery;
 #[cfg(target_os = "linux")]
 mod seccomp;
 mod theme;
 mod toast;
-mod trash;
+#[allow(dead_code)] mod trash;
 mod tray;
 mod verify;
-mod secure_boot;
+#[allow(dead_code)] mod secure_boot;
 mod mgmt_protocol;
 mod mgmt_server;
 mod mgmt_handlers;
 mod router;
 mod ota_update;
-mod atomic_update;
+#[allow(dead_code)] mod atomic_update;
 mod auto_update;
 mod resize;
 mod drag_drop;
-mod share;
+#[allow(dead_code)] mod share;
 mod session;
-mod undo;
+#[allow(dead_code)] mod undo;
 mod win_actions;
-mod screenshot;
-mod wallpaper;
-mod file_assoc;
-mod vfs;
-mod encrypted_store;
-mod pkg_registry;
-mod workspace;
-mod audit;
-mod cap_request;
-mod totp;
-mod user;
-mod user_caps;
-mod firewall;
-mod memory;
-mod cpu;
-mod installer;
-mod jit_config;
-mod backup;
-mod uefi;
-mod virtualization;
-mod vnc;
-mod store;
+#[allow(dead_code)] mod screenshot;
+#[allow(dead_code)] mod wallpaper;
+#[allow(dead_code)] mod file_assoc;
+#[allow(dead_code)] mod vfs;
+#[allow(dead_code)] mod encrypted_store;
+#[allow(dead_code)] mod pkg_registry;
+#[allow(dead_code)] mod workspace;
+#[allow(dead_code)] mod audit;
+#[allow(dead_code)] mod cap_request;
+#[allow(dead_code)] mod totp;
+#[allow(dead_code)] mod user;
+#[allow(dead_code)] mod user_caps;
+#[allow(dead_code)] mod firewall;
+#[allow(dead_code)] mod memory;
+#[allow(dead_code)] mod cpu;
+#[allow(dead_code)] mod installer;
+#[allow(dead_code)] mod jit_config;
+#[allow(dead_code)] mod backup;
+#[allow(dead_code)] mod uefi;
+#[allow(dead_code)] mod virtualization;
+#[allow(dead_code)] mod vnc;
+#[allow(dead_code)] mod store;
 
 use std::{
     collections::{HashMap, VecDeque},
