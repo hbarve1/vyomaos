@@ -23,6 +23,7 @@ pub mod observability;
 pub mod capability;
 
 pub mod undo_public;
+pub mod file_assoc;
 
 #[cfg(target_os = "linux")]
 pub mod font;

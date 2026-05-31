@@ -46,6 +46,7 @@ mod undo;
 mod win_actions;
 mod screenshot;
 mod wallpaper;
+mod file_assoc;
 mod workspace;
 
 use std::{
