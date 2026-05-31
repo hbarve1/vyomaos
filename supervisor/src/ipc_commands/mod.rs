@@ -37,6 +37,15 @@ pub fn handle_extended_command(
     focused:      &FocusedApp,
     app_registry: &AppRegistry,
 ) -> bool {
+    // P89: audit every IPC command reaching the extended handler.
+    let detail = parts.get(1).unwrap_or(&"").trim();
+    crate::audit::log_audit(
+        sender,
+        "ipc",
+        &format!("{verb} {detail}"),
+        crate::audit::AuditResult::Allowed,
+    );
+
     match verb {
         // P14T01: package manager commands
         "pkg-list" => {
@@ -646,6 +655,11 @@ pub fn handle_extended_command(
         // P59: package registry
         "registry-search" | "registry-list" | "registry-add" => {
             return crate::pkg_registry::handle_registry_command(verb, parts, sender, inbox);
+        }
+
+        // P89: audit log commands
+        "audit-list" | "audit-search" | "audit-clear" => {
+            return crate::audit::handle_audit_command(verb, &parts, sender, inbox);
         }
 
         // P60: runtime capability requests

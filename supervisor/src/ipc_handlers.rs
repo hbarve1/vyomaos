@@ -28,6 +28,15 @@ pub fn handle_supervisor_command(
     app_registry: &AppRegistry,
 ) {
     let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
+
+    // P89: audit every @supervisor command.
+    crate::audit::log_audit(
+        sender,
+        "ipc",
+        cmd,
+        crate::audit::AuditResult::Allowed,
+    );
+
     match parts[0] {
         // ── P12T03 legacy commands ────────────────────────────────────────────
         "list" => {
