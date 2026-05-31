@@ -5,7 +5,7 @@
 //! monitors thermal zones, models ACPI events, and provides IPC commands for
 //! querying ACPI/thermal state.
 
-use crate::{log_info, log_warn, AppRegistry, AppStatus, Inbox};
+use crate::{log_warn, AppRegistry, AppStatus, Inbox};
 use supervisor::logging::Subsystem;
 
 // ── ACPI table discovery ────────────────────────────────────────────────────
