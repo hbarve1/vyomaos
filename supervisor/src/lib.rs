@@ -22,6 +22,8 @@ pub mod ota;
 pub mod observability;
 pub mod capability;
 
+pub mod undo_public;
+
 #[cfg(target_os = "linux")]
 pub mod font;
 #[cfg(target_os = "linux")]

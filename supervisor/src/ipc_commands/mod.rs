@@ -9,6 +9,7 @@ mod drag_drop_cmd;
 mod lock;
 mod tcp;
 mod theme_cmd;
+mod undo_cmd;
 mod workspace_cmd;
 use std::{fs, path::Path, sync::Arc, thread};
 
@@ -135,7 +136,6 @@ pub fn handle_extended_command(
                 }
             }
         }
-
         "raise" => {
             let app_name = match parts.get(1).map(|s| s.trim()) {
                 Some(n) if !n.is_empty() => n.to_string(),
@@ -159,7 +159,6 @@ pub fn handle_extended_command(
             z_order_push_back(&app_name);
             send_reply(sender, &format!("REPLY:lowered {app_name}"), inbox);
         }
-
         // P36: resize <app> <x>,<y>,<w>,<h>  or  resize <app> <w> <h> (legacy)
         "resize" => {
             let rest = parts.get(1).unwrap_or(&"").trim();
@@ -558,6 +557,10 @@ pub fn handle_extended_command(
             );
         }
 
+        // Undo / redo / undo-history
+        "undo" | "redo" | "undo-history" => {
+            return undo_cmd::handle_undo_redo(verb, sender, inbox, focused, app_registry);
+        }
         _ => return false,
     }
     true

@@ -339,7 +339,7 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                         log_info!(Subsystem::Lifecycle, None, "screen locked via Ctrl+L");
                     }
                 } else if buf[0] == 0x13 {
-                    // Ctrl+S: capture screenshot (PNG to /data/screenshots/)
+                    // Ctrl+S: capture screenshot
                     #[cfg(target_os = "linux")]
                     {
                         use crate::display;
@@ -360,6 +360,12 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                             }
                         }
                     }
+                } else if buf[0] == 0x1A {
+                    // Ctrl+Z: undo last reversible command
+                    log_info!(Subsystem::Input, None, "ctrl+z: undo");
+                    crate::ipc_handlers::handle_supervisor_command(
+                        "undo", "keyboard", &inbox, &focused, &registry,
+                    );
                 } else if buf[0] == 0x16 {
                     // Ctrl+V: paste clipboard contents to focused app
                     if let Some(name) = focused.lock().unwrap().clone() {

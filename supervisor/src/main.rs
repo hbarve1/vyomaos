@@ -42,6 +42,7 @@ mod auto_update;
 mod resize;
 mod drag_drop;
 mod session;
+mod undo;
 mod win_actions;
 mod screenshot;
 mod wallpaper;
