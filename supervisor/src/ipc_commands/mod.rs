@@ -630,6 +630,11 @@ pub fn handle_extended_command(
         "trash" | "trash-list" | "trash-restore" | "trash-empty" | "trash-size" => {
             return crate::trash::handle_trash_command(verb, parts, sender, inbox);
         }
+
+        // P59: package registry
+        "registry-search" | "registry-list" | "registry-add" => {
+            return crate::pkg_registry::handle_registry_command(verb, parts, sender, inbox);
+        }
         _ => return false,
     }
     true
