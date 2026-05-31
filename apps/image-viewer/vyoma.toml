@@ -6,8 +6,8 @@ wasm    = "image-viewer.wasm"
 [capabilities]
 stdio      = true
 display    = true
-shell      = true
 filesystem = true
+shell      = true
 
 [window]
 x = 100
