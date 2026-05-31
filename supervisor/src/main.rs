@@ -75,6 +75,7 @@ mod backup;
 mod uefi;
 mod virtualization;
 mod vnc;
+mod store;
 
 use std::{
     collections::{HashMap, VecDeque},
