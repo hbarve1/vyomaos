@@ -735,6 +735,14 @@ pub fn handle_extended_command(
         "recovery-status" | "recovery-reset" | "recovery-repair" | "recovery-exit" => {
             return crate::recovery::handle_recovery_command(verb, sender, inbox);
         }
+
+        // P91: Secure boot chain verification
+        "boot-verify" => {
+            crate::secure_boot::handle_boot_verify(sender, inbox);
+        }
+        "boot-manifest-generate" => {
+            crate::secure_boot::handle_boot_manifest_generate(sender, inbox);
+        }
         _ => return false,
     }
     true

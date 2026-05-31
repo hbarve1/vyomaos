@@ -39,6 +39,7 @@ mod toast;
 mod trash;
 mod tray;
 mod verify;
+mod secure_boot;
 mod mgmt_protocol;
 mod mgmt_server;
 mod mgmt_handlers;
@@ -293,6 +294,9 @@ fn main() {
 
     mount::mount_filesystems();
     log_info!(Subsystem::Lifecycle, None, "filesystems mounted");
+
+    // ── P91: Secure boot chain verification ──────────────────────────────────
+    secure_boot::run_boot_verification();
 
     // ── P106: Recovery mode — increment boot counter, check triggers ─────────
     recovery::increment_boot_count();
