@@ -779,6 +779,10 @@ pub fn handle_extended_command(
         "uefi-info" | "uefi-entries" => {
             return crate::uefi::handle_uefi_command(verb, sender, inbox);
         }
+        // P110: virtualization info
+        "vm-info" | "vm-resources" => {
+            return crate::virtualization::handle_vm_command(verb, sender, inbox);
+        }
         _ => return false,
     }
     true
