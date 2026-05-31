@@ -371,16 +371,29 @@ make apps                 # only hello-world recompiles
 
 | Phase | Feature | Status |
 |-------|---------|--------|
-| P01–P08 | Kernel, supervisor, manifest model, IPC, seccomp, storage | ✅ complete |
-| P09–P10 | Display (DRM/virtio-gpu) + bitmap font | ✅ complete |
-| P11–P12 | Networking (HTTP server) + interactive shell + keyboard routing | ✅ complete |
-| P13–P17 | Process management, package manager, persistent logs, real-time TTY | ✅ complete |
-| P18–P30 | Font scaling, windowing, mouse input, watchdog, window management | ✅ complete |
-| P31–P45 | Shell UX, multi-platform profiles, HAL, OTA, modular supervisor | ✅ complete |
-| P46–P77 | Apple UI fidelity (Menu Bar, Dock, Spotlight, Mission Control, 77+ apps) | ✅ complete |
-| P78+ | Ongoing refinement and new features | 🔄 active |
+| P01–P23 | Foundation: kernel, supervisor, IPC, display, font, shell, windowing, mouse | ✅ complete |
+| P24–P26 | System apps: file manager, text editor, system monitor | ✅ complete |
+| P27–P30 | Security: namespaces, signed bundles, multi-resolution, OTA | ✅ complete |
+| P31–P36 | Window manager: compositor, decorations, z-order, WM app, wallpaper, resize | ✅ complete |
+| P37–P42 | Desktop shell: taskbar, launcher, notifications, settings, power, session | ✅ complete |
+| P43 | Multi-monitor | 📋 next |
+| P44–P45 | DNS resolver, HTTPS/TLS | ✅ complete |
+| P46–P50 | Browser, SSH, network config, download manager, WebSocket | 🔄 partial |
+| P51–P58 | Storage: VFS, file associations, clipboard, drag-drop, search, app store | 🔄 partial |
+| P59–P71 | App platform: registry, permissions, auto-update, terminal, SDK | 🔄 partial |
+| P72–P78 | Multimedia & hardware: audio, image, video, USB, Bluetooth | 🔄 partial |
+| P79–P84 | Accessibility: screen reader, contrast, font scale, Unicode | 🔄 partial |
+| P85–P112 | Advanced: user accounts, encryption, GPU accel, UEFI, drivers, installer | 📋 planned |
 
-See `.context/plans/plan-vyomaos/` for detailed phase specs and task breakdowns.
+## Planning Documents
+
+- **Full roadmap (P31–P112)**: [`docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md`](docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md)
+- **Master spec (80 subsystems)**: [`docs/superpowers/specs/desktop-os-vision/master-spec.md`](docs/superpowers/specs/desktop-os-vision/master-spec.md)
+- **Subsystem debates**: [`docs/superpowers/specs/desktop-os-vision/debates/`](docs/superpowers/specs/desktop-os-vision/debates/) — 146 architect/critic/synthesis files
+- **Foundation phases (P1–P12)**: [`.context/plans/plan-vyomaos/`](.context/plans/plan-vyomaos/)
+- **Doc index**: [`docs/INDEX.md`](docs/INDEX.md)
+
+Always check the full roadmap before proposing next implementation phases.
 
 ## Troubleshooting
 
@@ -401,15 +414,13 @@ See `.context/plans/plan-vyomaos/` for detailed phase specs and task breakdowns.
 
 ## References
 
-- **README.md**: Project overview, vision, roadmap
-- **docs/vyoma-manifest-schema.md**: Detailed manifest format and examples
-- **docs/comparison-matrix.md**: VyomaOS vs Alpine, Flatcar, MirageOS positioning
-- **supervisor/src/main.rs**: Manifest parsing, app scheduler, IPC broker logic
-- **.context/plans/**: Implementation roadmap (phases, tasks, design specs)
-
-
-<!-- SPECKIT START -->
-For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan at
-`specs/046-apple-ui-fidelity/plan.md`.
-<!-- SPECKIT END -->
+- **README.md**: Project overview, vision
+- **docs/INDEX.md**: Master documentation navigation
+- **docs/vyoma-manifest-schema.md**: Manifest format (capabilities, window, menu_items, peripherals)
+- **docs/vyoma-draw-protocol.md**: VYOMA_DRAW v2 protocol (fill_rect, draw_glyph, draw_image, fill_rect_r)
+- **docs/git-workflow.md**: Git flow, worktree usage, commit conventions
+- **docs/comparison-matrix.md**: VyomaOS vs Alpine, Flatcar, MirageOS
+- **docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md**: Full P31–P112 roadmap
+- **docs/superpowers/specs/desktop-os-vision/master-spec.md**: 80-subsystem architecture spec
+- **supervisor/src/main.rs**: Supervisor entry point, app lifecycle, IPC broker
+- **.context/plans/**: Foundation phase task breakdowns (P01–P12)
