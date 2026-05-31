@@ -5,12 +5,11 @@
 
 use std::sync::Mutex;
 
-use crate::{log_info, log_error, AppRegistry, AppStatus, FocusedApp, Inbox};
+use crate::{log_info, AppRegistry, AppStatus, FocusedApp, Inbox};
 use crate::{HOVERED_APP, Z_ORDER};
 use crate::chrome::{
     draw_titlebar, repaint_all_borders, z_order_push_front, TITLEBAR_H,
 };
-use crate::win_actions::{drag_state, DragState};
 use supervisor::logging::Subsystem;
 
 #[cfg(target_os = "linux")]
@@ -266,8 +265,55 @@ pub fn dispatch_mouse(
         }
     }
 
+    // ── Left-click: dismiss context menu (with or without hitting an item) ───
+    if btn == 1 && crate::context_menu::context_menu_is_open() {
+        let hit = crate::context_menu::context_menu_hit_test(cx, cy);
+        crate::context_menu::close_context_menu();
+        crate::draw_cmd::force_repaint(app_registry, focused);
+        if let Some((target_app, action)) = hit {
+            if target_app == "supervisor" {
+                crate::ipc_handlers::handle_supervisor_command(
+                    &action,
+                    "desktop",
+                    inbox,
+                    focused,
+                    app_registry,
+                );
+            } else {
+                send_reply(&target_app, &action, inbox);
+            }
+        }
+        // Continue processing the click for normal focus/raise behaviour
+    }
+
+    // ── Right-click on desktop: open context menu ────────────────────────────
+    if btn == 2 {
+        let inside_window: bool = {
+            let reg = app_registry.lock().unwrap();
+            let mut found = false;
+            for name in &z_snapshot {
+                let Some(state_arc) = reg.get(name) else { continue };
+                let st = state_arc.lock().unwrap();
+                let Some((wx, wy, ww, wh)) = st.win_region else { continue };
+                if cx >= wx as i32 && cy >= wy as i32
+                    && cx < (wx + ww) as i32 && cy < (wy + wh) as i32
+                {
+                    found = true;
+                    break;
+                }
+            }
+            found
+        };
+        if !inside_window {
+            crate::context_menu::open_context_menu(cx as u32, cy as u32);
+            crate::draw_cmd::force_repaint(app_registry, focused);
+        }
+        return;
+    }
+
     // On click, raise topmost window under cursor and set keyboard focus
     if btn != 0 {
+
         let raise_target = {
             let reg = app_registry.lock().unwrap();
             let mut found: Option<String> = None;
@@ -283,6 +329,7 @@ pub fn dispatch_mouse(
             }
             found
         };
+
         if let Some(ref name) = raise_target {
             z_order_push_front(name);
             *focused.lock().unwrap() = Some(name.clone());

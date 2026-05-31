@@ -20,12 +20,15 @@ mod app_threads;
 #[allow(dead_code)] mod acpi;
 #[allow(dead_code)] mod battery;
 mod chrome;
+mod context_menu;
 mod draw_cmd;
 mod i18n;
 mod menus;
 mod input_keys;
 mod ipc_commands;
 mod ipc_handlers;
+mod ipc_update;
+mod platform;
 mod mount;
 mod mouse_input;
 #[cfg(target_os = "linux")]
@@ -89,8 +92,7 @@ use std::{
 };
 
 use supervisor::logging::Subsystem;
-use supervisor::manifest::{BootConfig, BootEntry};
-use supervisor::profile;
+use supervisor::manifest::{BootConfig, BootEntry, MenuItem};
 
 #[macro_export]
 macro_rules! log_info {
@@ -158,6 +160,8 @@ struct AppState {
     menu_items: Vec<supervisor::manifest::MenuItem>,
     // spec-044: management server live log subscribers
     log_subscribers: Vec<mpsc::Sender<String>>,
+    /// Declarative menu items from vyoma.toml — shown in the menu bar when focused.
+    menu_items: Vec<MenuItem>,
 }
 
 type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
@@ -312,7 +316,7 @@ fn main() {
     recovery::check_recovery_mode();
 
     // ── T017: Load platform profile (PLATFORM env var or default) ────────────
-    let _active_profile = load_platform_profile();
+    let _active_profile = platform::load_platform_profile();
     if let Some(ref p) = _active_profile {
         let _ = SHOW_MENU_BAR.set(p.display.show_menu_bar);
         let _ = SHOW_DOCK.set(p.display.show_dock);
@@ -473,7 +477,7 @@ fn main() {
         let focused_m  = Arc::clone(&focused);
         thread::Builder::new()
             .name("mouse-input".into())
-            .spawn(move || mouse_input::run_mouse_input(inbox_m, focused_m, registry_m))
+            .spawn(move || mouse_thread::run_mouse_input(inbox_m, focused_m, registry_m))
             .expect("spawn mouse-input thread");
     }
 
