@@ -698,6 +698,11 @@ pub fn handle_extended_command(
             return crate::cpu::handle_cpu_command(verb, parts, sender, inbox);
         }
 
+        // P95: battery / power profile
+        "battery" | "power-profile" => {
+            return crate::battery::handle_battery_command(verb, parts, sender, inbox);
+        }
+
         // P63: background service commands
         "bg-list" | "bg-start" | "bg-stop" => {
             return crate::bg_service::handle_bg_command(

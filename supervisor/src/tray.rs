@@ -46,7 +46,8 @@ pub fn network_indicator() -> TrayItem {
 
 /// Collect all active tray items in display order (left-to-right before the clock).
 pub fn collect_items() -> Vec<TrayItem> {
-    let mut items = Vec::with_capacity(3);
+    let mut items = Vec::with_capacity(4);
+    items.push(crate::battery::battery_indicator());
     items.push(volume_indicator());
     if let Some(lock) = lock_indicator() {
         items.push(lock);
@@ -82,7 +83,7 @@ mod tests {
     #[test]
     fn test_collect_items_count() {
         let items = collect_items();
-        // At minimum: volume + network = 2 items (lock only when locked)
-        assert!(items.len() >= 2);
+        // At minimum: battery + volume + network = 3 items (lock only when locked)
+        assert!(items.len() >= 3);
     }
 }

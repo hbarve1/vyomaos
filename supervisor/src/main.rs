@@ -16,6 +16,7 @@ mod archive_ipc;
 mod app_threads;
 mod bg_service;
 mod audio;
+mod battery;
 mod chrome;
 mod draw_cmd;
 mod i18n;
@@ -517,6 +518,9 @@ fn main() {
 
     // ── P94: memory pressure monitor thread ─────────────────────────────────
     memory::spawn_pressure_monitor(&inbox, &app_registry);
+
+    // ── P95: battery monitor thread (every 30s) ──────────────────────────────
+    battery::spawn_battery_monitor(&inbox, &app_registry, &focused);
 
     // ── Auto-update background checker (hourly) ─────────────────────────────
     auto_update::spawn_background_checker(&inbox, &app_registry);
