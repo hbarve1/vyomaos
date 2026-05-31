@@ -45,6 +45,7 @@ mod ota_update;
 mod auto_update;
 mod resize;
 mod drag_drop;
+mod share;
 mod session;
 mod undo;
 mod win_actions;
