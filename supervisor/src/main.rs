@@ -59,6 +59,7 @@ mod pkg_registry;
 mod workspace;
 mod audit;
 mod cap_request;
+mod totp;
 mod user;
 mod user_caps;
 mod firewall;

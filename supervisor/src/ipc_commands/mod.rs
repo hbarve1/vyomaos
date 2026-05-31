@@ -725,6 +725,11 @@ pub fn handle_extended_command(
         "jit-config" | "jit-set-opt" | "jit-cache-clear" | "jit-set-fuel" => {
             return crate::jit_config::handle_jit_command(verb, parts, sender, inbox);
         }
+
+        // P90: 2FA commands
+        "2fa-enable" | "2fa-disable" | "2fa-status" => {
+            return crate::totp::handle_2fa_command(verb, parts, sender, inbox);
+        }
         _ => return false,
     }
     true
