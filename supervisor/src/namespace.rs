@@ -22,9 +22,11 @@ use std::io;
 /// inside an `unsafe pre_exec` block where the child process has already
 /// been forked.
 pub unsafe fn setup_app_namespace() -> io::Result<()> {
-    // CLONE_NEWNS  = new mount namespace
-    // CLONE_NEWPID = new PID namespace (child will be PID 1 in its namespace)
-    let flags = libc::CLONE_NEWNS | libc::CLONE_NEWPID;
+    // Try mount namespace only.  CLONE_NEWPID breaks wasmtime's multi-threaded
+    // runtime on minimal kernels (worker thread spawn returns EINVAL inside a
+    // new PID namespace with CONFIG_SMP=n).  Mount isolation is the primary
+    // security benefit; PID isolation is secondary.
+    let flags = libc::CLONE_NEWNS;
     if libc::unshare(flags) < 0 {
         return Err(io::Error::last_os_error());
     }
