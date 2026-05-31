@@ -1,0 +1,143 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-vyoma-bg: #0D1117;
+  --color-vyoma-surface: #161B22;
+  --color-vyoma-border: #30363D;
+  --color-vyoma-accent: #58A6FF;
+  --color-vyoma-text: #E6EDF3;
+  --color-vyoma-dim: #8B949E;
+  --color-vyoma-green: #3FB950;
+  --color-vyoma-orange: #FFA657;
+  --font-sans: var(--font-inter);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-vyoma-bg);
+  color: var(--color-vyoma-text);
+}
+
+/* Highlight.js theme overrides for dark mode */
+pre code.hljs {
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+.hljs {
+  background: transparent !important;
+}
+
+/* Docs prose styling */
+.docs-content h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: var(--color-vyoma-text);
+}
+
+.docs-content h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-vyoma-border);
+  color: var(--color-vyoma-text);
+}
+
+.docs-content h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--color-vyoma-text);
+}
+
+.docs-content p {
+  margin-bottom: 1rem;
+  line-height: 1.75;
+  color: var(--color-vyoma-dim);
+}
+
+.docs-content a {
+  color: var(--color-vyoma-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.docs-content a:hover {
+  color: #79c0ff;
+}
+
+.docs-content ul,
+.docs-content ol {
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+  color: var(--color-vyoma-dim);
+}
+
+.docs-content ul {
+  list-style-type: disc;
+}
+
+.docs-content ol {
+  list-style-type: decimal;
+}
+
+.docs-content li {
+  margin-bottom: 0.25rem;
+  line-height: 1.75;
+}
+
+.docs-content pre {
+  background: var(--color-vyoma-surface);
+  border: 1px solid var(--color-vyoma-border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  overflow-x: auto;
+  font-size: 0.875rem;
+}
+
+.docs-content code:not(pre code) {
+  background: var(--color-vyoma-surface);
+  border: 1px solid var(--color-vyoma-border);
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.875em;
+}
+
+.docs-content blockquote {
+  border-left: 3px solid var(--color-vyoma-accent);
+  padding-left: 1rem;
+  margin-bottom: 1rem;
+  color: var(--color-vyoma-dim);
+  font-style: italic;
+}
+
+.docs-content table {
+  width: 100%;
+  margin-bottom: 1rem;
+  border-collapse: collapse;
+}
+
+.docs-content th,
+.docs-content td {
+  border: 1px solid var(--color-vyoma-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.docs-content th {
+  background: var(--color-vyoma-surface);
+  font-weight: 600;
+  color: var(--color-vyoma-text);
+}
+
+.docs-content td {
+  color: var(--color-vyoma-dim);
+}

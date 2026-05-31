@@ -1,80 +1,126 @@
 ---
 title: Quick Start
-description: Build and boot VyomaOS in minutes.
+description: Build and boot VyomaOS in 5 minutes.
+order: 2
 ---
+
+# Quick Start
+
+This guide walks you through building VyomaOS from source and booting it in QEMU.
 
 ## Prerequisites
 
-- **Docker** (for hermetic builds)
-- **QEMU** (for running the VM)
+- **Docker**: All builds run inside a hermetic container
+- **QEMU**: `qemu-system-x86_64` for desktop profile
+- **Git**: To clone the repository
 
-## Build & Boot
+## 1. Clone the repository
 
 ```bash
-# Clone the repo
 git clone https://github.com/hbarve1/vyomaos.git
 cd vyomaos
+```
 
-# Full build: kernel + supervisor + apps + rootfs
+## 2. Build the Docker image
+
+```bash
+make image
+```
+
+This creates the `vyomaos-builder` Docker image with all build dependencies: kernel build tools, musl-tools, Rust (stable), and the `wasm32-wasip2` target.
+
+## 3. Full build
+
+```bash
 make build
+```
 
-# Boot headless (serial console)
+This runs the full pipeline inside Docker:
+
+1. **Kernel**: Compiles Linux 5.10 with allnoconfig + VyomaOS drivers (2.3 MB)
+2. **Supervisor**: Compiles the Rust supervisor for `x86_64-unknown-linux-musl` (~2.9 MB)
+3. **Apps**: Compiles all WASM apps for `wasm32-wasip2`
+4. **Rootfs**: Packages everything into `initramfs.cpio.gz` (~34 MB)
+
+## 4. Boot it
+
+```bash
+# Headless (serial console)
 make run
 
-# Boot with GUI display (macOS)
+# With display (Linux)
+make run-gui DISPLAY_BACKEND=sdl
+
+# With display (macOS)
 make run-gui DISPLAY_BACKEND=cocoa
 
-# Boot with GUI display (Linux)
-make run-gui DISPLAY_BACKEND=sdl
+# With networking
+make run-net
 ```
 
-## What Happens at Boot
+## 5. Interact with VyomaOS
 
-1. Linux 5.10 kernel starts (allnoconfig, ~2.3 MB)
-2. Rust supervisor launches as PID 1
-3. Supervisor reads `/etc/vyoma/boot.toml` for app list
-4. Each app's `vyoma.toml` manifest is parsed for capabilities
-5. One Wasmtime process spawns per app with only declared WASI imports
-6. All 200+ apps are running within 5 seconds
+At the supervisor console, try:
 
-## Inside the VM
+```
+ps                    # List running apps
+log hello-world       # View app logs
+@supervisor: list     # List apps via IPC
+```
 
-Once booted, the supervisor console accepts commands:
+## Creating your first app
 
 ```bash
-ps                          # List running apps
-log <name>                  # Print app logs
-logf <name>                 # Tail app logs (follow mode)
-kill <name>                 # Terminate app
-restart <name>              # Restart app
-@supervisor: list           # List apps via IPC
-@supervisor: focus <name>   # Switch keyboard focus
-@supervisor: ping           # Health check
-@supervisor: uptime         # System uptime
+mkdir apps/hello
 ```
 
-## Build Targets
+Create `apps/hello/Cargo.toml`:
 
-| Command | What it does |
-|---------|-------------|
-| `make build` | Full build: kernel + supervisor + apps + rootfs + disk |
-| `make kernel` | Compile Linux kernel only |
-| `make supervisor` | Compile Rust supervisor only |
-| `make apps` | Compile all WASM apps (incremental) |
-| `make rootfs` | Create initramfs from artifacts |
-| `make run` | Boot headless |
-| `make run-gui` | Boot with virtio-gpu display |
-| `make run-net` | Boot with virtio-net networking |
-| `make run-gui-net` | Display + networking |
-| `make test` | Full CI: build + unit tests + smoke test |
+```toml
+[package]
+name = "hello"
+version = "0.1.0"
+edition = "2021"
 
-## Networking
+[[bin]]
+name = "hello"
+path = "src/main.rs"
+```
 
-To enable networking (e.g., for the HTTP server app):
+Create `apps/hello/src/main.rs`:
+
+```rust
+fn main() {
+    println!("Hello from VyomaOS!");
+}
+```
+
+Create `apps/hello/vyoma.toml`:
+
+```toml
+[app]
+name = "hello"
+version = "0.1.0"
+wasm = "hello.wasm"
+
+[capabilities]
+stdio = true
+```
+
+Build and run:
 
 ```bash
-make run-net            # Headless + port 8080 forwarded
-make run-gui-net        # GUI + networking
+cd apps/hello
+cargo build --target wasm32-wasip2 --release
+cd ../..
+make rootfs && make run
 ```
 
-Then access `http://localhost:8080` from your host machine.
+## Multi-platform builds
+
+```bash
+make build PLATFORM=iot-edge         # ARM64 IoT
+make build PLATFORM=mobile           # ARM64 mobile
+make build PLATFORM=server-headless  # Headless server
+make build PLATFORM=mcu-minimal      # ARM Cortex-M MCU
+```

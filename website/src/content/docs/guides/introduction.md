@@ -1,48 +1,73 @@
 ---
 title: Introduction
-description: What is VyomaOS and why does it exist?
+description: Core concepts and architecture of VyomaOS.
+order: 1
 ---
 
-VyomaOS is a **WASM-first operating system** with the long-term goal of becoming a lightweight but fully capable general-purpose OS built from the ground up on a capability-secure WebAssembly foundation.
+# Introduction to VyomaOS
 
-## The Problem
+VyomaOS is built on a simple principle: **every application is a WebAssembly binary, and security comes from capability declaration, not filtering**.
 
-Modern OSes carry 40 years of legacy attack surface:
+## Core architecture
 
-- **C Userland**: Shared libraries, POSIX quirks, shell injection. Every app inherits all of it.
-- **Coarse Permissions**: Android/Linux DAC — either you have access, or you don't. No fine-grained capability model.
-- **Non-Deterministic Binaries**: ELF binaries vary by libc/arch. No reproducibility guarantee. Supply chain attacks thrive.
+The system has four layers:
 
-## The VyomaOS Approach
+1. **Linux Kernel** (2.3 MB) -- Handles hardware only. Compiled with `allnoconfig` plus virtio, 9P, DRM, and fbcon drivers.
+2. **Rust Supervisor** (PID 1, ~2.9 MB) -- Static musl-linked binary that manages everything above the kernel.
+3. **Wasmtime Runtime** -- Executes `wasm32-wasip2` binaries with WASI Preview 2.
+4. **WASM Apps** -- User applications, typically 1-10 KB each.
 
-VyomaOS starts with a single rule: **the runtime IS the OS boundary**.
+## The capability model
 
-- The **Linux kernel** handles hardware, drivers, and process isolation. Nothing else.
-- Every application is a **`wasm32-wasip2` binary**. No native userland, no shell, no C runtime exposed to apps.
-- A **Rust PID 1 supervisor** manages app lifecycle, IPC, and capability enforcement.
-- Capabilities (filesystem, network, display, stdio) are **declared per-app in a manifest** and enforced at boot. Undeclared capabilities are not filtered — they are never wired up.
+Every app has a `vyoma.toml` manifest that declares its capabilities:
 
-## Why WebAssembly?
+```toml
+[app]
+name = "my-app"
+version = "0.1.0"
+wasm = "my-app.wasm"
 
-| Property | Benefit |
-|----------|---------|
-| **Portability** | The same `.wasm` binary runs identically on any VyomaOS instance, any architecture |
-| **Safety** | Strong sandbox; no app can access resources not explicitly granted in its manifest |
-| **Language-agnostic** | Rust, Go, C, Swift, Python, JS/TS — any language with a WASM target works |
-| **Small footprint** | Apps are 1–10 KB. No shared library sprawl |
-| **Determinism** | WASM bytecode is byte-identical across builds and hosts |
+[capabilities]
+stdio = true
+filesystem = true
+network = false
+display = false
+```
 
-## Current State
+The supervisor only wires up the WASI imports that are declared. If an app does not declare `network = true`, there is no network interface available -- no amount of syscalls can reach the network.
 
-VyomaOS boots in QEMU in under 5 seconds to a Rust supervisor running 200+ concurrent WASM apps with:
+## IPC system
 
-- macOS-like desktop: Menu Bar, Dock, Spotlight, App Switcher, Mission Control
-- Interactive shell with process management
-- Bidirectional IPC broker
-- DRM/virtio-gpu display at 1440x900
-- Window management with focus, drag, and keyboard routing
-- HTTP server with WASI sockets
-- Persistent storage via 9P virtio
-- seccomp BPF security hardening
+Apps communicate through the supervisor's IPC broker:
 
-The architecture scales from an 18 MB embedded appliance today to a full desktop OS tomorrow, with the same security model at every scale.
+```rust
+// Send a message to another app
+println!("@pong: hello from ping");
+
+// The supervisor routes it and strips the prefix
+// before delivering to the target app's stdin
+```
+
+## Display protocol
+
+Apps with `display = true` can draw to the framebuffer using the VYOMA_DRAW protocol:
+
+```rust
+println!("VYOMA_DRAW:fill_rect:0,0,960,700,{BG}");
+println!("VYOMA_DRAW:draw_text:8,24,{WHITE},m,Hello");
+println!("VYOMA_DRAW:flush");
+```
+
+## What is in the supervisor?
+
+The supervisor contains 62+ subsystem modules:
+
+- Manifest parser and capability enforcer
+- Concurrent scheduler (one thread per app)
+- IPC broker with message routing
+- Framebuffer driver and window compositor
+- TTY input router (raw mode, per-keypress dispatch)
+- Process manager (ps, kill, restart, reload)
+- HAL for GPIO, I2C, SPI, UART, ADC
+- OTA update manager with A/B slots
+- Package manager and app store client
