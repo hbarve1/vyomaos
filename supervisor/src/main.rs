@@ -47,6 +47,7 @@ mod win_actions;
 mod screenshot;
 mod wallpaper;
 mod file_assoc;
+mod vfs;
 mod workspace;
 
 use std::{
