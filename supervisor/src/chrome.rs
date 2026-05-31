@@ -383,8 +383,19 @@ pub fn draw_chrome_onto(
     };
     for (name, (wx, wy, ww, wh)) in &regions {
         if *ww < 60 { continue; }
-        // Skip windows not on the current workspace.
-        if !crate::workspace::is_visible(name, registry) { continue; }
+        // Skip windows not on the current workspace (inline check to avoid
+        // potential deadlock if registry is held by caller).
+        {
+            let ws_mgr = crate::workspace::manager().lock().unwrap();
+            let is_system_z = {
+                let reg = registry.lock().unwrap();
+                reg.get(name.as_str()).map(|st| st.lock().unwrap().win_z >= Z_DOCK).unwrap_or(false)
+            };
+            if !is_system_z {
+                let app_ws = ws_mgr.app_workspace.get(name.as_str()).copied().unwrap_or(0);
+                if app_ws != ws_mgr.current { continue; }
+            }
+        }
         let is_focused = focused_name.as_deref() == Some(name.as_str());
         let is_hovered = hovered_name.as_deref() == Some(name.as_str());
         let is_system = {
