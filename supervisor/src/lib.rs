@@ -22,6 +22,7 @@ pub mod ota;
 pub mod observability;
 pub mod capability;
 
+pub mod archive;
 pub mod undo_public;
 pub mod file_assoc;
 
