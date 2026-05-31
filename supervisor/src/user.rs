@@ -321,20 +321,21 @@ pub fn handle_user_command(
         }
 
         "user-login" => {
-            // usage: user-login <username> <pin>
+            // usage: user-login <username> <pin> [totp_code]
             let rest = parts.get(1).unwrap_or(&"").trim();
-            let (name, pin) = match rest.split_once(' ') {
-                Some((n, p)) => (n.trim(), p.trim()),
-                None => {
-                    send_reply(
-                        sender,
-                        "REPLY:error: usage: user-login <username> <pin>",
-                        inbox,
-                    );
-                    return true;
-                }
-            };
-            match login(name, pin) {
+            let tokens: Vec<&str> = rest.splitn(3, ' ').collect();
+            if tokens.len() < 2 || tokens[0].is_empty() {
+                send_reply(
+                    sender,
+                    "REPLY:error: usage: user-login <username> <pin> [totp_code]",
+                    inbox,
+                );
+                return true;
+            }
+            let name = tokens[0].trim();
+            let pin = tokens[1].trim();
+            let totp_code = tokens.get(2).and_then(|s| s.trim().parse::<u32>().ok());
+            match crate::totp::login_with_2fa(name, pin, totp_code) {
                 Ok(()) => {
                     log_info!(Subsystem::Lifecycle, None, "user logged in: {name}");
                     send_reply(
