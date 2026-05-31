@@ -74,6 +74,7 @@ mod jit_config;
 mod backup;
 mod uefi;
 mod virtualization;
+mod vnc;
 
 use std::{
     collections::{HashMap, VecDeque},
