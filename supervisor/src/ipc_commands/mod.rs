@@ -670,6 +670,12 @@ pub fn handle_extended_command(
                 verb, parts, sender, inbox, focused, app_registry,
             );
         }
+
+        // P85: user account commands
+        "user-list" | "user-add" | "user-remove" | "user-login" | "user-logout"
+        | "user-whoami" => {
+            return crate::user::handle_user_command(verb, parts, sender, inbox);
+        }
         _ => return false,
     }
     true
