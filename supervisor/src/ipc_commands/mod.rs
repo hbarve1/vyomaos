@@ -7,6 +7,7 @@
 mod audio_ipc;
 mod drag_drop_cmd;
 mod lock;
+mod share_cmd;
 mod tcp;
 mod theme_cmd;
 mod websocket;
@@ -522,6 +523,11 @@ pub fn handle_extended_command(
         // Drag & drop between apps
         "drag-start" | "drag-cancel" => {
             return drag_drop_cmd::handle_drag_drop(verb, &parts, sender, inbox);
+        }
+
+        // P64: Share sheet between apps
+        "share" | "share-accept" | "share-cancel" => {
+            return share_cmd::handle_share(verb, parts, sender, inbox, app_registry);
         }
 
         // i18n: switch active locale
