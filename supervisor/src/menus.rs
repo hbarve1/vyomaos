@@ -38,7 +38,8 @@ pub fn handle_dropdown_key_action(key: &str) -> Option<(String, String)> {
     let mut s = match dropdown_state().try_lock() { Ok(s) => s, Err(_) => return None };
     if !s.open { return None; }
     match key {
-        "\x1b[B" | "j" => { if s.selected + 1 < s.items.len() { s.selected += 1; } None }
+        // P82: Tab also moves to next item (keyboard-only navigation)
+        "\x1b[B" | "j" | "\t" => { if s.selected + 1 < s.items.len() { s.selected += 1; } None }
         "\x1b[A" | "k" => { if s.selected > 0 { s.selected -= 1; } None }
         "\r" | "\n" | "" => {
             let r = s.items.get(s.selected).map(|(_, a)| (s.app_name.clone(), a.clone()));

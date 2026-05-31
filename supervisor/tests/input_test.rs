@@ -9,6 +9,7 @@ enum InputAction {
     AltTab,
     AltShiftTab,
     AltW,
+    AltF4,
     AltF,
     AltQuestion,
     PassThrough,
@@ -25,18 +26,19 @@ enum InputAction {
 ///   anything else         → PassThrough
 fn classify_input_sequence(bytes: &[u8]) -> InputAction {
     match bytes {
-        [0x1B, 0x09]        => InputAction::AltTab,
-        [0x1B, 0x5B, 0x5A] => InputAction::AltShiftTab,
-        [0x1B, 0x77]        => InputAction::AltW,
-        [0x1B, 0x66]        => InputAction::AltF,
-        [0x1B, 0x3F]        => InputAction::AltQuestion,
-        _                   => InputAction::PassThrough,
+        [0x1B, 0x09]                    => InputAction::AltTab,
+        [0x1B, 0x5B, 0x5A]             => InputAction::AltShiftTab,
+        [0x1B, 0x77]                    => InputAction::AltW,
+        [0x1B, 0x5B, 0x31, 0x34, 0x7E] => InputAction::AltF4,
+        [0x1B, 0x66]                    => InputAction::AltF,
+        [0x1B, 0x3F]                    => InputAction::AltQuestion,
+        _                               => InputAction::PassThrough,
     }
 }
 
 /// Return the static help text listing all window-management keyboard shortcuts.
 fn shortcut_help_text() -> &'static str {
-    "Alt+Tab: next window  Alt+W: close  Alt+F: snap  Alt+?: help"
+    "Alt+Tab: next  Alt+W/F4: close  Alt+F: fullscreen  Ctrl+S: screenshot  Alt+?: help"
 }
 
 // ── Legacy ESC-pair classifier (kept for backwards-compatible arrow-key tests) ─
@@ -188,4 +190,68 @@ fn test_shortcut_help_text_content() {
     assert!(text.contains("Alt+W"),   "help text must mention Alt+W");
     assert!(text.contains("Alt+F"),   "help text must mention Alt+F");
     assert!(text.contains("Alt+?"),   "help text must mention Alt+?");
+    assert!(text.contains("fullscreen"), "help text must mention fullscreen");
+    assert!(text.contains("F4"),     "help text must mention F4");
+}
+
+// ── P82: Alt+F4 tests ──────────────────────────────────────────────────────
+
+#[test]
+fn test_alt_f4_classified() {
+    // Alt+F4: ESC + CSI F4 = \x1b[14~ → bytes [0x1B, 0x5B, 0x31, 0x34, 0x7E]
+    assert_eq!(
+        classify_input_sequence(&[0x1B, 0x5B, 0x31, 0x34, 0x7E]),
+        InputAction::AltF4,
+    );
+}
+
+#[test]
+fn test_alt_f4_does_not_match_other_function_keys() {
+    // F1 = \x1b[11~
+    assert_eq!(
+        classify_input_sequence(&[0x1B, 0x5B, 0x31, 0x31, 0x7E]),
+        InputAction::PassThrough,
+    );
+    // F5 = \x1b[15~
+    assert_eq!(
+        classify_input_sequence(&[0x1B, 0x5B, 0x31, 0x35, 0x7E]),
+        InputAction::PassThrough,
+    );
+}
+
+#[test]
+fn test_alt_f_still_classified_as_fullscreen() {
+    // Alt+F: ESC + 'f' (0x1B 0x66) → AltF (fullscreen toggle)
+    assert_eq!(classify_input_sequence(&[0x1B, 0x66]), InputAction::AltF);
+}
+
+// ── P82: Tab focus within menus ─────────────────────────────────────────────
+
+/// Mirror of dropdown key handler to test Tab navigation.
+fn handle_dropdown_key(key: &str, selected: usize, n_items: usize) -> usize {
+    match key {
+        "\x1b[B" | "j" | "\t" => { if selected + 1 < n_items { selected + 1 } else { selected } }
+        "\x1b[A" | "k" => { if selected > 0 { selected - 1 } else { selected } }
+        _ => selected,
+    }
+}
+
+#[test]
+fn test_tab_advances_menu_selection() {
+    // Tab should move to next item just like ArrowDown
+    assert_eq!(handle_dropdown_key("\t", 0, 3), 1);
+    assert_eq!(handle_dropdown_key("\t", 1, 3), 2);
+    // At last item, Tab should not advance past end
+    assert_eq!(handle_dropdown_key("\t", 2, 3), 2);
+}
+
+#[test]
+fn test_tab_and_arrow_down_equivalent() {
+    for sel in 0..3 {
+        assert_eq!(
+            handle_dropdown_key("\t", sel, 4),
+            handle_dropdown_key("\x1b[B", sel, 4),
+            "Tab and ArrowDown should produce the same result at position {sel}",
+        );
+    }
 }

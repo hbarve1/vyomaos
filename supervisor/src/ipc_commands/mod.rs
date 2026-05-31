@@ -6,6 +6,7 @@
 
 mod audio_ipc;
 mod drag_drop_cmd;
+mod focus_cmd;
 mod lock;
 mod tcp;
 mod theme_cmd;
@@ -650,6 +651,11 @@ pub fn handle_extended_command(
         }
         "list-caps" => {
             crate::cap_request::handle_list_caps(parts, sender, inbox);
+        }
+
+        // P82: keyboard-only focus cycling via IPC (delegated to focus_cmd)
+        "focus-next" | "focus-prev" => {
+            return focus_cmd::handle_focus_command(verb, sender, inbox, focused, app_registry);
         }
 
         // P63: background service commands

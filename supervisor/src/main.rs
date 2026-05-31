@@ -122,6 +122,9 @@ struct AppState {
     // spec-042: minimize/restore state
     minimized:           bool,
     pre_minimize_region: Option<(u32, u32, u32, u32)>,
+    // P82: fullscreen toggle — stores the tiled region before going fullscreen
+    pub is_fullscreen:       bool,
+    pre_fullscreen_region: Option<(u32, u32, u32, u32)>,
     // T052: pending window animation (Open/Close/Minimize)
     pub pending_anim: Option<crate::display::animator::Animation>,
     /// Per-window pixel surface buffer (content area only, no chrome).

@@ -13,7 +13,8 @@ pub enum InputAction {
     AltTab,       // Alt+Tab      — cycle focus forward
     AltShiftTab,  // Alt+Shift+Tab — cycle focus backward
     AltW,         // Alt+W        — close focused window
-    AltF,         // Alt+F        — maximize focused window (stub)
+    AltF4,        // Alt+F4       — close/kill focused app (P82)
+    AltF,         // Alt+F        — toggle fullscreen for focused window (P82)
     AltQuestion,  // Alt+?        — show keyboard shortcut overlay toast
     #[allow(dead_code)]
     CtrlL,        // Ctrl+L       — lock the screen (handled as raw 0x0c byte)
@@ -26,17 +27,20 @@ pub enum InputAction {
 ///   `[0x1B, 0x09]`        → AltTab        (ESC + TAB)
 ///   `[0x1B, 0x5B, 0x5A]`  → AltShiftTab   (ESC + [ + Z  i.e. \x1b[Z)
 ///   `[0x1B, 0x77]`        → AltW          (ESC + 'w')
+///   `[0x1B, 0x5B, 0x31, 0x34, 0x7E]` → AltF4 (ESC + CSI F4 i.e. \x1b[14~)
 ///   `[0x1B, 0x66]`        → AltF          (ESC + 'f')
 ///   `[0x1B, 0x3F]`        → AltQuestion   (ESC + '?')
 ///   anything else         → PassThrough
 pub fn classify_input_sequence(bytes: &[u8]) -> InputAction {
     match bytes {
-        [0x1B, 0x09]        => InputAction::AltTab,
-        [0x1B, 0x5B, 0x5A] => InputAction::AltShiftTab,
-        [0x1B, 0x77]        => InputAction::AltW,
-        [0x1B, 0x66]        => InputAction::AltF,
-        [0x1B, 0x3F]        => InputAction::AltQuestion,
-        _                   => InputAction::PassThrough,
+        [0x1B, 0x09]                    => InputAction::AltTab,
+        [0x1B, 0x5B, 0x5A]             => InputAction::AltShiftTab,
+        [0x1B, 0x77]                    => InputAction::AltW,
+        // Alt+F4: ESC + CSI sequence for F4 = \x1b[14~
+        [0x1B, 0x5B, 0x31, 0x34, 0x7E] => InputAction::AltF4,
+        [0x1B, 0x66]                    => InputAction::AltF,
+        [0x1B, 0x3F]                    => InputAction::AltQuestion,
+        _                               => InputAction::PassThrough,
     }
 }
 
@@ -44,7 +48,7 @@ pub fn classify_input_sequence(bytes: &[u8]) -> InputAction {
 ///
 /// Pure function — no side effects, no allocation.
 pub fn shortcut_help_text() -> &'static str {
-    "Alt+Tab: next  Alt+W: close  Alt+F: snap  Ctrl+S: screenshot  Alt+?: help"
+    "Alt+Tab: next  Alt+W/F4: close  Alt+F: fullscreen  Ctrl+S: screenshot  Alt+?: help"
 }
 
 /// Draw a 3-second shortcut-help toast in the bottom-right corner of the screen.
@@ -80,6 +84,75 @@ pub fn show_shortcut_overlay() {
             }
         });
     }
+}
+
+/// P82: Kill the currently focused app and move focus to the next windowed app.
+#[cfg(target_os = "linux")]
+fn handle_alt_f4_close(focused: &FocusedApp, registry: &AppRegistry, _inbox: &Inbox) {
+    use crate::{log_info, chrome};
+
+    let focused_name = focused.lock().unwrap().clone();
+    if let Some(ref name) = focused_name {
+        let pid = {
+            let reg = registry.lock().unwrap();
+            reg.get(name).and_then(|st| st.lock().unwrap().child_pid)
+        };
+        if let Some(pid) = pid {
+            log_info!(Subsystem::Input, Some(name.as_str()), "alt+f4: closing {name}");
+            unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+        }
+        // Move focus to next remaining windowed app
+        let names: Vec<String> = {
+            let reg = registry.lock().unwrap();
+            let mut v: Vec<String> = reg.iter()
+                .filter(|(n, st)| n.as_str() != name.as_str()
+                    && st.lock().unwrap().win_region.is_some())
+                .map(|(n, _)| n.clone()).collect();
+            v.sort(); v
+        };
+        let next = names.into_iter().next();
+        if let Some(ref n) = next {
+            chrome::z_order_push_front(n);
+        }
+        *focused.lock().unwrap() = next;
+    }
+}
+
+/// P82: Toggle the focused app between fullscreen and its previous tiled region.
+#[cfg(target_os = "linux")]
+fn handle_fullscreen_toggle(
+    focused: &FocusedApp,
+    registry: &AppRegistry,
+) {
+    use crate::{log_info, display};
+    use crate::chrome::{MENUBAR_H, repaint_all_borders};
+
+    let focused_name = focused.lock().unwrap().clone();
+    let Some(ref name) = focused_name else { return };
+    let (sw, sh) = display::screen_size().unwrap_or((1440, 900));
+
+    let reg = registry.lock().unwrap();
+    let Some(st_arc) = reg.get(name) else { return };
+    let mut st = st_arc.lock().unwrap();
+
+    if st.is_fullscreen {
+        // Restore to pre-fullscreen region
+        if let Some(prev) = st.pre_fullscreen_region.take() {
+            st.win_region = Some(prev);
+        }
+        st.is_fullscreen = false;
+        log_info!(Subsystem::Input, Some(name.as_str()), "alt+f: restored {name} from fullscreen");
+    } else {
+        // Save current region and go fullscreen
+        st.pre_fullscreen_region = st.win_region;
+        let fs_region = (0, MENUBAR_H, sw, sh.saturating_sub(MENUBAR_H));
+        st.win_region = Some(fs_region);
+        st.is_fullscreen = true;
+        log_info!(Subsystem::Input, Some(name.as_str()), "alt+f: fullscreen {name}");
+    }
+    drop(st);
+    drop(reg);
+    repaint_all_borders(registry, focused);
 }
 
 /// P17T01: body of the input-router thread — raw /dev/tty0 → focused app dispatch.
@@ -176,10 +249,17 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                         if tty.read(&mut b2).unwrap_or(0) == 0 { continue; }
 
                         // Ctrl+Arrow: \x1b[1;5C (right) / \x1b[1;5D (left)
+                        // F4: \x1b[14~ (Alt+F4 close, P82)
                         // Read extended CSI: b2='1', then ';', '5', final char
                         if b2[0] == b'1' {
                             let mut ext = [0u8; 3];
                             let n = tty.read(&mut ext).unwrap_or(0);
+                            // F4 key: \x1b[14~ → ext = ['4', '~', ...]
+                            if n >= 2 && ext[0] == b'4' && ext[1] == b'~' {
+                                // P82: Alt+F4 / F4 → close focused app
+                                handle_alt_f4_close(&focused, &registry, &inbox);
+                                continue;
+                            }
                             if n == 3 && ext[0] == b';' && ext[1] == b'5' {
                                 match ext[2] {
                                     b'C' => {
@@ -224,6 +304,7 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                                 let cur = focused.lock().unwrap().clone();
                                 if let Some(ref name) = cycle_focus_backward(&names, cur.as_deref()) {
                                     log_info!(Subsystem::Input, Some(name.as_str()), "alt+shift+tab: focus → {name}");
+                                    crate::chrome::z_order_push_front(name);
                                     *focused.lock().unwrap() = Some(name.clone());
                                     repaint_all_borders(&registry, &focused);
                                 }
@@ -237,6 +318,7 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                                     let cur = focused.lock().unwrap().clone();
                                     if let Some(ref name) = cycle_focus_forward(&names, cur.as_deref()) {
                                         log_info!(Subsystem::Input, Some(name.as_str()), "alt+tab: focus → {name}");
+                                        crate::chrome::z_order_push_front(name);
                                         *focused.lock().unwrap() = Some(name.clone());
                                         repaint_all_borders(&registry, &focused);
                                     }
@@ -263,36 +345,8 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                                 }
                             }
                             InputAction::AltF => {
-                                use supervisor::windows::compute_snap_layout;
-                                let focused_name = focused.lock().unwrap().clone();
-                                if let Some(ref name) = focused_name {
-                                    log_info!(Subsystem::Input, Some(name.as_str()), "alt+f: snap {name}");
-                                    let apps: Vec<String> = {
-                                        let reg = registry.lock().unwrap();
-                                        let mut v: Vec<String> = reg.iter()
-                                            .filter(|(_, st)| st.lock().unwrap().win_region.is_some())
-                                            .map(|(n, _)| n.clone()).collect();
-                                        v.sort(); v
-                                    };
-                                    if let Some(idx) = apps.iter().position(|n| n == name) {
-                                        let (sw, sh) = display::screen_size().unwrap_or((1440, 900)); // DEFAULT_SCREEN_W/H
-                                        let snap = compute_snap_layout(sw, sh, MENUBAR_H, idx, apps.len());
-                                        {
-                                            let reg = registry.lock().unwrap();
-                                            for (i, app_name) in apps.iter().enumerate() {
-                                                if let Some(st) = reg.get(app_name) {
-                                                    if let Some(&region) = snap.get(i) {
-                                                        st.lock().unwrap().win_region = Some(region);
-                                                        log_info!(Subsystem::Display, Some(app_name.as_str()),
-                                                            "snap: assigned ({},{},{},{})",
-                                                            region.0, region.1, region.2, region.3);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        repaint_all_borders(&registry, &focused);
-                                    }
-                                }
+                                // P82: toggle fullscreen for focused app
+                                handle_fullscreen_toggle(&focused, &registry);
                             }
                             InputAction::AltQuestion => {
                                 log_info!(Subsystem::Input, None, "alt+?: showing shortcut overlay");

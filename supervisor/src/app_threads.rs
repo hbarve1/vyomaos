@@ -373,6 +373,8 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         last_cpu_reset:   Instant::now(),
         minimized:           false,
         pre_minimize_region: None,
+        is_fullscreen:       false,
+        pre_fullscreen_region: None,
         // T053: pending_anim set below after construction
         pending_anim:        None,
         surface:             None,
