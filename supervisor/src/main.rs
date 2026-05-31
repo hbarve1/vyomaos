@@ -64,6 +64,7 @@ mod user_caps;
 mod firewall;
 mod memory;
 mod cpu;
+mod jit_config;
 
 use std::{
     collections::{HashMap, VecDeque},
