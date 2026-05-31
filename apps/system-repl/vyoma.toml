@@ -1,0 +1,16 @@
+[app]
+name    = "system-repl"
+version = "0.1.0"
+wasm    = "system-repl.wasm"
+
+[capabilities]
+stdio      = true
+display    = true
+shell      = true
+filesystem = true
+
+[window]
+x = 40
+y = 80
+w = 720
+h = 500

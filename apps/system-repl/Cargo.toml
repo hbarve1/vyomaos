@@ -1,0 +1,14 @@
+[package]
+name    = "system-repl"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "system-repl"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+strip     = true
+
+[workspace]
