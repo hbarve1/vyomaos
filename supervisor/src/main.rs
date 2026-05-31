@@ -58,6 +58,7 @@ mod pkg_registry;
 mod workspace;
 mod cap_request;
 mod user;
+mod firewall;
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -359,6 +360,9 @@ fn main() {
         log_info!(Subsystem::Lifecycle, None, "no apps configured, idling");
         loop { thread::park(); }
     }
+
+    // P88: load per-app firewall rules from /data/firewall.toml
+    firewall::load_rules();
 
     let _ = Z_ORDER.set(Mutex::new(Vec::new()));
     let _ = TCP_CONNS.set(Mutex::new(std::collections::HashMap::new()));

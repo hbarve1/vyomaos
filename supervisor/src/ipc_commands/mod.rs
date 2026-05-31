@@ -669,6 +669,11 @@ pub fn handle_extended_command(
             return focus_cmd::handle_focus_command(verb, sender, inbox, focused, app_registry);
         }
 
+        // P88: per-app firewall rules
+        "firewall-list" | "firewall-add" | "firewall-remove" | "firewall-check" => {
+            return crate::firewall::handle_firewall_command(verb, parts, sender, inbox);
+        }
+
         // P63: background service commands
         "bg-list" | "bg-start" | "bg-stop" => {
             return crate::bg_service::handle_bg_command(
