@@ -720,6 +720,11 @@ pub fn handle_extended_command(
         "user-caps" | "user-set-quota" => {
             return crate::user_caps::handle_user_caps_command(verb, parts, sender, inbox);
         }
+
+        // P92: JIT optimization settings
+        "jit-config" | "jit-set-opt" | "jit-cache-clear" | "jit-set-fuel" => {
+            return crate::jit_config::handle_jit_command(verb, parts, sender, inbox);
+        }
         _ => return false,
     }
     true
