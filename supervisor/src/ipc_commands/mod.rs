@@ -783,6 +783,11 @@ pub fn handle_extended_command(
         "vm-info" | "vm-resources" => {
             return crate::virtualization::handle_vm_command(verb, sender, inbox);
         }
+
+        // P109: VNC remote desktop commands
+        "vnc-start" | "vnc-stop" | "vnc-status" => {
+            return crate::vnc::handle_vnc_command(verb, parts, sender, inbox);
+        }
         _ => return false,
     }
     true
