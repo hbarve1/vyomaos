@@ -625,6 +625,11 @@ pub fn handle_extended_command(
         "vfs-list" | "vfs-stat" | "vfs-mounts" => {
             return crate::vfs::handle_vfs_command(verb, parts, sender, inbox, app_registry);
         }
+
+        // P57: trash (recycle bin)
+        "trash" | "trash-list" | "trash-restore" | "trash-empty" | "trash-size" => {
+            return crate::trash::handle_trash_command(verb, parts, sender, inbox);
+        }
         _ => return false,
     }
     true

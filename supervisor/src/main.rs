@@ -32,6 +32,7 @@ mod packages;
 mod seccomp;
 mod theme;
 mod toast;
+mod trash;
 mod tray;
 mod verify;
 mod mgmt_protocol;
