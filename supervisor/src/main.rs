@@ -43,6 +43,7 @@ mod mgmt_server;
 mod mgmt_handlers;
 mod router;
 mod ota_update;
+mod atomic_update;
 mod auto_update;
 mod resize;
 mod drag_drop;

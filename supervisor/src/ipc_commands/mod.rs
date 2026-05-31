@@ -502,6 +502,20 @@ pub fn handle_extended_command(
             crate::ota_update::handle_update_local(parts, sender, inbox, focused, app_registry);
         }
 
+        // P108: atomic OS update commands (A/B slot)
+        "update-prepare" => {
+            crate::atomic_update::handle_update_prepare(parts, sender, inbox);
+        }
+        "update-activate" => {
+            crate::atomic_update::handle_update_activate(sender, inbox);
+        }
+        "update-rollback" => {
+            crate::atomic_update::handle_update_rollback(sender, inbox);
+        }
+        "update-status" => {
+            crate::atomic_update::handle_update_status(sender, inbox);
+        }
+
         // Auto-update: check catalog and apply updates
         "check-updates" => {
             crate::auto_update::handle_check_updates(sender, inbox, app_registry);
