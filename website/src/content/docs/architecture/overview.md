@@ -1,89 +1,106 @@
 ---
-title: System Overview
-description: How VyomaOS is architected from kernel to apps.
+title: Architecture Overview
+description: Understanding the VyomaOS system stack and design decisions.
+order: 1
 ---
 
-VyomaOS is a vertically integrated OS where the Linux kernel handles hardware only, and all policy — security, lifecycle, display, IPC — lives in a single Rust supervisor.
+# Architecture Overview
 
-## System Stack
+VyomaOS is a four-layer operating system where the kernel handles hardware, and everything else runs through a Rust supervisor that manages WebAssembly applications.
+
+## System stack
 
 ```
 Linux 5.10 kernel (allnoconfig, 2.3 MB)
-  ↓ hardware abstraction only
-Rust supervisor (PID 1, 697 KB static musl)
-  ├─ Manifest parser (TOML capabilities)
-  ├─ Concurrent scheduler (one thread per app)
-  ├─ IPC broker (route @<app>: messages)
-  ├─ Framebuffer driver (DRM/virtio-gpu + VYOMA_DRAW protocol)
-  ├─ TTY input router (raw mode, per-keypress dispatch)
-  └─ Process manager (ps, kill, restart, reload, log)
-      ↓ one wasmtime process per app
+  |
+Rust supervisor (PID 1, ~2.9 MB static musl)
+  |-- Manifest parser (TOML capabilities)
+  |-- Concurrent scheduler (one thread per app)
+  |-- IPC broker (route @<app>: messages)
+  |-- Framebuffer driver (DRM/virtio-gpu)
+  |-- TTY input router (raw mode)
+  |-- Process manager (ps, kill, restart)
+  |
 Wasmtime runtime (WASI Preview 2)
-  ↓ only declared capabilities wired up
-WASM apps (wasm32-wasip2 binaries, 1–10 KB each)
+  |
+WASM apps (wasm32-wasip2 binaries, 1-10 KB each)
 ```
 
-## Key Numbers
+## Design decisions
 
-| Component | Size |
-|-----------|------|
-| Linux kernel | 2.3 MB (allnoconfig + virtio + DRM) |
-| Supervisor binary | 697 KB (static musl, stripped) |
-| Full initramfs | 18 MB (Wasmtime dominates) |
-| Average app | 1–10 KB |
-| Boot time | < 5 seconds in QEMU |
-| Wasmtime version | 43.0.0 |
+### Capability-secure by default
 
-## Linux Kernel
+The supervisor does not filter app syscalls. It only wires up the WASI imports declared in each app's `vyoma.toml`. This means:
 
-The kernel is compiled with `allnoconfig` — the absolute minimum configuration — plus only the drivers VyomaOS actually uses:
+- No `network = true` declaration = no network interface exists for the app
+- No `filesystem = true` declaration = no `/data` mount exists
+- No seccomp, AppArmor, or SELinux layer needed
 
-- **virtio-blk**: Block device for data disk
-- **virtio-gpu**: Display output
-- **virtio-net**: Networking (optional)
-- **9P/virtio**: Filesystem sharing (host ↔ guest)
-- **DRM**: Direct Rendering Manager for framebuffer
-- **fbcon**: Framebuffer console
+### Deterministic binaries
 
-No networking stack, no USB, no sound, no filesystem drivers beyond 9P. The kernel is a hardware abstraction layer and nothing more.
+WASM bytecode is byte-identical across builds and hosts. Unlike ELF binaries that vary by libc and architecture, WASM apps produce the same output everywhere. This enables reproducible deployments.
 
-## Supervisor (PID 1)
+### Minimal kernel
 
-The Rust supervisor is the only native binary in userspace. It:
+The Linux kernel is compiled with `allnoconfig` plus only the drivers VyomaOS needs:
 
-1. **Parses `/etc/vyoma/boot.toml`** at startup to discover which apps to launch
-2. **Reads each app's `vyoma.toml`** to determine declared capabilities
-3. **Spawns one Wasmtime process per app** with only the declared WASI imports wired up
-4. **Routes IPC messages** between apps via the `@<target>:` protocol
-5. **Manages the framebuffer** — parses `VYOMA_DRAW:` commands from app stdout and renders to DRM
-6. **Routes keyboard/mouse input** to the focused app
-7. **Handles process lifecycle** — restart policies, watchdog, kill, log
+- virtio (block, network, GPU, console)
+- 9P filesystem (host-VM file sharing)
+- DRM (framebuffer for display)
+- fbcon (early console output)
 
-## App Model
+No networking stack, no USB drivers, no excess filesystem drivers.
 
-Every app is a standalone Rust crate targeting `wasm32-wasip2`. Apps:
+### Supervisor-side IPC
 
-- Are fully sandboxed inside Wasmtime
-- Declare capabilities in `vyoma.toml` (stdio, filesystem, network, display, shell, mouse)
-- Communicate only through supervisor-mediated IPC
-- Have no access to capabilities they don't declare
-- Produce byte-identical binaries across builds
+Apps never communicate directly. The supervisor brokers all messages, which:
 
-## Display System
+- Centralizes routing logic
+- Enables monitoring and debugging
+- Allows message filtering and rate limiting
+- Supports future features like message logging
 
-Apps draw to the screen by writing `VYOMA_DRAW:` protocol commands to stdout. The supervisor intercepts these, renders to a framebuffer, and manages window chrome (title bars, focus borders, status strips).
+## Supervisor subsystems
 
-Font rendering uses a built-in 8x16 bitmap font with three sizes: small (4x8), medium (8x16), and large (16x32).
+The supervisor is organized into focused modules:
 
-## Storage
+| Subsystem | Purpose |
+|-----------|---------|
+| `runtime/` | WasmRuntime trait + Wasmtime/wasm3 adapters |
+| `hal/` | Hardware Abstraction Layer (GPIO, I2C, SPI, UART, ADC) |
+| `profile/` | Platform profile loader (desktop, mobile, IoT, MCU) |
+| `ota/` | A/B slot OTA update manager |
+| `observability/` | Structured heartbeat and metrics emitter |
+| `capability/` | Peripheral capability enforcer |
+| `display/` | Framebuffer driver and VYOMA_DRAW parser |
+| `font/` | Scalable font rendering via fontdue |
+| `image/` | PNG image loading via lodepng |
+| `chrome/` | Window decorations and compositor |
 
-Host `data/` directory is mounted via 9P virtio at `/data` inside the VM. Apps with `filesystem = true` can read/write files that persist across VM reboots.
-
-## Build System
+## Build system
 
 Docker-based hermetic builds ensure reproducibility:
 
-- All compilation happens inside a Docker container
-- Wasmtime and BusyBox binaries are SHA-256 verified
-- Per-app stamp files enable incremental builds
-- `make test` runs build + unit tests + headless QEMU smoke test
+```bash
+make build    # kernel + supervisor + apps + rootfs
+```
+
+The Makefile orchestrates:
+1. Linux kernel compilation
+2. Supervisor compilation (`x86_64-unknown-linux-musl`)
+3. WASM app compilation (`wasm32-wasip2`)
+4. Rootfs packaging (initramfs.cpio.gz)
+5. Data disk creation (ext4, 64 MB)
+
+## Multi-platform support
+
+Six platform profiles target different hardware:
+
+| Platform | Target | Runtime | RAM |
+|----------|--------|---------|-----|
+| `desktop-full` | x86-64 | Wasmtime JIT | 512 MB |
+| `mobile` | ARM64 | Wasmtime JIT | 256 MB |
+| `server-headless` | ARM64/x86-64 | Wasmtime JIT | 1 GB |
+| `iot-edge` | ARM64 SBC | WAMR AOT | 4 MB |
+| `robotics-rt` | ARM64 | WAMR AOT | 8 MB |
+| `mcu-minimal` | ARM Cortex-M4 | wasm3 | 128 KB |

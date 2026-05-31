@@ -1,7 +1,0 @@
-name = "vyomaos-redirect-www"
-main = "worker.js"
-compatibility_date = "2025-05-25"
-
-routes = [
-  { pattern = "www.vyomaos.org/*", zone_name = "vyomaos.org" }
-]

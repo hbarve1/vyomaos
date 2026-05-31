@@ -1,137 +1,122 @@
 ---
-title: App Manifest
-description: The vyoma.toml capability manifest reference.
+title: Manifest Reference
+description: Complete reference for the vyoma.toml app manifest format.
+order: 1
 ---
 
-Every VyomaOS app has a `vyoma.toml` manifest file that declares its identity and capabilities.
+# Manifest Reference (vyoma.toml)
 
-## Format
+Every VyomaOS app requires a `vyoma.toml` manifest that declares its identity and capabilities.
 
-```toml
-[app]
-name    = "my-app"
-version = "0.1.0"
-wasm    = "my-app.wasm"
-
-[capabilities]
-stdio      = true
-filesystem = true
-network    = true
-display    = true
-shell      = true
-mouse      = true
-watchdog_secs = 30
-```
-
-## `[app]` Section
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | yes | App identifier (must match directory name) |
-| `version` | string | yes | Semantic version |
-| `wasm` | string | yes | WASM binary filename (relative to app dir) |
-
-## `[capabilities]` Section
-
-All capabilities default to `false` (not wired up). Only declare what your app needs.
-
-### `stdio`
-
-**Type**: `bool`
-
-Wires up stdin, stdout, and stderr. Required for:
-- Console output (`println!`)
-- Receiving keyboard input via stdin
-- Using the VYOMA_DRAW display protocol (writes to stdout)
-- IPC messaging (writes `@<target>: msg` to stdout)
-
-### `filesystem`
-
-**Type**: `bool`
-
-Mounts the persistent `/data` directory (9P virtio, backed by host `data/` folder). Files written here survive VM reboots.
-
-### `network`
-
-**Type**: `bool`
-
-Enables WASI sockets support. App can bind TCP ports (default: 8080). Requires booting with `make run-net` or `make run-gui-net`.
-
-### `display`
-
-**Type**: `bool`
-
-Grants access to the framebuffer. App can use the `VYOMA_DRAW:` protocol to render graphics. The supervisor manages window chrome around the app's drawing area.
-
-### `shell`
-
-**Type**: `bool`
-
-Allows the app to issue `@supervisor:` IPC commands for process management (list, kill, restart, focus, etc.).
-
-### `mouse`
-
-**Type**: `bool`
-
-App receives `VYOMA_INPUT:mouse:` events when the cursor is within the app's window region. Events include click, move, and drag with coordinates.
-
-### `watchdog_secs`
-
-**Type**: `integer`
-
-If set to a non-zero value, the supervisor kills the app if it produces no output for N seconds. Set to `0` or omit to disable.
-
-## Validation
-
-The supervisor validates all manifests at startup. Invalid manifests produce clear error messages:
-
-- Unknown fields in `[capabilities]` → error with field name
-- Missing `[app]` section → parse error
-- Missing required fields → parse error
-- TOML syntax errors → line/column reported
-
-Run `make check-manifests` to validate all app manifests without booting.
-
-## Examples
-
-### Minimal app (console only)
+## Structure
 
 ```toml
 [app]
-name    = "hello-world"
+name = "my-app"
 version = "0.1.0"
-wasm    = "hello-world.wasm"
+wasm = "my-app.wasm"
 
 [capabilities]
 stdio = true
+filesystem = false
+network = false
+display = false
+shell = false
+mouse = false
+watchdog_secs = 0
+
+[window]
+title = "My App"
+x = 0
+y = 20
+width = 480
+height = 360
 ```
 
-### GUI app with mouse input
+## `[app]` section
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | Application identifier (must match binary name) |
+| `version` | string | yes | Semantic version |
+| `wasm` | string | yes | WASM binary filename |
+
+## `[capabilities]` section
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `stdio` | bool | false | App inherits supervisor stdin/stdout |
+| `filesystem` | bool | false | App mounts `/data` (9P persistent storage) |
+| `network` | bool | false | App gets WASI sockets support |
+| `display` | bool | false | App can use VYOMA_DRAW protocol |
+| `shell` | bool | false | App can issue `@supervisor:` commands |
+| `mouse` | bool | false | App receives mouse events |
+| `watchdog_secs` | int | 0 | Kill app if silent for N seconds (0 = disabled) |
+
+## Peripheral capabilities (embedded/robotics)
+
+```toml
+[capabilities]
+touch = true
+
+[capabilities.gpio]
+pins = [4, 17]
+direction = "output"
+
+[capabilities.i2c]
+bus = 1
+
+[capabilities.spi]
+bus = 0
+
+[capabilities.uart]
+port = 0
+
+[capabilities.adc]
+channel = 0
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `touch` | bool | Receive `VYOMA_INPUT:touch:` events |
+| `gpio.pins` | [u8] | Exclusive access to GPIO pins |
+| `gpio.direction` | string | `"input"` or `"output"` |
+| `i2c.bus` | u8 | I2C bus number |
+| `spi.bus` | u8 | SPI bus number |
+| `uart.port` | u8 | UART port number |
+| `adc.channel` | u8 | ADC channel number |
+
+## `[window]` section (optional)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `title` | string | app name | Window title bar text |
+| `x` | int | 0 | Initial X position |
+| `y` | int | 20 | Initial Y position |
+| `width` | int | 480 | Window width in pixels |
+| `height` | int | 360 | Window height in pixels |
+
+## Restart policies
+
+Apps declare restart behavior in `[app]`:
 
 ```toml
 [app]
-name    = "paint"
-version = "0.1.0"
-wasm    = "paint.wasm"
-
-[capabilities]
-stdio   = true
-display = true
-mouse   = true
+restart = "always"   # Restart on exit (default for services)
+# restart = "never"  # One-shot execution (default for tools)
 ```
 
-### Full-featured app
+## Validation
 
-```toml
-[app]
-name    = "file-manager"
-version = "0.1.0"
-wasm    = "file-manager.wasm"
+The supervisor validates manifests at startup. Invalid manifests produce errors:
 
-[capabilities]
-stdio      = true
-filesystem = true
-display    = true
-shell      = true
-mouse      = true
+```
+[manifest] ERROR: unknown field "nework" in capabilities for app "my-app"
+[manifest] ERROR: missing required field "name" in [app] for "my-app"
+```
+
+Run validation manually:
+
+```bash
+make check-manifests
 ```
