@@ -16,6 +16,7 @@ mod archive_ipc;
 mod app_threads;
 mod bg_service;
 mod audio;
+mod acpi;
 mod battery;
 mod chrome;
 mod draw_cmd;
@@ -524,6 +525,9 @@ fn main() {
 
     // ── P95: battery monitor thread (every 30s) ──────────────────────────────
     battery::spawn_battery_monitor(&inbox, &app_registry, &focused);
+
+    // ── P104: thermal monitor thread (every 10s) ────────────────────────────
+    acpi::spawn_thermal_monitor(&inbox, &app_registry);
 
     // ── Auto-update background checker (hourly) ─────────────────────────────
     auto_update::spawn_background_checker(&inbox, &app_registry);
