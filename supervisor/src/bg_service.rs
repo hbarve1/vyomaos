@@ -214,6 +214,8 @@ mod tests {
             last_cpu_reset: Instant::now(),
             minimized: false,
             pre_minimize_region: None,
+            is_fullscreen: false,
+            pre_fullscreen_region: None,
             pending_anim: None,
             surface: None,
             frame_ready: false,
