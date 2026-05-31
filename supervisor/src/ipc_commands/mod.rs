@@ -562,7 +562,7 @@ pub fn handle_extended_command(
             return undo_cmd::handle_undo_redo(verb, sender, inbox, focused, app_registry);
         }
 
-        // P52: file associations — open file with default app
+        // P52: file associations
         "open" => {
             let path = match parts.get(1).map(|s| s.trim()) {
                 Some(p) if !p.is_empty() => p.to_string(),
@@ -573,7 +573,6 @@ pub fn handle_extended_command(
             };
             match crate::file_assoc::app_for_file(&path) {
                 Some(app_name) => {
-                    // Check if target app is running.
                     let running = {
                         let reg = app_registry.lock().unwrap();
                         reg.get(&app_name)
@@ -583,39 +582,23 @@ pub fn handle_extended_command(
                     if running {
                         let msg = crate::file_assoc::format_open_message(&path);
                         send_reply(&app_name, &msg, inbox);
-                        log_info!(Subsystem::Ipc, Some(sender),
-                            "open {path} → {app_name}");
                         send_reply(sender, &format!("REPLY:open {path} with {app_name}"), inbox);
                     } else {
-                        send_reply(
-                            sender,
-                            &format!("REPLY:error: app '{app_name}' not running"),
-                            inbox,
-                        );
+                        send_reply(sender, &format!("REPLY:error: app '{app_name}' not running"), inbox);
                     }
                 }
                 None => {
                     let ext = crate::file_assoc::extract_extension(&path)
                         .unwrap_or_else(|| "(none)".to_string());
-                    send_reply(
-                        sender,
-                        &format!("REPLY:error: no app associated with .{ext}"),
-                        inbox,
-                    );
+                    send_reply(sender, &format!("REPLY:error: no app for .{ext}"), inbox);
                 }
             }
         }
         "assoc-list" => {
             let assocs = crate::file_assoc::list_associations();
-            let rows: Vec<String> = assocs
-                .iter()
-                .map(|a| format!(".{} → {}", a.extension, a.app_name))
-                .collect();
-            if rows.is_empty() {
-                send_reply(sender, "REPLY:no file associations", inbox);
-            } else {
-                send_reply(sender, &format!("REPLY:{}", rows.join("|")), inbox);
-            }
+            let rows: Vec<String> = assocs.iter().map(|a| format!(".{} → {}", a.extension, a.app_name)).collect();
+            if rows.is_empty() { send_reply(sender, "REPLY:no file associations", inbox); }
+            else { send_reply(sender, &format!("REPLY:{}", rows.join("|")), inbox); }
         }
         "assoc-set" => {
             let rest = parts.get(1).unwrap_or(&"").trim();
@@ -627,15 +610,14 @@ pub fn handle_extended_command(
             let ext = sub[0].trim_start_matches('.');
             let app = sub[1].trim();
             match crate::file_assoc::set_association(ext, app) {
-                Ok(()) => {
-                    log_info!(Subsystem::Ipc, Some(sender),
-                        "assoc-set .{ext} → {app}");
-                    send_reply(sender, &format!("REPLY:assoc .{ext} → {app}"), inbox);
-                }
-                Err(e) => {
-                    send_reply(sender, &format!("REPLY:error: {e}"), inbox);
-                }
+                Ok(()) => send_reply(sender, &format!("REPLY:assoc .{ext} → {app}"), inbox),
+                Err(e) => send_reply(sender, &format!("REPLY:error: {e}"), inbox),
             }
+        }
+
+        // P51: VFS commands
+        "vfs-list" | "vfs-stat" | "vfs-mounts" => {
+            return crate::vfs::handle_vfs_command(verb, parts, sender, inbox, app_registry);
         }
         _ => return false,
     }
