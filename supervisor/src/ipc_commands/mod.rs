@@ -730,6 +730,11 @@ pub fn handle_extended_command(
         "2fa-enable" | "2fa-disable" | "2fa-status" => {
             return crate::totp::handle_2fa_command(verb, parts, sender, inbox);
         }
+
+        // P106: Recovery mode commands
+        "recovery-status" | "recovery-reset" | "recovery-repair" | "recovery-exit" => {
+            return crate::recovery::handle_recovery_command(verb, sender, inbox);
+        }
         _ => return false,
     }
     true
