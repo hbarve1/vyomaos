@@ -6,29 +6,28 @@ import { motion } from "framer-motion";
 
 const Scene3D = dynamic(() => import("./Scene3D"), { ssr: false });
 
+const fadeUp = {
+  initial: { opacity: 0, y: 20 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true, amount: 0.1 as const },
+};
+
 export default function Hero() {
   return (
     <section className="relative overflow-hidden">
-      {/* Gradient background */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-vyoma-accent/5 via-transparent to-transparent" />
 
       <div className="mx-auto max-w-6xl px-4 pb-16 pt-12 sm:px-6 sm:pt-20">
         <div className="grid items-center gap-8 lg:grid-cols-2">
-          {/* Text */}
           <div>
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
+            <motion.div {...fadeUp} transition={{ duration: 0.5 }}>
               <div className="mb-4 inline-block rounded-full border border-vyoma-border bg-vyoma-surface/80 px-4 py-1.5 text-xs font-medium text-vyoma-dim">
                 112 phases complete &middot; 207+ apps &middot; 6 platforms
               </div>
             </motion.div>
 
             <motion.h1
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+              {...fadeUp}
               transition={{ duration: 0.5, delay: 0.1 }}
               className="text-4xl font-bold leading-tight tracking-tight text-vyoma-text sm:text-5xl lg:text-6xl"
             >
@@ -40,8 +39,7 @@ export default function Hero() {
             </motion.h1>
 
             <motion.p
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+              {...fadeUp}
               transition={{ duration: 0.5, delay: 0.2 }}
               className="mt-5 max-w-xl text-lg leading-relaxed text-vyoma-dim"
             >
@@ -51,8 +49,7 @@ export default function Hero() {
             </motion.p>
 
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+              {...fadeUp}
               transition={{ duration: 0.5, delay: 0.3 }}
               className="mt-8 flex flex-wrap gap-3"
             >
@@ -73,10 +70,10 @@ export default function Hero() {
             </motion.div>
           </div>
 
-          {/* 3D Scene */}
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true, amount: 0.1 }}
             transition={{ duration: 0.7, delay: 0.2 }}
           >
             <Scene3D />
