@@ -731,7 +731,7 @@ pub fn handle_extended_command(
             return crate::totp::handle_2fa_command(verb, parts, sender, inbox);
         }
 
-        // P106: Recovery mode commands
+// P106: Recovery mode commands
         "recovery-status" | "recovery-reset" | "recovery-repair" | "recovery-exit" => {
             return crate::recovery::handle_recovery_command(verb, sender, inbox);
         }
@@ -747,6 +747,13 @@ pub fn handle_extended_command(
         // P107: backup and restore
         "backup-create" | "backup-list" | "backup-restore" | "backup-delete" => {
             return crate::backup::handle_backup_command(verb, parts, sender, inbox);
+        }
+
+        // P105: OS installer framework
+        "install-detect-disks" | "install-plan" | "install-execute" => {
+            return crate::installer::handle_installer_command(
+                verb, parts, sender, inbox, app_registry,
+            );
         }
         _ => return false,
     }

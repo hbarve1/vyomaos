@@ -67,6 +67,7 @@ mod user_caps;
 mod firewall;
 mod memory;
 mod cpu;
+mod installer;
 mod jit_config;
 mod backup;
 
