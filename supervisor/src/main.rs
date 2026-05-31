@@ -72,6 +72,7 @@ mod cpu;
 mod installer;
 mod jit_config;
 mod backup;
+mod uefi;
 
 use std::{
     collections::{HashMap, VecDeque},
