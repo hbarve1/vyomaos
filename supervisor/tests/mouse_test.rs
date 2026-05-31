@@ -266,4 +266,3 @@ fn drag_delta_negative() {
 fn drag_delta_mixed() {
     assert_eq!(supervisor::windows::drag_delta(5, 0, 2, 7), (-3, 7));
 }
-

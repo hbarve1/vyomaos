@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use crate::{AppRegistry, AppStatus, FocusedApp, HOVERED_APP, Z_ORDER, BOOT_INSTANT};
 
 #[cfg(target_os = "linux")]
-use crate::display::{self, draw_rounded_rect};
+use crate::display;
 
 // ── Z-layer constants ─────────────────────────────────────────────────────────
 #[allow(dead_code)] pub const Z_DESKTOP: u32 = 0;
@@ -132,6 +132,7 @@ fn draw_glyph_str(
 /// dark rounded rects slightly offset below and around the window frame.
 #[cfg(target_os = "linux")]
 fn draw_window_shadow(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, wh: u32) {
+    use crate::display::draw_rounded_rect;
     let shadow_rgba = 0x00000078_u32; // black at ~47% alpha
     let (sw, sh) = (fb.width, fb.height);
     let fs = fb.stride;
@@ -183,11 +184,14 @@ pub fn draw_titlebar(
     } else {
         (TL_GRAY, TL_GRAY, TL_GRAY)
     };
-    let r = TL_DOT / 2;
-    let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-    draw_rounded_rect(&mut fb.back, wx +  9, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
-    draw_rounded_rect(&mut fb.back, wx + 30, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
-    draw_rounded_rect(&mut fb.back, wx + 51, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
+    {
+        use crate::display::draw_rounded_rect;
+        let r = TL_DOT / 2;
+        let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
+        draw_rounded_rect(&mut fb.back, wx +  9, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 30, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 51, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
+    }
 
     // App name centered — 13pt regular Inter
     let nlen = name.len().min(20);
@@ -285,7 +289,11 @@ pub fn draw_menubar(
 /// Immediately repaint title bars for all windowed apps (called on focus changes).
 pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     let focused_name = focused.lock().unwrap().clone();
-    let hovered_name = HOVERED_APP.get_or_init(|| Mutex::new(None)).lock().unwrap().clone();
+    let hovered_name = HOVERED_APP
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap()
+        .clone();
     // Collect (win_z, name, region) then sort by win_z ascending so lower-z
     // windows are painted first (appear behind higher-z windows).
     let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
@@ -348,7 +356,9 @@ pub fn draw_chrome_onto(
     focused: &FocusedApp,
 ) {
     let focused_name = focused.lock().unwrap().clone();
-    let hovered_name = HOVERED_APP.get_or_init(|| Mutex::new(None)).lock().unwrap().clone();
+    let hovered_name = HOVERED_APP
+        .get_or_init(|| Mutex::new(None))
+        .lock().unwrap().clone();
     let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
         let reg = registry.lock().unwrap();
         let mut regions_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = Vec::new();
@@ -392,19 +402,8 @@ pub fn draw_chrome_onto(
             let reg = registry.lock().unwrap();
             reg.get(name.as_str()).map(|st| st.lock().unwrap().win_z >= Z_DOCK).unwrap_or(false)
         };
-        if is_system {
-            // Dock-layer windows: only render chrome when dock is enabled.
-            if !dock_visible { continue; }
-        } else {
+        if !is_system {
             draw_titlebar(fb, *wx, *wy, *ww, is_focused, is_hovered, name);
-            // T078: focus ring — 3px Apple-blue rounded highlight around focused/hovered title bar
-            if (is_focused || is_hovered) && supervisor::FOCUS_RING.get().copied().unwrap_or(false) {
-                let (fsw, fsh, fst) = (fb.width, fb.height, fb.stride);
-                draw_rounded_rect(
-                    &mut fb.back, wx.saturating_sub(2), wy.saturating_sub(2),
-                    ww + 4, TITLEBAR_H + 4, 0x0A84FFFF, 3, fst, fsw, fsh,
-                );
-            }
         }
         // Draw focus ring for focused window (TV/Vision profiles).
         if is_focused {

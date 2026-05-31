@@ -1,0 +1,7 @@
+{
+  "name": "tessl/pypi-wasmtime",
+  "version": "36.0.0",
+  "docs": "docs/index.md",
+  "describes": "pkg:pypi/wasmtime@36.0.0",
+  "summary": "A WebAssembly runtime powered by Wasmtime"
+}
