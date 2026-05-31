@@ -5,19 +5,6 @@ pub mod ipc;
 pub mod lifecycle;
 pub mod windows;
 pub mod statusbar;
-
-// ── T077/T078: profile-gated display flags ────────────────────────────────────
-
-use std::sync::OnceLock;
-
-/// When false, the first non-dock/non-menubar app expands to fill the full
-/// screen (no chrome, no dock).  Defaults to true (windowed mode on).
-pub static WINDOWED_MODE: OnceLock<bool> = OnceLock::new();
-
-/// When true, draw a 3px rounded-rect focus-ring highlight around the
-/// focused/hovered window.  Defaults to false.
-pub static FOCUS_RING: OnceLock<bool> = OnceLock::new();
-
 pub mod chrome {
     //! Z-layer constants re-exported for tests and external crates.
     //! The full chrome module (title bars, menu bar, etc.) lives in the binary crate.
@@ -34,6 +21,10 @@ pub mod profile;
 pub mod ota;
 pub mod observability;
 pub mod capability;
+
+pub mod archive;
+pub mod undo_public;
+pub mod file_assoc;
 
 #[cfg(target_os = "linux")]
 pub mod font;

@@ -2,13 +2,14 @@
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
 //! @supervisor IPC command handler — process management commands (P12T03, P13T01, P16T01).
-//!
 //! Extended commands (pkg-*, wallpaper, resize, tcp-*, …) are handled in `ipc_commands`.
 
-use std::fs;
+use std::{fs, sync::Arc};
+
+use sha2::{Digest, Sha256};
 
 use crate::{
-    log_info, log_warn,
+    log_info, log_warn, log_error,
     AppRegistry, AppStatus, FocusedApp, Inbox,
     BOOT_CONFIG_PATH, LOG_DIR, LOG_TAIL_LINES,
 };
@@ -17,6 +18,7 @@ use crate::app_threads::{spawn_app, launch_app_threads};
 use supervisor::lifecycle::format_ps_line;
 use supervisor::logging::Subsystem;
 use supervisor::manifest::{AppManifest, BootConfig, BootEntry};
+use crate::net::http_get;
 
 pub fn handle_supervisor_command(
     cmd:          &str,
@@ -26,6 +28,15 @@ pub fn handle_supervisor_command(
     app_registry: &AppRegistry,
 ) {
     let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
+
+    // P89: audit every @supervisor command.
+    crate::audit::log_audit(
+        sender,
+        "ipc",
+        cmd,
+        crate::audit::AuditResult::Allowed,
+    );
+
     match parts[0] {
         // ── P12T03 legacy commands ────────────────────────────────────────────
         "list" => {
@@ -115,6 +126,7 @@ pub fn handle_supervisor_command(
                 Some(app) => {
                     let app_name = app.name.clone();
                     launch_app_threads(app, inbox, focused, app_registry);
+                    crate::undo::capture_run(&app_name, &path);
                     send_reply(sender, &format!("REPLY:launched {app_name}"), inbox);
                 }
                 None => {
@@ -122,35 +134,7 @@ pub fn handle_supervisor_command(
                 }
             }
         }
-
-        // spawn <name> — launch an on-demand app by short name.
-        // Resolves the manifest to /apps/<name>/vyoma.toml and delegates to
-        // the same spawn_app path used by `run`.
-        "spawn" => {
-            let name = match parts.get(1).map(|s| s.trim()) {
-                Some(n) if !n.is_empty() => n.to_string(),
-                _ => {
-                    send_reply(sender, "REPLY:error: usage: spawn <app_name>", inbox);
-                    return;
-                }
-            };
-            let path = format!("/apps/{name}/vyoma.toml");
-            log_info!(Subsystem::Ipc, None, "@supervisor: spawn {name} ({path})");
-            let entry = BootEntry { manifest: path.clone(), restart: "never".to_string() };
-            match spawn_app(&entry, inbox, app_registry) {
-                Some(app) => {
-                    let app_name = app.name.clone();
-                    launch_app_threads(app, inbox, focused, app_registry);
-                    send_reply(sender, &format!("REPLY:launched {app_name}"), inbox);
-                }
-                None => {
-                    send_reply(sender, &format!("REPLY:error: could not spawn {name}"), inbox);
-                }
-            }
-        }
-
         // ── P13T01 process management commands ───────────────────────────────
-
         // ps-raw — machine-readable: name:status:uptime_secs:restarts per entry
         "ps-raw" => {
             let entries: Vec<String> = {
@@ -162,7 +146,8 @@ pub fn handle_supervisor_command(
                         AppStatus::Running    => "run",
                         AppStatus::Stopped(_) => "stop",
                     };
-                    let entry = format!("{}:{}:{}:{}", name, status, uptime, st.restart_count);
+                    let bg_tag = if st.is_background { "[bg]" } else { "" };
+                    let entry = format!("{}{}:{}:{}:{}", name, bg_tag, status, uptime, st.restart_count);
                     (name.clone(), entry)
                 }).collect();
                 rows.sort_by(|a, b| a.0.cmp(&b.0));
@@ -193,8 +178,9 @@ pub fn handle_supervisor_command(
                         st.draw_ticks,
                         st.last_cpu_reset.elapsed().as_millis() as u64,
                     );
+                    let bg_tag = if st.is_background { " [bg]" } else { "" };
                     let base = format_ps_line(name, pid, &state_str, st.restart_count);
-                    let info = format!("{}{} up:{} cpu:{}", base, wd_tag, uptime_str, cpu);
+                    let info = format!("{}{}{} up:{} cpu:{}", base, wd_tag, bg_tag, uptime_str, cpu);
                     (name.clone(), info)
                 }).collect();
                 rows.sort_by(|a, b| a.0.cmp(&b.0));
@@ -212,11 +198,13 @@ pub fn handle_supervisor_command(
                     return;
                 }
             };
-            let (pid, running_names) = {
+            let (pid, running_names, manifest_path) = {
                 let reg = app_registry.lock().unwrap();
-                let pid = reg.get(&app_name).and_then(|st| st.lock().unwrap().child_pid);
-                let names: Vec<String> = reg.keys().cloned().collect();
-                (pid, names)
+                let (pid, mfst) = reg.get(&app_name).map(|st| {
+                    let s = st.lock().unwrap();
+                    (s.child_pid, s.entry.manifest.clone())
+                }).unwrap_or((None, String::new()));
+                (pid, reg.keys().cloned().collect::<Vec<_>>(), mfst)
             };
             let running_refs: Vec<&str> = running_names.iter().map(|s| s.as_str()).collect();
             if !supervisor::ipc::validate_kill_target(&app_name, &running_refs) {
@@ -226,9 +214,15 @@ pub fn handle_supervisor_command(
             }
             match pid {
                 Some(pid) => {
+                    // T054: enqueue Close animation before killing
+                    if let Some(st) = app_registry.lock().unwrap().get(&app_name) {
+                        use crate::display::animator::{Animation, AnimKind, now_ms};
+                        st.lock().unwrap().pending_anim = Some(Animation::new(AnimKind::Close, now_ms()));
+                    }
                     #[cfg(target_os = "linux")]
                     unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
                     log_info!(Subsystem::Lifecycle, Some(app_name.as_str()), "killed {app_name} (pid {pid})");
+                    crate::undo::capture_kill(&app_name, &manifest_path);
                     send_reply(sender, &format!("REPLY:killed {app_name}"), inbox);
                 }
                 None => {
@@ -237,7 +231,6 @@ pub fn handle_supervisor_command(
                 }
             }
         }
-
         // restart <app> — kill + re-spawn an app
         "restart" => {
             let app_name = match parts.get(1).map(|s| s.trim()) {
@@ -282,7 +275,100 @@ pub fn handle_supervisor_command(
         // P30: update <app> <url> — download new wasm, verify sha256, hot-swap, restart
         "update" => {
             let rest = parts.get(1).unwrap_or(&"").trim();
-            crate::ipc_update::handle_update(rest, sender, inbox, focused, app_registry);
+            let (app_name, url) = match rest.split_once(' ') {
+                Some((a, u)) if !a.trim().is_empty() && !u.trim().is_empty() => {
+                    (a.trim().to_string(), u.trim().to_string())
+                }
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: update <app> <url>", inbox);
+                    return;
+                }
+            };
+            let entry = {
+                let reg = app_registry.lock().unwrap();
+                reg.get(&app_name).map(|st| st.lock().unwrap().entry.clone())
+            };
+            let entry = match entry {
+                Some(e) => e,
+                None => {
+                    send_reply(sender, &format!("REPLY:error: unknown app: {app_name}"), inbox);
+                    return;
+                }
+            };
+            send_reply(sender, &format!("REPLY:downloading {url}…"), inbox);
+            log_info!(Subsystem::Ipc, Some(app_name.as_str()), "@supervisor: update {app_name} from {url}");
+
+            let sender_name  = sender.to_string();
+            let inbox_bg     = Arc::clone(inbox);
+            let focused_bg   = Arc::clone(focused);
+            let registry_bg  = Arc::clone(app_registry);
+
+            std::thread::spawn(move || {
+                let bytes = match http_get(&url) {
+                    Ok(b)  => b,
+                    Err(e) => {
+                        log_error!(Subsystem::Lifecycle, Some(app_name.as_str()), "update {app_name}: download failed: {e}");
+                        send_reply(&sender_name, &format!("REPLY:error: download failed: {e}"), &inbox_bg);
+                        return;
+                    }
+                };
+
+                let tmp = format!("/tmp/{app_name}.wasm.new");
+                if let Err(e) = fs::write(&tmp, &bytes) {
+                    send_reply(&sender_name, &format!("REPLY:error: write tmp failed: {e}"), &inbox_bg);
+                    return;
+                }
+
+                // Verify SHA-256 if declared in manifest (reuses P28 Sha256)
+                if let Ok(raw) = fs::read_to_string(&entry.manifest) {
+                    if let Ok(m) = toml::from_str::<AppManifest>(&raw) {
+                        if let Some(expected) = &m.app.wasm_sha256 {
+                            let actual = format!("{:x}", Sha256::digest(&bytes));
+                            if actual != expected.to_lowercase() {
+                                let _ = fs::remove_file(&tmp);
+                                send_reply(&sender_name, "REPLY:error: SHA-256 mismatch — update rejected", &inbox_bg);
+                                return;
+                            }
+                            log_info!(Subsystem::Capability, Some(app_name.as_str()), "update {app_name}: SHA-256 verified OK");
+                        }
+                    }
+                }
+
+                use std::path::Path;
+                let dest = Path::new(&entry.manifest)
+                    .parent()
+                    .unwrap_or(Path::new("/apps"))
+                    .join(format!("{app_name}.wasm"));
+                if let Err(e) = fs::copy(&tmp, &dest) {
+                    let _ = fs::remove_file(&tmp);
+                    send_reply(&sender_name, &format!("REPLY:error: install failed: {e}"), &inbox_bg);
+                    return;
+                }
+                let _ = fs::remove_file(&tmp);
+                log_info!(Subsystem::Lifecycle, Some(app_name.as_str()), "update {app_name}: installed → {dest:?}");
+                send_reply(&sender_name, &format!("REPLY:installed — restarting {app_name}…"), &inbox_bg);
+
+                // Kill old instance then respawn
+                {
+                    let reg = registry_bg.lock().unwrap();
+                    if let Some(st) = reg.get(&app_name) {
+                        if let Some(pid) = st.lock().unwrap().child_pid {
+                            #[cfg(target_os = "linux")]
+                            unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+                        }
+                    }
+                }
+                match spawn_app(&entry, &inbox_bg, &registry_bg) {
+                    Some(app) => {
+                        launch_app_threads(app, &inbox_bg, &focused_bg, &registry_bg);
+                        log_info!(Subsystem::Lifecycle, Some(app_name.as_str()), "update {app_name}: restarted OK");
+                        send_reply(&sender_name, &format!("REPLY:updated {app_name} OK"), &inbox_bg);
+                    }
+                    None => {
+                        send_reply(&sender_name, "REPLY:error: restart failed after update", &inbox_bg);
+                    }
+                }
+            });
         }
 
         // reload — re-read boot.toml, launch any apps not currently running
@@ -423,4 +509,3 @@ pub fn handle_supervisor_command(
         }
     }
 }
-

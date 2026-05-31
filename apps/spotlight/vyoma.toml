@@ -4,10 +4,11 @@ version = "0.1.0"
 wasm    = "spotlight.wasm"
 
 [capabilities]
-stdio   = true
-display = true
-shell   = true
-mouse   = true
+stdio      = true
+display    = true
+shell      = true
+mouse      = true
+filesystem = true
 
 [window]
 x = 0

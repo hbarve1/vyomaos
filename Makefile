@@ -343,11 +343,8 @@ test-e2e-gui: build
 	bash base/scripts/test-e2e-gui.sh
 
 # ── test-e2e: pytest E2E harness (requires make build first) ──────────────────
-test-e2e: $(BZIMAGE) $(INITRAMFS)
-	$(DOCKER_RUN) bash -c " \
-	  pip install -q -r tests/e2e/requirements.txt && \
-	  BZIMAGE=$(BZIMAGE) INITRAMFS=$(INITRAMFS) \
-	  pytest tests/e2e/ -v --tb=short 2>&1"
+test-e2e: build
+	cd tests/e2e && pip install -r requirements.txt -q && pytest -v
 
 # ── test-gui: all GUI tests (unit + protocol) — does not require QEMU ────────
 test-gui: test-unit-apps test-gui-protocol

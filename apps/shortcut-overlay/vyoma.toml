@@ -1,0 +1,9 @@
+[app]
+name    = "shortcut-overlay"
+version = "0.1.0"
+wasm    = "shortcut-overlay.wasm"
+
+[capabilities]
+stdio   = true
+display = true
+shell   = true

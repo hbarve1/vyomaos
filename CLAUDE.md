@@ -17,7 +17,7 @@ Current state (Phase 17): Boots in QEMU under 5 seconds to a Rust supervisor run
 ```
 Linux 5.10 kernel (allnoconfig, 2.3 MB)
   ↓
-Rust supervisor (PID 1, 697 KB static musl)
+Rust supervisor (PID 1, ~2.9 MB static musl)
   ├─ Manifest parser (TOML capabilities)
   ├─ Concurrent scheduler (one thread per app)
   ├─ IPC broker (route @<app>: messages)
@@ -44,11 +44,11 @@ WASM apps (wasm32-wasip2 binaries, 1–10 KB each)
 - Capabilities not declared are not wired up (no filtering layer needed)
 - Restart policies: `never` (one-shot), `always` (restart on exit)
 
-**Display System** (`supervisor/src/display.rs`):
+**Display System** (`supervisor/src/display/mod.rs`):
 - Opens `/dev/fb0` (or virtio-gpu framebuffer)
-- Parses `VYOMA_DRAW:` protocol from app stdout
-- Commands: `fill_rect`, `draw_text`, `flush`
-- 8×16 bitmap font rendering (`supervisor/src/font.rs`)
+- Parses `VYOMA_DRAW:` protocol v2 from app stdout
+- Commands: `fill_rect`, `draw_text`, `draw_glyph`, `draw_image`, `fill_rect_r`, `flush`
+- Scalable font rendering via fontdue (`supervisor/src/font/`), PNG icons via lodepng (`supervisor/src/image/`)
 
 **IPC Broker**:
 - Apps write `@<app>: <message>` to stdout
@@ -71,9 +71,9 @@ WASM apps (wasm32-wasip2 binaries, 1–10 KB each)
 
 **Build artifacts**:
 - `out/bzImage`: Linux kernel (2.3 MB)
-- `out/initramfs.cpio.gz`: Compressed rootfs (18 MB) with Wasmtime + BusyBox + supervisor
+- `out/initramfs.cpio.gz`: Compressed rootfs (~34 MB) with Wasmtime + BusyBox + supervisor + 77+ apps
 - `out/disk.img`: ext4 data disk (64 MB, created once, persists across reboots)
-- `supervisor/target/x86_64-unknown-linux-musl/release/supervisor`: Binary
+- `target/x86_64-unknown-linux-musl/release/supervisor`: Binary (workspace root)
 - `apps/*/target/wasm32-wasip2/release/*.wasm`: App binaries
 
 ## Common Commands
@@ -265,12 +265,18 @@ Full specification: [`docs/vyoma-draw-protocol.md`](docs/vyoma-draw-protocol.md)
 
 Apps write line-oriented commands to stdout. Colors are packed `u32`: `(R<<24)|(G<<16)|(B<<8)|A` printed as decimal.
 
+Core v1 commands:
 ```
 VYOMA_DRAW:fill_rect:<x>,<y>,<w>,<h>,<rgba>
 VYOMA_DRAW:draw_text:<x>,<y>,<rgba>,<size>,<text>   # size: s=4×8  m=8×16  l=16×32
 VYOMA_DRAW:draw_text_wrap:<x>,<y>,<max_w>,<rgba>,<size>,<text>
 VYOMA_DRAW:flush
 ```
+
+v2 extensions (see [`docs/vyoma-draw-protocol.md`](docs/vyoma-draw-protocol.md) for full details):
+- `fill_rect_r:<x>,<y>,<w>,<h>,<rgba>,<radius>` — rounded rectangle
+- `draw_glyph:<x>,<y>,<rgba>,<size>,<codepoint>` — single Unicode glyph
+- `draw_image:<x>,<y>,<w>,<h>,<format>,<base64data>` — inline image blit
 
 Example (Rust):
 ```rust
@@ -299,7 +305,7 @@ Receiving app reads stdin line-by-line; supervisor strips `@sender:` prefix befo
 - `base/`: Kernel config + rootfs build scripts
 - `docker/`: Dockerfile for hermetic build environment
 - `docs/`: Manifest schema, comparison matrix, design docs for future phases
-- `.context/plans/`: Phased implementation roadmap (P01–P17 complete, P18+ planned)
+- `.context/plans/`: Phased implementation roadmap (P01–P77+ complete)
 
 ## Code Size Rule
 
@@ -365,13 +371,29 @@ make apps                 # only hello-world recompiles
 
 | Phase | Feature | Status |
 |-------|---------|--------|
-| P01–P08 | Kernel, supervisor, manifest model, IPC, seccomp, storage | ✅ complete |
-| P09–P10 | Display (DRM/virtio-gpu) + bitmap font | ✅ complete |
-| P11–P12 | Networking (HTTP server) + interactive shell + keyboard routing | ✅ complete |
-| P13–P17 | Process management, package manager, persistent logs, real-time TTY | ✅ complete |
-| P18+ | Future phases (font scaling, windowing, mouse input, watchdog) | 📋 planned |
+| P01–P23 | Foundation: kernel, supervisor, IPC, display, font, shell, windowing, mouse | ✅ complete |
+| P24–P26 | System apps: file manager, text editor, system monitor | ✅ complete |
+| P27–P30 | Security: namespaces, signed bundles, multi-resolution, OTA | ✅ complete |
+| P31–P36 | Window manager: compositor, decorations, z-order, WM app, wallpaper, resize | ✅ complete |
+| P37–P42 | Desktop shell: taskbar, launcher, notifications, settings, power, session | ✅ complete |
+| P43 | Multi-monitor | 📋 next |
+| P44–P45 | DNS resolver, HTTPS/TLS | ✅ complete |
+| P46–P50 | Browser, SSH, network config, download manager, WebSocket | 🔄 partial |
+| P51–P58 | Storage: VFS, file associations, clipboard, drag-drop, search, app store | 🔄 partial |
+| P59–P71 | App platform: registry, permissions, auto-update, terminal, SDK | 🔄 partial |
+| P72–P78 | Multimedia & hardware: audio, image, video, USB, Bluetooth | 🔄 partial |
+| P79–P84 | Accessibility: screen reader, contrast, font scale, Unicode | 🔄 partial |
+| P85–P112 | Advanced: user accounts, encryption, GPU accel, UEFI, drivers, installer | 📋 planned |
 
-See `.context/plans/plan-vyomaos/` for detailed phase specs and task breakdowns.
+## Planning Documents
+
+- **Full roadmap (P31–P112)**: [`docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md`](docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md)
+- **Master spec (80 subsystems)**: [`docs/superpowers/specs/desktop-os-vision/master-spec.md`](docs/superpowers/specs/desktop-os-vision/master-spec.md)
+- **Subsystem debates**: [`docs/superpowers/specs/desktop-os-vision/debates/`](docs/superpowers/specs/desktop-os-vision/debates/) — 146 architect/critic/synthesis files
+- **Foundation phases (P1–P12)**: [`.context/plans/plan-vyomaos/`](.context/plans/plan-vyomaos/)
+- **Doc index**: [`docs/INDEX.md`](docs/INDEX.md)
+
+Always check the full roadmap before proposing next implementation phases.
 
 ## Troubleshooting
 
@@ -392,15 +414,13 @@ See `.context/plans/plan-vyomaos/` for detailed phase specs and task breakdowns.
 
 ## References
 
-- **README.md**: Project overview, vision, roadmap
-- **docs/vyoma-manifest-schema.md**: Detailed manifest format and examples
-- **docs/comparison-matrix.md**: VyomaOS vs Alpine, Flatcar, MirageOS positioning
-- **supervisor/src/main.rs**: Manifest parsing, app scheduler, IPC broker logic
-- **.context/plans/**: Implementation roadmap (phases, tasks, design specs)
-
-
-<!-- SPECKIT START -->
-For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan at
-`specs/046-apple-ui-fidelity/plan.md`.
-<!-- SPECKIT END -->
+- **README.md**: Project overview, vision
+- **docs/INDEX.md**: Master documentation navigation
+- **docs/vyoma-manifest-schema.md**: Manifest format (capabilities, window, menu_items, peripherals)
+- **docs/vyoma-draw-protocol.md**: VYOMA_DRAW v2 protocol (fill_rect, draw_glyph, draw_image, fill_rect_r)
+- **docs/git-workflow.md**: Git flow, worktree usage, commit conventions
+- **docs/comparison-matrix.md**: VyomaOS vs Alpine, Flatcar, MirageOS
+- **docs/superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md**: Full P31–P112 roadmap
+- **docs/superpowers/specs/desktop-os-vision/master-spec.md**: 80-subsystem architecture spec
+- **supervisor/src/main.rs**: Supervisor entry point, app lifecycle, IPC broker
+- **.context/plans/**: Foundation phase task breakdowns (P01–P12)

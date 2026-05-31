@@ -1,15 +1,14 @@
 [app]
-name    = "app-store"
+name = "app-store"
 version = "0.1.0"
-wasm    = "app-store.wasm"
+wasm = "app-store.wasm"
 
 [capabilities]
-stdio   = true
+stdio = true
 display = true
-shell   = true
+shell = true
+filesystem = true
+network = true
 
 [window]
-x = 0
-y = 24
-w = 1440
-h = 876
+title = "App Store"

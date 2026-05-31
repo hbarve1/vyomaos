@@ -2,10 +2,18 @@
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
 //! Extended @supervisor IPC commands: pkg-*, wallpaper, resize, tcp-*, clipboard,
-//! session-*, display, network helpers, uptime, loglevel, ping, version (P14–P55).
+//! session-*, display, network helpers, uptime, loglevel, ping, version, workspace, lock.
 
+mod audio_ipc;
+mod drag_drop_cmd;
+mod focus_cmd;
+mod lock;
+mod share_cmd;
 mod tcp;
-
+mod theme_cmd;
+mod websocket;
+mod undo_cmd;
+mod workspace_cmd;
 use std::{fs, path::Path, sync::Arc, thread};
 
 use crate::{
@@ -29,9 +37,17 @@ pub fn handle_extended_command(
     focused:      &FocusedApp,
     app_registry: &AppRegistry,
 ) -> bool {
-    match verb {
-        // ── P14T01: package manager commands ─────────────────────────────────
+    // P89: audit every IPC command reaching the extended handler.
+    let detail = parts.get(1).unwrap_or(&"").trim();
+    crate::audit::log_audit(
+        sender,
+        "ipc",
+        &format!("{verb} {detail}"),
+        crate::audit::AuditResult::Allowed,
+    );
 
+    match verb {
+        // P14T01: package manager commands
         "pkg-list" => {
             let installed = read_installed_apps();
             let rows: Vec<String> = PACKAGES.iter().map(|(name, ver, desc)| {
@@ -94,26 +110,44 @@ pub fn handle_extended_command(
             }
         }
 
-        // P35: wallpaper <rgba_hex> — fill screen with solid color
+        // P35: wallpaper <rgba_hex> or wallpaper <path_to_png>
         "wallpaper" => {
-            let color_str = parts.get(1).unwrap_or(&"").trim();
-            let rgba = color_str
-                .strip_prefix("0x").or_else(|| color_str.strip_prefix("0X"))
-                .and_then(|hex| u32::from_str_radix(hex, 16).ok())
-                .or_else(|| color_str.parse::<u32>().ok())
-                .unwrap_or(0x0D1117FF);
-            #[cfg(target_os = "linux")]
-            if let Some(fb_lock) = crate::display::get() {
-                let mut fb = fb_lock.lock().unwrap();
-                let (w, h) = (fb.width, fb.height);
-                fb.fill_rect(0, 0, w, h, rgba);
-                fb.flush();
+            let arg = parts.get(1).unwrap_or(&"").trim();
+            match crate::wallpaper::parse_arg(arg) {
+                Some(wp @ crate::wallpaper::Wallpaper::SolidColor(rgba)) => {
+                    crate::wallpaper::set(wp);
+                    #[cfg(target_os = "linux")]
+                    if let Some(fb_lock) = crate::display::get() {
+                        let mut fb = fb_lock.lock().unwrap();
+                        let (w, h) = (fb.width, fb.height);
+                        fb.fill_rect(0, 0, w, h, rgba);
+                        fb.flush();
+                    }
+                    log_info!(Subsystem::Display, None, "wallpaper set to {rgba:#010x}");
+                    send_reply(sender, &format!("REPLY:wallpaper {rgba:#010x}"), inbox);
+                }
+                Some(crate::wallpaper::Wallpaper::Image(ref path)) => {
+                    let reply_path = path.clone();
+                    crate::wallpaper::set(crate::wallpaper::Wallpaper::Image(reply_path.clone()));
+                    log_info!(Subsystem::Display, None, "wallpaper set to image {reply_path}");
+                    send_reply(sender, &format!("REPLY:wallpaper {reply_path}"), inbox);
+                }
+                None => {
+                    // Fallback to default solid color
+                    let rgba = 0x0D1117FFu32;
+                    crate::wallpaper::set(crate::wallpaper::Wallpaper::SolidColor(rgba));
+                    #[cfg(target_os = "linux")]
+                    if let Some(fb_lock) = crate::display::get() {
+                        let mut fb = fb_lock.lock().unwrap();
+                        let (w, h) = (fb.width, fb.height);
+                        fb.fill_rect(0, 0, w, h, rgba);
+                        fb.flush();
+                    }
+                    log_info!(Subsystem::Display, None, "wallpaper set to {rgba:#010x}");
+                    send_reply(sender, &format!("REPLY:wallpaper {rgba:#010x}"), inbox);
+                }
             }
-            log_info!(Subsystem::Display, None, "wallpaper set to {rgba:#010x}");
-            send_reply(sender, &format!("REPLY:wallpaper {rgba:#010x}"), inbox);
         }
-
-        // P33: raise/lower window in Z-order
         "raise" => {
             let app_name = match parts.get(1).map(|s| s.trim()) {
                 Some(n) if !n.is_empty() => n.to_string(),
@@ -137,48 +171,51 @@ pub fn handle_extended_command(
             z_order_push_back(&app_name);
             send_reply(sender, &format!("REPLY:lowered {app_name}"), inbox);
         }
-
-        // P36: resize <app> <w> <h> — update win_region and notify app
+        // P36: resize <app> <x>,<y>,<w>,<h>  or  resize <app> <w> <h> (legacy)
         "resize" => {
             let rest = parts.get(1).unwrap_or(&"").trim();
-            let mut args = rest.splitn(3, ' ');
-            let app_name = args.next().unwrap_or("").trim().to_string();
-            let w_str    = args.next().unwrap_or("").trim();
-            let h_str    = args.next().unwrap_or("").trim();
-            if app_name.is_empty() || w_str.is_empty() || h_str.is_empty() {
-                send_reply(sender, "REPLY:error: usage: resize <app> <w> <h>", inbox);
+            let (app_name, geom_str) = rest.split_once(' ').unwrap_or(("", ""));
+            let app_name = app_name.trim().to_string();
+            if app_name.is_empty() || geom_str.is_empty() {
+                send_reply(sender, "REPLY:error: usage: resize <app> <x>,<y>,<w>,<h>", inbox);
                 return true;
             }
-            let (new_w, new_h) = match (w_str.parse::<u32>(), h_str.parse::<u32>()) {
-                (Ok(w), Ok(h)) if w > 0 && h > 0 => (w, h),
-                _ => {
-                    send_reply(sender, "REPLY:error: w and h must be positive integers", inbox);
-                    return true;
+            let cp: Vec<&str> = geom_str.split(',').collect();
+            let geom = if cp.len() == 4 {
+                match (cp[0].parse(), cp[1].parse(), cp[2].parse::<u32>(), cp[3].parse::<u32>()) {
+                    (Ok(x), Ok(y), Ok(w), Ok(h)) if w > 0 && h > 0 => Some((x, y, w, h)),
+                    _ => None,
                 }
-            };
-            let updated = {
-                let reg = app_registry.lock().unwrap();
-                if let Some(state_arc) = reg.get(&app_name) {
-                    let mut st = state_arc.lock().unwrap();
-                    let (x, y) = st.win_region.map(|(x, y, _, _)| (x, y)).unwrap_or((0, 0));
-                    st.win_region = Some((x, y, new_w, new_h));
-                    true
-                } else {
-                    false
+            } else if let Some((ws, hs)) = geom_str.split_once(' ') {
+                match (ws.trim().parse::<u32>(), hs.trim().parse::<u32>()) {
+                    (Ok(w), Ok(h)) if w > 0 && h > 0 => {
+                        let (x, y) = app_registry.lock().unwrap().get(&app_name)
+                            .and_then(|st| st.lock().unwrap().win_region.map(|(x, y, _, _)| (x, y)))
+                            .unwrap_or((0, 0));
+                        Some((x, y, w, h))
+                    }
+                    _ => None,
                 }
+            } else { None };
+            let (nx, ny, nw, nh) = match geom {
+                Some(g) => g,
+                None => { send_reply(sender, "REPLY:error: usage: resize <app> <x>,<y>,<w>,<h>", inbox); return true; }
             };
-            if !updated {
-                send_reply(sender, &format!("REPLY:error: app {app_name} not found"), inbox);
-                return true;
-            }
-            send_reply(&app_name, &format!("VYOMA_SYSTEM:resize:{new_w},{new_h}"), inbox);
-            log_info!(Subsystem::Display, Some(app_name.as_str()), "resize {app_name} → {new_w}×{new_h}");
-            send_reply(sender, &format!("REPLY:resized {app_name} to {new_w}x{new_h}"), inbox);
+            let ok = app_registry.lock().unwrap().get(&app_name)
+                .map(|sa| { sa.lock().unwrap().win_region = Some((nx, ny, nw, nh)); }).is_some();
+            if !ok { send_reply(sender, &format!("REPLY:error: app {app_name} not found"), inbox); return true; }
+            send_reply(&app_name, &format!("VYOMA_SYSTEM:resize:{nw},{nh}"), inbox);
+            log_info!(Subsystem::Display, Some(app_name.as_str()), "resize {app_name} → ({nx},{ny},{nw},{nh})");
+            send_reply(sender, &format!("REPLY:resized {app_name} to {nx},{ny},{nw}x{nh}"), inbox);
         }
 
-        // P41: shutdown / reboot
+        // P41: shutdown / reboot (auto-save session before executing)
         "shutdown" => {
             log_info!(Subsystem::Lifecycle, None, "shutdown requested by {sender}");
+            match crate::session::save_session(app_registry, focused) {
+                Ok(bytes) => log_info!(Subsystem::Lifecycle, None, "auto-saved session ({bytes} bytes) before shutdown"),
+                Err(e) => log_warn!(Subsystem::Lifecycle, None, "session auto-save failed: {e}"),
+            }
             send_reply(sender, "REPLY:shutting down...", inbox);
             thread::spawn(|| {
                 thread::sleep(std::time::Duration::from_millis(500));
@@ -188,6 +225,10 @@ pub fn handle_extended_command(
         }
         "reboot" => {
             log_info!(Subsystem::Lifecycle, None, "reboot requested by {sender}");
+            match crate::session::save_session(app_registry, focused) {
+                Ok(bytes) => log_info!(Subsystem::Lifecycle, None, "auto-saved session ({bytes} bytes) before reboot"),
+                Err(e) => log_warn!(Subsystem::Lifecycle, None, "session auto-save failed: {e}"),
+            }
             send_reply(sender, "REPLY:rebooting...", inbox);
             thread::spawn(|| {
                 thread::sleep(std::time::Duration::from_millis(500));
@@ -196,98 +237,46 @@ pub fn handle_extended_command(
             });
         }
 
-        // P39: notify <title>|<body> — enqueue banner + legacy toast overlay
         "notify" => {
             let rest = parts.get(1).unwrap_or(&"").trim().to_string();
             let (title, msg) = rest.split_once('|')
                 .map(|(a, b)| (a.to_string(), b.to_string()))
                 .or_else(|| rest.split_once(' ').map(|(a, b)| (a.to_string(), b.to_string())))
                 .unwrap_or_else(|| (rest.clone(), String::new()));
-            crate::toast::enqueue_banner(sender, &title, &msg);
-            #[cfg(target_os = "linux")]
-            {
-                use crate::font;
-                const NX: u32 = 1020; const NY: u32 = 10;
-                const NW: u32 = 400;  const NH: u32 = 60;
-                if let Some(fb_lock) = crate::display::get() {
-                    let mut fb = fb_lock.lock().unwrap();
-                    fb.fill_rect(NX, NY, NW, NH, 0x21262DFF);
-                    fb.rect_border(NX, NY, NW, NH, 0x58A6FFFF);
-                    fb.draw_text(NX + 8, NY + 8, &title, 0xFFFFFFFF, font::FontSize::Medium);
-                    fb.draw_text(NX + 8, NY + 28, &msg, 0x8B949EFF, font::FontSize::Medium);
-                    fb.flush();
-                }
-                thread::spawn(move || {
-                    thread::sleep(std::time::Duration::from_secs(3));
-                    if let Some(fb_lock) = crate::display::get() {
-                        let mut fb = fb_lock.lock().unwrap();
-                        fb.fill_rect(NX, NY, NW, NH, 0x0D1117FF);
-                        fb.flush();
-                    }
-                });
-            }
+            // T067: Extract sender icon path from boot entry manifest for banner icon
+            let icon_path: Option<String> = {
+                let reg = app_registry.lock().unwrap();
+                reg.get(sender).and_then(|st| {
+                    let st = st.lock().unwrap();
+                    let manifest_path = &st.entry.manifest;
+                    let raw = std::fs::read_to_string(manifest_path).ok()?;
+                    let m: supervisor::manifest::AppManifest = toml::from_str(&raw).ok()?;
+                    let icon_rel = m.app.icon?;
+                    let parent = std::path::Path::new(manifest_path).parent()?;
+                    Some(parent.join(icon_rel).to_string_lossy().to_string())
+                })
+            };
+            crate::toast::enqueue_banner_with_icon(sender, &title, &msg, icon_path.as_deref());
             log_info!(Subsystem::Display, None, "notify title={title:?} msg={msg:?}");
             send_reply(sender, "REPLY:notified", inbox);
         }
 
-        // P42: session-save / session-restore
+        // P42: session-save / session-restore (delegated to session module)
         "session-save" => {
-            let mut toml_out = String::new();
-            {
-                let reg = app_registry.lock().unwrap();
-                for (name, state_arc) in reg.iter() {
-                    let st = state_arc.lock().unwrap();
-                    if let Some((x, y, w, h)) = st.win_region {
-                        toml_out.push_str(&format!(
-                            "[[window]]\nname = \"{name}\"\nx = {x}\ny = {y}\nw = {w}\nh = {h}\n\n"
-                        ));
-                    }
+            match crate::session::save_session(app_registry, focused) {
+                Ok(bytes) => {
+                    log_info!(Subsystem::Lifecycle, None, "session saved ({bytes} bytes)");
+                    send_reply(sender, "REPLY:session saved", inbox);
+                }
+                Err(e) => {
+                    log_warn!(Subsystem::Lifecycle, None, "session save failed: {e}");
+                    send_reply(sender, &format!("REPLY:error: session save failed: {e}"), inbox);
                 }
             }
-            let _ = fs::write("/data/session.toml", &toml_out);
-            log_info!(Subsystem::Lifecycle, None, "session saved ({} bytes)", toml_out.len());
-            send_reply(sender, "REPLY:session saved", inbox);
         }
         "session-restore" => {
-            let content = fs::read_to_string("/data/session.toml").unwrap_or_default();
-            let mut windows: Vec<(String, u32, u32, u32, u32)> = Vec::new();
-            let (mut cur_name, mut cx, mut cy, mut cw, mut ch, mut in_win) =
-                (String::new(), 0u32, 0u32, 0u32, 0u32, false);
-            for line in content.lines() {
-                let l = line.trim();
-                if l == "[[window]]" {
-                    if in_win && !cur_name.is_empty() {
-                        windows.push((cur_name.clone(), cx, cy, cw, ch));
-                    }
-                    cur_name.clear();
-                    (cx, cy, cw, ch, in_win) = (0, 0, 0, 0, true);
-                } else if in_win {
-                    if let Some(v) = l.strip_prefix("name = ") {
-                        cur_name = v.trim_matches('"').to_string();
-                    } else if let Some(v) = l.strip_prefix("x = ") { cx = v.parse().unwrap_or(0); }
-                    else if let Some(v) = l.strip_prefix("y = ")  { cy = v.parse().unwrap_or(0); }
-                    else if let Some(v) = l.strip_prefix("w = ")  { cw = v.parse().unwrap_or(0); }
-                    else if let Some(v) = l.strip_prefix("h = ")  { ch = v.parse().unwrap_or(0); }
-                }
-            }
-            if in_win && !cur_name.is_empty() {
-                windows.push((cur_name, cx, cy, cw, ch));
-            }
-            let mut restored = 0usize;
-            for (name, x, y, w, h) in windows {
-                let updated = {
-                    let reg = app_registry.lock().unwrap();
-                    if let Some(state_arc) = reg.get(&name) {
-                        let mut st = state_arc.lock().unwrap();
-                        st.win_region = Some((x, y, w, h));
-                        true
-                    } else { false }
-                };
-                if updated {
-                    send_reply(&name, &format!("VYOMA_SYSTEM:resize:{w},{h}"), inbox);
-                    restored += 1;
-                }
-            }
+            let entries = crate::session::restore_session();
+            let restored = crate::session::apply_session(&entries, app_registry, focused, inbox);
             log_info!(Subsystem::Lifecycle, None, "session restored {restored} windows");
             send_reply(sender, &format!("REPLY:restored {restored} windows"), inbox);
         }
@@ -355,33 +344,51 @@ pub fn handle_extended_command(
             return tcp::handle_tcp(verb, parts, sender, inbox);
         }
 
+        // P50: WebSocket connections — delegated to websocket submodule
+        "ws-connect" | "ws-send" | "ws-close" => {
+            return websocket::handle_ws(verb, parts, sender, inbox);
+        }
+
         // P50: clipboard
         "clipboard-set" => {
             let text = parts.get(1).unwrap_or(&"").trim().to_string();
             *CLIPBOARD.get().unwrap().lock().unwrap() = text;
-            send_reply(sender, "REPLY:clipboard-set ok", inbox);
+            send_reply(sender, &supervisor::ipc::format_clipboard_set_reply(), inbox);
         }
         "clipboard-get" => {
             let text = CLIPBOARD.get().unwrap().lock().unwrap().clone();
-            send_reply(sender, &format!("REPLY:clipboard {text}"), inbox);
+            send_reply(sender, &supervisor::ipc::format_clipboard_get_reply(&text), inbox);
+        }
+        "clipboard-clear" => {
+            CLIPBOARD.get().unwrap().lock().unwrap().clear();
+            send_reply(sender, "REPLY:clipboard-clear ok", inbox);
         }
 
-        // P51: screenshot <path>
+        // P51: screenshot [path] — PNG to /data/screenshots/ (auto) or given path
         "screenshot" => {
-            let path = parts.get(1).unwrap_or(&"").trim().to_string();
-            if path.is_empty() {
-                send_reply(sender, "REPLY:screenshot error no-path", inbox);
-                return true;
-            }
             #[cfg(target_os = "linux")]
             {
                 match crate::display::get() {
                     Some(fb_lock) => {
                         let fb = fb_lock.lock().unwrap();
-                        match fb.screenshot(&path) {
-                            Ok(()) => {
-                                log_info!(Subsystem::Display, None, "screenshot saved to {path}");
-                                send_reply(sender, &format!("REPLY:screenshot ok {path}"), inbox);
+                        let explicit_path = parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty());
+                        let result = if let Some(p) = explicit_path {
+                            // Legacy PPM path for explicit destinations
+                            fb.screenshot(p).map(|()| p.to_string())
+                        } else {
+                            // Auto PNG capture via screenshot module
+                            crate::screenshot::capture_screenshot(&fb)
+                        };
+                        match result {
+                            Ok(saved_path) => {
+                                log_info!(Subsystem::Display, None, "screenshot saved to {saved_path}");
+                                send_reply(sender, &format!("REPLY:screenshot ok {saved_path}"), inbox);
+                                // Fire a notification banner
+                                crate::toast::enqueue_banner(
+                                    "supervisor",
+                                    "Screenshot",
+                                    &format!("Saved to {saved_path}"),
+                                );
                             }
                             Err(e) => send_reply(sender, &format!("REPLY:screenshot error {e}"), inbox),
                         }
@@ -490,6 +497,303 @@ pub fn handle_extended_command(
             send_reply(sender, &reply, inbox);
         }
 
+        // P30: update-local <app> <wasm_path> — hot-swap WASM from local file
+        "update-local" => {
+            crate::ota_update::handle_update_local(parts, sender, inbox, focused, app_registry);
+        }
+
+        // P108: atomic OS update commands (A/B slot)
+        "update-prepare" => {
+            crate::atomic_update::handle_update_prepare(parts, sender, inbox);
+        }
+        "update-activate" => {
+            crate::atomic_update::handle_update_activate(sender, inbox);
+        }
+        "update-rollback" => {
+            crate::atomic_update::handle_update_rollback(sender, inbox);
+        }
+        "update-status" => {
+            crate::atomic_update::handle_update_status(sender, inbox);
+        }
+
+        // Auto-update: check catalog and apply updates
+        "check-updates" => {
+            crate::auto_update::handle_check_updates(sender, inbox, app_registry);
+        }
+        "auto-update" => {
+            crate::auto_update::handle_auto_update(parts, sender, inbox, focused, app_registry);
+        }
+        // Audio subsystem IPC commands
+        "volume" | "volume-get" | "mute" | "unmute" => {
+            return audio_ipc::handle_audio_ipc(verb, parts, sender, inbox);
+        }
+
+        // Workspace commands
+        "workspace" | "workspace-move" | "workspace-get" => {
+            return workspace_cmd::handle_workspace_command(
+                verb, parts, sender, inbox, focused, app_registry,
+            );
+        }
+
+        // Theme switching: theme <dark|light|auto>
+        "theme" => {
+            return theme_cmd::handle_theme_command(parts, sender, inbox, app_registry);
+        }
+
+        "lock" | "unlock" => {
+            lock::handle_lock_command(verb, sender, inbox, focused, app_registry);
+        }
+
+        // Drag & drop between apps
+        "drag-start" | "drag-cancel" => {
+            return drag_drop_cmd::handle_drag_drop(verb, &parts, sender, inbox);
+        }
+
+        // P64: Share sheet between apps
+        "share" | "share-accept" | "share-cancel" => {
+            return share_cmd::handle_share(verb, parts, sender, inbox, app_registry);
+        }
+
+        // i18n: switch active locale
+        "locale" => {
+            let code = parts.get(1).unwrap_or(&"").trim();
+            if code.is_empty() {
+                let cur = crate::i18n::current_locale();
+                let all = crate::i18n::supported_locales().join(", ");
+                send_reply(sender, &format!("REPLY:locale {cur} (available: {all})"), inbox);
+            } else if crate::i18n::set_locale(code) {
+                log_info!(Subsystem::Ipc, None, "locale switched to {code} by {sender}");
+                send_reply(sender, &format!("REPLY:locale set to {code}"), inbox);
+                // Broadcast locale change to all running apps.
+                let msg = format!("VYOMA_SYSTEM:locale:{code}");
+                let reg = app_registry.lock().unwrap();
+                let inb = inbox.lock().unwrap();
+                for (name, state_arc) in reg.iter() {
+                    let st = state_arc.lock().unwrap();
+                    if matches!(st.status, crate::AppStatus::Running) {
+                        if let Some(tx) = inb.get(name) {
+                            let _ = tx.send(msg.clone());
+                        }
+                    }
+                }
+            } else {
+                let all = crate::i18n::supported_locales().join(", ");
+                send_reply(
+                    sender,
+                    &format!("REPLY:error: unknown locale '{code}' (available: {all})"),
+                    inbox,
+                );
+            }
+        }
+
+        // Accessibility commands
+        "a11y" => {
+            return crate::accessibility::handle_a11y_command(
+                parts, sender, inbox, app_registry,
+            );
+        }
+
+        // Undo / redo / undo-history
+        "undo" | "redo" | "undo-history" => {
+            return undo_cmd::handle_undo_redo(verb, sender, inbox, focused, app_registry);
+        }
+
+        // P52: file associations
+        "open" => {
+            let path = match parts.get(1).map(|s| s.trim()) {
+                Some(p) if !p.is_empty() => p.to_string(),
+                _ => {
+                    send_reply(sender, "REPLY:error: usage: open <path>", inbox);
+                    return true;
+                }
+            };
+            match crate::file_assoc::app_for_file(&path) {
+                Some(app_name) => {
+                    let running = {
+                        let reg = app_registry.lock().unwrap();
+                        reg.get(&app_name)
+                            .map(|st| matches!(st.lock().unwrap().status, crate::AppStatus::Running))
+                            .unwrap_or(false)
+                    };
+                    if running {
+                        let msg = crate::file_assoc::format_open_message(&path);
+                        send_reply(&app_name, &msg, inbox);
+                        send_reply(sender, &format!("REPLY:open {path} with {app_name}"), inbox);
+                    } else {
+                        send_reply(sender, &format!("REPLY:error: app '{app_name}' not running"), inbox);
+                    }
+                }
+                None => {
+                    let ext = crate::file_assoc::extract_extension(&path)
+                        .unwrap_or_else(|| "(none)".to_string());
+                    send_reply(sender, &format!("REPLY:error: no app for .{ext}"), inbox);
+                }
+            }
+        }
+        "assoc-list" => {
+            let assocs = crate::file_assoc::list_associations();
+            let rows: Vec<String> = assocs.iter().map(|a| format!(".{} → {}", a.extension, a.app_name)).collect();
+            if rows.is_empty() { send_reply(sender, "REPLY:no file associations", inbox); }
+            else { send_reply(sender, &format!("REPLY:{}", rows.join("|")), inbox); }
+        }
+        "assoc-set" => {
+            let rest = parts.get(1).unwrap_or(&"").trim();
+            let sub: Vec<&str> = rest.splitn(2, ' ').collect();
+            if sub.len() < 2 || sub[0].is_empty() || sub[1].is_empty() {
+                send_reply(sender, "REPLY:error: usage: assoc-set <ext> <app>", inbox);
+                return true;
+            }
+            let ext = sub[0].trim_start_matches('.');
+            let app = sub[1].trim();
+            match crate::file_assoc::set_association(ext, app) {
+                Ok(()) => send_reply(sender, &format!("REPLY:assoc .{ext} → {app}"), inbox),
+                Err(e) => send_reply(sender, &format!("REPLY:error: {e}"), inbox),
+            }
+        }
+
+        // P51: VFS commands
+        "vfs-list" | "vfs-stat" | "vfs-mounts" => {
+            return crate::vfs::handle_vfs_command(verb, parts, sender, inbox, app_registry);
+        }
+
+        // P87: encrypted storage
+        "encrypt" | "decrypt" | "encrypted-write" => {
+            return crate::encrypted_store::handle_encrypted_command(verb, parts, sender, inbox);
+        }
+
+        // P55: archive support (tar.gz extraction, archive listing)
+        "extract" | "archive-list" => {
+            return crate::archive_ipc::handle_archive_command(verb, parts, sender, inbox);
+        }
+
+        // P57: trash (recycle bin)
+        "trash" | "trash-list" | "trash-restore" | "trash-empty" | "trash-size" => {
+            return crate::trash::handle_trash_command(verb, parts, sender, inbox);
+        }
+
+        // P59: package registry
+        "registry-search" | "registry-list" | "registry-add" => {
+            return crate::pkg_registry::handle_registry_command(verb, parts, sender, inbox);
+        }
+
+        // P112: app store
+        "store-fetch" | "store-search" | "store-install" | "store-uninstall"
+        | "store-config" => {
+            return crate::store::handle_store_command(verb, parts, sender, inbox);
+        }
+
+        // P89: audit log commands
+        "audit-list" | "audit-search" | "audit-clear" => {
+            return crate::audit::handle_audit_command(verb, &parts, sender, inbox);
+        }
+
+        // P60: runtime capability requests
+        "request-cap" => {
+            crate::cap_request::handle_request_cap(parts, sender, inbox, app_registry);
+        }
+        "revoke-cap" => {
+            crate::cap_request::handle_revoke_cap(parts, sender, inbox, app_registry);
+        }
+        "list-caps" => {
+            crate::cap_request::handle_list_caps(parts, sender, inbox);
+        }
+
+        // P82: keyboard-only focus cycling via IPC (delegated to focus_cmd)
+        "focus-next" | "focus-prev" => {
+            return focus_cmd::handle_focus_command(verb, sender, inbox, focused, app_registry);
+        }
+
+        // P88: per-app firewall rules
+        "firewall-list" | "firewall-add" | "firewall-remove" | "firewall-check" => {
+            return crate::firewall::handle_firewall_command(verb, parts, sender, inbox);
+        }
+
+        // P94: memory pressure manager commands
+        "memory-info" | "memory-apps" | "memory-pressure" => {
+            return crate::memory::handle_memory_command(verb, sender, inbox, app_registry);
+        }
+
+        // P96: CPU governor/frequency management
+        "cpu-info" | "cpu-usage" | "cpu-governor" => {
+            return crate::cpu::handle_cpu_command(verb, parts, sender, inbox);
+        }
+
+        // P95: battery / power profile
+        "battery" | "power-profile" => {
+            return crate::battery::handle_battery_command(verb, parts, sender, inbox);
+        }
+
+        // P104: ACPI tables, thermal zones, general ACPI info
+        "acpi-tables" | "acpi-thermal" | "acpi-info" => {
+            return crate::acpi::handle_acpi_command(verb, parts, sender, inbox);
+        }
+
+        // P63: background service commands
+        "bg-list" | "bg-start" | "bg-stop" => {
+            return crate::bg_service::handle_bg_command(
+                verb, parts, sender, inbox, focused, app_registry,
+            );
+        }
+
+        // P85: user account commands
+        "user-list" | "user-add" | "user-remove" | "user-login" | "user-logout"
+        | "user-whoami" => {
+            return crate::user::handle_user_command(verb, parts, sender, inbox);
+        }
+
+        // P86: per-user capability tokens
+        "user-caps" | "user-set-quota" => {
+            return crate::user_caps::handle_user_caps_command(verb, parts, sender, inbox);
+        }
+
+        // P92: JIT optimization settings
+        "jit-config" | "jit-set-opt" | "jit-cache-clear" | "jit-set-fuel" => {
+            return crate::jit_config::handle_jit_command(verb, parts, sender, inbox);
+        }
+
+        // P90: 2FA commands
+        "2fa-enable" | "2fa-disable" | "2fa-status" => {
+            return crate::totp::handle_2fa_command(verb, parts, sender, inbox);
+        }
+
+// P106: Recovery mode commands
+        "recovery-status" | "recovery-reset" | "recovery-repair" | "recovery-exit" => {
+            return crate::recovery::handle_recovery_command(verb, sender, inbox);
+        }
+
+        // P91: Secure boot chain verification
+        "boot-verify" => {
+            crate::secure_boot::handle_boot_verify(sender, inbox);
+        }
+        "boot-manifest-generate" => {
+            crate::secure_boot::handle_boot_manifest_generate(sender, inbox);
+        }
+
+        // P107: backup and restore
+        "backup-create" | "backup-list" | "backup-restore" | "backup-delete" => {
+            return crate::backup::handle_backup_command(verb, parts, sender, inbox);
+        }
+
+        // P105: OS installer framework
+        "install-detect-disks" | "install-plan" | "install-execute" => {
+            return crate::installer::handle_installer_command(
+                verb, parts, sender, inbox, app_registry,
+            );
+        }
+
+        // P98: UEFI boot support
+        "uefi-info" | "uefi-entries" => {
+            return crate::uefi::handle_uefi_command(verb, sender, inbox);
+        }
+        // P110: virtualization info
+        "vm-info" | "vm-resources" => {
+            return crate::virtualization::handle_vm_command(verb, sender, inbox);
+        }
+
+        // P109: VNC remote desktop commands
+        "vnc-start" | "vnc-stop" | "vnc-status" => {
+            return crate::vnc::handle_vnc_command(verb, parts, sender, inbox);
+        }
         _ => return false,
     }
     true

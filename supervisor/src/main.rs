@@ -1,49 +1,82 @@
+#![allow(unused_imports, unused_variables)]
 // Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
 //! VyomaOS supervisor — PID 1
 //!
-//! Responsibilities:
-//!   P03T01 — scaffold: print banner
-//!   P03T02 — mount /proc, /sys, /dev
-//!   P05T03 — read /etc/vyoma/boot.toml and launch apps via capability manifests
-//!   P06T01 — concurrent scheduler: one thread per app, per-app restart policy
-//!   P07T01 — IPC broker: route @<app>: <msg> lines between app stdio pipes
-//!   P08T01 — security: seccomp BPF denylist applied to every wasmtime child
-//!   P08T02 — security: capability audit log + manifest unknown-field rejection
-//!   P09T01 — display: open /dev/fb0, mmap framebuffer; dispatch VYOMA_DRAW: commands
-//!   P17T01 — input thread: raw tty mode, per-keypress routing to focused app
-//!   P12T02 — focus manager: shell capability, focused_app state
-//!   P12T03 — @supervisor: IPC command handler (list, status, focus, run)
-//!   P13T01 — process management: ps, kill, restart, reload, log
+//! Boots apps, routes IPC, manages display, input, process lifecycle,
+//! OTA updates (P29/P30), and dynamic resolution detection.
 
 #[cfg(target_os = "linux")]
 mod display;
 mod font;
 mod image;
 
+#[allow(dead_code)] mod accessibility;
+mod archive_ipc;
 mod app_threads;
+#[allow(dead_code)] mod bg_service;
+#[allow(dead_code)] mod audio;
+#[allow(dead_code)] mod acpi;
+#[allow(dead_code)] mod battery;
 mod chrome;
-mod context_menu;
 mod draw_cmd;
+mod i18n;
+mod menus;
 mod input_keys;
 mod ipc_commands;
 mod ipc_handlers;
-mod ipc_update;
-mod platform;
 mod mount;
 mod mouse_input;
-mod mouse_thread;
+#[cfg(target_os = "linux")]
+#[allow(dead_code)] mod namespace;
 mod net;
+mod websocket;
 mod packages;
+#[allow(dead_code)] mod recovery;
 #[cfg(target_os = "linux")]
 mod seccomp;
+mod theme;
 mod toast;
+#[allow(dead_code)] mod trash;
+mod tray;
+mod verify;
+#[allow(dead_code)] mod secure_boot;
 mod mgmt_protocol;
 mod mgmt_server;
 mod mgmt_handlers;
 mod router;
+mod ota_update;
+#[allow(dead_code)] mod atomic_update;
+mod auto_update;
+mod resize;
+mod drag_drop;
+#[allow(dead_code)] mod share;
+mod session;
+#[allow(dead_code)] mod undo;
 mod win_actions;
+#[allow(dead_code)] mod screenshot;
+#[allow(dead_code)] mod wallpaper;
+#[allow(dead_code)] mod file_assoc;
+#[allow(dead_code)] mod vfs;
+#[allow(dead_code)] mod encrypted_store;
+#[allow(dead_code)] mod pkg_registry;
+#[allow(dead_code)] mod workspace;
+#[allow(dead_code)] mod audit;
+#[allow(dead_code)] mod cap_request;
+#[allow(dead_code)] mod totp;
+#[allow(dead_code)] mod user;
+#[allow(dead_code)] mod user_caps;
+#[allow(dead_code)] mod firewall;
+#[allow(dead_code)] mod memory;
+#[allow(dead_code)] mod cpu;
+#[allow(dead_code)] mod installer;
+#[allow(dead_code)] mod jit_config;
+#[allow(dead_code)] mod backup;
+#[allow(dead_code)] mod uefi;
+#[allow(dead_code)] mod virtualization;
+#[allow(dead_code)] mod vnc;
+#[allow(dead_code)] mod store;
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -56,7 +89,8 @@ use std::{
 };
 
 use supervisor::logging::Subsystem;
-use supervisor::manifest::{BootConfig, BootEntry, MenuItem};
+use supervisor::manifest::{BootConfig, BootEntry};
+use supervisor::profile;
 
 #[macro_export]
 macro_rules! log_info {
@@ -100,6 +134,8 @@ struct AppState {
     watchdog_backoff: Arc<Mutex<u64>>,   // seconds until next restart allowed
     has_mouse:   bool,
     has_display: bool,
+    has_audio:   bool,
+    is_background: bool,
     win_region:  Option<(u32, u32, u32, u32)>,  // supervisor-assigned; updated by apply_tiling_layout
     win_z:       u32,  // z-layer; 0=desktop, 10=default, 100=dock, 200+=system
     min_size:    (u32, u32),                     // (min_w, min_h) hint from manifest [window]
@@ -108,15 +144,20 @@ struct AppState {
     // spec-042: minimize/restore state
     minimized:           bool,
     pre_minimize_region: Option<(u32, u32, u32, u32)>,
+    // P82: fullscreen toggle — stores the tiled region before going fullscreen
+    pub is_fullscreen:       bool,
+    pre_fullscreen_region: Option<(u32, u32, u32, u32)>,
     // T052: pending window animation (Open/Close/Minimize)
     pub pending_anim: Option<crate::display::animator::Animation>,
     /// Per-window pixel surface buffer (content area only, no chrome).
     /// None until the first tiling layout assigns a win_region.
     pub surface: Option<std::sync::Arc<std::sync::Mutex<crate::display::Surface>>>,
+    /// P31: set to true when the app sends `present` or `flush`, cleared after composite.
+    pub frame_ready: bool,
+    /// Declarative menu items from the app manifest (T058).
+    menu_items: Vec<supervisor::manifest::MenuItem>,
     // spec-044: management server live log subscribers
     log_subscribers: Vec<mpsc::Sender<String>>,
-    /// Declarative menu items from vyoma.toml — shown in the menu bar when focused.
-    menu_items: Vec<MenuItem>,
 }
 
 type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
@@ -133,7 +174,14 @@ static LAST_SENDER: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 static TCP_CONNS: OnceLock<Mutex<std::collections::HashMap<u32, std::net::TcpStream>>> =
     OnceLock::new();
 static TCP_NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+static WS_CONNS: OnceLock<Mutex<std::collections::HashMap<u32, websocket::WsConnection>>> =
+    OnceLock::new();
+static WS_NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 static CLIPBOARD: OnceLock<Mutex<String>> = OnceLock::new();
+/// Lock screen state: when true, keyboard input is only routed to screen-lock.
+pub static LOCKED: OnceLock<Mutex<bool>> = OnceLock::new();
+pub fn is_locked() -> bool { *LOCKED.get_or_init(|| Mutex::new(false)).lock().unwrap() }
+pub fn set_locked(v: bool) { *LOCKED.get_or_init(|| Mutex::new(false)).lock().unwrap() = v; }
 static FONT_SIZE: OnceLock<Mutex<String>> = OnceLock::new();
 static MOUSE_DRAG_START: OnceLock<Mutex<Option<(i32, i32)>>> = OnceLock::new();
 fn mouse_drag_start() -> &'static Mutex<Option<(i32, i32)>> {
@@ -157,10 +205,18 @@ static FLUSH_COUNTS: OnceLock<Mutex<HashMap<String, (u64, std::time::Instant)>>>
 fn flush_counts() -> &'static Mutex<HashMap<String, (u64, std::time::Instant)>> {
     FLUSH_COUNTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
-// Profile gates: false = suppress on non-desktop profiles.
-pub static SHOW_MENU_BAR: OnceLock<bool> = OnceLock::new(); // suppress menu bar
-pub static SHOW_DOCK:     OnceLock<bool> = OnceLock::new(); // suppress dock strip
+/// Gate: false = suppress menu bar rendering on non-desktop profiles.
+pub static SHOW_MENU_BAR: OnceLock<bool> = OnceLock::new();
+/// Gate: false = suppress dock strip rendering on profiles without a dock.
+pub static SHOW_DOCK: OnceLock<bool> = OnceLock::new();
+/// Gate: false = single-app fullscreen mode (phone, watch, TV profiles).
+pub static WINDOWED_MODE: OnceLock<bool> = OnceLock::new();
+/// Gate: true = draw a focus ring around the focused window (TV/Vision).
+pub static FOCUS_RING: OnceLock<bool> = OnceLock::new();
+/// Active display profile name broadcast to apps via VYOMA_SYSTEM:display_profile.
 pub static DISPLAY_PROFILE: OnceLock<String> = OnceLock::new();
+/// P29: cached screen resolution set once during display init, queried by broadcast.
+pub static SCREEN_SIZE: OnceLock<(u32, u32)> = OnceLock::new();
 
 // ── T023: Scalable font cache (Linux-only) ────────────────────────────────────
 #[cfg(target_os = "linux")]
@@ -205,9 +261,41 @@ const DATA_APPS_DIR:     &str = "/data/apps";
 const LOG_DIR:           &str = "/data/logs";
 const LOG_TAIL_LINES:    usize = 30;
 
+// ── T017: Platform profile loader ────────────────────────────────────────────
 
-// Re-export for use by app_threads (via crate::watchdog_next_backoff)
-pub use platform::watchdog_next_backoff;
+const PLATFORM_PROFILE_DIR: &str = "/etc/vyoma/profiles";
+const DEFAULT_PROFILE_NAME: &str = "desktop-full";
+
+/// Load the active platform profile (`PLATFORM` env var, default `desktop-full`).
+fn load_platform_profile() -> Option<profile::PlatformProfile> {
+    let name = std::env::var("PLATFORM")
+        .unwrap_or_else(|_| DEFAULT_PROFILE_NAME.to_string());
+    let path = format!("{PLATFORM_PROFILE_DIR}/{name}.toml");
+    match profile::load_profile(std::path::Path::new(&path)) {
+        Ok(p) => {
+            log_info!(Subsystem::Lifecycle, None,
+                "platform profile loaded: {} (runtime={:?}, ram={}KB)",
+                p.platform.name, p.platform.runtime, p.platform.min_ram_kb);
+            Some(p)
+        }
+        Err(profile::ProfileError::Io(_)) => {
+            log_info!(Subsystem::Lifecycle, None, "no platform profile at {path}, using defaults");
+            None
+        }
+        Err(e) => {
+            log_warn!(Subsystem::Lifecycle, None, "platform profile error: {e}");
+            None
+        }
+    }
+}
+
+// ── P19: watchdog backoff helper ─────────────────────────────────────────────
+
+fn watchdog_next_backoff(watchdog_secs: u32, restarts: u32) -> u64 {
+    let base = watchdog_secs as u64;
+    let factor = 1u64 << restarts.min(8);
+    (base * factor).min(300)
+}
 
 fn main() {
     BOOT_INSTANT.get_or_init(std::time::Instant::now);
@@ -216,19 +304,28 @@ fn main() {
     mount::mount_filesystems();
     log_info!(Subsystem::Lifecycle, None, "filesystems mounted");
 
+    // ── P91: Secure boot chain verification ──────────────────────────────────
+    secure_boot::run_boot_verification();
+
+    // ── P106: Recovery mode — increment boot counter, check triggers ─────────
+    recovery::increment_boot_count();
+    recovery::check_recovery_mode();
+
     // ── T017: Load platform profile (PLATFORM env var or default) ────────────
-    let _active_profile = platform::load_platform_profile();
+    let _active_profile = load_platform_profile();
     if let Some(ref p) = _active_profile {
         let _ = SHOW_MENU_BAR.set(p.display.show_menu_bar);
         let _ = SHOW_DOCK.set(p.display.show_dock);
-        let _ = supervisor::WINDOWED_MODE.set(p.display.windowed_mode);
-        let _ = supervisor::FOCUS_RING.set(p.display.focus_ring);
+        let _ = WINDOWED_MODE.set(p.display.windowed_mode);
+        let _ = FOCUS_RING.set(p.display.focus_ring);
         let _ = DISPLAY_PROFILE.set(p.display.profile.clone());
     }
 
     #[cfg(target_os = "linux")]
     if display::init() {
         log_info!(Subsystem::Display, None, "display ready");
+        // P29: cache screen resolution for broadcast to display apps
+        if let Some(sz) = display::screen_size() { let _ = SCREEN_SIZE.set(sz); }
         // P35: paint default desktop background before any app draws
         if let Some(fb_lock) = display::get() {
             let mut fb = fb_lock.lock().unwrap();
@@ -282,6 +379,9 @@ fn main() {
         }
     }
 
+    // ── P106: In recovery mode, restrict to shell app only ─────────────────
+    recovery::enter_recovery_mode(&mut all_entries);
+
     log_info!(Subsystem::Lifecycle, None, "{} app(s) total", all_entries.len());
 
     if all_entries.is_empty() {
@@ -289,8 +389,12 @@ fn main() {
         loop { thread::park(); }
     }
 
+    // P88: load per-app firewall rules from /data/firewall.toml
+    firewall::load_rules();
+
     let _ = Z_ORDER.set(Mutex::new(Vec::new()));
     let _ = TCP_CONNS.set(Mutex::new(std::collections::HashMap::new()));
+    let _ = WS_CONNS.set(Mutex::new(std::collections::HashMap::new()));
     let _ = CLIPBOARD.set(Mutex::new(String::new()));
     let _ = FONT_SIZE.set(Mutex::new("m".to_string()));
     let _ = LAST_SENDER.set(Mutex::new(HashMap::new()));
@@ -328,6 +432,9 @@ fn main() {
     // T022 [FR-003]: canonical ready-signal — smoke test greps for this exact substring.
     log_info!(Subsystem::Lifecycle, None, "all apps spawned");
 
+    // ── P106: Clear boot counter — successful boot confirmed ─────────────────
+    recovery::clear_boot_count();
+
     // ── Set default keyboard focus to the first shell app ────────────────────
     {
         let shell_name = spawned.iter().find(|a| a.is_shell).map(|a| a.name.clone());
@@ -335,6 +442,15 @@ fn main() {
             log_info!(Subsystem::Input, Some(name.as_str()), "keyboard focus → {name}");
         }
         *focused.lock().unwrap() = shell_name;
+    }
+
+    // ── Boot-time session restore — apply saved window positions ─────────────
+    {
+        let entries = session::restore_session();
+        if !entries.is_empty() {
+            let restored = session::apply_session(&entries, &app_registry, &focused, &inbox);
+            log_info!(Subsystem::Lifecycle, None, "boot session restore: {restored} window(s) applied");
+        }
     }
 
     // ── P17T01: input-router thread — /dev/tty0 → focused app (raw mode) ─────
@@ -357,7 +473,7 @@ fn main() {
         let focused_m  = Arc::clone(&focused);
         thread::Builder::new()
             .name("mouse-input".into())
-            .spawn(move || mouse_thread::run_mouse_input(inbox_m, focused_m, registry_m))
+            .spawn(move || mouse_input::run_mouse_input(inbox_m, focused_m, registry_m))
             .expect("spawn mouse-input thread");
     }
 
@@ -427,6 +543,29 @@ fn main() {
             .expect("spawn watchdog thread");
     }
 
+    // ── P94: memory pressure monitor thread ─────────────────────────────────
+    memory::spawn_pressure_monitor(&inbox, &app_registry);
+
+    // ── P95: battery monitor thread (every 30s) ──────────────────────────────
+    battery::spawn_battery_monitor(&inbox, &app_registry, &focused);
+
+    // ── P104: thermal monitor thread (every 10s) ────────────────────────────
+    acpi::spawn_thermal_monitor(&inbox, &app_registry);
+
+    // ── Auto-update background checker (hourly) ─────────────────────────────
+    auto_update::spawn_background_checker(&inbox, &app_registry);
+
+    // ── P31: compositor tick thread — polls frame_ready flags and recomposites ──
+    #[cfg(target_os = "linux")]
+    {
+        let registry_comp = Arc::clone(&app_registry);
+        let focused_comp  = Arc::clone(&focused);
+        thread::Builder::new()
+            .name("compositor-tick".into())
+            .spawn(move || draw_cmd::run_compositor_tick(&registry_comp, &focused_comp))
+            .expect("spawn compositor-tick thread");
+    }
+
     drop(inbox);
     drop(focused);
     drop(app_registry);
@@ -439,17 +578,9 @@ fn main() {
     loop { thread::park(); }
 }
 
-// ── IPC router + display dispatcher — delegated to router.rs ──────────────────
 fn route_or_print(
-    line:         &str,
-    sender:       &str,
-    inbox:        &Inbox,
-    has_display:  bool,
-    win_region:   Option<(u32, u32, u32, u32)>,
-    focused:      &FocusedApp,
-    app_registry: &AppRegistry,
-) {
-    router::route_or_print(line, sender, inbox, has_display, win_region, focused, app_registry);
-}
-fn send_reply(target: &str, msg: &str, inbox: &Inbox) { router::send_reply(target, msg, inbox); }
+    line: &str, sender: &str, inbox: &Inbox, has_display: bool,
+    win_region: Option<(u32, u32, u32, u32)>, focused: &FocusedApp, app_registry: &AppRegistry,
+) { router::route_or_print(line, sender, inbox, has_display, win_region, focused, app_registry); }
 
+fn send_reply(target: &str, msg: &str, inbox: &Inbox) { router::send_reply(target, msg, inbox); }

@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VyomaOS — Architecture</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0f0f17; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
+
+  svg { display: block; width: 100vw; height: 100vh; }
+
+  .link { stroke-opacity: 0.45; fill: none; stroke-linecap: round; }
+  .link-weak { stroke-opacity: 0.18; stroke-dasharray: 4 4; }
+
+  .node { cursor: pointer; }
+  .node circle {
+    stroke-width: 1.8;
+    transition: filter 0.15s;
+  }
+  .node:hover circle { filter: brightness(1.35); }
+  .node text {
+    fill: #cdd6f4;
+    font-size: 11px;
+    font-weight: 500;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+    user-select: none;
+  }
+  .node text.big { font-size: 13px; font-weight: 700; }
+
+  #tooltip {
+    position: absolute;
+    background: #1e1e2e;
+    border: 1px solid #313244;
+    border-radius: 8px;
+    color: #cdd6f4;
+    font-size: 12px;
+    line-height: 1.55;
+    padding: 9px 13px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+    max-width: 200px;
+    white-space: pre-line;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+
+  #header {
+    position: absolute;
+    top: 18px; left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    pointer-events: none;
+  }
+  #header h1 { margin: 0; color: #cdd6f4; font-size: 16px; font-weight: 600; letter-spacing: .04em; }
+  #header p  { margin: 3px 0 0; color: #6c7086; font-size: 11px; }
+
+  #legend {
+    position: absolute;
+    bottom: 20px; left: 20px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 7px;
+    color: #a6adc8; font-size: 11px;
+  }
+  .legend-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  }
+
+  #hint {
+    position: absolute;
+    bottom: 20px; right: 20px;
+    color: #45475a; font-size: 11px;
+    text-align: right; line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>VyomaOS — Modular WASM-First OS</h1>
+  <p>One codebase · Six hardware profiles · 80 composable subsystems</p>
+</div>
+
+<svg id="graph"><g id="zoom-layer"></g></svg>
+
+<div id="tooltip"></div>
+
+<div id="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#cba6f7"></div>Core</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#89b4fa"></div>Hardware Targets</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#a6e3a1"></div>Stack Layers</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fab387"></div>Subsystem Groups</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f38ba8"></div>Capabilities</div>
+</div>
+
+<div id="hint">Scroll to zoom · Drag to pan<br>Hover nodes for details</div>
+
+<script>
+const COLOR = {
+  root:         "#cba6f7",
+  hardware:     "#89b4fa",
+  stack:        "#a6e3a1",
+  modules:      "#fab387",
+  caps:         "#f38ba8",
+  sub_core:     "#b4befe",
+  sub_display:  "#89dceb",
+  sub_window:   "#cba6f7",
+  sub_input:    "#f9e2af",
+  sub_storage:  "#94e2d5",
+  sub_net:      "#74c7ec",
+  sub_security: "#f38ba8",
+  sub_media:    "#fab387",
+};
+
+const STROKE = {
+  root:         "#9a7eca",
+  hardware:     "#6090d0",
+  stack:        "#78b87a",
+  modules:      "#d08a60",
+  caps:         "#c06070",
+  sub_core:     "#8a90cc",
+  sub_display:  "#60b0c8",
+  sub_window:   "#9a7eca",
+  sub_input:    "#c8b060",
+  sub_storage:  "#60b0a0",
+  sub_net:      "#50a0c8",
+  sub_security: "#c06070",
+  sub_media:    "#d08a60",
+};
+
+const nodes = [
+  // ── Root ──────────────────────────────────────────
+  { id: "root",       label: "VyomaOS",             group: "root",         r: 44,
+    info: "WASM-first OS\nOne codebase, any hardware\nLinux 5.10 + Rust supervisor" },
+
+  // ── Level 1 ───────────────────────────────────────
+  { id: "hw",      label: "Hardware\nTargets",       group: "hardware",    r: 32,
+    info: "6 platform profiles\nSelect via PLATFORM= flag\nSame WASM app runs on all" },
+  { id: "stack",   label: "Core\nStack",             group: "stack",       r: 32,
+    info: "4-layer architecture\nKernel → Supervisor → Runtime → Apps" },
+  { id: "modules", label: "80 Subsystem\nModules",  group: "modules",     r: 32,
+    info: "Every OS feature is a module\nCompose only what you need\nSpec complete, impl in progress" },
+  { id: "caps",    label: "Capability\nModel",       group: "caps",        r: 32,
+    info: "Per-app vyoma.toml declaration\nOnly declared capabilities wired\nWASM sandbox = enforcement layer" },
+
+  // ── Hardware Targets ──────────────────────────────
+  { id: "mcu",     label: "MCU\nMinimal",   group: "hardware", r: 19,
+    info: "ARM Cortex-M4\n128 KB RAM\nwasm3 interpreter\nBare-metal robotics / sensors" },
+  { id: "iot",     label: "IoT\nEdge",      group: "hardware", r: 19,
+    info: "ARM64 SBC (Raspberry Pi etc)\n4 MB RAM\nWAMR AOT compile\nSensor hubs, gateways" },
+  { id: "robot",   label: "Robotics\nRT",   group: "hardware", r: 19,
+    info: "ARM64 robot controller\n8 MB RAM\nWAMR AOT\nReal-time motor control" },
+  { id: "mobile",  label: "Mobile",         group: "hardware", r: 21,
+    info: "ARM64 tablet / phone\n256 MB RAM\nWasmtime JIT\nTouch + display" },
+  { id: "desktop", label: "Desktop\nFull",  group: "hardware", r: 24,
+    info: "x86-64 workstation\n512 MB RAM\nWasmtime JIT\nFull macOS-equivalent UI" },
+  { id: "server",  label: "Server\nHeadless", group: "hardware", r: 21,
+    info: "ARM64 or x86-64\n1 GB RAM\nWasmtime JIT\nNo display subsystem" },
+
+  // ── Core Stack ────────────────────────────────────
+  { id: "kernel",     label: "Linux 5.10\nKernel",      group: "stack", r: 22,
+    info: "Hardware only — no policy\nallnoconfig + virtio drivers\n2.3 MB image\nNetwork, DRM, 9P" },
+  { id: "supervisor", label: "Rust PID-1\nSupervisor",  group: "stack", r: 28,
+    info: "700 KB static musl binary\nApp lifecycle + IPC broker\nDisplay compositor\nAll OS policy lives here" },
+  { id: "runtime",    label: "WASM\nRuntime",            group: "stack", r: 22,
+    info: "Wasmtime (desktop/server)\nWAMR AOT (embedded)\nwasm3 (MCU)\nSame interface, swappable" },
+  { id: "wasm_apps",  label: "WASM\nApps",              group: "stack", r: 20,
+    info: "wasm32-wasip2 binaries\n1–100 KB each\nByte-identical across hosts\nCapability-gated at spawn" },
+
+  // ── Subsystem Groups ──────────────────────────────
+  { id: "s_core",    label: "OS Core",          group: "sub_core",     r: 21,
+    info: "6 subsystems\nKernel · VM · IPC\nFilesystem · Scheduler\nHAL · Boot & Init" },
+  { id: "s_display", label: "Display &\nGraphics", group: "sub_display", r: 21,
+    info: "8 subsystems\nCompositor · GPU layer\nFonts · Image pipeline\nColor · Animation\nHiDPI · VYOMA_DRAW v3" },
+  { id: "s_window",  label: "Window &\nDesktop", group: "sub_window",  r: 21,
+    info: "9 subsystems\nWindow Manager · Spaces\nDock · Mission Control\nStage Manager · Split View\nFocus / Z-order · Wallpaper" },
+  { id: "s_input",   label: "Input",            group: "sub_input",    r: 21,
+    info: "8 subsystems\nKeyboard · Mouse · Touch\nGestures · IME / CJK\nHotkeys · Cursor · Gamepad\nDrag & Drop" },
+  { id: "s_storage", label: "Storage &\nFiles", group: "sub_storage",  r: 21,
+    info: "7 subsystems\nFile Manager · Spotlight\nFile Coordination\nCloud Sync · Snapshots\nDisk Mgmt · File Tagging" },
+  { id: "s_net",     label: "Networking",       group: "sub_net",      r: 21,
+    info: "7 subsystems\nTCP/IP · DNS & mDNS\nVPN · Bluetooth\nWi-Fi · AirDrop\nTLS & Certificates" },
+  { id: "s_security",label: "Security",         group: "sub_security", r: 21,
+    info: "8 subsystems\nSandbox · Keychain\nPermissions · Code Signing\nSecure Enclave\nFull Disk Encryption\nFirewall · Quarantine" },
+  { id: "s_media",   label: "Media &\nApps",    group: "sub_media",    r: 21,
+    info: "8 subsystems\nAudio · Video · Camera\nMIDI · Image Processing\nPDF · Notifications\nLaunch Services" },
+
+  // ── Capability Model ──────────────────────────────
+  { id: "cap_stdio",   label: "stdio",          group: "caps", r: 15,
+    info: "Console I/O\nKernel routes to supervisor\nDefault for all apps" },
+  { id: "cap_fs",      label: "filesystem",     group: "caps", r: 15,
+    info: "Mounts /data (9P virtio)\nPersistent storage\nContainer FS per app" },
+  { id: "cap_net",     label: "network",        group: "caps", r: 15,
+    info: "WASI sockets\nTCP / UDP\nPort 8080 forwarded" },
+  { id: "cap_display", label: "display",        group: "caps", r: 15,
+    info: "Framebuffer access\nVYOMA_DRAW: protocol\nWrites to stdout" },
+  { id: "cap_mouse",   label: "mouse\ntouch",   group: "caps", r: 15,
+    info: "Pointer events\nVYOMA_INPUT:mouse:\nVYOMA_INPUT:touch:" },
+  { id: "cap_hw",      label: "GPIO\nI2C·SPI\nUART·ADC", group: "caps", r: 18,
+    info: "Embedded peripherals\nExclusive-access enforced\nPlatform profiles only" },
+];
+
+const links = [
+  // Root → L1
+  { source: "root", target: "hw",      dist: 200 },
+  { source: "root", target: "stack",   dist: 200 },
+  { source: "root", target: "modules", dist: 200 },
+  { source: "root", target: "caps",    dist: 200 },
+
+  // Hardware
+  { source: "hw", target: "mcu",     dist: 120 },
+  { source: "hw", target: "iot",     dist: 120 },
+  { source: "hw", target: "robot",   dist: 120 },
+  { source: "hw", target: "mobile",  dist: 120 },
+  { source: "hw", target: "desktop", dist: 120 },
+  { source: "hw", target: "server",  dist: 120 },
+
+  // Stack (radial)
+  { source: "stack", target: "kernel",     dist: 130 },
+  { source: "stack", target: "supervisor", dist: 130 },
+  { source: "stack", target: "runtime",    dist: 130 },
+  { source: "stack", target: "wasm_apps",  dist: 130 },
+  // Stack sequential chain (weak — shows ordering)
+  { source: "kernel",     target: "supervisor", dist: 80, weak: true },
+  { source: "supervisor", target: "runtime",    dist: 80, weak: true },
+  { source: "runtime",    target: "wasm_apps",  dist: 80, weak: true },
+
+  // Modules
+  { source: "modules", target: "s_core",     dist: 120 },
+  { source: "modules", target: "s_display",  dist: 120 },
+  { source: "modules", target: "s_window",   dist: 120 },
+  { source: "modules", target: "s_input",    dist: 120 },
+  { source: "modules", target: "s_storage",  dist: 120 },
+  { source: "modules", target: "s_net",      dist: 120 },
+  { source: "modules", target: "s_security", dist: 120 },
+  { source: "modules", target: "s_media",    dist: 120 },
+
+  // Capabilities
+  { source: "caps", target: "cap_stdio",   dist: 110 },
+  { source: "caps", target: "cap_fs",      dist: 110 },
+  { source: "caps", target: "cap_net",     dist: 110 },
+  { source: "caps", target: "cap_display", dist: 110 },
+  { source: "caps", target: "cap_mouse",   dist: 110 },
+  { source: "caps", target: "cap_hw",      dist: 110 },
+];
+
+// ── D3 setup ──────────────────────────────────────────────────────────────────
+
+const svg    = d3.select("#graph");
+const layer  = d3.select("#zoom-layer");
+const W      = window.innerWidth;
+const H      = window.innerHeight;
+const tip    = document.getElementById("tooltip");
+
+// Zoom
+svg.call(
+  d3.zoom()
+    .scaleExtent([0.25, 4])
+    .on("zoom", e => layer.attr("transform", e.transform))
+);
+
+// Simulation
+const sim = d3.forceSimulation(nodes)
+  .force("link",      d3.forceLink(links).id(d => d.id).distance(d => d.dist).strength(d => d.weak ? 0.15 : 0.55))
+  .force("charge",    d3.forceManyBody().strength(d => -(d.r * 28 + 160)))
+  .force("center",    d3.forceCenter(W / 2, H / 2).strength(0.04))
+  .force("collision", d3.forceCollide().radius(d => d.r + 14).strength(0.85))
+  .alphaDecay(0.025);
+
+// Pin root to center
+const rootNode = nodes.find(n => n.id === "root");
+rootNode.fx = W / 2;
+rootNode.fy = H / 2;
+
+// ── Render edges ─────────────────────────────────────────────────────────────
+
+const linkSel = layer.append("g")
+  .selectAll("line")
+  .data(links)
+  .join("line")
+  .attr("class", d => "link" + (d.weak ? " link-weak" : ""))
+  .attr("stroke", d => {
+    const src = nodes.find(n => n.id === (d.source.id || d.source));
+    return src ? COLOR[src.group] || "#45475a" : "#45475a";
+  })
+  .attr("stroke-width", d => d.weak ? 1 : 1.8);
+
+// ── Render nodes ─────────────────────────────────────────────────────────────
+
+const nodeSel = layer.append("g")
+  .selectAll("g")
+  .data(nodes)
+  .join("g")
+  .attr("class", "node")
+  .call(
+    d3.drag()
+      .on("start", (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on("drag",  (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on("end",   (e, d) => {
+        if (!e.active) sim.alphaTarget(0);
+        if (d.id !== "root") { d.fx = null; d.fy = null; }
+      })
+  )
+  .on("mousemove", (e, d) => {
+    if (!d.info) return;
+    tip.style.opacity = "1";
+    tip.style.left = (e.pageX + 14) + "px";
+    tip.style.top  = (e.pageY - 10) + "px";
+    tip.textContent = d.info;
+  })
+  .on("mouseleave", () => { tip.style.opacity = "0"; });
+
+// Circle
+nodeSel.append("circle")
+  .attr("r", d => d.r)
+  .attr("fill", d => (COLOR[d.group] || "#45475a") + "26")   // 15% opacity fill
+  .attr("stroke", d => STROKE[d.group] || "#45475a");
+
+// Label (multi-line via tspan)
+nodeSel.each(function(d) {
+  const g    = d3.select(this);
+  const lines = d.label.split("\n");
+  const fs   = d.r >= 30 ? 13 : (d.r >= 20 ? 11.5 : 10);
+  const lh   = fs * 1.3;
+  const off  = -(lines.length - 1) * lh / 2;
+
+  const txt = g.append("text")
+    .attr("class", d.r >= 30 ? "big" : "")
+    .style("font-size", fs + "px");
+
+  lines.forEach((line, i) => {
+    txt.append("tspan")
+      .attr("x", 0)
+      .attr("dy", i === 0 ? off : lh)
+      .text(line);
+  });
+});
+
+// ── Tick ──────────────────────────────────────────────────────────────────────
+
+sim.on("tick", () => {
+  linkSel
+    .attr("x1", d => d.source.x)
+    .attr("y1", d => d.source.y)
+    .attr("x2", d => d.target.x)
+    .attr("y2", d => d.target.y);
+
+  nodeSel.attr("transform", d => `translate(${d.x},${d.y})`);
+});
+
+// ── Window resize ─────────────────────────────────────────────────────────────
+window.addEventListener("resize", () => {
+  rootNode.fx = window.innerWidth / 2;
+  rootNode.fy = window.innerHeight / 2;
+  sim.force("center", d3.forceCenter(window.innerWidth / 2, window.innerHeight / 2).strength(0.04));
+  sim.alpha(0.3).restart();
+});
+</script>
+</body>
+</html>

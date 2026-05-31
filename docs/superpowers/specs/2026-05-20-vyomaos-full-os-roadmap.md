@@ -486,3 +486,23 @@ Each milestone ships independently and improves daily usability.
 The OS is fully self-hostable (i.e., can be developed on itself) after Milestone H.
 Real-hardware target is achievable after Milestone M.
 Public release readiness after Milestone N.
+
+---
+
+## Future: App Compatibility Layer (Rosetta-style Translation)
+
+VyomaOS apps must speak VYOMA protocols (VYOMA_DRAW, VYOMA_INPUT, VYOMA_SYSTEM, VYOMA_AUDIO). Existing Windows/Linux/macOS applications compiled to WASM will NOT work out of the box — they expect POSIX terminals, X11/Wayland, Win32, or Cocoa APIs.
+
+A **translation layer** (analogous to Apple's Rosetta or Wine) will be needed to run ported software:
+
+1. **VT100 Terminal Adapter** — translates VT100/ANSI escape codes ↔ VYOMA_DRAW for CLI apps
+2. **POSIX Shim** — maps POSIX file/process/socket syscalls to VYOMA IPC + VFS
+3. **GUI Translation** — maps a minimal widget API (buttons, text fields, canvas) to VYOMA_DRAW commands
+4. **WASI Extensions** — custom WASI interfaces (`wasi:vyoma/display`, `wasi:vyoma/input`) with typed bindings
+
+This is a post-P112 initiative. The current OS must be feature-complete before tackling compatibility.
+
+**Priority order when ready:**
+1. VT100 adapter (unblocks all Rust/C CLI tools compiled to wasm32-wasip2)
+2. WASI typed interfaces (proper long-term API surface)
+3. GUI translation layer (desktop app porting)

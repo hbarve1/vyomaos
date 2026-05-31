@@ -14,8 +14,6 @@ use std::{
     time::Instant,
 };
 
-use sha2::{Digest, Sha256};
-
 use crate::{
     log_error, log_info, log_warn,
     AppRegistry, AppState, AppStatus, FocusedApp, Inbox, SpawnedApp,
@@ -25,7 +23,10 @@ use crate::{chrome, route_or_print, watchdog_next_backoff};
 use supervisor::logging::Subsystem;
 use supervisor::manifest::BootEntry;
 
-// ── init_surface_for_region ───────────────────────────────────────────────────
+/// P34: Send a message to the window-manager app if it exists in the inbox.
+fn notify_wm(msg: &str, inbox: &Inbox) {
+    if let Some(tx) = inbox.lock().unwrap().get("window-manager") { let _ = tx.send(msg.to_string()); }
+}
 
 /// Create or resize the per-window Surface for `st` to match the content area
 /// implied by `region`.  Content area = region height minus chrome (title bar +
@@ -46,8 +47,6 @@ fn init_surface_for_region(st: &mut AppState, region: (u32, u32, u32, u32)) {
         )));
     }
 }
-
-// ── apply_tiling_layout ───────────────────────────────────────────────────────
 
 /// Recompute tiled regions for all running display apps and write them into
 /// the registry.  Called on every display-app spawn or exit.
@@ -73,7 +72,7 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
         let mut v: Vec<(String, u32, u32, u32)> = reg.iter()
             .filter_map(|(name, st)| {
                 let st = st.lock().unwrap();
-                if st.has_display && matches!(st.status, AppStatus::Running) {
+                if st.has_display && !st.is_background && matches!(st.status, AppStatus::Running) {
                     Some((name.clone(), st.win_z, st.min_size.0, st.min_size.1))
                 } else { None }
             })
@@ -84,12 +83,12 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
     if apps.is_empty() { return; }
 
     // Partition: system-layer (dock, overlay) vs. regular tiled apps.
+    let show_dock = crate::SHOW_DOCK.get().copied().unwrap_or(true);
     let (pinned, tiled): (Vec<_>, Vec<_>) = apps.iter().partition(|(_, z, _, _)| *z >= Z_DOCK);
 
-    // Assign pinned apps to the reserved bottom strip (skipped when SHOW_DOCK=false).
-    let dock_enabled = crate::SHOW_DOCK.get().copied().unwrap_or(true);
-    let dock_h_reserved: u32 = if pinned.is_empty() || !dock_enabled { 0 } else { DOCK_STRIP_H };
-    if dock_enabled {
+    // Assign pinned apps to the reserved bottom strip (skipped when dock is hidden).
+    let dock_h_reserved: u32 = if pinned.is_empty() || !show_dock { 0 } else { DOCK_STRIP_H };
+    if show_dock {
         let reg = registry.lock().unwrap();
         for (name, _, _, _) in &pinned {
             if let Some(st) = reg.get(name.as_str()) {
@@ -106,32 +105,19 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
 
     // Tile remaining apps in usable area above the dock strip.
     if tiled.is_empty() { return; }
-    // T077: when windowed_mode is false, expand the first tiled app to fill the
-    // full screen (overrides tiled regions entirely for single-app full-screen).
-    let windowed = supervisor::WINDOWED_MODE.get().copied().unwrap_or(true);
-    if !windowed {
-        let reg = registry.lock().unwrap();
-        for (i, (name, _, _, _)) in tiled.iter().enumerate() {
-            if let Some(st) = reg.get(name.as_str()) {
-                let region = if i == 0 { (0, 0, sw, sh) }
-                else { (sw, 0, 0, 0) }; // park other apps off-screen
-                let mut st_guard = st.lock().unwrap();
-                st_guard.win_region = Some(region);
-                if i == 0 { init_surface_for_region(&mut st_guard, region); }
-                log_info!(Subsystem::Display, Some(name.as_str()),
-                    "tiling: fullscreen ({},{},{},{})",
-                    region.0, region.1, region.2, region.3);
-            }
-        }
-        return;
-    }
-    let usable_h = sh.saturating_sub(MENUBAR_H).saturating_sub(dock_h_reserved);
-    let min_sizes: Vec<(u32, u32)> = tiled.iter().map(|(_, _, mw, mh)| (*mw, *mh)).collect();
-    let regions: Vec<(u32, u32, u32, u32)> =
+    let windowed = crate::WINDOWED_MODE.get().copied().unwrap_or(true);
+    let menubar_h = if crate::SHOW_MENU_BAR.get().copied().unwrap_or(true) { MENUBAR_H } else { 0 };
+    let usable_h = sh.saturating_sub(menubar_h).saturating_sub(dock_h_reserved);
+    let regions: Vec<(u32, u32, u32, u32)> = if !windowed {
+        // Fullscreen mode: every app gets the full usable area (only focused is visible).
+        tiled.iter().map(|_| (0, menubar_h, sw, usable_h)).collect()
+    } else {
+        let min_sizes: Vec<(u32, u32)> = tiled.iter().map(|(_, _, mw, mh)| (*mw, *mh)).collect();
         compute_tiling_with_hints(tiled.len(), sw, usable_h, &min_sizes)
             .into_iter()
-            .map(|(x, y, w, h)| (x, y + MENUBAR_H, w, h))
-            .collect();
+            .map(|(x, y, w, h)| (x, y + menubar_h, w, h))
+            .collect()
+    };
     {
         let reg = registry.lock().unwrap();
         for (i, (name, _, _, _)) in tiled.iter().enumerate() {
@@ -238,7 +224,10 @@ pub fn launch_app_threads(
 
     #[cfg(target_os = "linux")]
     if has_display {
-        if let Some((w, h)) = crate::display::screen_size() {
+        // P29: send screen size from cached SCREEN_SIZE static, fall back to live query.
+        let size = crate::SCREEN_SIZE.get().copied()
+            .or_else(|| crate::display::screen_size());
+        if let Some((w, h)) = size {
             if let Some(tx) = inbox.lock().unwrap().get(&name) {
                 let _ = tx.send(format!("VYOMA_SYSTEM:screen:{w},{h}"));
             }
@@ -252,6 +241,8 @@ pub fn launch_app_threads(
 
     if has_display {
         crate::chrome::z_order_push_front(&name);
+        // P34: notify window-manager of new display app
+        notify_wm(&format!("VYOMA_SYSTEM:app_launched:{name}"), inbox);
     }
 
     let registry_w = Arc::clone(app_registry);
@@ -285,6 +276,8 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         if caps.display    { wired.push("display")     } else { skipped.push("display") }
         if caps.shell      { wired.push("shell")       } else { skipped.push("shell") }
         if caps.mouse      { wired.push("mouse")       } else { skipped.push("mouse") }
+        if caps.audio      { wired.push("audio")       } else { skipped.push("audio") }
+        if caps.background { wired.push("background")  } else { skipped.push("background") }
         let net_note = if caps.network { format!(" (port={net_port})") } else { String::new() };
         log_info!(Subsystem::Capability, Some(name.as_str()),
             "wired: {}{net_note}; skipped: {}", wired.join(" "), skipped.join(" "));
@@ -298,18 +291,17 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         .join(&manifest.app.wasm);
 
     if let Some(expected) = &manifest.app.wasm_sha256 {
-        match fs::read(&wasm_path) {
-            Ok(bytes) => {
-                let actual = format!("{:x}", Sha256::digest(&bytes));
-                if actual != expected.to_lowercase() {
-                    log_error!(Subsystem::Capability, Some(name.as_str()),
-                        "SECURITY: {name} rejected — SHA-256 mismatch\n  expected {expected}\n  actual   {actual}");
-                    inbox.lock().unwrap().remove(&name);
-                    return None;
-                }
-                log_info!(Subsystem::Capability, Some(name.as_str()), "[security] {name} wasm_sha256 verified OK");
+        match crate::verify::verify_wasm_binary(wasm_path.to_str().unwrap_or(""), expected) {
+            Ok(()) => {
+                log_info!(Subsystem::Capability, Some(name.as_str()),
+                    "[security] {name} wasm_sha256 verified OK");
             }
-            Err(e) => log_warn!(Subsystem::Capability, Some(name.as_str()), "cannot read wasm for hash check: {e}"),
+            Err(e) => {
+                log_error!(Subsystem::Capability, Some(name.as_str()),
+                    "SECURITY: {name} rejected — {e}");
+                inbox.lock().unwrap().remove(&name);
+                return None;
+            }
         }
     }
 
@@ -328,7 +320,19 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
     {
         use std::os::unix::process::CommandExt;
         let filter = crate::seccomp::build();
-        unsafe { cmd.pre_exec(move || crate::seccomp::apply(&filter)); }
+        unsafe {
+            cmd.pre_exec(move || {
+                // P27: namespace isolation — disabled pending kernel SMP+namespace
+                // compat fix. Mount namespace (CLONE_NEWNS) breaks wasmtime's
+                // shared library access. Seccomp BPF (below) is the active
+                // security layer.
+                // if let Err(e) = crate::namespace::setup_app_namespace() {
+                //     eprintln!("[warn] [namespace] setup_app_namespace failed: {e}");
+                // }
+                // P08: seccomp BPF denylist.
+                crate::seccomp::apply(&filter)
+            });
+        }
     }
 
     let mut child = match cmd.spawn() {
@@ -346,6 +350,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
     let min_size = manifest.window.as_ref()
         .map(|wr| (wr.width.unwrap_or(0), wr.height.unwrap_or(0)))
         .unwrap_or((0, 0));
+    let menu_items = manifest.menu_items.clone();
 
     let state = Arc::new(Mutex::new(AppState {
         entry:            entry.clone(),
@@ -359,6 +364,8 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         watchdog_backoff: Arc::new(Mutex::new(0u64)),
         has_mouse:        caps.mouse,
         has_display:      caps.display,
+        has_audio:        caps.audio,
+        is_background:    caps.background,
         win_region:       None,
         win_z:            manifest.window.as_ref().map(|w| w.z).unwrap_or(chrome::Z_APP),
         min_size,
@@ -366,11 +373,14 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         last_cpu_reset:   Instant::now(),
         minimized:           false,
         pre_minimize_region: None,
+        is_fullscreen:       false,
+        pre_fullscreen_region: None,
         // T053: pending_anim set below after construction
         pending_anim:        None,
         surface:             None,
+        frame_ready:         false,
+        menu_items,
         log_subscribers:     Vec::new(),
-        menu_items:          manifest.menu_items.clone(),
     }));
     // T053: enqueue Open animation so the window fades in on spawn
     {
@@ -379,11 +389,11 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
             Some(Animation::new(AnimKind::Open, now_ms()));
     }
     app_registry.lock().unwrap().insert(name.clone(), state);
+    crate::workspace::register_app(&name);
 
     Some(SpawnedApp { entry: entry.clone(), name, child, msg_rx, child_stdin, child_stdout,
                       has_display: caps.display, is_shell: caps.shell })
 }
-
 // ── wait_app ──────────────────────────────────────────────────────────────────
 
 pub fn wait_app(
@@ -425,6 +435,8 @@ pub fn wait_app(
         crate::toast::auto_transfer_focus(&name, &app_registry, &focused);
 
         if had_display {
+            // P34: notify window-manager of display app exit
+            notify_wm(&format!("VYOMA_SYSTEM:app_exited:{name}"), &inbox);
             apply_tiling_layout(&app_registry);
             #[cfg(target_os = "linux")]
             crate::chrome::repaint_all_borders(&app_registry, &focused);
@@ -459,12 +471,8 @@ pub fn wait_app(
         }
     }
 
-    // Remove from registry so Z_ORDER cleanup is consistent
     let _ = LAST_SENDER.get().and_then(|m| m.lock().ok()).map(|mut m| m.remove(&name));
 }
-
-// ── run_watchdog ──────────────────────────────────────────────────────────────
-
 /// P19: watchdog loop — kills any app that has been silent longer than its
 /// configured `watchdog_secs`.  Runs forever in its own named thread.
 pub fn run_watchdog(registry: AppRegistry) {

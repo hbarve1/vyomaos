@@ -8,78 +8,68 @@ use std::sync::Mutex;
 use crate::{AppRegistry, AppStatus, FocusedApp, HOVERED_APP, Z_ORDER, BOOT_INSTANT};
 
 #[cfg(target_os = "linux")]
-use crate::display::{self, draw_rounded_rect};
+use crate::display;
 
 // ── Z-layer constants ─────────────────────────────────────────────────────────
-#[allow(dead_code)]
-pub const Z_DESKTOP:  u32 = 0;    // desktop wallpaper — always background
-#[allow(dead_code)]
-pub const Z_APP:      u32 = 10;   // default app window layer
-#[allow(dead_code)]
-pub const Z_DOCK:     u32 = 100;  // dock — always above app windows
-#[allow(dead_code)]
-pub const Z_OVERLAY:  u32 = 255;  // notifications, system overlays
-
-// Ordering invariant: background < apps < dock < overlay
+#[allow(dead_code)] pub const Z_DESKTOP: u32 = 0;
+#[allow(dead_code)] pub const Z_APP:     u32 = 10;
+#[allow(dead_code)] pub const Z_DOCK:    u32 = 100;
+#[allow(dead_code)] pub const Z_OVERLAY: u32 = 255;
 const _: () = assert!(Z_DESKTOP < Z_APP && Z_APP < Z_DOCK && Z_DOCK < Z_OVERLAY);
 
 // ── macOS-inspired chrome constants ──────────────────────────────────────────
 
 pub const MENUBAR_H:    u32 = 24;   // global menu bar height
 pub const TITLEBAR_H:   u32 = 28;   // per-window title bar height
-const TL_DOT:           u32 = 13;   // traffic-light dot size (px) — Apple spec
+const TL_DOT:           u32 = 13;   // traffic-light dot diameter (px) — Apple spec
 
-const MAC_MENUBAR:      u32 = 0x2A2A2AFF; // system background (menubar)
-const MAC_TITLE_ACT:    u32 = 0x323232FF; // active window title bar
-const MAC_TITLE_INACT:  u32 = 0x282828FF; // inactive window title bar
-const MAC_TITLE_HOVER:  u32 = 0x383838FF; // hovered title bar (slightly lighter than active)
-const MAC_SEP:          u32 = 0x3A3A3CFF; // separator line
-const MAC_LABEL:        u32 = 0xEBEBEBFF; // primary label (near-white)
-const MAC_LABEL2:       u32 = 0x8E8E93FF; // secondary label (gray)
-const TL_CLOSE:         u32 = 0xFF6159FF; // traffic light red
-const TL_MINIMIZE:      u32 = 0xFFBD2EFF; // traffic light yellow
-const TL_MAXIMIZE:      u32 = 0x28C941FF; // traffic light green
+fn mac_menubar()     -> u32 { crate::theme::current_theme().menubar }
+fn mac_title_act()   -> u32 { crate::theme::current_theme().title_active }
+fn mac_title_inact() -> u32 { crate::theme::current_theme().title_inactive }
+fn mac_title_hover() -> u32 {
+    // Hover is slightly lighter than active; derive by adding 0x060606 per channel.
+    let t = crate::theme::current_theme().title_active;
+    let r = ((t >> 24) & 0xFF).saturating_add(6);
+    let g = ((t >> 16) & 0xFF).saturating_add(6);
+    let b = ((t >>  8) & 0xFF).saturating_add(6);
+    let a =  t & 0xFF;
+    (r << 24) | (g << 16) | (b << 8) | a
+}
+fn mac_sep()         -> u32 { crate::theme::current_theme().border }
+fn mac_label()       -> u32 { crate::theme::current_theme().text }
+fn mac_label2()      -> u32 { crate::theme::current_theme().dim }
+const TL_CLOSE:         u32 = 0xFF5F57FF; // traffic light red
+const TL_MINIMIZE:      u32 = 0xFFBD2DFF; // traffic light yellow
+const TL_MAXIMIZE:      u32 = 0x28C840FF; // traffic light green
 const TL_GRAY:          u32 = 0x4D4D4DFF; // inactive traffic lights
-
-// Kept for repaint compat; unused after chrome redesign.
-#[allow(dead_code)] const BORDER_FOCUSED:   u32 = 0x89B4FAFF;
-#[allow(dead_code)] const BORDER_UNFOCUSED: u32 = 0x45475AFF;
 
 // ── Focus helpers ─────────────────────────────────────────────────────────────
 
-/// Return all windowed app names (those with `win_region = Some(_)`) sorted alphabetically.
+/// Return all windowed app names sorted alphabetically.
 pub fn windowed_apps_sorted(registry: &AppRegistry) -> Vec<String> {
     let reg = registry.lock().unwrap();
     let mut v: Vec<String> = reg.iter()
         .filter(|(_, st)| st.lock().unwrap().win_region.is_some())
-        .map(|(n, _)| n.clone())
-        .collect();
-    v.sort();
-    v
+        .map(|(n, _)| n.clone()).collect();
+    v.sort(); v
 }
 
-/// Advance focus to the next app in `names` (wrapping).  If `current` is None or
-/// not in `names`, return the first element.
+/// Advance focus to the next app in `names` (wrapping).
 pub fn cycle_focus_forward(names: &[String], current: Option<&str>) -> Option<String> {
-    if names.is_empty() {
-        return None;
-    }
+    if names.is_empty() { return None; }
     match current.and_then(|c| names.iter().position(|n| n == c)) {
         Some(idx) => Some(names[(idx + 1) % names.len()].clone()),
-        None      => Some(names[0].clone()),
+        None => Some(names[0].clone()),
     }
 }
 
-/// Move focus to the previous app in `names` (wrapping).  If `current` is None or
-/// not in `names`, return the last element.
+/// Move focus to the previous app in `names` (wrapping).
 pub fn cycle_focus_backward(names: &[String], current: Option<&str>) -> Option<String> {
-    if names.is_empty() {
-        return None;
-    }
+    if names.is_empty() { return None; }
     match current.and_then(|c| names.iter().position(|n| n == c)) {
-        Some(0)   => Some(names[names.len() - 1].clone()),
+        Some(0) => Some(names[names.len() - 1].clone()),
         Some(idx) => Some(names[idx - 1].clone()),
-        None      => Some(names[names.len() - 1].clone()),
+        None => Some(names[names.len() - 1].clone()),
     }
 }
 
@@ -142,6 +132,7 @@ fn draw_glyph_str(
 /// dark rounded rects slightly offset below and around the window frame.
 #[cfg(target_os = "linux")]
 fn draw_window_shadow(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, wh: u32) {
+    use crate::display::draw_rounded_rect;
     let shadow_rgba = 0x00000078_u32; // black at ~47% alpha
     let (sw, sh) = (fb.width, fb.height);
     let fs = fb.stride;
@@ -160,9 +151,9 @@ fn draw_window_shadow(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, 
 ///
 /// Pure function — no side-effects, no global state reads.
 pub fn titlebar_color_for_state(focused: bool, hovered: bool) -> u32 {
-    if hovered      { MAC_TITLE_HOVER } // hover — slightly lighter for affordance
-    else if focused { MAC_TITLE_ACT   } // active window
-    else            { MAC_TITLE_INACT } // inactive window
+    if hovered      { mac_title_hover() } // hover — slightly lighter for affordance
+    else if focused { mac_title_act()   } // active window
+    else            { mac_title_inact() } // inactive window
 }
 
 /// Draw a macOS-style title bar at (wx, wy, ww, TITLEBAR_H).
@@ -179,9 +170,12 @@ pub fn draw_titlebar(
     // Drop shadow rendered behind the window chrome
     draw_window_shadow(fb, wx, wy, ww, TITLEBAR_H);
     let bg = titlebar_color_for_state(is_focused, is_hovered);
-    let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-    draw_rounded_rect(&mut fb.back, wx, wy, ww, TITLEBAR_H, bg, 10, fs, sw, sh);
-    fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, MAC_SEP);
+    {
+        use crate::display::draw_rounded_rect;
+        let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
+        draw_rounded_rect(&mut fb.back, wx, wy, ww, TITLEBAR_H, bg, 10, fs, sw, sh);
+    }
+    fb.fill_rect(wx, wy + TITLEBAR_H - 1, ww, 1, mac_sep());
 
     // Traffic lights — circles (radius = TL_DOT/2), left-aligned, vertically centered
     let tl_y = wy + (TITLEBAR_H - TL_DOT) / 2;
@@ -190,11 +184,14 @@ pub fn draw_titlebar(
     } else {
         (TL_GRAY, TL_GRAY, TL_GRAY)
     };
-    let r = TL_DOT / 2;
-    let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
-    draw_rounded_rect(&mut fb.back, wx +  9, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
-    draw_rounded_rect(&mut fb.back, wx + 30, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
-    draw_rounded_rect(&mut fb.back, wx + 51, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
+    {
+        use crate::display::draw_rounded_rect;
+        let r = TL_DOT / 2;
+        let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
+        draw_rounded_rect(&mut fb.back, wx +  9, tl_y, TL_DOT, TL_DOT, c1, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 30, tl_y, TL_DOT, TL_DOT, c2, r, fs, sw, sh);
+        draw_rounded_rect(&mut fb.back, wx + 51, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
+    }
 
     // App name centered — 13pt regular Inter
     let nlen = name.len().min(20);
@@ -204,7 +201,7 @@ pub fn draw_titlebar(
     if ww > name_w_est + 60 {
         let nx = (wx + (ww - name_w_est) / 2) as i32;
         let ny = (wy + TITLEBAR_H / 2) as i32;
-        let col = if is_focused { MAC_LABEL } else { MAC_LABEL2 };
+        let col = if is_focused { mac_label() } else { mac_label2() };
         draw_glyph_str(fb, display_name, nx, ny, col, 13, false, false);
     }
 }
@@ -227,20 +224,27 @@ pub fn draw_menubar(
     if !crate::SHOW_MENU_BAR.get().copied().unwrap_or(true) { return; }
     use supervisor::windows::{MENUBAR_APPS_START_X, menubar_label_width};
 
-    fb.fill_rect(0, 0, sw, MENUBAR_H, MAC_MENUBAR);
-    fb.fill_rect(0, MENUBAR_H - 1, sw, 1, MAC_SEP);
+    fb.fill_rect(0, 0, sw, MENUBAR_H, mac_menubar());
+    fb.fill_rect(0, MENUBAR_H - 1, sw, 1, mac_sep());
 
     let ty = (MENUBAR_H / 2) as i32; // vertical center baseline for 12pt font
 
     // Left: brand — 12pt regular
-    draw_glyph_str(fb, "VyomaOS", 12, ty, MAC_LABEL, 12, false, false);
+    draw_glyph_str(fb, crate::i18n::t("brand"), 12, ty, mac_label(), 12, false, false);
+
+    // Workspace indicator (e.g. "● ○ ○ ○") right after brand
+    {
+        let ws_indicator = crate::workspace::indicator_string();
+        let ws_x = 80i32; // after "VyomaOS" label
+        draw_glyph_str(fb, &ws_indicator, ws_x, ty, mac_label2(), 10, false, false);
+    }
 
     // App-switcher labels: drawn immediately after the brand name.
     // Highlighted (white) when focused, dimmed otherwise.
     let mut lx = MENUBAR_APPS_START_X as i32;
     for app in apps {
         let is_focused = focused.map_or(false, |f| f == app.as_str());
-        let color = if is_focused { MAC_LABEL } else { MAC_LABEL2 };
+        let color = if is_focused { mac_label() } else { mac_label2() };
         draw_glyph_str(fb, app, lx + 8, ty, color, 12, false, false);
         lx += menubar_label_width(app.len()) as i32;
     }
@@ -252,25 +256,44 @@ pub fn draw_menubar(
         let name_w_est = crate::font_cache().lock().unwrap()
             .measure_str(display_name, 12, false, false);
         let nx = sw.saturating_sub(name_w_est) / 2;
-        draw_glyph_str(fb, display_name, nx as i32, ty, MAC_LABEL, 12, false, false);
+        draw_glyph_str(fb, display_name, nx as i32, ty, mac_label(), 12, false, false);
     }
 
-    // Right: elapsed clock HH:MM:SS — 12pt regular
+    // Right: clock HH:MM:SS — 12pt regular (rightmost element)
     let h = elapsed_secs / 3600;
     let m = (elapsed_secs % 3600) / 60;
     let s = elapsed_secs % 60;
     let clock = format!("{h:02}:{m:02}:{s:02}");
     let cw = crate::font_cache().lock().unwrap()
         .measure_str(&clock, 12, false, false);
-    if sw > cw + 20 {
-        draw_glyph_str(fb, &clock, (sw - cw - 12) as i32, ty, MAC_LABEL2, 12, false, false);
+    let clock_x = if sw > cw + 12 { sw - cw - 12 } else { 0 };
+    if clock_x > 0 {
+        draw_glyph_str(fb, &clock, clock_x as i32, ty, mac_label2(), 12, false, false);
+    }
+
+    // Tray indicators: rendered right-to-left, to the left of the clock
+    let tray_items = crate::tray::collect_items();
+    let tray_gap = 12_u32;
+    let mut tray_x = clock_x.saturating_sub(tray_gap);
+    for item in tray_items.iter().rev() {
+        let tw = crate::font_cache().lock().unwrap()
+            .measure_str(&item.text, 12, false, false);
+        tray_x = tray_x.saturating_sub(tw);
+        if tray_x > 0 {
+            draw_glyph_str(fb, &item.text, tray_x as i32, ty, item.color, 12, false, false);
+        }
+        tray_x = tray_x.saturating_sub(tray_gap);
     }
 }
 
 /// Immediately repaint title bars for all windowed apps (called on focus changes).
 pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     let focused_name = focused.lock().unwrap().clone();
-    let hovered_name = HOVERED_APP.get_or_init(|| Mutex::new(None)).lock().unwrap().clone();
+    let hovered_name = HOVERED_APP
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap()
+        .clone();
     // Collect (win_z, name, region) then sort by win_z ascending so lower-z
     // windows are painted first (appear behind higher-z windows).
     let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
@@ -302,18 +325,13 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     {
         let Some(fb_lock) = display::get() else { return };
         let mut fb = fb_lock.lock().unwrap();
-        for (name, (wx, wy, ww, _wh)) in &regions {
+        for (name, (wx, wy, ww, wh)) in &regions {
             if *ww < 60 { continue; }
             let is_focused = focused_name.as_deref() == Some(name.as_str());
             let is_hovered = hovered_name.as_deref() == Some(name.as_str());
             draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, is_hovered, name);
-            // T078: focus ring — 3px Apple-blue rounded highlight around focused/hovered title bar
-            if (is_focused || is_hovered) && supervisor::FOCUS_RING.get().copied().unwrap_or(false) {
-                let (fsw, fsh, fst) = (fb.width, fb.height, fb.stride);
-                draw_rounded_rect(
-                    &mut fb.back, wx.saturating_sub(2), wy.saturating_sub(2),
-                    ww + 4, TITLEBAR_H + 4, 0x0A84FFFF, 3, fst, fsw, fsh,
-                );
+            if is_focused {
+                draw_focus_ring(&mut *fb, *wx, *wy, *ww, *wh);
             }
         }
         let sw = fb.width;
@@ -338,7 +356,9 @@ pub fn draw_chrome_onto(
     focused: &FocusedApp,
 ) {
     let focused_name = focused.lock().unwrap().clone();
-    let hovered_name = HOVERED_APP.get_or_init(|| Mutex::new(None)).lock().unwrap().clone();
+    let hovered_name = HOVERED_APP
+        .get_or_init(|| Mutex::new(None))
+        .lock().unwrap().clone();
     let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
         let reg = registry.lock().unwrap();
         let mut regions_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = Vec::new();
@@ -361,28 +381,33 @@ pub fn draw_chrome_onto(
         let regions = regions_with_z.into_iter().map(|(_, n, r)| (n, r)).collect();
         (regions, display_apps)
     };
-    let dock_visible = crate::SHOW_DOCK.get().copied().unwrap_or(true);
-    for (name, (wx, wy, ww, _wh)) in &regions {
+    for (name, (wx, wy, ww, wh)) in &regions {
         if *ww < 60 { continue; }
+        // Skip windows not on the current workspace (inline check to avoid
+        // potential deadlock if registry is held by caller).
+        {
+            let ws_mgr = crate::workspace::manager().lock().unwrap();
+            let is_system_z = {
+                let reg = registry.lock().unwrap();
+                reg.get(name.as_str()).map(|st| st.lock().unwrap().win_z >= Z_DOCK).unwrap_or(false)
+            };
+            if !is_system_z {
+                let app_ws = ws_mgr.app_workspace.get(name.as_str()).copied().unwrap_or(0);
+                if app_ws != ws_mgr.current { continue; }
+            }
+        }
         let is_focused = focused_name.as_deref() == Some(name.as_str());
         let is_hovered = hovered_name.as_deref() == Some(name.as_str());
         let is_system = {
             let reg = registry.lock().unwrap();
             reg.get(name.as_str()).map(|st| st.lock().unwrap().win_z >= Z_DOCK).unwrap_or(false)
         };
-        if is_system {
-            // Dock-layer windows: only render chrome when dock is enabled.
-            if !dock_visible { continue; }
-        } else {
+        if !is_system {
             draw_titlebar(fb, *wx, *wy, *ww, is_focused, is_hovered, name);
-            // T078: focus ring — 3px Apple-blue rounded highlight around focused/hovered title bar
-            if (is_focused || is_hovered) && supervisor::FOCUS_RING.get().copied().unwrap_or(false) {
-                let (fsw, fsh, fst) = (fb.width, fb.height, fb.stride);
-                draw_rounded_rect(
-                    &mut fb.back, wx.saturating_sub(2), wy.saturating_sub(2),
-                    ww + 4, TITLEBAR_H + 4, 0x0A84FFFF, 3, fst, fsw, fsh,
-                );
-            }
+        }
+        // Draw focus ring for focused window (TV/Vision profiles).
+        if is_focused {
+            draw_focus_ring(fb, *wx, *wy, *ww, *wh);
         }
     }
     let sw = fb.width;
@@ -390,110 +415,78 @@ pub fn draw_chrome_onto(
     draw_menubar(fb, sw, elapsed, focused_name.as_deref(), &display_apps);
 }
 
-// ── T056: Animation alpha stub ────────────────────────────────────────────────
+// ── Focus ring (TV / Vision profiles) ─────────────────────────────────────────
 
-/// Sample the current animation alpha for an app state.
+/// Draw a 3 px highlight border around the focused window when `FOCUS_RING` is enabled.
+#[cfg(target_os = "linux")]
+pub fn draw_focus_ring(fb: &mut display::Framebuffer, wx: u32, wy: u32, ww: u32, wh: u32) {
+    if !crate::FOCUS_RING.get().copied().unwrap_or(false) { return; }
+    const RING_W: u32 = 3;
+    const RING_COLOR: u32 = 0x0A84FFFF; // system blue
+    let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
+    if wy >= RING_W {
+        crate::display::draw_rounded_rect(
+            &mut fb.back, wx.saturating_sub(RING_W), wy.saturating_sub(RING_W),
+            ww + RING_W * 2, RING_W, RING_COLOR, 6, fs, sw, sh,
+        );
+    }
+    let by = wy + wh;
+    if by + RING_W <= sh {
+        crate::display::draw_rounded_rect(
+            &mut fb.back, wx.saturating_sub(RING_W), by,
+            ww + RING_W * 2, RING_W, RING_COLOR, 6, fs, sw, sh,
+        );
+    }
+    if wx >= RING_W {
+        crate::display::draw_rounded_rect(
+            &mut fb.back, wx.saturating_sub(RING_W), wy,
+            RING_W, wh, RING_COLOR, 6, fs, sw, sh,
+        );
+    }
+    let rx = wx + ww;
+    if rx + RING_W <= sw {
+        crate::display::draw_rounded_rect(
+            &mut fb.back, rx, wy,
+            RING_W, wh, RING_COLOR, 6, fs, sw, sh,
+        );
+    }
+}
+
+// ── Animation alpha ──────────────────────────────────────────────────────────
+
+/// Sample the current animation alpha and clear completed animations.
 /// Returns 255 (fully opaque) when no animation is active.
-/// Full layer-alpha blending requires a compositor not yet built;
-/// this helper is the integration point for future frame-tick use.
-#[allow(dead_code)]
-pub fn sample_anim_alpha(anim: &Option<crate::display::animator::Animation>) -> u8 {
-    match anim {
-        None => 255,
-        Some(a) => {
-            let elapsed = crate::display::animator::now_ms()
-                .saturating_sub(a.start_ms);
-            a.sample(elapsed).alpha
-        }
+/// When reduce-motion accessibility is enabled, animations are skipped
+/// (immediately completed) and 255 is returned.
+pub fn sample_and_clear_anim(anim: &mut Option<crate::display::animator::Animation>) -> u8 {
+    let a = match anim.as_ref() {
+        None => return 255,
+        Some(a) => a,
+    };
+    // Accessibility: skip animations when reduce-motion is enabled.
+    if !crate::accessibility::animation_enabled() {
+        *anim = None;
+        return 255;
     }
+    let elapsed = crate::display::animator::now_ms().saturating_sub(a.start_ms);
+    let state = a.sample(elapsed);
+    if state.done { *anim = None; }
+    state.alpha
 }
 
-// ── T059–T064: Dropdown menu state ───────────────────────────────────────────
-
-struct DropdownState { open: bool, selected: usize, items: Vec<(String, String)>, anchor_x: u32, anchor_y: u32, app_name: String }
-static DROPDOWN_STATE: std::sync::OnceLock<Mutex<DropdownState>> = std::sync::OnceLock::new();
-fn dropdown_state() -> &'static Mutex<DropdownState> {
-    DROPDOWN_STATE.get_or_init(|| Mutex::new(DropdownState { open: false, selected: 0, items: vec![], anchor_x: 0, anchor_y: 0, app_name: String::new() }))
-}
-
-/// Open the app-name dropdown at anchor position.
-pub fn open_dropdown(app: &str, items: Vec<(String, String)>, ax: u32, ay: u32) {
-    let mut s = dropdown_state().lock().unwrap();
-    s.open = true; s.selected = 0; s.items = items; s.anchor_x = ax; s.anchor_y = ay; s.app_name = app.to_string();
-}
-/// Close the dropdown without dispatching any action.
-#[allow(dead_code)]
-pub fn close_dropdown() { dropdown_state().lock().unwrap().open = false; }
-
-/// Return true when the dropdown is currently open.
-///
-/// Used by the keyboard router in `input_keys` to intercept navigation
-/// keys before they are forwarded to the focused app's stdin.
-pub fn dropdown_is_open() -> bool {
-    dropdown_state().lock().unwrap().open
-}
-
-/// Handle a keyboard navigation event while the dropdown is open.
-///
-/// Key byte mapping (spec T062):
-///   `0x42` — ArrowDown  — move selection down (clamp at last item)
-///   `0x41` — ArrowUp    — move selection up   (clamp at first item)
-///   `0x0A` — Enter      — confirm selection, close dropdown,
-///                          returns `Some((app_name, action))` for IPC dispatch
-///   `0x1B` — Escape     — close dropdown without action, returns `None`
-///
-/// All other keys are ignored.  When the dropdown is closed this is a no-op.
-///
-/// # Return value
-/// `Some((app_name, action))` when Enter is pressed and the dropdown was open;
-/// the caller must send `@<app_name>: <action>` via the IPC inbox.
-/// `None` in all other cases.
-pub fn handle_dropdown_key(key: u8) -> Option<(String, String)> {
-    let mut s = match dropdown_state().try_lock() { Ok(s) => s, Err(_) => return None };
-    if !s.open { return None; }
-    match key {
-        0x42 => { // ArrowDown
-            if s.selected + 1 < s.items.len() { s.selected += 1; }
-            None
-        }
-        0x41 => { // ArrowUp
-            if s.selected > 0 { s.selected -= 1; }
-            None
-        }
-        0x0A => { // Enter — confirm and close
-            let result = s.items.get(s.selected)
-                .map(|(_, action)| (s.app_name.clone(), action.clone()));
-            s.open = false;
-            result
-        }
-        0x1B => { // Escape — discard and close
-            s.open = false;
-            None
-        }
-        _ => None,
-    }
-}
-/// Public wrapper for draw_glyph_str (used by toast.rs banner renderer).
+/// Public wrapper for draw_glyph_str (used by toast.rs and menus.rs).
 #[cfg(target_os = "linux")]
-#[allow(dead_code)]
-pub fn draw_glyph_str_pub(fb: &mut display::Framebuffer, text: &str, x: i32, y: i32, rgba: u32, pt: u32, bold: bool, mono: bool) {
-    draw_glyph_str(fb, text, x, y, rgba, pt, bold, mono);
-}
+pub fn draw_glyph_str_pub(
+    fb: &mut display::Framebuffer, text: &str,
+    x: i32, y: i32, rgba: u32, pt: u32, bold: bool, mono: bool,
+) { draw_glyph_str(fb, text, x, y, rgba, pt, bold, mono); }
 
-
-/// Render the dropdown menu if open.
+// Re-export menu functions for callers using chrome::*
+#[allow(unused_imports)]
+pub use crate::menus::{
+    is_dropdown_open, open_dropdown, close_dropdown, handle_dropdown_key_action,
+    open_context_menu, close_context_menu, is_context_menu_open,
+    dismiss_context_menu_if_outside,
+};
 #[cfg(target_os = "linux")]
-#[allow(dead_code)]
-pub fn render_dropdown_if_open(fb: &mut display::Framebuffer) {
-    let s = dropdown_state().lock().unwrap();
-    if !s.open || s.items.is_empty() { return; }
-    let (ax, ay, items, selected) = (s.anchor_x, s.anchor_y, s.items.clone(), s.selected);
-    drop(s);
-    let row_h: u32 = 22; let (pw, fs, fw, fh) = (200u32, fb.stride, fb.width, fb.height);
-    draw_rounded_rect(&mut fb.back, ax, ay, pw, row_h * items.len() as u32 + 8, 0x1C1C1EE8_u32, 8, fs, fw, fh);
-    for (i, (label, _)) in items.iter().enumerate() {
-        let ry = ay + 4 + i as u32 * row_h;
-        if i == selected { draw_rounded_rect(&mut fb.back, ax + 4, ry, pw - 8, row_h - 2, 0x0A84FFFF_u32, 4, fs, fw, fh); }
-        draw_glyph_str(fb, label, (ax + 12) as i32, (ry + row_h / 2) as i32, 0xFFFFFFFF, 13, false, false);
-    }
-}
+pub use crate::menus::{render_dropdown_if_open, render_context_menu_if_open};

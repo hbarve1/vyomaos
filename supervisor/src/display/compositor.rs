@@ -273,6 +273,76 @@ pub fn generate_shadow_mask(shape_w: u32, shape_h: u32, blur_r: u32) -> Vec<u8> 
     out
 }
 
+/// Descriptor for a single surface to be composited onto the back-buffer.
+///
+/// Fields: `(x, y, w, h, surface_pixels, alpha)` where `surface_pixels`
+/// is a BGRA byte slice and `alpha` is the global opacity (0–255).
+#[allow(dead_code)]
+pub struct CompositeEntry<'a> {
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+    pub pixels: &'a [u8],
+    pub alpha: u8,
+}
+
+/// Composite a list of surfaces onto a back-buffer in order (painter's algorithm).
+///
+/// Each entry is blitted at its `(x, y)` position with per-surface global alpha.
+/// Surfaces later in the list paint over earlier ones.  The caller is responsible
+/// for clearing the back-buffer to the desired background colour beforehand.
+#[allow(dead_code)]
+pub fn composite_frame(
+    back: &mut [u8],
+    surfaces: &[CompositeEntry<'_>],
+    fb_stride: u32,
+    fb_width: u32,
+    fb_height: u32,
+) {
+    for entry in surfaces {
+        if entry.alpha == 0 || entry.w == 0 { continue; }
+        let src_stride = entry.w * 4;
+
+        if entry.alpha == 255 {
+            // Fast path: row-level memcpy (no per-pixel blend).
+            let visible_w = entry.w.min(fb_width.saturating_sub(entry.x));
+            if visible_w == 0 { continue; }
+            let copy_bytes = (visible_w * 4) as usize;
+            for row in 0..entry.h {
+                let screen_y = entry.y + row;
+                if screen_y >= fb_height { break; }
+                let src_start = (row * src_stride) as usize;
+                let fb_start  = (screen_y * fb_stride + entry.x * 4) as usize;
+                if src_start + copy_bytes > entry.pixels.len() { break; }
+                if fb_start  + copy_bytes > back.len()         { break; }
+                back[fb_start..fb_start + copy_bytes]
+                    .copy_from_slice(&entry.pixels[src_start..src_start + copy_bytes]);
+            }
+        } else {
+            // Slow path: per-pixel alpha blend with attenuated global alpha.
+            for row in 0..entry.h {
+                let screen_y = entry.y + row;
+                if screen_y >= fb_height { break; }
+                for col in 0..entry.w {
+                    let screen_x = entry.x + col;
+                    if screen_x >= fb_width { continue; }
+                    let src_off = (row * src_stride + col * 4) as usize;
+                    if src_off + 4 > entry.pixels.len() { continue; }
+                    let fb_off = (screen_y * fb_stride + screen_x * 4) as usize;
+                    if fb_off + 4 > back.len() { continue; }
+                    let src = read_bgra(entry.pixels, src_off);
+                    let (sr, sg, sb, sa) = unpack(src);
+                    let eff_a = (sa as u32 * entry.alpha as u32 / 255) as u8;
+                    let attenuated = pack(sr, sg, sb, eff_a);
+                    let dst = read_bgra(back, fb_off);
+                    write_bgra(back, fb_off, blend_over(attenuated, dst));
+                }
+            }
+        }
+    }
+}
+
 /// Composite a fontdue glyph bitmap onto the framebuffer back-buffer.
 ///
 /// `coverage`: alpha mask from fontdue (one byte per pixel, row-major).

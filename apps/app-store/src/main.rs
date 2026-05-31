@@ -1,34 +1,88 @@
 // Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
+//! P47: App Store — catalog browser with category tabs, install/uninstall via
+//! supervisor IPC, and persistent tracking via /data/installed.txt.
+
 use std::io::{self, BufRead, Write};
 
+// ── Layout constants ────────────────────────────────────────────────────────
 const W: u32 = 1440;
-const H: u32 = 880;
-const C_BG: u32      = 0x0D1117FF;
-const C_ACCENT: u32  = 0x58A6FFFF;
-const C_DIM: u32     = 0x8B949EFF;
-const C_TITLE: u32   = 0xFFFFFFFF;
-const C_BORDER: u32  = 0x30363DFF;
-const C_SEL: u32     = 0x1F4068FF;
-const C_OK: u32      = 0x3FB950FF;
-const C_ERR: u32     = 0xFF7B72FF;
-const C_HINT: u32    = 0x6E7681FF;
-const C_FIELD: u32   = 0x21262DFF;
+const H: u32 = 900;
+const HEADER_H: u32 = 56;
+const TAB_Y: u32 = 64;
+const TAB_H: u32 = 32;
+const LIST_Y: u32 = 108;
+const CARD_H: u32 = 60;
+const CARD_GAP: u32 = 4;
+const CARD_X: u32 = 40;
+const CARD_W: u32 = W - 80;
 
-const COLS: u32  = 4;
-const CARD_W: u32 = 320;
-const CARD_H: u32 = 80;
-const GAP_X: u32 = 20;
-const GAP_Y: u32 = 12;
-const GRID_X: u32 = (W - COLS * CARD_W - (COLS - 1) * GAP_X) / 2;
-const GRID_Y: u32 = 110;
+// ── Colors ──────────────────────────────────────────────────────────────────
+const C_BG: u32        = 0x0D1117FF;
+const C_HEADER: u32    = 0x161B22FF;
+const C_TITLE: u32     = 0xFFFFFFFF;
+const C_ACCENT: u32    = 0x58A6FFFF;
+const C_CARD: u32      = 0x161B22FF;
+const C_SEL: u32       = 0x1F6A4EFF;
+const C_HINT: u32      = 0x8B949EFF;
+const C_INSTALLED: u32 = 0x3FB950FF;
+const C_TAB_BG: u32    = 0x21262DFF;
+const C_TAB_SEL: u32   = 0x30363DFF;
+const C_BTN_INST: u32  = 0x238636FF;
+const C_STATUS: u32    = 0xF0C000FF;
+const C_ERR: u32       = 0xFF7B72FF;
+const C_BORDER: u32    = 0x30363DFF;
 
+// ── Catalog ─────────────────────────────────────────────────────────────────
+struct AppEntry {
+    name: &'static str,
+    desc: &'static str,
+    version: &'static str,
+    size: &'static str,
+    category: Category,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Category { All, Productivity, Games, Utilities, System }
+
+const CATEGORIES: &[Category] = &[
+    Category::All, Category::Productivity, Category::Games,
+    Category::Utilities, Category::System,
+];
+
+fn cat_label(c: Category) -> &'static str {
+    match c {
+        Category::All          => "All",
+        Category::Productivity => "Productivity",
+        Category::Games        => "Games",
+        Category::Utilities    => "Utilities",
+        Category::System       => "System",
+    }
+}
+
+const CATALOG: &[AppEntry] = &[
+    AppEntry { name: "calculator",   desc: "Basic arithmetic calculator",     version: "0.1.0", size: "4 KB",  category: Category::Productivity },
+    AppEntry { name: "notes",        desc: "Simple note-taking app",          version: "0.1.0", size: "4 KB",  category: Category::Productivity },
+    AppEntry { name: "factorial",    desc: "Recursive factorial computation", version: "0.1.0", size: "2 KB",  category: Category::Utilities },
+    AppEntry { name: "gui-demo",     desc: "Framebuffer dashboard demo",      version: "0.1.0", size: "6 KB",  category: Category::Utilities },
+    AppEntry { name: "hello-world",  desc: "Hello World demo app",            version: "0.1.0", size: "1 KB",  category: Category::Utilities },
+    AppEntry { name: "ping",         desc: "IPC demo - send side",            version: "0.1.0", size: "2 KB",  category: Category::Games },
+    AppEntry { name: "pong",         desc: "IPC demo - recv side",            version: "0.1.0", size: "2 KB",  category: Category::Games },
+    AppEntry { name: "http-server",  desc: "HTTP status server on :8080",     version: "0.1.0", size: "5 KB",  category: Category::System },
+    AppEntry { name: "storage-demo", desc: "Persistent storage demo",         version: "0.1.0", size: "3 KB",  category: Category::System },
+    AppEntry { name: "shell",        desc: "Interactive VyomaOS shell",       version: "0.1.0", size: "8 KB",  category: Category::System },
+];
+
+// ── Draw helpers ────────────────────────────────────────────────────────────
 fn fill(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
     println!("VYOMA_DRAW:fill_rect:{x},{y},{w},{h},{rgba:#010x}");
 }
 fn text(x: u32, y: u32, rgba: u32, s: &str) {
     println!("VYOMA_DRAW:draw_text:{x},{y},{rgba:#010x},m,{s}");
+}
+fn text_s(x: u32, y: u32, rgba: u32, s: &str) {
+    println!("VYOMA_DRAW:draw_text:{x},{y},{rgba:#010x},s,{s}");
 }
 fn border(x: u32, y: u32, w: u32, h: u32, rgba: u32) {
     println!("VYOMA_DRAW:rect_border:{x},{y},{w},{h},{rgba:#010x}");
@@ -38,193 +92,252 @@ fn flush() {
     let _ = io::stdout().flush();
 }
 
-#[derive(Clone)]
-struct Package {
-    name:      String,
-    installed: bool,
-}
-
-fn parse_pkg_list(reply: &str) -> Vec<Package> {
-    reply.split('|')
-        .filter(|s| !s.is_empty() && (s.starts_with('[') ))
-        .map(|entry| {
-            let installed = entry.starts_with("[+]");
-            let rest = if installed { &entry[4..] } else { &entry[4..] };
-            let name = rest.split_whitespace().next().unwrap_or("").to_string();
-            Package { name, installed }
-        })
-        .filter(|p| !p.name.is_empty())
+// ── Installed tracking via /data/installed.txt ──────────────────────────────
+fn read_installed() -> Vec<String> {
+    std::fs::read_to_string("/data/installed.txt")
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .collect()
 }
 
-struct State {
-    all:      Vec<Package>,
-    filter:   String,
-    cursor:   usize,
-    status:   String,
+fn is_installed(name: &str, list: &[String]) -> bool {
+    list.iter().any(|n| n == name)
 }
 
-impl State {
-    fn filtered(&self) -> Vec<&Package> {
-        let f = self.filter.to_lowercase();
-        self.all.iter()
-            .filter(|p| f.is_empty() || p.name.to_lowercase().contains(&f))
-            .collect()
+fn add_to_installed(name: &str) {
+    use std::fs::OpenOptions;
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/data/installed.txt") {
+        let _ = writeln!(f, "{name}");
     }
 }
 
-fn draw(s: &State) {
+fn remove_from_installed(name: &str) {
+    let kept: Vec<String> = read_installed().into_iter().filter(|n| n != name).collect();
+    let out = if kept.is_empty() { String::new() } else { kept.join("\n") + "\n" };
+    let _ = std::fs::write("/data/installed.txt", out);
+}
+
+// ── Filtered catalog view ───────────────────────────────────────────────────
+fn visible(cat: Category) -> Vec<usize> {
+    CATALOG.iter().enumerate()
+        .filter(|(_, a)| cat == Category::All || a.category == cat)
+        .map(|(i, _)| i)
+        .collect()
+}
+
+// ── UI rendering ────────────────────────────────────────────────────────────
+fn draw_ui(cat_idx: usize, sel: usize, installed: &[String], status: &str) {
+    let cat = CATEGORIES[cat_idx];
     fill(0, 0, W, H, C_BG);
-    text(20, 16, C_ACCENT, "App Store");
-    fill(0, 38, W, 1, C_BORDER);
 
-    // Search bar
-    fill(40, 52, 800, 32, C_FIELD);
-    border(40, 52, 800, 32, C_BORDER);
-    let search_text = if s.filter.is_empty() { "Search packages…" } else { &s.filter };
-    let sc = if s.filter.is_empty() { C_HINT } else { C_TITLE };
-    text(54, 60, sc, search_text);
+    // Header
+    fill(0, 0, W, HEADER_H, C_HEADER);
+    text(40, 18, C_TITLE, "App Store");
+    text(W - 340, 18, C_HINT, "VyomaOS Package Manager");
+    fill(0, HEADER_H, W, 1, C_BORDER);
 
-    // Status message
-    if !s.status.is_empty() {
-        let color = if s.status.starts_with("Error") { C_ERR } else { C_OK };
-        text(860, 60, color, &s.status);
+    // Category tabs
+    draw_tabs(cat_idx);
+
+    // App list
+    let idxs = visible(cat);
+    let max_rows = ((H - LIST_Y - 56) / (CARD_H + CARD_GAP)) as usize;
+    let scroll = if sel >= max_rows { sel - max_rows + 1 } else { 0 };
+
+    for (vi, &ci) in idxs.iter().enumerate().skip(scroll).take(max_rows) {
+        let app = &CATALOG[ci];
+        let cy = LIST_Y + ((vi - scroll) as u32) * (CARD_H + CARD_GAP);
+        let is_sel = vi == sel;
+        let inst = is_installed(app.name, installed);
+        draw_card(cy, app, is_sel, inst);
     }
 
-    // Grid legend
-    text(40, 92, C_DIM, "[+] installed   [ ] available");
-    text(W - 340, 92, C_HINT, "↑↓←→/Tab: nav   Enter: install/remove   Ctrl+C: quit");
-
-    let visible = s.filtered();
-    let rows = (visible.len() as u32 + COLS - 1) / COLS;
-    let max_visible_rows = (H - GRID_Y - 36) / (CARD_H + GAP_Y);
-
-    for (i, pkg) in visible.iter().enumerate() {
-        let col = i as u32 % COLS;
-        let row = i as u32 / COLS;
-        if row >= max_visible_rows { break; }
-        let cx = GRID_X + col * (CARD_W + GAP_X);
-        let cy = GRID_Y + row * (CARD_H + GAP_Y);
-
-        let is_sel = i == s.cursor;
-        let bg = if is_sel { C_SEL } else { 0x161B22FF };
-        let bc = if is_sel { C_ACCENT } else { C_BORDER };
-        fill(cx, cy, CARD_W, CARD_H, bg);
-        border(cx, cy, CARD_W, CARD_H, bc);
-
-        let mark = if pkg.installed { "[+]" } else { "[ ]" };
-        let mc = if pkg.installed { C_OK } else { C_DIM };
-        text(cx + 10, cy + 14, mc, mark);
-        text(cx + 52, cy + 14, C_TITLE, &pkg.name);
-
-        let action = if pkg.installed { "→ Remove" } else { "→ Install" };
-        let ac = if pkg.installed { C_ERR } else { C_ACCENT };
-        if is_sel {
-            text(cx + 10, cy + 48, ac, action);
-        }
+    // Status bar
+    if !status.is_empty() {
+        let sc = if status.starts_with("Error") { C_ERR } else { C_STATUS };
+        fill(CARD_X, H - 76, CARD_W, 24, C_HEADER);
+        text(CARD_X + 12, H - 72, sc, status);
     }
 
-    let _ = rows;
-    text(20, H - 18, C_HINT, &format!("{} packages", visible.len()));
+    // Footer
+    let help = "Up/Down: select  Left/Right: category  Enter: install/launch  u: uninstall  r: refresh  Esc: exit";
+    text_s(CARD_X, H - 40, C_HINT, help);
+    text_s(CARD_X, H - 24, C_HINT, &format!("{} apps in catalog", idxs.len()));
+
     flush();
 }
 
-fn request_lists() {
-    println!("@supervisor: pkg-list");
-    let _ = io::stdout().flush();
+fn draw_tabs(cat_idx: usize) {
+    let mut tx = CARD_X;
+    for (i, &c) in CATEGORIES.iter().enumerate() {
+        let label = cat_label(c);
+        let tw = (label.len() as u32) * 8 + 24;
+        let bg = if i == cat_idx { C_TAB_SEL } else { C_TAB_BG };
+        let fg = if i == cat_idx { C_ACCENT } else { C_HINT };
+        fill(tx, TAB_Y, tw, TAB_H, bg);
+        if i == cat_idx {
+            border(tx, TAB_Y, tw, TAB_H, C_ACCENT);
+        }
+        text(tx + 12, TAB_Y + 8, fg, label);
+        tx += tw + 8;
+    }
 }
 
+fn draw_card(cy: u32, app: &AppEntry, is_sel: bool, inst: bool) {
+    let card_bg = if is_sel { C_SEL } else { C_CARD };
+    fill(CARD_X, cy, CARD_W, CARD_H, card_bg);
+    if is_sel {
+        border(CARD_X, cy, CARD_W, CARD_H, C_ACCENT);
+    }
+
+    // Icon placeholder
+    let icon_c = if inst { C_INSTALLED } else { C_ACCENT };
+    fill(CARD_X + 10, cy + 10, 40, 40, icon_c);
+    let initial = &app.name[..1].to_uppercase();
+    text(CARD_X + 22, cy + 22, C_TITLE, &initial);
+
+    // Name + version
+    text(CARD_X + 64, cy + 10, C_TITLE, &format!("{}  v{}", app.name, app.version));
+
+    // Description + size
+    text_s(CARD_X + 64, cy + 34, C_HINT, &format!("{}  ({})", app.desc, app.size));
+
+    // Badge
+    if inst {
+        let bx = CARD_X + CARD_W - 120;
+        fill(bx, cy + 16, 100, 26, C_INSTALLED);
+        text(bx + 10, cy + 20, C_TITLE, "Installed");
+    } else if is_sel {
+        let bx = CARD_X + CARD_W - 100;
+        fill(bx, cy + 16, 80, 26, C_BTN_INST);
+        text(bx + 10, cy + 20, C_TITLE, "Install");
+    }
+}
+
+fn clear_exit() {
+    fill(0, 0, W, H, 0x0D1117FF);
+    flush();
+    std::process::exit(0);
+}
+
+// ── Main event loop ─────────────────────────────────────────────────────────
 fn main() {
     let stdin = io::stdin();
-    let mut s = State { all: Vec::new(), filter: String::new(), cursor: 0, status: String::new() };
+    let mut cat_idx: usize = 0;
+    let mut sel: usize = 0;
+    let mut installed = read_installed();
+    let mut status = String::new();
 
-    request_lists();
+    draw_ui(cat_idx, sel, &installed, &status);
 
     for line in stdin.lock().lines() {
         let raw = match line { Ok(l) => l, Err(_) => break };
 
-        if let Some(rest) = raw.strip_prefix("REPLY:") {
-            if rest.contains('[') {
-                // pkg-list reply
-                s.all = parse_pkg_list(rest);
-                if s.cursor >= s.all.len() && !s.all.is_empty() {
-                    s.cursor = s.all.len() - 1;
-                }
-            } else if !rest.starts_with("no packages") && !rest.is_empty() {
-                // install/remove status reply
-                s.status = rest.chars().take(60).collect();
-                // re-query
-                request_lists();
-            } else {
-                s.status = rest.chars().take(60).collect();
+        // IPC replies from supervisor
+        if let Some(reply) = raw.strip_prefix("REPLY:") {
+            if reply.starts_with("installed ") {
+                status = reply.to_string();
+                installed = read_installed();
+            } else if reply.starts_with("removed ") {
+                status = reply.to_string();
+                installed = read_installed();
+            } else if reply.starts_with("error:") {
+                status = format!("Error: {}", reply[6..].trim());
+            } else if !reply.starts_with("no packages") {
+                status = reply.chars().take(80).collect();
             }
-            draw(&s);
+            draw_ui(cat_idx, sel, &installed, &status);
             continue;
         }
 
+        let cat = CATEGORIES[cat_idx];
+        let count = visible(cat).len();
+
         match raw.as_str() {
-            "\x03" => {
-                fill(0, 0, W, H, 0x0D1117FF);
-                flush();
-                std::process::exit(0);
-            }
-            "\t" | "\x1b[C" => {
-                let n = s.filtered().len();
-                if n > 0 { s.cursor = (s.cursor + 1) % n; }
-                s.status.clear();
-                draw(&s);
-            }
+            // Escape / Ctrl+C — exit
+            "\x1b" | "\x1b[" | "\x03" => clear_exit(),
+
+            // Arrow Up
             "\x1b[A" => {
-                if s.cursor >= COLS as usize { s.cursor -= COLS as usize; }
-                s.status.clear();
-                draw(&s);
+                if sel > 0 { sel -= 1; }
+                status.clear();
+                draw_ui(cat_idx, sel, &installed, &status);
             }
+            // Arrow Down
             "\x1b[B" => {
-                let n = s.filtered().len();
-                if s.cursor + (COLS as usize) < n { s.cursor += COLS as usize; }
-                s.status.clear();
-                draw(&s);
+                if sel + 1 < count { sel += 1; }
+                status.clear();
+                draw_ui(cat_idx, sel, &installed, &status);
             }
+            // Arrow Left — previous category
             "\x1b[D" => {
-                if s.cursor > 0 { s.cursor -= 1; }
-                s.status.clear();
-                draw(&s);
+                if cat_idx > 0 { cat_idx -= 1; } else { cat_idx = CATEGORIES.len() - 1; }
+                sel = 0;
+                status.clear();
+                draw_ui(cat_idx, sel, &installed, &status);
             }
-            "\x7f" => {
-                s.filter.pop();
-                s.cursor = 0;
-                s.status.clear();
-                draw(&s);
+            // Arrow Right — next category
+            "\x1b[C" => {
+                cat_idx = (cat_idx + 1) % CATEGORIES.len();
+                sel = 0;
+                status.clear();
+                draw_ui(cat_idx, sel, &installed, &status);
             }
+
+            // Enter — install or launch
             "" => {
-                // Enter: install or remove
-                let visible = s.filtered();
-                if let Some(pkg) = visible.get(s.cursor) {
-                    let name = pkg.name.clone();
-                    let installed = pkg.installed;
-                    s.status = if installed {
-                        format!("Removing {name}…")
+                let idxs = visible(cat);
+                if let Some(&ci) = idxs.get(sel) {
+                    let app = &CATALOG[ci];
+                    if is_installed(app.name, &installed) {
+                        // Already installed — launch
+                        println!("@supervisor: run /apps/{}/vyoma.toml", app.name);
+                        let _ = io::stdout().flush();
+                        println!("@supervisor: focus {}", app.name);
+                        let _ = io::stdout().flush();
+                        status = format!("Launched {}", app.name);
                     } else {
-                        format!("Installing {name}…")
-                    };
-                    draw(&s);
-                    if installed {
-                        println!("@supervisor: pkg-remove {name}");
-                    } else {
-                        println!("@supervisor: pkg-install {name}");
+                        // Install via supervisor pkg-install
+                        status = format!("Installing {}...", app.name);
+                        draw_ui(cat_idx, sel, &installed, &status);
+                        println!("@supervisor: pkg-install {}", app.name);
+                        let _ = io::stdout().flush();
+                        add_to_installed(app.name);
+                        installed = read_installed();
                     }
-                    let _ = io::stdout().flush();
+                    draw_ui(cat_idx, sel, &installed, &status);
                 }
             }
-            ch if ch.len() == 1 => {
-                let c = ch.chars().next().unwrap();
-                if c.is_ascii_graphic() || c == ' ' {
-                    s.filter.push(c);
-                    s.cursor = 0;
-                    s.status.clear();
-                    draw(&s);
+
+            // 'u' — uninstall selected
+            "u" => {
+                let idxs = visible(cat);
+                if let Some(&ci) = idxs.get(sel) {
+                    let app = &CATALOG[ci];
+                    if is_installed(app.name, &installed) {
+                        status = format!("Removing {}...", app.name);
+                        draw_ui(cat_idx, sel, &installed, &status);
+                        println!("@supervisor: pkg-remove {}", app.name);
+                        let _ = io::stdout().flush();
+                        remove_from_installed(app.name);
+                        installed = read_installed();
+                        status = format!("Removed {}", app.name);
+                    } else {
+                        status = format!("{} is not installed", app.name);
+                    }
+                    draw_ui(cat_idx, sel, &installed, &status);
                 }
             }
+
+            // 'r' — refresh installed list
+            "r" => {
+                installed = read_installed();
+                status = "Catalog refreshed".to_string();
+                draw_ui(cat_idx, sel, &installed, &status);
+            }
+
             _ => {}
         }
     }

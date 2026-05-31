@@ -58,7 +58,8 @@ build_rootfs() {
 
     # ── BusyBox ───────────────────────────────────────────────────────────────
     download_verified "$BUSYBOX_URL" "$BUSYBOX_CACHE" "$BUSYBOX_SHA256"
-    install -m 0755 "$BUSYBOX_CACHE" "$ROOTFS/bin/busybox"
+    cp -f "$BUSYBOX_CACHE" "$ROOTFS/bin/busybox"
+    chmod 0755 "$ROOTFS/bin/busybox"
 
     # Minimal applet symlinks — keep this list short (attack surface reduction)
     for applet in sh mount poweroff echo ls cat; do
@@ -71,7 +72,8 @@ build_rootfs() {
     tar -xJf "$WASMTIME_CACHE" --strip-components=1 \
         -C "$OUTDIR/cache" \
         "wasmtime-v${WASMTIME_VERSION}-x86_64-linux/wasmtime"
-    install -m 0755 "$OUTDIR/cache/wasmtime" "$ROOTFS/usr/bin/wasmtime"
+    cp -f "$OUTDIR/cache/wasmtime" "$ROOTFS/usr/bin/wasmtime"
+    chmod 0755 "$ROOTFS/usr/bin/wasmtime"
     log_info "Installed wasmtime ($(du -h "$ROOTFS/usr/bin/wasmtime" | cut -f1))"
 
     # ── glibc runtime for wasmtime (x86_64-linux glibc variant) ──────────────
@@ -85,7 +87,8 @@ build_rootfs() {
         /lib/x86_64-linux-gnu/libm.so.6 \
         /lib/x86_64-linux-gnu/libpthread.so.0 \
         /lib/x86_64-linux-gnu/libdl.so.2; do
-        install -m 0755 "$lib" "$ROOTFS/lib/x86_64-linux-gnu/"
+        cp -f "$lib" "$ROOTFS/lib/x86_64-linux-gnu/"
+        chmod 0755 "$ROOTFS/lib/x86_64-linux-gnu/$(basename "$lib")"
     done
     # ld-linux expects /lib64/ld-linux-x86-64.so.2 as well (ELF interpreter path)
     ln -sf /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 \
@@ -119,9 +122,10 @@ INIT_EOF
     log_info "Installed boot.toml"
 
     # ── Rust supervisor binary ────────────────────────────────────────────────
-    local supervisor_bin="$PROJECT_ROOT/supervisor/target/x86_64-unknown-linux-musl/release/supervisor"
+    local supervisor_bin="$PROJECT_ROOT/target/x86_64-unknown-linux-musl/release/supervisor"
     if [[ -f "$supervisor_bin" ]]; then
-        install -m 0755 "$supervisor_bin" "$ROOTFS/usr/bin/supervisor"
+        cp -f "$supervisor_bin" "$ROOTFS/usr/bin/supervisor"
+        chmod 0755 "$ROOTFS/usr/bin/supervisor"
         log_info "Installed supervisor ($(du -h "$supervisor_bin" | cut -f1))"
     else
         log_info "WARNING: supervisor binary not found, /init will fall back to shell"
