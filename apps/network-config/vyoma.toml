@@ -7,10 +7,11 @@ wasm    = "network-config.wasm"
 stdio      = true
 display    = true
 shell      = true
+network    = true
 filesystem = true
 
 [window]
-x = 200
+x = 300
 y = 100
-w = 1040
-h = 600
+w = 900
+h = 700
