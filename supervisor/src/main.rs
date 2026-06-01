@@ -337,8 +337,18 @@ fn main() {
         }
     }
     // T023: Initialize scalable font cache (warm-up; graceful if fonts missing)
+    // Pre-warm common pt sizes used by chrome (13, 15, 16) to avoid first-frame lag.
     #[cfg(target_os = "linux")]
-    { let _ = font_cache(); }
+    {
+        let fc = font_cache();
+        let mut cache = fc.lock().unwrap();
+        for &pt in &[13u32, 15, 16] {
+            for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789:".chars() {
+                cache.rasterize(ch, pt, false, false);
+            }
+        }
+        drop(cache);
+    }
 
     let boot_raw = match fs::read_to_string(BOOT_CONFIG_PATH) {
         Ok(s) => s,
@@ -500,7 +510,7 @@ fn main() {
         thread::Builder::new()
             .name("screen-poll".into())
             .spawn(move || {
-                let mut last = display::screen_size().unwrap_or((1440, 900)); // DEFAULT_SCREEN_W/H fallback
+                let mut last = display::screen_size().unwrap_or((1920, 1080)); // DEFAULT_SCREEN_W/H fallback
                 loop {
                     thread::sleep(std::time::Duration::from_secs(1));
                     if let Some((w, h)) = display::screen_size() {

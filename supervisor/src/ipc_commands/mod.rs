@@ -486,8 +486,8 @@ pub fn handle_extended_command(
 
         // T017 [US2]: screen-size — reply with current framebuffer dimensions
         "screen-size" => {
-            const DEFAULT_SCREEN_W: u32 = 1440;
-            const DEFAULT_SCREEN_H: u32 = 900;
+            const DEFAULT_SCREEN_W: u32 = 1920;
+            const DEFAULT_SCREEN_H: u32 = 1080;
             #[cfg(target_os = "linux")]
             let (w, h) = crate::display::screen_size().unwrap_or((DEFAULT_SCREEN_W, DEFAULT_SCREEN_H));
             #[cfg(not(target_os = "linux"))]

@@ -55,7 +55,7 @@ CFLAGS_x86_64_unknown_linux_musl = None
 cargo:rerun-if-env-changed=CFLAGS_x86_64-unknown-linux-musl
 CFLAGS_x86_64-unknown-linux-musl = None
 cargo:rustc-link-lib=static=ring_core_0_17_14__test
-cargo:rustc-link-search=native=/home/hbarve1/codes/vyomaos/target/x86_64-unknown-linux-musl/debug/build/ring-a75f1c17de5bf864/out
+cargo:rustc-link-search=native=/home/hbarve1/codes/vyomaos/.worktrees/feat-hires/target/x86_64-unknown-linux-musl/debug/build/ring-a75f1c17de5bf864/out
 cargo:rerun-if-changed=crypto/chacha/asm/chacha-x86.pl
 cargo:rerun-if-changed=crypto/chacha/asm/chacha-armv4.pl
 cargo:rerun-if-changed=crypto/chacha/asm/chacha-x86_64.pl
