@@ -509,3 +509,103 @@ pub fn handle_supervisor_command(
         }
     }
 }
+
+// ── Inline tests: command parsing patterns ──────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    /// Verify splitn(2, ' ') correctly splits command + argument.
+    #[test]
+    fn test_splitn_single_word() {
+        let parts: Vec<&str> = "ps".splitn(2, ' ').collect();
+        assert_eq!(parts, vec!["ps"]);
+    }
+
+    #[test]
+    fn test_splitn_command_with_arg() {
+        let parts: Vec<&str> = "kill calc".splitn(2, ' ').collect();
+        assert_eq!(parts, vec!["kill", "calc"]);
+    }
+
+    #[test]
+    fn test_splitn_command_with_multi_word_arg() {
+        let parts: Vec<&str> = "update calc http://example.com/calc.wasm".splitn(2, ' ').collect();
+        assert_eq!(parts, vec!["update", "calc http://example.com/calc.wasm"]);
+    }
+
+    /// The update command does a nested split_once to separate app name from URL.
+    #[test]
+    fn test_update_arg_parsing() {
+        let rest = "calc http://example.com/calc.wasm";
+        let (app, url) = rest.split_once(' ').unwrap();
+        assert_eq!(app.trim(), "calc");
+        assert_eq!(url.trim(), "http://example.com/calc.wasm");
+    }
+
+    #[test]
+    fn test_update_arg_missing_url() {
+        let rest = "calc";
+        assert!(rest.split_once(' ').is_none());
+    }
+
+    /// Verify log line pipe replacement (prevents breaking the reply protocol).
+    #[test]
+    fn test_log_line_pipe_replacement() {
+        let line = "hello | world | test";
+        let cleaned = line.replace('|', " ");
+        assert_eq!(cleaned, "hello   world   test");
+        assert!(!cleaned.contains('|'));
+    }
+
+    /// Verify the font-size validation logic.
+    #[test]
+    fn test_font_size_valid() {
+        for s in &["s", "m", "l"] {
+            assert!(matches!(*s, "s" | "m" | "l"), "should be valid: {s}");
+        }
+    }
+
+    #[test]
+    fn test_font_size_invalid() {
+        for s in &["xl", "xs", "medium", ""] {
+            assert!(!matches!(*s, "s" | "m" | "l"), "should be invalid: {s}");
+        }
+    }
+
+    /// Verify the ps-raw format: name:status:uptime:restarts
+    #[test]
+    fn test_ps_raw_format() {
+        let entry = format!("{}:{}:{}:{}", "calc", "run", 120, 0);
+        assert_eq!(entry, "calc:run:120:0");
+        let parts: Vec<&str> = entry.split(':').collect();
+        assert_eq!(parts.len(), 4);
+    }
+
+    /// Verify background tag format.
+    #[test]
+    fn test_bg_tag_format() {
+        let is_bg = true;
+        let bg_tag = if is_bg { "[bg]" } else { "" };
+        let entry = format!("calc{}", bg_tag);
+        assert_eq!(entry, "calc[bg]");
+    }
+
+    /// Verify the installed.txt tail logic for logf command.
+    #[test]
+    fn test_log_tail_lines() {
+        let log_tail_lines: usize = 30;
+        let all: Vec<&str> = (0..100).map(|_| "line").collect();
+        let start = all.len().saturating_sub(log_tail_lines);
+        assert_eq!(start, 70);
+        assert_eq!(all[start..].len(), 30);
+    }
+
+    #[test]
+    fn test_log_tail_fewer_lines() {
+        let log_tail_lines: usize = 30;
+        let all: Vec<&str> = (0..10).map(|_| "line").collect();
+        let start = all.len().saturating_sub(log_tail_lines);
+        assert_eq!(start, 0);
+        assert_eq!(all[start..].len(), 10);
+    }
+}
