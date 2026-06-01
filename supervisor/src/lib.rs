@@ -30,3 +30,23 @@ pub mod file_assoc;
 pub mod font;
 #[cfg(target_os = "linux")]
 pub mod display;
+
+// ── Color parsing (platform-independent) ────────────────────────────────────
+
+/// Parse a u32 color value from a string.
+///
+/// Accepts decimal (`"4294967295"`) or hex with `0x`/`0X` prefix
+/// (`"0x0d1117ff"`, `"0X0D1117FF"`).  Leading/trailing whitespace is
+/// trimmed.  Returns `None` for empty, non-numeric, or overflow values.
+#[inline]
+pub fn parse_color(s: &str) -> Option<u32> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u32::from_str_radix(hex, 16).ok()
+    } else {
+        s.parse().ok()
+    }
+}
