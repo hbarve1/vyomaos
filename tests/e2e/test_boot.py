@@ -18,11 +18,13 @@ def test_apps_spawned(vm):
 
 
 def test_boot_under_5s(vm):
-    """Boot completes (all apps spawned) in under 5 seconds."""
-    # The vm fixture already waited for "all apps spawned", so
-    # boot_duration captures the total time from QEMU start to now.
-    # We allow some slack since the fixture also includes QMP connect time.
-    assert vm.boot_duration < 30, (
-        f"Boot took {vm.boot_duration:.1f}s, expected under 5s. "
-        "Note: this includes QMP connection overhead."
+    """Boot completes (all apps spawned) in under 5 seconds.
+
+    boot_duration measures QEMU start → 'all apps spawned' serial marker.
+    This includes QMP connection overhead (~1-2 s), so we allow a 10 s
+    budget while the target is < 5 s of actual kernel+supervisor time.
+    """
+    assert vm.boot_duration < 10, (
+        f"Boot took {vm.boot_duration:.1f}s, expected under 10s "
+        "(target: 5 s kernel+supervisor, 10 s with QMP overhead)."
     )

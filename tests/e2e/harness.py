@@ -27,6 +27,7 @@ class QmpClient:
         self._qmp_path = "/tmp/vyoma-qmp.sock"
         self._serial_log = "/tmp/vyoma-serial.log"
         self._boot_time = None
+        self._boot_done_time = None
 
         # Clean up stale socket/pipe files
         for path in (self._qmp_path, self._serial_log):
@@ -180,11 +181,25 @@ class QmpClient:
             f"Pattern {pattern!r} not found in serial output within {timeout}s"
         )
 
+    def mark_boot_done(self):
+        """Record the moment boot completed (all apps spawned).
+
+        Called by the conftest fixture after wait_for_serial succeeds.
+        """
+        self._boot_done_time = time.time()
+
     @property
     def boot_duration(self) -> float:
-        """Seconds elapsed since QEMU was started."""
+        """Seconds between QEMU start and boot completion.
+
+        If mark_boot_done() was called, returns the recorded duration.
+        Otherwise falls back to elapsed time since QEMU was started
+        (which keeps ticking and is only useful as an upper bound).
+        """
         if self._boot_time is None:
             return 0.0
+        if self._boot_done_time is not None:
+            return self._boot_done_time - self._boot_time
         return time.time() - self._boot_time
 
     @property
