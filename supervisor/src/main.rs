@@ -42,8 +42,9 @@ mod mount;
 mod mouse_input;
 #[cfg(target_os = "linux")]
 #[allow(dead_code)] mod namespace;
-mod net;
-mod websocket;
+mod network;
+pub(crate) use network::net;
+pub(crate) use network::websocket;
 mod packages;
 #[allow(dead_code)] mod recovery;
 #[cfg(target_os = "linux")]
@@ -85,7 +86,8 @@ pub(crate) use security::encrypted_store;
 #[allow(dead_code)] mod jit_config;
 #[allow(dead_code)] mod backup;
 #[allow(dead_code)] mod virtualization;
-#[allow(dead_code)] mod vnc;
+#[allow(dead_code)]
+pub(crate) use network::vnc;
 #[allow(dead_code)] mod store;
 
 use std::{
