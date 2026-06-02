@@ -1,5 +1,6 @@
 use crate::{log_info, log_warn, send_reply, app_log_levels, AppRegistry, AppStatus, Inbox, BOOT_INSTANT, CLIPBOARD};
 use supervisor::logging::Subsystem;
+use crate::lock_or_recover;
 
 pub fn handle(
     verb: &str, parts: &[&str], sender: &str,
@@ -19,7 +20,7 @@ pub fn handle(
                 let app_name = sub_parts[0].trim();
                 let level_str = sub_parts[1].trim();
                 if let Some(lvl) = supervisor::ipc::parse_log_level(level_str) {
-                    app_log_levels().lock().unwrap().insert(app_name.to_string(), lvl);
+                    lock_or_recover(&app_log_levels()).insert(app_name.to_string(), lvl);
                     log_info!(Subsystem::Ipc, Some(app_name),
                         "app={} log_level set to {:?}", app_name, lvl);
                 } else {
@@ -62,15 +63,15 @@ pub fn handle(
         }
         "clipboard-set" => {
             let text = parts.get(1).unwrap_or(&"").trim().to_string();
-            *CLIPBOARD.get().unwrap().lock().unwrap() = text;
+            *lock_or_recover(&CLIPBOARD.get().unwrap()) = text;
             send_reply(sender, &supervisor::ipc::format_clipboard_set_reply(), inbox);
         }
         "clipboard-get" => {
-            let text = CLIPBOARD.get().unwrap().lock().unwrap().clone();
+            let text = lock_or_recover(&CLIPBOARD.get().unwrap()).clone();
             send_reply(sender, &supervisor::ipc::format_clipboard_get_reply(&text), inbox);
         }
         "clipboard-clear" => {
-            CLIPBOARD.get().unwrap().lock().unwrap().clear();
+            lock_or_recover(&CLIPBOARD.get().unwrap()).clear();
             send_reply(sender, "REPLY:clipboard-clear ok", inbox);
         }
         "screenshot" => {
@@ -78,7 +79,7 @@ pub fn handle(
             {
                 match crate::display::get() {
                     Some(fb_lock) => {
-                        let fb = fb_lock.lock().unwrap();
+                        let fb = lock_or_recover(&fb_lock);
                         let explicit_path = parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty());
                         let result = if let Some(p) = explicit_path {
                             fb.screenshot(p).map(|()| p.to_string())
@@ -114,10 +115,10 @@ pub fn handle(
                 log_info!(Subsystem::Ipc, None, "locale switched to {code} by {sender}");
                 send_reply(sender, &format!("REPLY:locale set to {code}"), inbox);
                 let msg = format!("VYOMA_SYSTEM:locale:{code}");
-                let reg = app_registry.lock().unwrap();
-                let inb = inbox.lock().unwrap();
+                let reg = lock_or_recover(&app_registry);
+                let inb = lock_or_recover(&inbox);
                 for (name, state_arc) in reg.iter() {
-                    let st = state_arc.lock().unwrap();
+                    let st = lock_or_recover(&state_arc);
                     if matches!(st.status, AppStatus::Running) {
                         if let Some(tx) = inb.get(name) {
                             let _ = tx.send(msg.clone());
@@ -144,9 +145,9 @@ pub fn handle(
             match crate::file_assoc::app_for_file(&path) {
                 Some(app_name) => {
                     let running = {
-                        let reg = app_registry.lock().unwrap();
+                        let reg = lock_or_recover(&app_registry);
                         reg.get(&app_name)
-                            .map(|st| matches!(st.lock().unwrap().status, AppStatus::Running))
+                            .map(|st| matches!(lock_or_recover(&st).status, AppStatus::Running))
                             .unwrap_or(false)
                     };
                     if running {

@@ -5,6 +5,7 @@
 
 use crate::{log_info, log_warn, send_reply, AppRegistry, AppStatus, Inbox};
 use supervisor::logging::Subsystem;
+use crate::lock_or_recover;
 
 /// Handle share-sheet IPC commands. Returns `true` if handled.
 pub fn handle_share(
@@ -83,10 +84,10 @@ pub fn handle_share(
 
 /// Broadcast a message to all running apps that have `display = true`.
 fn broadcast_to_display_apps(msg: &str, inbox: &Inbox, app_registry: &AppRegistry) {
-    let reg = app_registry.lock().unwrap();
-    let inb = inbox.lock().unwrap();
+    let reg = lock_or_recover(&app_registry);
+    let inb = lock_or_recover(&inbox);
     for (name, state_arc) in reg.iter() {
-        let st = state_arc.lock().unwrap();
+        let st = lock_or_recover(&state_arc);
         if st.has_display && matches!(st.status, AppStatus::Running) {
             if let Some(tx) = inb.get(name) {
                 let _ = tx.send(msg.to_string());

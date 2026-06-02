@@ -9,6 +9,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 use crate::{log_info, send_reply, AppRegistry, Inbox};
 use supervisor::logging::Subsystem;
@@ -48,7 +49,7 @@ fn mount_table() -> &'static Mutex<Vec<VfsMount>> {
 
 /// Add a mount to the global table. Returns `Err` if the mount point is already present.
 pub fn add_mount(mount: VfsMount) -> Result<(), String> {
-    let mut table = mount_table().lock().unwrap();
+    let mut table = lock_or_recover(&mount_table());
     if table.iter().any(|m| m.mount_point == mount.mount_point) {
         return Err(format!("mount point {} already exists", mount.mount_point));
     }
@@ -58,7 +59,7 @@ pub fn add_mount(mount: VfsMount) -> Result<(), String> {
 
 /// List all active mounts (cloned snapshot).
 pub fn list_mounts() -> Vec<VfsMount> {
-    mount_table().lock().unwrap().clone()
+    lock_or_recover(&mount_table()).clone()
 }
 
 // ── Path sandboxing ──────────────────────────────────────────────────────────
@@ -69,7 +70,7 @@ pub fn list_mounts() -> Vec<VfsMount> {
 /// Rejects paths that escape the mount point via `..` traversal, or that do
 /// not fall under any registered mount.
 fn resolve_path(path: &str) -> Result<(PathBuf, usize), String> {
-    let table = mount_table().lock().unwrap();
+    let table = lock_or_recover(&mount_table());
 
     // Normalise the requested path (no fs access yet — purely lexical).
     let req = lexical_clean(path);
@@ -120,9 +121,9 @@ fn lexical_clean(path: &str) -> String {
 /// Check whether `app` has the `filesystem` capability by inspecting the
 /// app registry for manifest data.
 fn app_has_filesystem(app: &str, app_registry: &AppRegistry) -> bool {
-    let reg = app_registry.lock().unwrap();
+    let reg = lock_or_recover(&app_registry);
     let Some(state_arc) = reg.get(app) else { return false };
-    let state = state_arc.lock().unwrap();
+    let state = lock_or_recover(&state_arc);
 
     // Re-parse the manifest to check capabilities.filesystem.
     // The entry.manifest path is stored in AppState.
@@ -154,7 +155,7 @@ pub fn vfs_write(
         return Err(format!("app {app} does not have filesystem capability"));
     }
     let (real_path, idx) = resolve_path(path)?;
-    let table = mount_table().lock().unwrap();
+    let table = lock_or_recover(&mount_table());
     if table[idx].read_only {
         return Err(format!("mount {} is read-only", table[idx].mount_point));
     }
@@ -199,7 +200,7 @@ pub fn vfs_delete(app: &str, path: &str, app_registry: &AppRegistry) -> Result<(
         return Err(format!("app {app} does not have filesystem capability"));
     }
     let (real_path, idx) = resolve_path(path)?;
-    let table = mount_table().lock().unwrap();
+    let table = lock_or_recover(&mount_table());
     if table[idx].read_only {
         return Err(format!("mount {} is read-only", table[idx].mount_point));
     }

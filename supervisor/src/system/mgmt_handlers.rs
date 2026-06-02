@@ -3,6 +3,7 @@
 // `handle_client` dispatches incoming NDJSON requests to the appropriate
 // handler function.  Each function writes NDJSON responses back to the client.
 
+use crate::lock_or_recover;
 use std::{
     io::{BufRead, BufReader, Read, Write},
     net::TcpStream,
@@ -78,11 +79,11 @@ pub fn handle_client(stream: TcpStream, registry: AppRegistry) {
 
 pub fn handle_ps(w: &mut dyn Write, registry: &AppRegistry) {
     let rows: Vec<MgmtResponse> = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         let mut rows: Vec<(String, MgmtResponse)> = reg
             .iter()
             .map(|(name, st)| {
-                let st = st.lock().unwrap();
+                let st = lock_or_recover(&st);
                 let uptime_s = st.start_time.elapsed().as_secs();
                 let status = match &st.status {
                     AppStatus::Running    => MgmtAppStatus::Running,
@@ -115,9 +116,9 @@ pub fn handle_ps(w: &mut dyn Write, registry: &AppRegistry) {
 pub fn handle_logs(w: &mut dyn Write, app: &str, registry: &AppRegistry) {
     // Drain buffered log lines first, then subscribe to new lines.
     let buffered: Vec<String> = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         match reg.get(app) {
-            Some(st) => st.lock().unwrap().log_buf.iter().cloned().collect(),
+            Some(st) => lock_or_recover(&st).log_buf.iter().cloned().collect(),
             None => {
                 let _ = write_response(
                     w,
@@ -136,11 +137,11 @@ pub fn handle_logs(w: &mut dyn Write, app: &str, registry: &AppRegistry) {
 
     // Subscribe to live log output via the app's log_subscribers list.
     let rx = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         match reg.get(app) {
             Some(st) => {
                 let (tx, rx) = mpsc::channel::<String>();
-                st.lock().unwrap().log_subscribers.push(tx);
+                lock_or_recover(&st).log_subscribers.push(tx);
                 rx
             }
             None => {
@@ -233,9 +234,9 @@ pub fn handle_heartbeat_stream(w: &mut dyn Write, registry: &AppRegistry) {
     // Continuously emit heartbeats for all running apps every 2 seconds.
     loop {
         let rows: Vec<MgmtResponse> = {
-            let reg = registry.lock().unwrap();
+            let reg = lock_or_recover(&registry);
             reg.iter().map(|(name, st)| {
-                let st = st.lock().unwrap();
+                let st = lock_or_recover(&st);
                 let uptime_s = st.start_time.elapsed().as_secs();
                 let status = match &st.status {
                     AppStatus::Running    => "healthy",
@@ -274,7 +275,7 @@ pub fn handle_exec(
 
     // Look up app; ensure it's running.
     {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         if reg.get(app).is_none() {
             drop(reg);
             let _ = write_response(
@@ -291,17 +292,17 @@ pub fn handle_exec(
     // Store the reply sender indexed by the app name so that when the app
     // writes `@__mgmt__: <reply>` the supervisor routes it here.
     if let Some(map) = crate::EXEC_REPLY_CHANNELS.get() {
-        map.lock().unwrap().insert(app.to_string(), reply_tx);
+        lock_or_recover(&map).insert(app.to_string(), reply_tx);
     }
 
     // Track that __mgmt__ is the last sender to this app, so @reply: works.
     if let Some(ls) = crate::LAST_SENDER.get() {
-        ls.lock().unwrap().insert(app.to_string(), "__mgmt__".to_string());
+        lock_or_recover(&ls).insert(app.to_string(), "__mgmt__".to_string());
     }
 
     // Deliver the message to the app's IPC inbox.
     let sent = if let Some(inbox_arc) = crate::MGMT_INBOX.get() {
-        let inbox = inbox_arc.lock().unwrap();
+        let inbox = lock_or_recover(&inbox_arc);
         if let Some(tx) = inbox.get(app) {
             tx.send(msg.to_string()).is_ok()
         } else {
@@ -333,6 +334,6 @@ pub fn handle_exec(
 
     // Clean up the reply channel entry.
     if let Some(map) = crate::EXEC_REPLY_CHANNELS.get() {
-        map.lock().unwrap().remove(app);
+        lock_or_recover(&map).remove(app);
     }
 }

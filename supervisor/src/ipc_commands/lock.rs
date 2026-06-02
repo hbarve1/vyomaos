@@ -7,6 +7,7 @@ use crate::{log_info, AppRegistry, FocusedApp, Inbox};
 use crate::send_reply;
 use crate::chrome::z_order_push_front;
 use supervisor::logging::Subsystem;
+use crate::lock_or_recover;
 
 /// Handle `@supervisor: lock` or `@supervisor: unlock`.
 pub fn handle_lock_command(
@@ -22,8 +23,8 @@ pub fn handle_lock_command(
             return;
         }
         crate::set_locked(true);
-        let running = app_registry.lock().unwrap().get("screen-lock")
-            .map(|st| matches!(st.lock().unwrap().status, crate::AppStatus::Running))
+        let running = lock_or_recover(&app_registry).get("screen-lock")
+            .map(|st| matches!(lock_or_recover(&st).status, crate::AppStatus::Running))
             .unwrap_or(false);
         if !running {
             let entry = supervisor::manifest::BootEntry {
@@ -35,7 +36,7 @@ pub fn handle_lock_command(
             }
         }
         z_order_push_front("screen-lock");
-        *focused.lock().unwrap() = Some("screen-lock".to_string());
+        *lock_or_recover(&focused) = Some("screen-lock".to_string());
         log_info!(Subsystem::Lifecycle, None, "screen locked by {sender}");
         send_reply(sender, "REPLY:locked", inbox);
     } else {
@@ -45,8 +46,8 @@ pub fn handle_lock_command(
             return;
         }
         crate::set_locked(false);
-        let pid = app_registry.lock().unwrap().get("screen-lock")
-            .and_then(|st| st.lock().unwrap().child_pid);
+        let pid = lock_or_recover(&app_registry).get("screen-lock")
+            .and_then(|st| lock_or_recover(&st).child_pid);
         if let Some(pid) = pid {
             #[cfg(target_os = "linux")]
             unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }

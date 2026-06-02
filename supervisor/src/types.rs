@@ -6,6 +6,8 @@ use std::process::{Child, ChildStdin, ChildStdout};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Instant;
 
+pub use supervisor::lock_or_recover;
+
 use supervisor::manifest::BootEntry;
 
 pub const LOG_BUF_SIZE: usize = 20;

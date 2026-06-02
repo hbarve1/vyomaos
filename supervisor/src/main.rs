@@ -93,6 +93,7 @@ pub(crate) use security::encrypted_store;
 #[allow(dead_code)]
 pub(crate) use network::vnc;
 
+use crate::lock_or_recover;
 use std::{
     collections::HashMap,
     fs,
@@ -189,7 +190,7 @@ fn main() {
         if let Some(sz) = display::screen_size() { let _ = SCREEN_SIZE.set(sz); }
         // P35: paint default desktop background before any app draws
         if let Some(fb_lock) = display::get() {
-            let mut fb = fb_lock.lock().unwrap();
+            let mut fb = lock_or_recover(&fb_lock);
             let (w, h) = (fb.width, fb.height);
             fb.fill_rect(0, 0, w, h, 0x1C1C1EFF);
             // Draw initial menu bar (no focused app yet, no apps yet)
@@ -202,7 +203,7 @@ fn main() {
     #[cfg(target_os = "linux")]
     {
         let fc = font_cache();
-        let mut cache = fc.lock().unwrap();
+        let mut cache = lock_or_recover(&fc);
         for &pt in &[13u32, 15, 16] {
             for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789:".chars() {
                 cache.rasterize(ch, pt, false, false);
@@ -312,7 +313,7 @@ fn main() {
         if let Some(ref name) = shell_name {
             log_info!(Subsystem::Input, Some(name.as_str()), "keyboard focus → {name}");
         }
-        *focused.lock().unwrap() = shell_name;
+        *lock_or_recover(&focused) = shell_name;
     }
 
     // ── Boot-time session restore — apply saved window positions ─────────────
@@ -381,10 +382,10 @@ fn main() {
                             last = (w, h);
                             // Broadcast new dimensions to all running display apps.
                             let msg = format!("VYOMA_SYSTEM:screen:{},{}", w, h);
-                            let reg = registry_resize.lock().unwrap();
-                            let inb = inbox_resize.lock().unwrap();
+                            let reg = lock_or_recover(&registry_resize);
+                            let inb = lock_or_recover(&inbox_resize);
                             for (name, state_arc) in reg.iter() {
-                                let st = state_arc.lock().unwrap();
+                                let st = lock_or_recover(&state_arc);
                                 if st.has_display && matches!(st.status, AppStatus::Running) {
                                     if let Some(tx) = inb.get(name) {
                                         let _ = tx.send(msg.clone());

@@ -4,6 +4,7 @@
 //! P85: User accounts system — user model, database, session, and IPC commands.
 
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 use sha2::{Digest, Sha256};
 
@@ -172,18 +173,18 @@ pub fn login(username: &str, pin: &str) -> Result<(), String> {
     if !verify_pin(pin, &user.pin_hash) {
         return Err("incorrect PIN".to_string());
     }
-    *session().lock().unwrap() = Some(username.to_string());
+    *lock_or_recover(&session()) = Some(username.to_string());
     Ok(())
 }
 
 /// Log out the current user.
 pub fn logout() {
-    *session().lock().unwrap() = None;
+    *lock_or_recover(&session()) = None;
 }
 
 /// Return the currently logged-in username, if any.
 pub fn current_user() -> Option<String> {
-    session().lock().unwrap().clone()
+    lock_or_recover(&session()).clone()
 }
 
 /// Check whether the current user has the Admin role.

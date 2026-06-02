@@ -7,6 +7,7 @@ mod parser;
 mod compositor;
 
 use std::sync::Mutex;
+use crate::lock_or_recover;
 
 use crate::{log_info, log_warn, AppRegistry, FocusedApp};
 use crate::chrome::{TITLEBAR_H, Z_DOCK};
@@ -34,30 +35,30 @@ pub fn handle_draw_command(
 ) {
     // Skip draw commands for minimized windows (content area is hidden).
     {
-        let reg = app_registry.lock().unwrap();
-        if reg.get(sender).map(|st| st.lock().unwrap().minimized).unwrap_or(false) {
+        let reg = lock_or_recover(&app_registry);
+        if reg.get(sender).map(|st| lock_or_recover(&st).minimized).unwrap_or(false) {
             return;
         }
     }
 
     let Some(fb_lock) = display::get() else { return };
-    let win_z = app_registry.lock().unwrap().get(sender)
-        .map(|st| st.lock().unwrap().win_z).unwrap_or(10u32);
+    let win_z = lock_or_recover(&app_registry).get(sender)
+        .map(|st| lock_or_recover(&st).win_z).unwrap_or(10u32);
     let is_system = win_z >= Z_DOCK;
     let chrome_h = if is_system { 0u32 } else { TITLEBAR_H };
 
     // Mark this app dirty for any draw command other than flush/present.
     if cmd != "flush" && cmd != "present" {
-        APP_DIRTY.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
-            .lock().unwrap().insert(sender.to_string(), true);
+        lock_or_recover(APP_DIRTY.get_or_init(|| Mutex::new(std::collections::HashMap::new())))
+            .insert(sender.to_string(), true);
     }
 
     if cmd == "flush" || cmd == "present" {
         // P31: mark frame as ready for the compositor tick.
-        if let Some(st) = app_registry.lock().unwrap().get(sender) {
-            st.lock().unwrap().frame_ready = true;
+        if let Some(st) = lock_or_recover(&app_registry).get(sender) {
+            lock_or_recover(&st).frame_ready = true;
         }
-        let mut fb = fb_lock.lock().unwrap();
+        let mut fb = lock_or_recover(&fb_lock);
         let (fb_w, fb_h) = (fb.width, fb.height);
 
         // -- Compositor pass --
@@ -74,7 +75,7 @@ pub fn handle_draw_command(
 
         // FPS tracking
         {
-            let mut map = flush_counts().lock().unwrap();
+            let mut map = lock_or_recover(&flush_counts());
             let e = map.entry(sender.to_string()).or_insert((0u64, std::time::Instant::now()));
             e.0 += 1;
             let ms = e.1.elapsed().as_millis() as u64;

@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 // ── Locale model ────────────────────────────────────────────────────────────
 
@@ -150,7 +151,7 @@ fn locale_map() -> &'static HashMap<&'static str, Locale> {
 /// Look up a translated string by key. Falls back to English if the current
 /// locale does not contain the key.
 pub fn t(key: &str) -> &'static str {
-    let code = *active_locale_lock().lock().unwrap();
+    let code = *lock_or_recover(&active_locale_lock());
     let map = locale_map();
 
     // Try current locale first.
@@ -175,7 +176,7 @@ pub fn t(key: &str) -> &'static str {
 
 /// Return the currently active locale code (e.g. "en", "es", "hi").
 pub fn current_locale() -> &'static str {
-    *active_locale_lock().lock().unwrap()
+    *lock_or_recover(&active_locale_lock())
 }
 
 /// Switch the active locale. Returns `true` if the locale code is known,
@@ -186,7 +187,7 @@ pub fn set_locale(code: &str) -> bool {
     let static_code: Option<&'static str> = map.keys().find(|&&k| k == code).copied();
     match static_code {
         Some(c) => {
-            *active_locale_lock().lock().unwrap() = c;
+            *lock_or_recover(&active_locale_lock()) = c;
             true
         }
         None => false,

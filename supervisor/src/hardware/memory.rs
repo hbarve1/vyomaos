@@ -7,6 +7,7 @@
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use crate::lock_or_recover;
 
 use crate::{log_info, log_warn, AppRegistry, AppStatus, Inbox};
 use supervisor::logging::Subsystem;
@@ -151,10 +152,10 @@ pub fn handle_memory_command(
             crate::send_reply(sender, &reply, inbox);
         }
         "memory-apps" => {
-            let reg = app_registry.lock().unwrap();
+            let reg = lock_or_recover(&app_registry);
             let mut lines: Vec<String> = Vec::new();
             for (name, state_arc) in reg.iter() {
-                let st = state_arc.lock().unwrap();
+                let st = lock_or_recover(&state_arc);
                 if !matches!(st.status, AppStatus::Running) {
                     continue;
                 }
@@ -217,7 +218,7 @@ fn run_pressure_monitor(inbox: &Inbox, registry: &AppRegistry) {
 
         let new_level = pressure_level(&info);
         let prev_level = {
-            let mut lock = current_level_lock().lock().unwrap();
+            let mut lock = lock_or_recover(&current_level_lock());
             let prev = *lock;
             *lock = new_level;
             prev
@@ -252,10 +253,10 @@ fn run_pressure_monitor(inbox: &Inbox, registry: &AppRegistry) {
 /// Broadcast `VYOMA_SYSTEM:memory-pressure:<level>` to all running apps.
 fn broadcast_pressure(inbox: &Inbox, registry: &AppRegistry, level: &str) {
     let msg = format!("VYOMA_SYSTEM:memory-pressure:{level}");
-    let reg = registry.lock().unwrap();
-    let inb = inbox.lock().unwrap();
+    let reg = lock_or_recover(&registry);
+    let inb = lock_or_recover(&inbox);
     for (name, state_arc) in reg.iter() {
-        let st = state_arc.lock().unwrap();
+        let st = lock_or_recover(&state_arc);
         if matches!(st.status, AppStatus::Running) {
             if let Some(tx) = inb.get(name) {
                 let _ = tx.send(msg.clone());
@@ -268,11 +269,11 @@ fn broadcast_pressure(inbox: &Inbox, registry: &AppRegistry, level: &str) {
 /// "Lowest priority" = background app with the highest restart_count (most restarts
 /// means least stable), falling back to alphabetical ordering as a tiebreaker.
 fn kill_lowest_priority_bg_app(registry: &AppRegistry) {
-    let reg = registry.lock().unwrap();
+    let reg = lock_or_recover(&registry);
     let mut candidates: Vec<(String, u32, Option<u32>)> = Vec::new();
 
     for (name, state_arc) in reg.iter() {
-        let st = state_arc.lock().unwrap();
+        let st = lock_or_recover(&state_arc);
         if !st.is_background || !matches!(st.status, AppStatus::Running) {
             continue;
         }

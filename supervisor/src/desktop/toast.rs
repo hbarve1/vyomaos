@@ -4,6 +4,7 @@
 //! Crash / watchdog notification toasts and focus transfer on app exit.
 
 use std::thread;
+use crate::lock_or_recover;
 
 use crate::{log_info, AppRegistry, AppStatus, FocusedApp};
 use supervisor::logging::Subsystem;
@@ -26,7 +27,7 @@ pub fn show_crash_toast(name: &str, code: i32) {
         const NW: u32 = 400;
         const NH: u32 = 60;
         if let Some(fb_lock) = display::get() {
-            let mut fb = fb_lock.lock().unwrap();
+            let mut fb = lock_or_recover(&fb_lock);
             fb.fill_rect(NX, NY, NW, NH, 0x21262DFF);
             fb.rect_border(NX, NY, NW, NH, 0x58A6FFFF);
             fb.draw_text(NX + 8, NY + 8, &title, 0xFFFFFFFF, font::FontSize::Medium);
@@ -36,7 +37,7 @@ pub fn show_crash_toast(name: &str, code: i32) {
         thread::spawn(move || {
             thread::sleep(std::time::Duration::from_secs(3));
             if let Some(fb_lock) = display::get() {
-                let mut fb = fb_lock.lock().unwrap();
+                let mut fb = lock_or_recover(&fb_lock);
                 fb.fill_rect(NX, NY, NW, NH, 0x0D1117FF);
                 fb.flush();
             }
@@ -49,16 +50,16 @@ pub fn show_crash_toast(name: &str, code: i32) {
 ///
 /// No-op if `exiting` does not currently hold focus.
 pub fn auto_transfer_focus(exiting: &str, app_registry: &AppRegistry, focused: &FocusedApp) {
-    let is_focused = focused.lock().unwrap().as_deref() == Some(exiting);
+    let is_focused = lock_or_recover(&focused).as_deref() == Some(exiting);
     if !is_focused { return; }
 
     // Find first other Running display-or-shell app (sorted for determinism)
     let next = {
-        let reg = app_registry.lock().unwrap();
+        let reg = lock_or_recover(&app_registry);
         let mut names: Vec<String> = reg.iter()
             .filter(|(name, state_arc)| {
                 if name.as_str() == exiting { return false; }
-                let st = state_arc.lock().unwrap();
+                let st = lock_or_recover(&state_arc);
                 matches!(st.status, AppStatus::Running) && st.has_display
             })
             .map(|(name, _)| name.clone())
@@ -67,7 +68,7 @@ pub fn auto_transfer_focus(exiting: &str, app_registry: &AppRegistry, focused: &
         names.into_iter().next()
     };
 
-    *focused.lock().unwrap() = next;
+    *lock_or_recover(&focused) = next;
 }
 
 // Satisfy the borrow checker on non-Linux builds where `display` is not imported.
@@ -113,7 +114,7 @@ pub fn enqueue_banner(app_name: &str, title: &str, body: &str) {
 pub fn enqueue_banner_with_icon(
     app_name: &str, title: &str, body: &str, icon: Option<&str>,
 ) {
-    let mut q = banner_queue().lock().unwrap();
+    let mut q = lock_or_recover(&banner_queue());
     // T066: Max 3 concurrent banners; evict oldest if full.
     if q.len() >= 3 { q.pop_front(); }
     q.push_back(NotificationBanner {
@@ -134,7 +135,7 @@ pub fn enqueue_banner_with_icon(
 pub fn render_banners(fb: &mut crate::display::Framebuffer) {
     use crate::display::draw_rounded_rect;
     let now = now_ms();
-    let mut q = banner_queue().lock().unwrap();
+    let mut q = lock_or_recover(&banner_queue());
     // T066: Auto-dismiss after dismiss_after_ms (4000ms default).
     q.retain(|b| now.saturating_sub(b.created_ms) < b.dismiss_after_ms as u64);
     let (sw, sh, fs) = (fb.width, fb.height, fb.stride);
@@ -148,7 +149,7 @@ pub fn render_banners(fb: &mut crate::display::Framebuffer) {
         draw_rounded_rect(&mut fb.back, bx, by, bw, bh, 0x1C1C1EE5_u32, 10, fs, sw, sh);
         // T065: 16x16 icon if available
         let has_icon = if let Some(ref icon_path) = banner.icon_path {
-            let mut ic = crate::image_cache().lock().unwrap();
+            let mut ic = lock_or_recover(&crate::image_cache());
             if let Some(img) = ic.get(icon_path) {
                 let (iw, ih, rgba) = (img.width, img.height, img.rgba.clone());
                 drop(ic);

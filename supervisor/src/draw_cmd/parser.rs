@@ -4,6 +4,7 @@
 //! Individual VYOMA_DRAW command parsers (fill_rect, draw_text, draw_glyph, etc.).
 
 use std::sync::Mutex;
+use crate::lock_or_recover;
 
 use crate::{log_error, AppRegistry};
 use supervisor::logging::Subsystem;
@@ -25,8 +26,8 @@ pub fn parse_color(s: &str) -> Option<u32> {
 fn get_surface(sender: &str, app_registry: &AppRegistry)
     -> Option<std::sync::Arc<Mutex<display::Surface>>>
 {
-    app_registry.lock().unwrap().get(sender)
-        .and_then(|st| st.lock().unwrap().surface.clone())
+    lock_or_recover(&app_registry).get(sender)
+        .and_then(|st| lock_or_recover(&st).surface.clone())
 }
 
 #[cfg(target_os = "linux")]
@@ -46,7 +47,7 @@ pub fn parse_fill_rect(
             parse_color(rgba_s),
         ) {
             if let Some(surface_arc) = get_surface(sender, app_registry) {
-                surface_arc.lock().unwrap().fill_rect(lx, ly, w, h, rgba);
+                lock_or_recover(&surface_arc).fill_rect(lx, ly, w, h, rgba);
             } else if let Some((wx, wy, ww, wh)) = win {
                 let content_wy = wy + chrome_h;
                 let ax = wx + lx; let ay = content_wy + ly;
@@ -54,9 +55,9 @@ pub fn parse_fill_rect(
                 let win_bottom = wy + wh;
                 if ax < win_right && ay < win_bottom {
                     let aw = w.min(win_right - ax); let ah = h.min(win_bottom - ay);
-                    if aw > 0 && ah > 0 { fb_lock.lock().unwrap().fill_rect(ax, ay, aw, ah, rgba); }
+                    if aw > 0 && ah > 0 { lock_or_recover(&fb_lock).fill_rect(ax, ay, aw, ah, rgba); }
                 }
-            } else { fb_lock.lock().unwrap().fill_rect(lx, ly, w, h, rgba); }
+            } else { lock_or_recover(&fb_lock).fill_rect(lx, ly, w, h, rgba); }
         } else {
             log_error!(Subsystem::Display, Some(sender), "bad fill_rect args: {args}");
         }
@@ -112,11 +113,11 @@ pub fn parse_draw_text(
 
     if let Some((lx, ly, rgba, size, text)) = parsed {
         if let Some(surface_arc) = get_surface(sender, app_registry) {
-            surface_arc.lock().unwrap().draw_text_bitmap(lx, ly, text, rgba);
+            lock_or_recover(&surface_arc).draw_text_bitmap(lx, ly, text, rgba);
         } else if let Some((wx, wy, _, _)) = win {
-            fb_lock.lock().unwrap().draw_text(wx + lx, wy + chrome_h + ly, text, rgba, size);
+            lock_or_recover(&fb_lock).draw_text(wx + lx, wy + chrome_h + ly, text, rgba, size);
         } else {
-            fb_lock.lock().unwrap().draw_text(lx, ly, text, rgba, size);
+            lock_or_recover(&fb_lock).draw_text(lx, ly, text, rgba, size);
         }
     } else {
         log_error!(Subsystem::Display, Some(sender), "bad draw_text args: {args}");
@@ -142,7 +143,7 @@ pub fn parse_rect_border(
             parse_color(parts[4]),
         ) {
             if let Some(surface_arc) = get_surface(sender, app_registry) {
-                surface_arc.lock().unwrap().rect_border(lx, ly, w, h, rgba);
+                lock_or_recover(&surface_arc).rect_border(lx, ly, w, h, rgba);
             } else if let Some((wx, wy, ww, wh)) = win {
                 let content_wy = wy + chrome_h;
                 let ax = wx + lx; let ay = content_wy + ly;
@@ -150,9 +151,9 @@ pub fn parse_rect_border(
                 let win_bottom = wy + wh;
                 if ax < win_right && ay < win_bottom {
                     let aw = w.min(win_right - ax); let ah = h.min(win_bottom - ay);
-                    if aw > 0 && ah > 0 { fb_lock.lock().unwrap().rect_border(ax, ay, aw, ah, rgba); }
+                    if aw > 0 && ah > 0 { lock_or_recover(&fb_lock).rect_border(ax, ay, aw, ah, rgba); }
                 }
-            } else { fb_lock.lock().unwrap().rect_border(lx, ly, w, h, rgba); }
+            } else { lock_or_recover(&fb_lock).rect_border(lx, ly, w, h, rgba); }
         } else {
             log_error!(Subsystem::Display, Some(sender), "bad rect_border args: {args}");
         }
@@ -179,16 +180,16 @@ pub fn parse_clear_region(
             parts[3].parse::<u32>(),
         ) {
             if let Some(surface_arc) = get_surface(sender, app_registry) {
-                surface_arc.lock().unwrap().clear_region(lx, ly, w, h);
+                lock_or_recover(&surface_arc).clear_region(lx, ly, w, h);
             } else if let Some((wx, wy, ww, wh)) = win {
                 let content_wy = wy + chrome_h;
                 let ax = wx + lx; let ay = content_wy + ly;
                 let win_right  = wx + ww; let win_bottom = wy + wh;
                 if ax < win_right && ay < win_bottom {
                     let aw = w.min(win_right - ax); let ah = h.min(win_bottom - ay);
-                    if aw > 0 && ah > 0 { fb_lock.lock().unwrap().clear_region(ax, ay, aw, ah); }
+                    if aw > 0 && ah > 0 { lock_or_recover(&fb_lock).clear_region(ax, ay, aw, ah); }
                 }
-            } else { fb_lock.lock().unwrap().clear_region(lx, ly, w, h); }
+            } else { lock_or_recover(&fb_lock).clear_region(lx, ly, w, h); }
         } else {
             log_error!(Subsystem::Display, Some(sender), "bad clear_region args: {args}");
         }
@@ -221,7 +222,7 @@ pub fn parse_draw_text_wrap(
                 // Route to surface: word-wrap then draw each line with bitmap font.
                 let max_chars = (max_w / font::GLYPH_W) as usize;
                 let lines = display::wrap_words(text, max_chars);
-                let mut surface = surface_arc.lock().unwrap();
+                let mut surface = lock_or_recover(&surface_arc);
                 for (i, line) in lines.iter().enumerate() {
                     let line_y = ly.saturating_add(i as u32 * font::GLYPH_H);
                     if line_y >= surface.height { break; }
@@ -241,7 +242,7 @@ pub fn parse_draw_text_wrap(
                         (ax, ay, effective_max_w)
                     }
                 };
-                fb_lock.lock().unwrap().draw_text_wrap(ax, ay, effective_max_w, text, rgba, size);
+                lock_or_recover(&fb_lock).draw_text_wrap(ax, ay, effective_max_w, text, rgba, size);
             }
         } else {
             log_error!(Subsystem::Display, Some(sender), "bad draw_text_wrap args: {args}");
@@ -276,12 +277,12 @@ pub fn parse_draw_glyph(
 
             #[cfg(target_os = "linux")]
             if let Some(surface_arc) = get_surface(sender, app_registry) {
-                let mut surface = surface_arc.lock().unwrap();
+                let mut surface = lock_or_recover(&surface_arc);
                 let (sw, sh, ss) = (surface.width, surface.height, surface.stride);
                 let mut cursor_x = lx as i32;
                 for ch in text.chars() {
                     let (gw, gh, adv, bear_y, cov) = {
-                        let mut fc = crate::font_cache().lock().unwrap();
+                        let mut fc = lock_or_recover(&crate::font_cache());
                         let g = fc.rasterize(ch, pt, bold, mono);
                         (g.width, g.height, g.advance_x, g.bearing_y, g.coverage.clone())
                     };
@@ -295,12 +296,12 @@ pub fn parse_draw_glyph(
                     None => (lx as i32, ly as i32),
                     Some((wx, wy, _, _)) => ((wx as i32 + lx as i32), (wy as i32 + chrome_h as i32 + ly as i32)),
                 };
-                let mut fb = fb_lock.lock().unwrap();
+                let mut fb = lock_or_recover(&fb_lock);
                 let (fb_stride, fb_width, fb_height) = (fb.stride, fb.width, fb.height);
                 let mut cursor_x = ax;
                 for ch in text.chars() {
                     let (gw, gh, adv, bear_y, cov) = {
-                        let mut fc = crate::font_cache().lock().unwrap();
+                        let mut fc = lock_or_recover(&crate::font_cache());
                         let g = fc.rasterize(ch, pt, bold, mono);
                         (g.width, g.height, g.advance_x, g.bearing_y, g.coverage.clone())
                     };
@@ -334,17 +335,17 @@ pub fn parse_draw_image(
             let path = parts[4];
             #[cfg(target_os = "linux")]
             {
-                let mut ic = crate::image_cache().lock().unwrap();
+                let mut ic = lock_or_recover(&crate::image_cache());
                 if let Some(img) = ic.get(path) {
                     let (iw2, ih2, img_rgba) = (img.width, img.height, img.rgba.clone());
                     drop(ic);
                     if let Some(surface_arc) = get_surface(sender, app_registry) {
-                        let mut surface = surface_arc.lock().unwrap();
+                        let mut surface = lock_or_recover(&surface_arc);
                         let (sw, sh, ss) = (surface.width, surface.height, surface.stride);
                         display::blit_image(&mut surface.buf, &img_rgba, iw2, ih2, lx, ly, iw, ih, ss, sw, sh);
                     } else {
                         let (ax, ay) = win.map(|(wx, wy, _, _)| (wx + lx, wy + chrome_h + ly)).unwrap_or((lx, ly));
-                        let mut fb = fb_lock.lock().unwrap();
+                        let mut fb = lock_or_recover(&fb_lock);
                         let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
                         display::blit_image(&mut fb.back, &img_rgba, iw2, ih2, ax, ay, iw, ih, fs, fw, fh);
                     }
@@ -378,7 +379,7 @@ pub fn parse_fill_rect_r(
         ) {
             #[cfg(target_os = "linux")] {
                 if let Some(surface_arc) = get_surface(sender, app_registry) {
-                    let mut surface = surface_arc.lock().unwrap();
+                    let mut surface = lock_or_recover(&surface_arc);
                     let (sw, sh, ss) = (surface.width, surface.height, surface.stride);
                     display::draw_rounded_rect(&mut surface.buf, lx, ly, rw, rh, rgba, radius, ss, sw, sh);
                 } else {
@@ -393,7 +394,7 @@ pub fn parse_fill_rect_r(
                             (ax, ay, rw.min(win_right - ax), rh.min(win_bottom - ay))
                         }
                     };
-                    let mut fb = fb_lock.lock().unwrap();
+                    let mut fb = lock_or_recover(&fb_lock);
                     let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
                     display::draw_rounded_rect(&mut fb.back, ax, ay, aw, ah, rgba, radius, fs, fw, fh);
                 }

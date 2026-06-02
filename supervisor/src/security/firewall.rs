@@ -11,6 +11,7 @@
 //! manifest are implicitly denied all network access regardless of rules.
 
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 use crate::{log_info, log_warn, send_reply, Inbox};
 use supervisor::logging::Subsystem;
@@ -110,7 +111,7 @@ pub fn load_rules() {
     }
 
     let count = loaded.len();
-    *rules().lock().unwrap() = loaded;
+    *lock_or_recover(&rules()) = loaded;
     log_info!(Subsystem::Lifecycle, None, "firewall: loaded {count} rule(s) from {PATH}");
 }
 
@@ -131,7 +132,7 @@ pub fn check_network_access(
     host: &str,
     port: u16,
 ) -> bool {
-    let rules_guard = rules().lock().unwrap();
+    let rules_guard = lock_or_recover(&rules());
     for rule in rules_guard.iter() {
         if rule.app_name != app {
             continue;
@@ -160,14 +161,14 @@ pub fn check_network_access(
 
 /// Add a rule to the end of the rule list. Returns the new index.
 pub fn add_rule(rule: FirewallRule) -> usize {
-    let mut r = rules().lock().unwrap();
+    let mut r = lock_or_recover(&rules());
     r.push(rule);
     r.len() - 1
 }
 
 /// Remove a rule by index. Returns the removed rule or `None` if out of bounds.
 pub fn remove_rule(index: usize) -> Option<FirewallRule> {
-    let mut r = rules().lock().unwrap();
+    let mut r = lock_or_recover(&rules());
     if index < r.len() {
         Some(r.remove(index))
     } else {
@@ -177,7 +178,7 @@ pub fn remove_rule(index: usize) -> Option<FirewallRule> {
 
 /// Return a snapshot of all current rules.
 pub fn list_rules() -> Vec<FirewallRule> {
-    rules().lock().unwrap().clone()
+    lock_or_recover(&rules()).clone()
 }
 
 // ── Formatting helpers ──────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 use crate::{log_info, send_reply, AppRegistry, Inbox, FocusedApp};
 use crate::chrome::{z_order_push_back, z_order_push_front};
 use supervisor::logging::Subsystem;
+use crate::lock_or_recover;
 
 pub fn handle(
     verb: &str, parts: &[&str], sender: &str,
@@ -14,7 +15,7 @@ pub fn handle(
                     crate::wallpaper::set(wp);
                     #[cfg(target_os = "linux")]
                     if let Some(fb_lock) = crate::display::get() {
-                        let mut fb = fb_lock.lock().unwrap();
+                        let mut fb = lock_or_recover(&fb_lock);
                         let (w, h) = (fb.width, fb.height);
                         fb.fill_rect(0, 0, w, h, rgba);
                         fb.flush();
@@ -33,7 +34,7 @@ pub fn handle(
                     crate::wallpaper::set(crate::wallpaper::Wallpaper::SolidColor(rgba));
                     #[cfg(target_os = "linux")]
                     if let Some(fb_lock) = crate::display::get() {
-                        let mut fb = fb_lock.lock().unwrap();
+                        let mut fb = lock_or_recover(&fb_lock);
                         let (w, h) = (fb.width, fb.height);
                         fb.fill_rect(0, 0, w, h, rgba);
                         fb.flush();
@@ -52,7 +53,7 @@ pub fn handle(
                 }
             };
             z_order_push_front(&app_name);
-            *focused.lock().unwrap() = Some(app_name.clone());
+            *lock_or_recover(&focused) = Some(app_name.clone());
             send_reply(sender, &format!("REPLY:raised {app_name}"), inbox);
         }
         "lower" => {
@@ -83,8 +84,8 @@ pub fn handle(
             } else if let Some((ws, hs)) = geom_str.split_once(' ') {
                 match (ws.trim().parse::<u32>(), hs.trim().parse::<u32>()) {
                     (Ok(w), Ok(h)) if w > 0 && h > 0 => {
-                        let (x, y) = app_registry.lock().unwrap().get(&app_name)
-                            .and_then(|st| st.lock().unwrap().win_region.map(|(x, y, _, _)| (x, y)))
+                        let (x, y) = lock_or_recover(&app_registry).get(&app_name)
+                            .and_then(|st| lock_or_recover(&st).win_region.map(|(x, y, _, _)| (x, y)))
                             .unwrap_or((0, 0));
                         Some((x, y, w, h))
                     }
@@ -95,8 +96,8 @@ pub fn handle(
                 Some(g) => g,
                 None => { send_reply(sender, "REPLY:error: usage: resize <app> <x>,<y>,<w>,<h>", inbox); return true; }
             };
-            let ok = app_registry.lock().unwrap().get(&app_name)
-                .map(|sa| { sa.lock().unwrap().win_region = Some((nx, ny, nw, nh)); }).is_some();
+            let ok = lock_or_recover(&app_registry).get(&app_name)
+                .map(|sa| { lock_or_recover(&sa).win_region = Some((nx, ny, nw, nh)); }).is_some();
             if !ok { send_reply(sender, &format!("REPLY:error: app {app_name} not found"), inbox); return true; }
             send_reply(&app_name, &format!("VYOMA_SYSTEM:resize:{nw},{nh}"), inbox);
             log_info!(Subsystem::Display, Some(app_name.as_str()), "resize {app_name} → ({nx},{ny},{nw},{nh})");

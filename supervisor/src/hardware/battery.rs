@@ -7,6 +7,7 @@
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
+use crate::lock_or_recover;
 
 use crate::{log_info, log_warn, AppRegistry, AppStatus, FocusedApp, Inbox};
 use supervisor::logging::Subsystem;
@@ -162,12 +163,12 @@ fn power_profile_lock() -> &'static Mutex<PowerProfile> {
 
 /// Get the current power profile.
 pub fn current_profile() -> PowerProfile {
-    *power_profile_lock().lock().unwrap()
+    *lock_or_recover(&power_profile_lock())
 }
 
 /// Set the power profile. Returns the previous profile.
 pub fn set_profile(p: PowerProfile) -> PowerProfile {
-    let mut lock = power_profile_lock().lock().unwrap();
+    let mut lock = lock_or_recover(&power_profile_lock());
     let prev = *lock;
     *lock = p;
     prev
@@ -337,7 +338,7 @@ fn run_battery_monitor(inbox: &Inbox, registry: &AppRegistry, focused: &FocusedA
 
         let action = classify_battery(info.percent, info.charging);
         let prev = {
-            let mut lock = prev_action_lock().lock().unwrap();
+            let mut lock = lock_or_recover(&prev_action_lock());
             let p = *lock;
             *lock = action;
             p
@@ -390,10 +391,10 @@ fn run_battery_monitor(inbox: &Inbox, registry: &AppRegistry, focused: &FocusedA
 /// Broadcast `VYOMA_SYSTEM:battery:<level>` to all running apps.
 fn broadcast_battery_event(inbox: &Inbox, registry: &AppRegistry, level: &str) {
     let msg = format!("VYOMA_SYSTEM:battery:{level}");
-    let reg = registry.lock().unwrap();
-    let inb = inbox.lock().unwrap();
+    let reg = lock_or_recover(&registry);
+    let inb = lock_or_recover(&inbox);
     for (name, state_arc) in reg.iter() {
-        let st = state_arc.lock().unwrap();
+        let st = lock_or_recover(&state_arc);
         if matches!(st.status, AppStatus::Running) {
             if let Some(tx) = inb.get(name) {
                 let _ = tx.send(msg.clone());

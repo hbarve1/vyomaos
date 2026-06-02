@@ -9,6 +9,7 @@
 //! `@supervisor: theme <dark|light|auto>` IPC command.
 
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 // ── Theme struct ─────────────────────────────────────────────────────────────
 
@@ -65,7 +66,7 @@ fn active_lock() -> &'static Mutex<&'static str> {
 
 /// Return the name of the active theme (`"dark"`, `"light"`, or `"auto"`).
 pub fn active_name() -> &'static str {
-    *active_lock().lock().unwrap()
+    *lock_or_recover(&active_lock())
 }
 
 /// Resolve `"auto"` to a concrete theme.  For now auto always maps to dark;
@@ -92,7 +93,7 @@ pub fn set_active(name: &str) -> bool {
         "auto"  => "auto",
         _       => return false,
     };
-    let mut lock = active_lock().lock().unwrap();
+    let mut lock = lock_or_recover(&active_lock());
     if *lock == static_name {
         return false;
     }
@@ -115,10 +116,10 @@ pub fn broadcast_theme_change(
     registry: &crate::AppRegistry,
 ) {
     let msg = format!("VYOMA_SYSTEM:theme:{name}");
-    let reg = registry.lock().unwrap();
-    let inb = inbox.lock().unwrap();
+    let reg = lock_or_recover(&registry);
+    let inb = lock_or_recover(&inbox);
     for (app_name, state_arc) in reg.iter() {
-        let st = state_arc.lock().unwrap();
+        let st = lock_or_recover(&state_arc);
         if st.has_display && matches!(st.status, crate::AppStatus::Running) {
             if let Some(tx) = inb.get(app_name) {
                 let _ = tx.send(msg.clone());

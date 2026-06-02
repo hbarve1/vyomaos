@@ -11,6 +11,7 @@
 mod process_mgmt;
 mod log_cmds;
 
+use crate::lock_or_recover;
 use crate::{
     log_info, log_warn,
     AppRegistry, AppStatus, FocusedApp, Inbox,
@@ -40,20 +41,20 @@ pub fn handle_supervisor_command(
     match parts[0] {
         // -- P12T03 legacy commands -----------------------------------------------
         "list" => {
-            let names = inbox.lock().unwrap().keys().cloned().collect::<Vec<_>>().join("|");
+            let names = lock_or_recover(&inbox).keys().cloned().collect::<Vec<_>>().join("|");
             send_reply(sender, &format!("REPLY:{names}"), inbox);
         }
         "status" => {
-            let count = inbox.lock().unwrap().len();
+            let count = lock_or_recover(&inbox).len();
             send_reply(sender, &format!("REPLY:{{\"running\":{count}}}"), inbox);
         }
 
         // 030-ipc-list-apps: return newline-separated list of running app names
         "apps" => {
             let names: Vec<String> = {
-                let reg = app_registry.lock().unwrap();
+                let reg = lock_or_recover(&app_registry);
                 let mut v: Vec<String> = reg.iter()
-                    .filter(|(_, st)| matches!(st.lock().unwrap().status, AppStatus::Running))
+                    .filter(|(_, st)| matches!(lock_or_recover(&st).status, AppStatus::Running))
                     .map(|(name, _)| name.clone())
                     .collect();
                 v.sort();
@@ -67,7 +68,7 @@ pub fn handle_supervisor_command(
 
         "focus" => {
             if let Some(name) = parts.get(1).map(|s| s.trim()) {
-                *focused.lock().unwrap() = Some(name.to_string());
+                *lock_or_recover(&focused) = Some(name.to_string());
                 log_info!(Subsystem::Input, Some(name), "focus \u{2192} {name}");
             }
         }
@@ -75,9 +76,9 @@ pub fn handle_supervisor_command(
         // P54: win-info <app> -- return window region of an app
         "win-info" => {
             let app_name = parts.get(1).unwrap_or(&"").trim().to_string();
-            let reg = app_registry.lock().unwrap();
+            let reg = lock_or_recover(&app_registry);
             if let Some(st) = reg.get(&app_name) {
-                let region = st.lock().unwrap().win_region;
+                let region = lock_or_recover(&st).win_region;
                 let coords = match region {
                     Some((x, y, w, h)) => format!("{x},{y},{w},{h}"),
                     None => "none".to_string(),
@@ -93,7 +94,7 @@ pub fn handle_supervisor_command(
             let size = parts.get(1).unwrap_or(&"m").trim().to_string();
             let valid = matches!(size.as_str(), "s" | "m" | "l");
             if valid {
-                *crate::FONT_SIZE.get().unwrap().lock().unwrap() = size.clone();
+                *lock_or_recover(&crate::FONT_SIZE.get().unwrap()) = size.clone();
                 log_info!(Subsystem::Lifecycle, None, "font-size \u{2192} {size}");
                 send_reply(sender, &format!("REPLY:font-size {size}"), inbox);
             } else {
@@ -104,9 +105,9 @@ pub fn handle_supervisor_command(
         // P52: input <char> -- forward a character to the focused app's stdin
         "input" => {
             let ch = parts.get(1).map(|s| s.to_string()).unwrap_or_default();
-            let target = focused.lock().unwrap().clone();
+            let target = lock_or_recover(&focused).clone();
             if let Some(name) = target {
-                let map = inbox.lock().unwrap();
+                let map = lock_or_recover(&inbox);
                 if let Some(tx) = map.get(&name) {
                     let _ = tx.send(ch);
                 }
@@ -142,9 +143,9 @@ pub fn handle_supervisor_command(
         // ps-raw -- machine-readable: name:status:uptime_secs:restarts per entry
         "ps-raw" => {
             let entries: Vec<String> = {
-                let reg = app_registry.lock().unwrap();
+                let reg = lock_or_recover(&app_registry);
                 let mut rows: Vec<(String, String)> = reg.iter().map(|(name, st)| {
-                    let st = st.lock().unwrap();
+                    let st = lock_or_recover(&st);
                     let uptime = st.start_time.elapsed().as_secs();
                     let status = match &st.status {
                         AppStatus::Running    => "run",
@@ -163,9 +164,9 @@ pub fn handle_supervisor_command(
         // ps -- list all apps with status, uptime, restart count, cpu%
         "ps" => {
             let entries: Vec<String> = {
-                let reg = app_registry.lock().unwrap();
+                let reg = lock_or_recover(&app_registry);
                 let mut rows: Vec<(String, String)> = reg.iter().map(|(name, st)| {
-                    let st = st.lock().unwrap();
+                    let st = lock_or_recover(&st);
                     let pid = st.child_pid.unwrap_or(0);
                     let uptime_secs = st.start_time.elapsed().as_secs();
                     let uptime_str = supervisor::lifecycle::format_uptime(uptime_secs);

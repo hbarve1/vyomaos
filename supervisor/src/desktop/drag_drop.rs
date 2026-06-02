@@ -12,6 +12,7 @@
 //!   4. Source app (or supervisor) can cancel with `@supervisor: drag-cancel`.
 
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 /// Payload held while a drag operation is in progress.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,25 +48,25 @@ pub fn drag_start(source_app: &str, mime: &str, data: &str) -> Result<(), String
         mime: mime.to_string(),
         data: data.to_string(),
     };
-    *drag_drop_state().lock().unwrap() = Some(payload);
+    *lock_or_recover(&drag_drop_state()) = Some(payload);
     Ok(())
 }
 
 /// Cancel the current drag operation, clearing any stored payload.
 /// Returns `true` if there was an active drag, `false` if already idle.
 pub fn drag_cancel() -> bool {
-    drag_drop_state().lock().unwrap().take().is_some()
+    lock_or_recover(&drag_drop_state()).take().is_some()
 }
 
 /// Take the current drag payload (if any), clearing the state.
 /// Used on mouse-up to deliver the drop and reset.
 pub fn take_payload() -> Option<DragPayload> {
-    drag_drop_state().lock().unwrap().take()
+    lock_or_recover(&drag_drop_state()).take()
 }
 
 /// Check whether a drag operation is currently active.
 pub fn is_drag_active() -> bool {
-    drag_drop_state().lock().unwrap().is_some()
+    lock_or_recover(&drag_drop_state()).is_some()
 }
 
 /// Format the drop message delivered to the target app's stdin.
@@ -93,14 +94,14 @@ pub fn deliver_drop_if_active(
 
     // Find topmost window under cursor (z-order aware).
     let z_snap: Vec<String> = crate::Z_ORDER.get()
-        .map(|m| m.lock().unwrap().clone()).unwrap_or_default();
+        .map(|m| lock_or_recover(&m).clone()).unwrap_or_default();
 
     let target_app: Option<String> = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         let mut found = None;
         for name in &z_snap {
             let Some(state_arc) = reg.get(name) else { continue };
-            let st = state_arc.lock().unwrap();
+            let st = lock_or_recover(&state_arc);
             let Some((wx, wy, ww, wh)) = st.win_region else { continue };
             if cx >= wx as i32 && cy >= wy as i32
                 && cx < (wx + ww) as i32 && cy < (wy + wh) as i32

@@ -6,6 +6,7 @@
 use crate::{AppRegistry, FocusedApp, Inbox};
 use crate::font;
 use supervisor::logging::Subsystem;
+use crate::lock_or_recover;
 
 /// Decoded action for a raw TTY input byte sequence.
 #[derive(Debug, PartialEq)]
@@ -68,7 +69,7 @@ pub fn show_shortcut_overlay() {
         let ox: u32 = screen_w.saturating_sub(OW + 20);
         let oy: u32 = screen_h.saturating_sub(OH + 20);
         if let Some(fb_lock) = display::get() {
-            let mut fb = fb_lock.lock().unwrap();
+            let mut fb = lock_or_recover(&fb_lock);
             fb.fill_rect(ox, oy, OW, OH, 0x21262DFF);
             fb.rect_border(ox, oy, OW, OH, 0x58A6FFFF);
             fb.draw_text(ox + 8, oy + 8,  "Keyboard Shortcuts", 0xFFFFFFFF, font::FontSize::Medium);
@@ -78,7 +79,7 @@ pub fn show_shortcut_overlay() {
         thread::spawn(move || {
             thread::sleep(std::time::Duration::from_secs(3));
             if let Some(fb_lock) = display::get() {
-                let mut fb = fb_lock.lock().unwrap();
+                let mut fb = lock_or_recover(&fb_lock);
                 fb.fill_rect(ox, oy, OW, OH, 0x0D1117FF);
                 fb.flush();
             }
@@ -91,11 +92,11 @@ pub fn show_shortcut_overlay() {
 fn handle_alt_f4_close(focused: &FocusedApp, registry: &AppRegistry, _inbox: &Inbox) {
     use crate::{log_info, chrome};
 
-    let focused_name = focused.lock().unwrap().clone();
+    let focused_name = lock_or_recover(&focused).clone();
     if let Some(ref name) = focused_name {
         let pid = {
-            let reg = registry.lock().unwrap();
-            reg.get(name).and_then(|st| st.lock().unwrap().child_pid)
+            let reg = lock_or_recover(&registry);
+            reg.get(name).and_then(|st| lock_or_recover(&st).child_pid)
         };
         if let Some(pid) = pid {
             log_info!(Subsystem::Input, Some(name.as_str()), "alt+f4: closing {name}");
@@ -103,10 +104,10 @@ fn handle_alt_f4_close(focused: &FocusedApp, registry: &AppRegistry, _inbox: &In
         }
         // Move focus to next remaining windowed app
         let names: Vec<String> = {
-            let reg = registry.lock().unwrap();
+            let reg = lock_or_recover(&registry);
             let mut v: Vec<String> = reg.iter()
                 .filter(|(n, st)| n.as_str() != name.as_str()
-                    && st.lock().unwrap().win_region.is_some())
+                    && lock_or_recover(&st).win_region.is_some())
                 .map(|(n, _)| n.clone()).collect();
             v.sort(); v
         };
@@ -114,7 +115,7 @@ fn handle_alt_f4_close(focused: &FocusedApp, registry: &AppRegistry, _inbox: &In
         if let Some(ref n) = next {
             chrome::z_order_push_front(n);
         }
-        *focused.lock().unwrap() = next;
+        *lock_or_recover(&focused) = next;
     }
 }
 
@@ -127,13 +128,13 @@ fn handle_fullscreen_toggle(
     use crate::{log_info, display};
     use crate::chrome::{MENUBAR_H, repaint_all_borders};
 
-    let focused_name = focused.lock().unwrap().clone();
+    let focused_name = lock_or_recover(&focused).clone();
     let Some(ref name) = focused_name else { return };
     let (sw, sh) = display::screen_size().unwrap_or((1920, 1080));
 
-    let reg = registry.lock().unwrap();
+    let reg = lock_or_recover(&registry);
     let Some(st_arc) = reg.get(name) else { return };
-    let mut st = st_arc.lock().unwrap();
+    let mut st = lock_or_recover(&st_arc);
 
     if st.is_fullscreen {
         // Restore to pre-fullscreen region
@@ -217,7 +218,7 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                     if let Some((app, action)) = crate::chrome::handle_dropdown_key_action(&key_str) {
                         // Send the menu action as IPC to the app
                         let msg = format!("VYOMA_SYSTEM:menu_action:{action}");
-                        if let Some(tx) = inbox.lock().unwrap().get(&app) {
+                        if let Some(tx) = lock_or_recover(&inbox).get(&app) {
                             let _ = tx.send(msg);
                         }
                     }
@@ -233,7 +234,7 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                         _           => None,
                     };
                     if let Some(msg) = msg {
-                        if let Some(tx) = inbox.lock().unwrap().get("screen-lock") {
+                        if let Some(tx) = lock_or_recover(&inbox).get("screen-lock") {
                             let _ = tx.send(msg);
                         }
                     }
@@ -291,8 +292,8 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                             _    => None,
                         };
                         if let Some(msg) = fwd {
-                            if let Some(name) = focused.lock().unwrap().clone() {
-                                if let Some(tx) = inbox.lock().unwrap().get(&name) {
+                            if let Some(name) = lock_or_recover(&focused).clone() {
+                                if let Some(tx) = lock_or_recover(&inbox).get(&name) {
                                     let _ = tx.send(msg.to_string());
                                 }
                             }
@@ -301,11 +302,11 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                         {
                             let names = windowed_apps_sorted(&registry);
                             if !names.is_empty() {
-                                let cur = focused.lock().unwrap().clone();
+                                let cur = lock_or_recover(&focused).clone();
                                 if let Some(ref name) = cycle_focus_backward(&names, cur.as_deref()) {
                                     log_info!(Subsystem::Input, Some(name.as_str()), "alt+shift+tab: focus → {name}");
                                     crate::chrome::z_order_push_front(name);
-                                    *focused.lock().unwrap() = Some(name.clone());
+                                    *lock_or_recover(&focused) = Some(name.clone());
                                     repaint_all_borders(&registry, &focused);
                                 }
                             }
@@ -315,33 +316,33 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                             InputAction::AltTab => {
                                 let names = windowed_apps_sorted(&registry);
                                 if !names.is_empty() {
-                                    let cur = focused.lock().unwrap().clone();
+                                    let cur = lock_or_recover(&focused).clone();
                                     if let Some(ref name) = cycle_focus_forward(&names, cur.as_deref()) {
                                         log_info!(Subsystem::Input, Some(name.as_str()), "alt+tab: focus → {name}");
                                         crate::chrome::z_order_push_front(name);
-                                        *focused.lock().unwrap() = Some(name.clone());
+                                        *lock_or_recover(&focused) = Some(name.clone());
                                         repaint_all_borders(&registry, &focused);
                                     }
                                 }
                             }
                             InputAction::AltW => {
-                                let focused_name = focused.lock().unwrap().clone();
+                                let focused_name = lock_or_recover(&focused).clone();
                                 if let Some(ref name) = focused_name {
-                                    let pid = { let reg = registry.lock().unwrap();
-                                        reg.get(name).and_then(|st| st.lock().unwrap().child_pid) };
+                                    let pid = { let reg = lock_or_recover(&registry);
+                                        reg.get(name).and_then(|st| lock_or_recover(&st).child_pid) };
                                     if let Some(pid) = pid {
                                         log_info!(Subsystem::Input, Some(name.as_str()), "alt+w: closing {name}");
                                         unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
                                     }
                                     let names: Vec<String> = {
-                                        let reg = registry.lock().unwrap();
+                                        let reg = lock_or_recover(&registry);
                                         let mut v: Vec<String> = reg.iter()
                                             .filter(|(n, st)| n.as_str() != name.as_str()
-                                                && st.lock().unwrap().win_region.is_some())
+                                                && lock_or_recover(&st).win_region.is_some())
                                             .map(|(n, _)| n.clone()).collect();
                                         v.sort(); v
                                     };
-                                    *focused.lock().unwrap() = names.into_iter().next();
+                                    *lock_or_recover(&focused) = names.into_iter().next();
                                 }
                             }
                             InputAction::AltF => {
@@ -357,9 +358,9 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                     }
                 } else if buf[0] == 0x03 {
                     // Ctrl+C: send copy signal to focused app
-                    if let Some(name) = focused.lock().unwrap().clone() {
+                    if let Some(name) = lock_or_recover(&focused).clone() {
                         let msg = supervisor::ipc::format_copy_signal();
-                        if let Some(tx) = inbox.lock().unwrap().get(&name) {
+                        if let Some(tx) = lock_or_recover(&inbox).get(&name) {
                             let _ = tx.send(msg);
                         }
                     }
@@ -367,7 +368,7 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                     // Ctrl+L: lock screen
                     if !crate::is_locked() {
                         // Synthesize a lock command via IPC
-                        if let Some(tx) = inbox.lock().unwrap().values().next().cloned() {
+                        if let Some(tx) = lock_or_recover(&inbox).values().next().cloned() {
                             // Route lock through supervisor command handler directly
                             drop(tx);
                         }
@@ -378,9 +379,9 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                             restart: "never".to_string(),
                         };
                         let already_running = {
-                            let reg = registry.lock().unwrap();
+                            let reg = lock_or_recover(&registry);
                             reg.get("screen-lock").map(|st| {
-                                matches!(st.lock().unwrap().status, crate::AppStatus::Running)
+                                matches!(lock_or_recover(&st).status, crate::AppStatus::Running)
                             }).unwrap_or(false)
                         };
                         if !already_running {
@@ -389,7 +390,7 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                             }
                         }
                         crate::chrome::z_order_push_front("screen-lock");
-                        *focused.lock().unwrap() = Some("screen-lock".to_string());
+                        *lock_or_recover(&focused) = Some("screen-lock".to_string());
                         log_info!(Subsystem::Lifecycle, None, "screen locked via Ctrl+L");
                     }
                 } else if buf[0] == 0x13 {
@@ -398,7 +399,7 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                     {
                         use crate::display;
                         if let Some(fb_lock) = display::get() {
-                            let fb = fb_lock.lock().unwrap();
+                            let fb = lock_or_recover(&fb_lock);
                             match crate::screenshot::capture_screenshot(&fb) {
                                 Ok(path) => {
                                     log_info!(Subsystem::Display, None, "screenshot saved to {path}");
@@ -422,12 +423,12 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                     );
                 } else if buf[0] == 0x16 {
                     // Ctrl+V: paste clipboard contents to focused app
-                    if let Some(name) = focused.lock().unwrap().clone() {
+                    if let Some(name) = lock_or_recover(&focused).clone() {
                         let text = crate::CLIPBOARD.get()
-                            .map(|c| c.lock().unwrap().clone())
+                            .map(|c| lock_or_recover(&c).clone())
                             .unwrap_or_default();
                         let msg = supervisor::ipc::format_paste_message(&text);
-                        if let Some(tx) = inbox.lock().unwrap().get(&name) {
+                        if let Some(tx) = lock_or_recover(&inbox).get(&name) {
                             let _ = tx.send(msg);
                         }
                     }
@@ -439,8 +440,8 @@ pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry
                         _           => None,
                     };
                     if let Some(msg) = msg {
-                        if let Some(name) = focused.lock().unwrap().clone() {
-                            if let Some(tx) = inbox.lock().unwrap().get(&name) {
+                        if let Some(name) = lock_or_recover(&focused).clone() {
+                            if let Some(tx) = lock_or_recover(&inbox).get(&name) {
                                 let _ = tx.send(msg);
                             }
                         }

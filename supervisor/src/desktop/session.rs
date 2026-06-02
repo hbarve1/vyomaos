@@ -5,6 +5,7 @@
 //! and focus state across reboots via `/data/session.toml`.
 
 use std::fs;
+use crate::lock_or_recover;
 
 use crate::workspace;
 use crate::{AppRegistry, FocusedApp, Inbox};
@@ -96,13 +97,13 @@ fn collect_entries(
     app_registry: &AppRegistry,
     focused: &FocusedApp,
 ) -> Vec<SessionEntry> {
-    let reg = app_registry.lock().unwrap();
-    let focused_name = focused.lock().unwrap().clone().unwrap_or_default();
-    let ws_mgr = workspace::manager().lock().unwrap();
+    let reg = lock_or_recover(&app_registry);
+    let focused_name = lock_or_recover(&focused).clone().unwrap_or_default();
+    let ws_mgr = lock_or_recover(&workspace::manager());
 
     let mut entries = Vec::new();
     for (name, state_arc) in reg.iter() {
-        let st = state_arc.lock().unwrap();
+        let st = lock_or_recover(&state_arc);
         if let Some((x, y, w, h)) = st.win_region {
             let ws = ws_mgr.app_workspace.get(name).copied().unwrap_or(0);
             entries.push(SessionEntry {
@@ -158,9 +159,9 @@ pub fn apply_session(
     for entry in entries {
         // Apply win_region
         let updated = {
-            let reg = app_registry.lock().unwrap();
+            let reg = lock_or_recover(&app_registry);
             if let Some(state_arc) = reg.get(&entry.app_name) {
-                let mut st = state_arc.lock().unwrap();
+                let mut st = lock_or_recover(&state_arc);
                 st.win_region = Some((entry.x, entry.y, entry.w, entry.h));
                 true
             } else {
@@ -185,7 +186,7 @@ pub fn apply_session(
 
     // Restore focus
     if let Some(name) = focus_target {
-        *focused.lock().unwrap() = Some(name);
+        *lock_or_recover(&focused) = Some(name);
     }
 
     restored

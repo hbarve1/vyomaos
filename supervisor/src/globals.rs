@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
+use crate::lock_or_recover;
 
 pub static Z_ORDER: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 pub static LAST_SENDER: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
@@ -13,8 +14,8 @@ pub static WS_CONNS: OnceLock<Mutex<HashMap<u32, super::websocket::WsConnection>
 pub static WS_NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 pub static CLIPBOARD: OnceLock<Mutex<String>> = OnceLock::new();
 pub static LOCKED: OnceLock<Mutex<bool>> = OnceLock::new();
-pub fn is_locked() -> bool { *LOCKED.get_or_init(|| Mutex::new(false)).lock().unwrap() }
-pub fn set_locked(v: bool) { *LOCKED.get_or_init(|| Mutex::new(false)).lock().unwrap() = v; }
+pub fn is_locked() -> bool { *lock_or_recover(&LOCKED.get_or_init(|| Mutex::new(false))) }
+pub fn set_locked(v: bool) { *lock_or_recover(&LOCKED.get_or_init(|| Mutex::new(false))) = v; }
 pub static FONT_SIZE: OnceLock<Mutex<String>> = OnceLock::new();
 pub static MOUSE_DRAG_START: OnceLock<Mutex<Option<(i32, i32)>>> = OnceLock::new();
 pub fn mouse_drag_start() -> &'static Mutex<Option<(i32, i32)>> {

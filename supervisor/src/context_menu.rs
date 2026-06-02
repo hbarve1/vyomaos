@@ -8,6 +8,7 @@
 //! tests can drive the logic without a framebuffer.
 
 use std::sync::Mutex;
+use crate::lock_or_recover;
 
 #[cfg(target_os = "linux")]
 use crate::display;
@@ -43,7 +44,7 @@ fn ctx_state() -> &'static Mutex<ContextMenuState> {
 
 /// Open the context menu at screen position (x, y) with the hardcoded desktop items.
 pub fn open_context_menu(x: u32, y: u32) {
-    let mut s = ctx_state().lock().unwrap();
+    let mut s = lock_or_recover(&ctx_state());
     s.open = true;
     s.x = x;
     s.y = y;
@@ -56,12 +57,12 @@ pub fn open_context_menu(x: u32, y: u32) {
 
 /// Close the context menu without dispatching any action.
 pub fn close_context_menu() {
-    ctx_state().lock().unwrap().open = false;
+    lock_or_recover(&ctx_state()).open = false;
 }
 
 /// Return true when the context menu is currently visible.
 pub fn context_menu_is_open() -> bool {
-    ctx_state().lock().unwrap().open
+    lock_or_recover(&ctx_state()).open
 }
 
 /// Hit-test (cx, cy) against the open context menu.
@@ -72,7 +73,7 @@ pub fn context_menu_is_open() -> bool {
 ///
 /// Returns `None` when the click is outside the panel, or when the menu is closed.
 pub fn context_menu_hit_test(cx: i32, cy: i32) -> Option<(String, String)> {
-    let s = ctx_state().lock().unwrap();
+    let s = lock_or_recover(&ctx_state());
     if !s.open || s.items.is_empty() { return None; }
     let panel_h = ROW_H * s.items.len() as u32 + PADDING;
     let px = s.x as i32;
@@ -102,7 +103,7 @@ pub fn context_menu_hit_test(cx: i32, cy: i32) -> Option<(String, String)> {
 /// Called from the compositor flush path after chrome has been drawn.
 #[cfg(target_os = "linux")]
 pub fn render_context_menu_if_open(fb: &mut display::Framebuffer) {
-    let s = ctx_state().lock().unwrap();
+    let s = lock_or_recover(&ctx_state());
     if !s.open || s.items.is_empty() { return; }
     let (px, py, items) = (s.x, s.y, s.items.clone());
     drop(s);

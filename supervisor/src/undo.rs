@@ -9,6 +9,7 @@
 //! the global `UNDO_STATE`.
 
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 // ── UndoEntry ───────────────────────────────────────────────────────────────
 
@@ -58,12 +59,12 @@ static LAST_WALLPAPER: OnceLock<Mutex<u32>> = OnceLock::new();
 
 /// Get the last wallpaper colour, defaulting to the VyomaOS dark background.
 pub fn last_wallpaper() -> u32 {
-    *LAST_WALLPAPER.get_or_init(|| Mutex::new(0x1C1C1EFF)).lock().unwrap()
+    *lock_or_recover(&LAST_WALLPAPER.get_or_init(|| Mutex::new(0x1C1C1EFF)))
 }
 
 /// Update the tracked wallpaper value (call *after* recording undo).
 pub fn set_last_wallpaper(rgba: u32) {
-    *LAST_WALLPAPER.get_or_init(|| Mutex::new(0x1C1C1EFF)).lock().unwrap() = rgba;
+    *lock_or_recover(&LAST_WALLPAPER.get_or_init(|| Mutex::new(0x1C1C1EFF))) = rgba;
 }
 
 // ── Public helpers ──────────────────────────────────────────────────────────
@@ -79,7 +80,7 @@ pub fn now_ms() -> u64 {
 /// Record a reversible action.  Clears the redo stack (new branch).
 /// Enforces `MAX_UNDO` by removing the oldest entry when full.
 pub fn push_undo(command: &str, undo_command: &str) {
-    let mut s = state().lock().unwrap();
+    let mut s = lock_or_recover(&state());
     s.redo_stack.clear();
     if s.undo_stack.len() >= MAX_UNDO {
         s.undo_stack.remove(0);
@@ -94,7 +95,7 @@ pub fn push_undo(command: &str, undo_command: &str) {
 /// Pop the most recent action from the undo stack.
 /// Returns `Some(entry)` (already moved to redo stack) or `None`.
 pub fn pop_undo() -> Option<UndoEntry> {
-    let mut s = state().lock().unwrap();
+    let mut s = lock_or_recover(&state());
     let entry = s.undo_stack.pop()?;
     s.redo_stack.push(entry.clone());
     Some(entry)
@@ -103,7 +104,7 @@ pub fn pop_undo() -> Option<UndoEntry> {
 /// Pop the most recent action from the redo stack.
 /// Returns `Some(entry)` (already moved back to undo stack) or `None`.
 pub fn pop_redo() -> Option<UndoEntry> {
-    let mut s = state().lock().unwrap();
+    let mut s = lock_or_recover(&state());
     let entry = s.redo_stack.pop()?;
     s.undo_stack.push(entry.clone());
     Some(entry)
@@ -111,7 +112,7 @@ pub fn pop_redo() -> Option<UndoEntry> {
 
 /// Return (up to) the last `n` entries on the undo stack, most-recent first.
 pub fn recent_history(n: usize) -> Vec<UndoEntry> {
-    let s = state().lock().unwrap();
+    let s = lock_or_recover(&state());
     s.undo_stack.iter().rev().take(n).cloned().collect()
 }
 
@@ -221,13 +222,13 @@ pub fn handle_undo_command(
 /// Retrieve the command string to execute for an undo operation.
 /// Note: `pop_undo` already moved the entry to redo, so peek at redo stack.
 pub fn undo_command_to_execute() -> Option<String> {
-    let s = state().lock().unwrap();
+    let s = lock_or_recover(&state());
     s.redo_stack.last().map(|e| e.undo_command.clone())
 }
 
 /// Retrieve the command string to execute for a redo operation.
 pub fn redo_command_to_execute() -> Option<String> {
-    let s = state().lock().unwrap();
+    let s = lock_or_recover(&state());
     s.undo_stack.last().map(|e| e.command.clone())
 }
 

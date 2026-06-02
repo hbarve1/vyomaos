@@ -4,6 +4,7 @@
 //! P82: IPC commands for keyboard-only focus cycling (`focus-next`, `focus-prev`).
 
 use crate::{AppRegistry, FocusedApp, Inbox};
+use crate::lock_or_recover;
 use crate::chrome::{
     cycle_focus_backward, cycle_focus_forward, repaint_all_borders,
     windowed_apps_sorted, z_order_push_front,
@@ -25,7 +26,7 @@ pub fn handle_focus_command(
         return true;
     }
 
-    let cur = focused.lock().unwrap().clone();
+    let cur = lock_or_recover(&focused).clone();
     let next = match verb {
         "focus-next" => cycle_focus_forward(&names, cur.as_deref()),
         "focus-prev" => cycle_focus_backward(&names, cur.as_deref()),
@@ -34,7 +35,7 @@ pub fn handle_focus_command(
 
     if let Some(ref name) = next {
         z_order_push_front(name);
-        *focused.lock().unwrap() = Some(name.clone());
+        *lock_or_recover(&focused) = Some(name.clone());
         log_info!(Subsystem::Input, Some(name.as_str()), "{verb} → {name}");
         send_reply(sender, &format!("REPLY:focus {name}"), inbox);
         repaint_all_borders(app_registry, focused);

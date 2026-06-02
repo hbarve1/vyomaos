@@ -4,6 +4,7 @@
 //! Package manager helpers (P14T01): install, remove, list installed apps.
 
 use std::{fs, path::Path};
+use crate::lock_or_recover;
 
 use crate::{log_info, AppRegistry, FocusedApp, Inbox};
 use supervisor::logging::Subsystem;
@@ -90,8 +91,8 @@ pub fn install_package(
 pub fn remove_package(name: &str, app_registry: &AppRegistry) -> Result<(), String> {
     // Kill running instance
     let pid = {
-        let reg = app_registry.lock().unwrap();
-        reg.get(name).and_then(|st| st.lock().unwrap().child_pid)
+        let reg = lock_or_recover(&app_registry);
+        reg.get(name).and_then(|st| lock_or_recover(&st).child_pid)
     };
     if let Some(pid) = pid {
         #[cfg(target_os = "linux")]

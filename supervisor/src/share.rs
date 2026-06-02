@@ -14,6 +14,7 @@
 
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
+use crate::lock_or_recover;
 
 /// Timeout in seconds after which a pending share is automatically cleared.
 pub const SHARE_TIMEOUT_SECS: u64 = 30;
@@ -62,14 +63,14 @@ pub fn share_start(source_app: &str, mime: &str, data: &str) -> Result<(), Strin
         },
         created: Instant::now(),
     };
-    *share_state().lock().unwrap() = Some(state);
+    *lock_or_recover(&share_state()) = Some(state);
     Ok(())
 }
 
 /// Accept the current share, returning the payload if one is pending and not expired.
 /// Clears the share state on success.
 pub fn share_accept() -> Result<SharePayload, String> {
-    let mut guard = share_state().lock().unwrap();
+    let mut guard = lock_or_recover(&share_state());
     match guard.take() {
         Some(state) => {
             if state.created.elapsed().as_secs() >= SHARE_TIMEOUT_SECS {
@@ -85,12 +86,12 @@ pub fn share_accept() -> Result<SharePayload, String> {
 /// Cancel the current share operation.
 /// Returns `true` if there was an active share, `false` if already idle.
 pub fn share_cancel() -> bool {
-    share_state().lock().unwrap().take().is_some()
+    lock_or_recover(&share_state()).take().is_some()
 }
 
 /// Check whether a share is currently pending (and not expired).
 pub fn is_share_pending() -> bool {
-    let guard = share_state().lock().unwrap();
+    let guard = lock_or_recover(&share_state());
     match guard.as_ref() {
         Some(state) => state.created.elapsed().as_secs() < SHARE_TIMEOUT_SECS,
         None => false,
@@ -100,7 +101,7 @@ pub fn is_share_pending() -> bool {
 /// Clear expired shares. Called periodically (e.g. from a watchdog or timer).
 /// Returns `true` if an expired share was cleared.
 pub fn clear_expired() -> bool {
-    let mut guard = share_state().lock().unwrap();
+    let mut guard = lock_or_recover(&share_state());
     if let Some(ref state) = *guard {
         if state.created.elapsed().as_secs() >= SHARE_TIMEOUT_SECS {
             *guard = None;

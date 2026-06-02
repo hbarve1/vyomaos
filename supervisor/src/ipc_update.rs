@@ -4,6 +4,7 @@
 //! @supervisor `update <app> <url>` IPC command — download, verify SHA-256, hot-swap, restart.
 
 use std::{fs, sync::Arc};
+use crate::lock_or_recover;
 
 use sha2::{Digest, Sha256};
 
@@ -40,8 +41,8 @@ pub fn handle_update(
         }
     };
     let entry = {
-        let reg = app_registry.lock().unwrap();
-        reg.get(&app_name).map(|st| st.lock().unwrap().entry.clone())
+        let reg = lock_or_recover(&app_registry);
+        reg.get(&app_name).map(|st| lock_or_recover(&st).entry.clone())
     };
     let entry = match entry {
         Some(e) => e,
@@ -105,9 +106,9 @@ pub fn handle_update(
 
         // Kill old instance then respawn
         {
-            let reg = registry_bg.lock().unwrap();
+            let reg = lock_or_recover(&registry_bg);
             if let Some(st) = reg.get(&app_name) {
-                if let Some(pid) = st.lock().unwrap().child_pid {
+                if let Some(pid) = lock_or_recover(&st).child_pid {
                     #[cfg(target_os = "linux")]
                     unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
                 }
