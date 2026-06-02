@@ -351,7 +351,7 @@ fn try_begin_titlebar_drag(cx: i32, cy: i32, registry: &AppRegistry) {
             && cx >= wx as i32 && cx < (wx + ww) as i32
             && traffic_light_hit(cx, cy, wx, wy).is_none()
         {
-            let region = st.win_region.unwrap();
+            let Some(region) = st.win_region else { continue };
             drop(st);
             drop(reg);
             *lock_or_recover(&drag_state()) = Some(DragState {

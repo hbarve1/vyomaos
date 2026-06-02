@@ -358,7 +358,8 @@ fn main() {
         thread::Builder::new()
             .name("mgmt-server".into())
             .spawn(move || {
-                let addr: std::net::SocketAddr = "0.0.0.0:9090".parse().unwrap();
+                let Ok(addr) = "0.0.0.0:9090".parse::<std::net::SocketAddr>() else { return };
+
                 mgmt_server::MgmtServer::new(registry_mgmt).start(addr);
             })
             .expect("spawn mgmt-server thread");
