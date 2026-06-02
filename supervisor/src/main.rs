@@ -36,7 +36,23 @@ pub(crate) use desktop::resize;
 pub(crate) use desktop::drag_drop;
 mod archive_ipc;
 mod app_threads;
-#[allow(dead_code)] mod bg_service;
+mod system;
+pub(crate) use system::mount;
+#[cfg(target_os = "linux")]
+pub(crate) use system::seccomp;
+#[cfg(target_os = "linux")]
+pub(crate) use system::namespace;
+pub(crate) use system::recovery;
+pub(crate) use system::ota_update;
+pub(crate) use system::auto_update;
+pub(crate) use system::atomic_update;
+pub(crate) use system::installer;
+pub(crate) use system::virtualization;
+pub(crate) use system::jit_config;
+pub(crate) use system::bg_service;
+pub(crate) use system::mgmt_protocol;
+pub(crate) use system::mgmt_server;
+pub(crate) use system::mgmt_handlers;
 #[allow(dead_code)] mod audio;
 #[allow(dead_code)]
 mod hardware;
@@ -49,10 +65,7 @@ mod draw_cmd;
 mod input_keys;
 mod ipc_commands;
 mod ipc_handlers;
-mod mount;
 mod mouse_input;
-#[cfg(target_os = "linux")]
-#[allow(dead_code)] mod namespace;
 mod network;
 pub(crate) use network::net;
 pub(crate) use network::websocket;
@@ -63,17 +76,8 @@ pub(crate) use storage::backup;
 pub(crate) use storage::store;
 pub(crate) use storage::pkg_registry;
 pub(crate) use storage::trash;
-#[allow(dead_code)] mod recovery;
-#[cfg(target_os = "linux")]
-mod seccomp;
 mod verify;
-mod mgmt_protocol;
-mod mgmt_server;
-mod mgmt_handlers;
 mod router;
-mod ota_update;
-#[allow(dead_code)] mod atomic_update;
-mod auto_update;
 #[allow(dead_code)] mod share;
 #[allow(dead_code)] mod undo;
 #[allow(dead_code)] mod file_assoc;
@@ -86,9 +90,6 @@ pub(crate) use security::user_caps;
 pub(crate) use security::totp;
 pub(crate) use security::audit;
 pub(crate) use security::encrypted_store;
-#[allow(dead_code)] mod installer;
-#[allow(dead_code)] mod jit_config;
-#[allow(dead_code)] mod virtualization;
 #[allow(dead_code)]
 pub(crate) use network::vnc;
 
