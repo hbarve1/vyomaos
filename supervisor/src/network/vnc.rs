@@ -4,6 +4,7 @@
 //! P109: Remote desktop / VNC server — simplified RFB 3.3 protocol over TCP.
 //! Exposes the supervisor framebuffer; clients send keyboard/mouse input.
 
+use crate::lock_or_recover;
 use std::{
     io::{self, Read, Write},
     net::{TcpListener, TcpStream},
@@ -105,7 +106,7 @@ pub fn start_vnc_server(port: u16) -> Result<(), String> {
         .set_nonblocking(false)
         .map_err(|e| format!("set_nonblocking: {e}"))?;
 
-    *state.port.lock().unwrap() = port;
+    *lock_or_recover(&state.port) = port;
     state.stop_flag.store(false, Ordering::SeqCst);
     state.running.store(true, Ordering::SeqCst);
 
@@ -125,7 +126,7 @@ pub fn stop_vnc_server() {
         state.stop_flag.store(true, Ordering::SeqCst);
         state.running.store(false, Ordering::SeqCst);
         // Connect to ourselves to unblock accept().
-        let port = *state.port.lock().unwrap();
+        let port = *lock_or_recover(&state.port);
         let _ = TcpStream::connect(format!("127.0.0.1:{port}"));
         eprintln!("[vnc] server stopped");
     }
@@ -136,7 +137,7 @@ pub fn vnc_status() -> (bool, u16, u32) {
     match VNC_STATE.get() {
         Some(s) => (
             s.running.load(Ordering::SeqCst),
-            *s.port.lock().unwrap(),
+            *lock_or_recover(&s.port),
             s.client_count.load(Ordering::SeqCst),
         ),
         None => (false, 0, 0),
@@ -363,7 +364,7 @@ fn snapshot_backbuffer(width: u32, height: u32) -> Vec<u8> {
     #[cfg(target_os = "linux")]
     {
         if let Some(fb_lock) = crate::display::get() {
-            let fb = fb_lock.lock().unwrap();
+            let fb = lock_or_recover(&fb_lock);
             // The back-buffer is stride-aligned; we need to extract width*4 per row.
             let row_bytes = (width * 4) as usize;
             let stride = fb.stride as usize;

@@ -6,6 +6,8 @@
 //! Computes text labels for volume, lock, and network indicators so that
 //! `chrome::draw_menubar` can render them without pulling in subsystem details.
 
+use crate::lock_or_recover;
+
 /// A single tray indicator with its display text and colour.
 pub struct TrayItem {
     pub text: String,
@@ -18,7 +20,7 @@ const DIM:   u32 = 0x8E8E93FF; // secondary / dim label
 
 /// Build the volume tray indicator from current audio state.
 pub fn volume_indicator() -> TrayItem {
-    let state = crate::audio::audio_state().lock().unwrap();
+    let state = lock_or_recover(&crate::audio::audio_state());
     if state.muted {
         return TrayItem { text: "M".to_string(), color: RED };
     }

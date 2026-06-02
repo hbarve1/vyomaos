@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 use crate::chrome::Z_DOCK;
 use crate::AppRegistry;
@@ -46,7 +47,7 @@ pub fn manager() -> &'static Mutex<WorkspaceManager> {
 /// Switch to the workspace at `idx` (0-indexed).  Clamps to `count - 1`.
 /// Returns the actual workspace index switched to.
 pub fn switch_to(idx: usize) -> usize {
-    let mut mgr = manager().lock().unwrap();
+    let mut mgr = lock_or_recover(&manager());
     let target = idx.min(mgr.count.saturating_sub(1));
     mgr.current = target;
     target
@@ -54,7 +55,7 @@ pub fn switch_to(idx: usize) -> usize {
 
 /// Switch to the next workspace (wrapping around).
 pub fn switch_next() -> usize {
-    let mut mgr = manager().lock().unwrap();
+    let mut mgr = lock_or_recover(&manager());
     let next = (mgr.current + 1) % mgr.count;
     mgr.current = next;
     next
@@ -62,7 +63,7 @@ pub fn switch_next() -> usize {
 
 /// Switch to the previous workspace (wrapping around).
 pub fn switch_prev() -> usize {
-    let mut mgr = manager().lock().unwrap();
+    let mut mgr = lock_or_recover(&manager());
     let prev = if mgr.current == 0 { mgr.count - 1 } else { mgr.current - 1 };
     mgr.current = prev;
     prev
@@ -70,12 +71,12 @@ pub fn switch_prev() -> usize {
 
 /// Return the current workspace index.
 pub fn current() -> usize {
-    manager().lock().unwrap().current
+    lock_or_recover(&manager()).current
 }
 
 /// Return the total workspace count.
 pub fn count() -> usize {
-    manager().lock().unwrap().count
+    lock_or_recover(&manager()).count
 }
 
 /// Check whether an app should be visible on the current workspace.
@@ -85,23 +86,23 @@ pub fn count() -> usize {
 pub fn is_visible(app_name: &str, registry: &AppRegistry) -> bool {
     // Check if system app (dock, overlay, desktop) — always visible.
     let is_system = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         reg.get(app_name)
-            .map(|st| st.lock().unwrap().win_z >= Z_DOCK)
+            .map(|st| lock_or_recover(&st).win_z >= Z_DOCK)
             .unwrap_or(false)
     };
     if is_system {
         return true;
     }
 
-    let mgr = manager().lock().unwrap();
+    let mgr = lock_or_recover(&manager());
     let app_ws = mgr.app_workspace.get(app_name).copied().unwrap_or(0);
     app_ws == mgr.current
 }
 
 /// Move an app to a different workspace.  Clamps `workspace` to valid range.
 pub fn move_app_to(app_name: &str, workspace: usize) {
-    let mut mgr = manager().lock().unwrap();
+    let mut mgr = lock_or_recover(&manager());
     let target = workspace.min(mgr.count.saturating_sub(1));
     mgr.app_workspace.insert(app_name.to_string(), target);
 }
@@ -109,7 +110,7 @@ pub fn move_app_to(app_name: &str, workspace: usize) {
 /// Assign an app to workspace 0 if it has no assignment yet.
 /// Called when a new app is spawned.
 pub fn register_app(app_name: &str) {
-    let mut mgr = manager().lock().unwrap();
+    let mut mgr = lock_or_recover(&manager());
     let current = mgr.current;
     mgr.app_workspace.entry(app_name.to_string()).or_insert(current);
 }
@@ -117,14 +118,14 @@ pub fn register_app(app_name: &str) {
 /// Remove an app from workspace tracking (e.g. on exit).
 #[allow(dead_code)]
 pub fn unregister_app(app_name: &str) {
-    let mut mgr = manager().lock().unwrap();
+    let mut mgr = lock_or_recover(&manager());
     mgr.app_workspace.remove(app_name);
 }
 
 /// Return a workspace indicator string for the menu bar.
 /// Example: "● ○ ○ ○" when on workspace 0 of 4.
 pub fn indicator_string() -> String {
-    let mgr = manager().lock().unwrap();
+    let mgr = lock_or_recover(&manager());
     (0..mgr.count)
         .map(|i| if i == mgr.current { "\u{25CF}" } else { "\u{25CB}" })
         .collect::<Vec<_>>()
@@ -133,7 +134,7 @@ pub fn indicator_string() -> String {
 
 /// Return the workspace index for a given app (defaults to 0).
 pub fn app_workspace_index(app_name: &str) -> usize {
-    manager().lock().unwrap().app_workspace.get(app_name).copied().unwrap_or(0)
+    lock_or_recover(&manager()).app_workspace.get(app_name).copied().unwrap_or(0)
 }
 
 // ── Unit tests ───────────────────────────────────────────────────────────────

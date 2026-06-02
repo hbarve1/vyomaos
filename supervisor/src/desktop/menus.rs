@@ -1,6 +1,7 @@
 //! Dropdown and context menu state + rendering (T059–T064).
 
 use std::sync::Mutex;
+use crate::lock_or_recover;
 
 #[cfg(target_os = "linux")]
 use crate::display;
@@ -20,17 +21,17 @@ fn dropdown_state() -> &'static Mutex<DropdownState> {
 }
 
 /// Query whether the dropdown is currently open.
-pub fn is_dropdown_open() -> bool { dropdown_state().lock().unwrap().open }
+pub fn is_dropdown_open() -> bool { lock_or_recover(&dropdown_state()).open }
 
 /// Open the app-name dropdown at anchor position with menu items.
 pub fn open_dropdown(app: &str, items: Vec<(String, String)>, ax: u32, ay: u32) {
-    let mut s = dropdown_state().lock().unwrap();
+    let mut s = lock_or_recover(&dropdown_state());
     s.open = true; s.selected = 0; s.items = items;
     s.anchor_x = ax; s.anchor_y = ay; s.app_name = app.to_string();
 }
 
 /// Close the dropdown.
-pub fn close_dropdown() { dropdown_state().lock().unwrap().open = false; }
+pub fn close_dropdown() { lock_or_recover(&dropdown_state()).open = false; }
 
 /// Handle keyboard navigation within the dropdown.
 /// Returns `Some((app_name, action))` when Enter is pressed on a selected item.
@@ -53,7 +54,7 @@ pub fn handle_dropdown_key_action(key: &str) -> Option<(String, String)> {
 /// Render the dropdown menu if open.
 #[cfg(target_os = "linux")]
 pub fn render_dropdown_if_open(fb: &mut display::Framebuffer) {
-    let s = dropdown_state().lock().unwrap();
+    let s = lock_or_recover(&dropdown_state());
     if !s.open || s.items.is_empty() { return; }
     let (ax, ay, items, sel) = (s.anchor_x, s.anchor_y, s.items.clone(), s.selected);
     drop(s);
@@ -74,7 +75,7 @@ fn context_menu_state() -> &'static Mutex<ContextMenuState> {
 
 /// Open a desktop context menu at cursor position.
 pub fn open_context_menu(cx: u32, cy: u32) {
-    let mut s = context_menu_state().lock().unwrap();
+    let mut s = lock_or_recover(&context_menu_state());
     s.open = true; s.selected = 0; s.anchor_x = cx; s.anchor_y = cy;
     s.items = vec![
         ("New Note".to_string(), "new-note".to_string()),
@@ -82,12 +83,12 @@ pub fn open_context_menu(cx: u32, cy: u32) {
     ];
 }
 
-pub fn close_context_menu() { context_menu_state().lock().unwrap().open = false; }
-pub fn is_context_menu_open() -> bool { context_menu_state().lock().unwrap().open }
+pub fn close_context_menu() { lock_or_recover(&context_menu_state()).open = false; }
+pub fn is_context_menu_open() -> bool { lock_or_recover(&context_menu_state()).open }
 
 /// Dismiss context menu if click is outside its bounds. Returns true if dismissed.
 pub fn dismiss_context_menu_if_outside(cx: i32, cy: i32) -> bool {
-    let s = context_menu_state().lock().unwrap();
+    let s = lock_or_recover(&context_menu_state());
     if !s.open { return false; }
     let (pw, row_h) = (200u32, 24u32);
     let panel_h = row_h * s.items.len() as u32 + 8;
@@ -101,7 +102,7 @@ pub fn dismiss_context_menu_if_outside(cx: i32, cy: i32) -> bool {
 /// Render context menu if open (same panel style as dropdown).
 #[cfg(target_os = "linux")]
 pub fn render_context_menu_if_open(fb: &mut display::Framebuffer) {
-    let s = context_menu_state().lock().unwrap();
+    let s = lock_or_recover(&context_menu_state());
     if !s.open || s.items.is_empty() { return; }
     let (ax, ay, items, sel) = (s.anchor_x, s.anchor_y, s.items.clone(), s.selected);
     drop(s);

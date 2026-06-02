@@ -12,6 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+use crate::lock_or_recover;
 
 use crate::{log_info, log_warn, send_reply, AppRegistry, FocusedApp, Inbox};
 use supervisor::logging::Subsystem;
@@ -93,10 +94,10 @@ fn read_catalog(catalog_path: &str) -> Result<Vec<CatalogEntry>, String> {
 /// Collect installed app names and versions by reading manifests from the
 /// app registry's boot entries.
 fn installed_versions(app_registry: &AppRegistry) -> Vec<(String, String)> {
-    let reg = app_registry.lock().unwrap();
+    let reg = lock_or_recover(&app_registry);
     let mut versions = Vec::new();
     for (name, state_arc) in reg.iter() {
-        let st = state_arc.lock().unwrap();
+        let st = lock_or_recover(&state_arc);
         let manifest_path = &st.entry.manifest;
         if let Ok(raw) = fs::read_to_string(manifest_path) {
             if let Ok(m) = toml::from_str::<supervisor::manifest::AppManifest>(&raw) {
@@ -201,8 +202,8 @@ pub fn handle_auto_update(
 
     // Resolve the installed WASM path from manifest
     let entry = {
-        let reg = app_registry.lock().unwrap();
-        reg.get(&app_name).map(|st| st.lock().unwrap().entry.clone())
+        let reg = lock_or_recover(&app_registry);
+        reg.get(&app_name).map(|st| lock_or_recover(&st).entry.clone())
     };
     let entry = match entry {
         Some(e) => e,
@@ -255,9 +256,9 @@ pub fn handle_auto_update(
 
     // Kill old instance
     {
-        let reg = app_registry.lock().unwrap();
+        let reg = lock_or_recover(&app_registry);
         if let Some(st) = reg.get(&app_name) {
-            if let Some(pid) = st.lock().unwrap().child_pid {
+            if let Some(pid) = lock_or_recover(&st).child_pid {
                 #[cfg(target_os = "linux")]
                 unsafe {
                     libc::kill(pid as libc::pid_t, libc::SIGKILL);

@@ -8,6 +8,7 @@
 //! IPC commands (`@supervisor: a11y ...`) are handled by [`handle_a11y_command`].
 
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 use crate::{log_info, send_reply, AppRegistry, AppStatus, Inbox};
 use supervisor::logging::Subsystem;
@@ -50,7 +51,7 @@ fn a11y_lock() -> &'static Mutex<A11yState> {
 
 /// Return a snapshot of the current accessibility state.
 pub fn current() -> A11yState {
-    a11y_lock().lock().unwrap().clone()
+    lock_or_recover(&a11y_lock()).clone()
 }
 
 // ── High-contrast mode ───────────────────────────────────────────────────────
@@ -71,7 +72,7 @@ pub struct HighContrastOverrides {
 /// Returns high-contrast colour overrides when high-contrast mode is enabled,
 /// or `None` when it is disabled.
 pub fn high_contrast_overrides() -> Option<HighContrastOverrides> {
-    let state = a11y_lock().lock().unwrap();
+    let state = lock_or_recover(&a11y_lock());
     if !state.high_contrast {
         return None;
     }
@@ -90,7 +91,7 @@ pub fn high_contrast_overrides() -> Option<HighContrastOverrides> {
 
 /// Returns `true` when high-contrast mode is active.
 pub fn is_high_contrast() -> bool {
-    a11y_lock().lock().unwrap().high_contrast
+    lock_or_recover(&a11y_lock()).high_contrast
 }
 
 // ── Large text / font scaling ────────────────────────────────────────────────
@@ -101,7 +102,7 @@ const MAX_FONT_SCALE: f32 = 3.0;
 /// Apply the current font scale to a base point size.
 /// When `large_text` is disabled the base size is returned unchanged.
 pub fn scaled_pt(base_pt: u32) -> u32 {
-    let state = a11y_lock().lock().unwrap();
+    let state = lock_or_recover(&a11y_lock());
     if !state.large_text {
         return base_pt;
     }
@@ -119,7 +120,7 @@ fn clamp_scale(v: f32) -> f32 {
 /// Returns `true` when animations should be played.
 /// Returns `false` when reduce-motion is enabled (skip all animations).
 pub fn animation_enabled() -> bool {
-    !a11y_lock().lock().unwrap().reduce_motion
+    !lock_or_recover(&a11y_lock()).reduce_motion
 }
 
 // ── Screen reader protocol ───────────────────────────────────────────────────
@@ -127,7 +128,7 @@ pub fn animation_enabled() -> bool {
 /// Emit a focus-change announcement to any running screen-reader app.
 /// Message format: `VYOMA_SYSTEM:a11y:focus:<app_name>`
 pub fn announce_focus(app_name: &str, inbox: &Inbox, registry: &AppRegistry) {
-    let state = a11y_lock().lock().unwrap();
+    let state = lock_or_recover(&a11y_lock());
     if !state.screen_reader {
         return;
     }
@@ -139,7 +140,7 @@ pub fn announce_focus(app_name: &str, inbox: &Inbox, registry: &AppRegistry) {
 /// Emit a text announcement to any running screen-reader app.
 /// Message format: `VYOMA_SYSTEM:a11y:announce:<text>`
 pub fn announce_text(text: &str, inbox: &Inbox, registry: &AppRegistry) {
-    let state = a11y_lock().lock().unwrap();
+    let state = lock_or_recover(&a11y_lock());
     if !state.screen_reader {
         return;
     }
@@ -150,10 +151,10 @@ pub fn announce_text(text: &str, inbox: &Inbox, registry: &AppRegistry) {
 
 /// Broadcast an accessibility system message to all running apps.
 fn broadcast_a11y_message(msg: &str, inbox: &Inbox, registry: &AppRegistry) {
-    let reg = registry.lock().unwrap();
-    let inb = inbox.lock().unwrap();
+    let reg = lock_or_recover(&registry);
+    let inb = lock_or_recover(&inbox);
     for (name, state_arc) in reg.iter() {
-        let st = state_arc.lock().unwrap();
+        let st = lock_or_recover(&state_arc);
         if matches!(st.status, AppStatus::Running) {
             if let Some(tx) = inb.get(name) {
                 let _ = tx.send(msg.to_string());
@@ -185,7 +186,7 @@ pub fn handle_a11y_command(
 
     if sub.is_empty() {
         // Report current state
-        let st = a11y_lock().lock().unwrap();
+        let st = lock_or_recover(&a11y_lock());
         let summary = format!(
             "REPLY:a11y high-contrast={} large-text={} reduce-motion={} screen-reader={} font-scale={:.1}",
             if st.high_contrast { "on" } else { "off" },
@@ -204,7 +205,7 @@ pub fn handle_a11y_command(
         "high-contrast" => {
             match parse_on_off(value) {
                 Some(v) => {
-                    a11y_lock().lock().unwrap().high_contrast = v;
+                    lock_or_recover(&a11y_lock()).high_contrast = v;
                     log_info!(Subsystem::Display, None, "a11y high-contrast {}", on_off_str(v));
                     send_reply(sender, &format!("REPLY:a11y high-contrast {}", on_off_str(v)), inbox);
                 }
@@ -217,7 +218,7 @@ pub fn handle_a11y_command(
         "large-text" => {
             match parse_on_off(value) {
                 Some(v) => {
-                    a11y_lock().lock().unwrap().large_text = v;
+                    lock_or_recover(&a11y_lock()).large_text = v;
                     log_info!(Subsystem::Display, None, "a11y large-text {}", on_off_str(v));
                     send_reply(sender, &format!("REPLY:a11y large-text {}", on_off_str(v)), inbox);
                 }
@@ -230,7 +231,7 @@ pub fn handle_a11y_command(
         "reduce-motion" => {
             match parse_on_off(value) {
                 Some(v) => {
-                    a11y_lock().lock().unwrap().reduce_motion = v;
+                    lock_or_recover(&a11y_lock()).reduce_motion = v;
                     log_info!(Subsystem::Display, None, "a11y reduce-motion {}", on_off_str(v));
                     send_reply(sender, &format!("REPLY:a11y reduce-motion {}", on_off_str(v)), inbox);
                 }
@@ -243,7 +244,7 @@ pub fn handle_a11y_command(
         "screen-reader" => {
             match parse_on_off(value) {
                 Some(v) => {
-                    a11y_lock().lock().unwrap().screen_reader = v;
+                    lock_or_recover(&a11y_lock()).screen_reader = v;
                     log_info!(Subsystem::Display, None, "a11y screen-reader {}", on_off_str(v));
                     send_reply(sender, &format!("REPLY:a11y screen-reader {}", on_off_str(v)), inbox);
                 }
@@ -257,7 +258,7 @@ pub fn handle_a11y_command(
             match value.parse::<f32>() {
                 Ok(v) => {
                     let clamped = clamp_scale(v);
-                    a11y_lock().lock().unwrap().font_scale = clamped;
+                    lock_or_recover(&a11y_lock()).font_scale = clamped;
                     log_info!(Subsystem::Display, None, "a11y font-scale {clamped:.1}");
                     send_reply(sender, &format!("REPLY:a11y font-scale {clamped:.1}"), inbox);
                 }

@@ -7,6 +7,7 @@
 //! Apps with `audio = true` in their vyoma.toml can use VYOMA_AUDIO: commands.
 
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 use supervisor::logging::Subsystem;
 
@@ -53,14 +54,14 @@ pub fn handle_audio_command(cmd: &str, sender: &str) -> bool {
     }
 
     if cmd == "mute" {
-        let mut state = audio_state().lock().unwrap();
+        let mut state = lock_or_recover(&audio_state());
         state.muted = true;
         crate::log_info!(Subsystem::Audio, Some(sender), "audio muted");
         return true;
     }
 
     if cmd == "unmute" {
-        let mut state = audio_state().lock().unwrap();
+        let mut state = lock_or_recover(&audio_state());
         state.muted = false;
         crate::log_info!(Subsystem::Audio, Some(sender), "audio unmuted");
         return true;
@@ -90,7 +91,7 @@ fn handle_beep(args: &str, sender: &str) {
             return;
         }
     };
-    let state = audio_state().lock().unwrap();
+    let state = lock_or_recover(&audio_state());
     let muted_tag = if state.muted { " (muted)" } else { "" };
     crate::log_info!(Subsystem::Audio, Some(sender),
         "beep: freq={freq}Hz duration={duration_ms}ms volume={}{muted_tag}",
@@ -110,27 +111,27 @@ fn handle_volume_set(vol_str: &str, sender: &str) {
             return;
         }
     };
-    audio_state().lock().unwrap().volume = vol;
+    lock_or_recover(&audio_state()).volume = vol;
     crate::log_info!(Subsystem::Audio, Some(sender), "volume set to {vol}");
 }
 
 /// Set volume from an IPC command. Returns a reply string.
 pub fn ipc_set_volume(vol: u8) -> String {
     let clamped = vol.min(100);
-    audio_state().lock().unwrap().volume = clamped;
+    lock_or_recover(&audio_state()).volume = clamped;
     format!("REPLY:volume {clamped}")
 }
 
 /// Get current volume. Returns a reply string.
 pub fn ipc_get_volume() -> String {
-    let state = audio_state().lock().unwrap();
+    let state = lock_or_recover(&audio_state());
     let muted_tag = if state.muted { " (muted)" } else { "" };
     format!("REPLY:volume {}{muted_tag}", state.volume)
 }
 
 /// Set muted state. Returns a reply string.
 pub fn ipc_set_mute(muted: bool) -> String {
-    audio_state().lock().unwrap().muted = muted;
+    lock_or_recover(&audio_state()).muted = muted;
     if muted {
         "REPLY:muted".to_string()
     } else {

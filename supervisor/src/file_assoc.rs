@@ -8,6 +8,8 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
+
+use crate::lock_or_recover;
 use std::sync::OnceLock;
 
 /// Path where user-defined association overrides are stored.
@@ -163,13 +165,13 @@ pub fn extract_extension(path: &str) -> Option<String> {
 /// Returns the app name if a matching association exists.
 pub fn app_for_file(path: &str) -> Option<String> {
     let ext = extract_extension(path)?;
-    let map = registry().lock().unwrap();
+    let map = lock_or_recover(&registry());
     map.get(&ext).map(|a| a.app_name.clone())
 }
 
 /// Return all current associations sorted by extension.
 pub fn list_associations() -> Vec<FileAssociation> {
-    let map = registry().lock().unwrap();
+    let map = lock_or_recover(&registry());
     let mut v: Vec<FileAssociation> = map.values().cloned().collect();
     v.sort_by(|a, b| a.extension.cmp(&b.extension));
     v
@@ -183,7 +185,7 @@ pub fn set_association(ext: &str, app_name: &str) -> Result<(), String> {
         app_name: app_name.to_string(),
         action: "open".to_string(),
     };
-    let mut map = registry().lock().unwrap();
+    let mut map = lock_or_recover(&registry());
     map.insert(ext_lower, assoc);
     save_custom_overrides(&map)
 }

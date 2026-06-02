@@ -5,6 +5,7 @@
 //! Extracted from mouse_input.rs to respect the 500-line file limit (spec-042).
 
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 use crate::{log_info, AppRegistry, AppStatus, FocusedApp};
 use crate::chrome::draw_titlebar;
@@ -40,7 +41,7 @@ pub fn apply_drag_update(
     focused: &FocusedApp,
 ) {
     let ds_opt = {
-        let guard = drag_state().lock().unwrap();
+        let guard = lock_or_recover(&drag_state());
         guard.as_ref().map(|ds| DragState {
             app_name:     ds.app_name.clone(),
             cursor_start: ds.cursor_start,
@@ -60,9 +61,9 @@ pub fn apply_drag_update(
                (screen_h - wh as i32).max(crate::chrome::MENUBAR_H as i32)) as u32;
     let new_region = (new_x, new_y, ww, wh);
     {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         if let Some(st_arc) = reg.get(&ds.app_name) {
-            st_arc.lock().unwrap().win_region = Some(new_region);
+            lock_or_recover(&st_arc).win_region = Some(new_region);
         }
     }
     crate::draw_cmd::force_repaint(registry, focused);
@@ -80,19 +81,19 @@ pub fn finish_drag_snap(
     registry: &AppRegistry,
     focused: &FocusedApp,
 ) {
-    let ds_finished = drag_state().lock().unwrap().take();
+    let ds_finished = lock_or_recover(&drag_state()).take();
     let Some(ds) = ds_finished else { return };
 
     let (wx, wy, ww, wh) = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         reg.get(&ds.app_name)
-            .and_then(|st| st.lock().unwrap().win_region)
+            .and_then(|st| lock_or_recover(&st).win_region)
             .unwrap_or(ds.win_start)
     };
     let n_display = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         reg.values().filter(|st| {
-            let st = st.lock().unwrap();
+            let st = lock_or_recover(&st);
             st.has_display && matches!(st.status, AppStatus::Running)
         }).count()
     };
@@ -102,9 +103,9 @@ pub fn finish_drag_snap(
         crate::chrome::MENUBAR_H,
     );
     if let Some(snapped) = snap {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         if let Some(st_arc) = reg.get(&ds.app_name) {
-            st_arc.lock().unwrap().win_region = Some(snapped);
+            lock_or_recover(&st_arc).win_region = Some(snapped);
         }
         log_info!(Subsystem::Input, Some(ds.app_name.as_str()),
             "drag: snapped to tiled slot at ({},{},{},{})",
@@ -125,16 +126,16 @@ pub fn do_minimize(
 ) {
     let (scr_w, scr_h) = display::screen_size().unwrap_or((1920, 1080)); // DEFAULT_SCREEN_W/H fallback
     let strip_pos: Option<(u32, u32)> = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         let minimized_count = reg.values()
-            .filter(|st| st.lock().unwrap().minimized)
+            .filter(|st| lock_or_recover(&st).minimized)
             .count() as u32;
         let strip_x_raw = minimized_count * 240;
         let row = strip_x_raw / scr_w;
         let col_x = strip_x_raw % scr_w;
         let strip_y = scr_h - 28 - row * 28;
         reg.get(name).map(|st| {
-            let mut st = st.lock().unwrap();
+            let mut st = lock_or_recover(&st);
             st.pre_minimize_region = st.win_region;
             st.minimized = true;
             st.win_region = Some((col_x, strip_y, 240, 28));
@@ -148,8 +149,8 @@ pub fn do_minimize(
     };
     if let Some((sx, sy)) = strip_pos {
         if let Some(fb_lock) = display::get() {
-            let is_focused = focused.lock().unwrap().as_deref() == Some(name);
-            let mut fb = fb_lock.lock().unwrap();
+            let is_focused = lock_or_recover(&focused).as_deref() == Some(name);
+            let mut fb = lock_or_recover(&fb_lock);
             draw_titlebar(&mut *fb, sx, sy, 240, is_focused, false, name);
             fb.flush();
         }
@@ -169,9 +170,9 @@ pub fn try_restore_minimized(
     focused: &FocusedApp,
 ) -> bool {
     let restore_name: Option<String> = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         reg.iter().find_map(|(n, st)| {
-            let st = st.lock().unwrap();
+            let st = lock_or_recover(&st);
             if !st.minimized { return None; }
             let Some((sx, sy, sw, sh)) = st.win_region else { return None };
             if cx >= sx as i32 && cy >= sy as i32
@@ -186,9 +187,9 @@ pub fn try_restore_minimized(
     let Some(ref rname) = restore_name else { return false };
 
     let prev_region: Option<(u32, u32, u32, u32)> = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         reg.get(rname).and_then(|st| {
-            let mut st = st.lock().unwrap();
+            let mut st = lock_or_recover(&st);
             let prev = st.pre_minimize_region.take();
             if prev.is_some() {
                 st.minimized = false;
@@ -199,8 +200,8 @@ pub fn try_restore_minimized(
     };
     if let Some((wx, wy, ww, _wh)) = prev_region {
         if let Some(fb_lock) = display::get() {
-            let is_focused = focused.lock().unwrap().as_deref() == Some(rname.as_str());
-            let mut fb = fb_lock.lock().unwrap();
+            let is_focused = lock_or_recover(&focused).as_deref() == Some(rname.as_str());
+            let mut fb = lock_or_recover(&fb_lock);
             draw_titlebar(&mut *fb, wx, wy, ww, is_focused, false, rname);
             fb.flush();
         }

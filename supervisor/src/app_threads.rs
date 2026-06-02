@@ -3,6 +3,7 @@
 
 //! App lifecycle helpers: spawn, IO threads, waiter thread.
 
+use crate::lock_or_recover;
 use std::{
     collections::VecDeque,
     fs,
@@ -25,7 +26,7 @@ use supervisor::manifest::BootEntry;
 
 /// P34: Send a message to the window-manager app if it exists in the inbox.
 fn notify_wm(msg: &str, inbox: &Inbox) {
-    if let Some(tx) = inbox.lock().unwrap().get("window-manager") { let _ = tx.send(msg.to_string()); }
+    if let Some(tx) = lock_or_recover(&inbox).get("window-manager") { let _ = tx.send(msg.to_string()); }
 }
 
 /// Create or resize the per-window Surface for `st` to match the content area
@@ -39,7 +40,7 @@ fn init_surface_for_region(st: &mut AppState, region: (u32, u32, u32, u32)) {
     let content_h = wh.saturating_sub(chrome_h);
     if ww == 0 || content_h == 0 { return; }
     let needs_new = st.surface.as_ref()
-        .map(|s| { let s = s.lock().unwrap(); s.width != ww || s.height != content_h })
+        .map(|s| { let s = lock_or_recover(&s); s.width != ww || s.height != content_h })
         .unwrap_or(true);
     if needs_new {
         st.surface = Some(std::sync::Arc::new(std::sync::Mutex::new(
@@ -68,10 +69,10 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
 
     // Collect all running display apps with z-layer and min-size hints.
     let apps: Vec<(String, u32, u32, u32)> = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         let mut v: Vec<(String, u32, u32, u32)> = reg.iter()
             .filter_map(|(name, st)| {
-                let st = st.lock().unwrap();
+                let st = lock_or_recover(&st);
                 if st.has_display && !st.is_background && matches!(st.status, AppStatus::Running) {
                     Some((name.clone(), st.win_z, st.min_size.0, st.min_size.1))
                 } else { None }
@@ -89,11 +90,11 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
     // Assign pinned apps to the reserved bottom strip (skipped when dock is hidden).
     let dock_h_reserved: u32 = if pinned.is_empty() || !show_dock { 0 } else { DOCK_STRIP_H };
     if show_dock {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         for (name, _, _, _) in &pinned {
             if let Some(st) = reg.get(name.as_str()) {
                 let region = (0, sh.saturating_sub(DOCK_STRIP_H), sw, DOCK_STRIP_H);
-                let mut st_guard = st.lock().unwrap();
+                let mut st_guard = lock_or_recover(&st);
                 st_guard.win_region = Some(region);
                 init_surface_for_region(&mut st_guard, region);
                 log_info!(Subsystem::Display, Some(name.as_str()),
@@ -119,11 +120,11 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
             .collect()
     };
     {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         for (i, (name, _, _, _)) in tiled.iter().enumerate() {
             if let Some(&region) = regions.get(i) {
                 if let Some(st) = reg.get(name.as_str()) {
-                    let mut st_guard = st.lock().unwrap();
+                    let mut st_guard = lock_or_recover(&st);
                     st_guard.win_region = Some(region);
                     init_surface_for_region(&mut st_guard, region);
                     log_info!(Subsystem::Display, Some(name.as_str()),
@@ -164,15 +165,15 @@ pub fn spawn_io_threads(
     let registry_r = Arc::clone(app_registry);
     let name_r     = name.to_string();
     let last_output_r: Arc<Mutex<Instant>> = {
-        let reg = app_registry.lock().unwrap();
+        let reg = lock_or_recover(&app_registry);
         reg.get(name)
-            .map(|st| Arc::clone(&st.lock().unwrap().last_output))
+            .map(|st| Arc::clone(&lock_or_recover(&st).last_output))
             .unwrap_or_else(|| Arc::new(Mutex::new(Instant::now())))
     };
     thread::Builder::new()
         .name(format!("{name}-reader"))
         .spawn(move || {
-            *last_output_r.lock().unwrap() = Instant::now();
+            *lock_or_recover(&last_output_r) = Instant::now();
             let _ = fs::create_dir_all(LOG_DIR);
             let log_path = format!("{LOG_DIR}/{name_r}.log");
             let mut log_file = std::fs::OpenOptions::new()
@@ -181,12 +182,12 @@ pub fn spawn_io_threads(
 
             for line in BufReader::new(child_stdout).lines() {
                 let line = match line { Ok(l) => l, Err(_) => break };
-                *last_output_r.lock().unwrap() = Instant::now();
+                *lock_or_recover(&last_output_r) = Instant::now();
                 if let Some(ref mut f) = log_file { let _ = writeln!(f, "{line}"); }
                 {
-                    let reg = registry_r.lock().unwrap();
+                    let reg = lock_or_recover(&registry_r);
                     if let Some(st) = reg.get(&name_r) {
-                        let mut st = st.lock().unwrap();
+                        let mut st = lock_or_recover(&st);
                         st.log_buf.push_back(line.clone());
                         if st.log_buf.len() > LOG_BUF_SIZE { st.log_buf.pop_front(); }
                         // Broadcast to live log subscribers (spec-044 management server).
@@ -194,9 +195,9 @@ pub fn spawn_io_threads(
                     }
                 }
                 let win_region = if has_display {
-                    registry_r.lock().unwrap()
+                    lock_or_recover(&registry_r)
                         .get(&name_r)
-                        .and_then(|st| st.lock().unwrap().win_region)
+                        .and_then(|st| lock_or_recover(&st).win_region)
                 } else { None };
                 route_or_print(&line, &name_r, &inbox_r, has_display, win_region, &focused_r, &registry_r);
             }
@@ -228,13 +229,13 @@ pub fn launch_app_threads(
         let size = crate::SCREEN_SIZE.get().copied()
             .or_else(|| crate::display::screen_size());
         if let Some((w, h)) = size {
-            if let Some(tx) = inbox.lock().unwrap().get(&name) {
+            if let Some(tx) = lock_or_recover(&inbox).get(&name) {
                 let _ = tx.send(format!("VYOMA_SYSTEM:screen:{w},{h}"));
             }
         }
         // T079: broadcast active display profile to every display app at spawn.
         let profile_kind = crate::DISPLAY_PROFILE.get().map(|s| s.as_str()).unwrap_or("desktop");
-        if let Some(tx) = inbox.lock().unwrap().get(&name) {
+        if let Some(tx) = lock_or_recover(&inbox).get(&name) {
             let _ = tx.send(format!("VYOMA_SYSTEM:display_profile:{profile_kind}"));
         }
     }
@@ -284,7 +285,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
     }
 
     let (tx, msg_rx) = mpsc::channel::<String>();
-    inbox.lock().unwrap().insert(name.clone(), tx);
+    lock_or_recover(&inbox).insert(name.clone(), tx);
 
     let wasm_path = Path::new(&entry.manifest)
         .parent().unwrap_or(Path::new("/apps"))
@@ -299,7 +300,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
             Err(e) => {
                 log_error!(Subsystem::Capability, Some(name.as_str()),
                     "SECURITY: {name} rejected — {e}");
-                inbox.lock().unwrap().remove(&name);
+                lock_or_recover(&inbox).remove(&name);
                 return None;
             }
         }
@@ -339,7 +340,7 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
         Ok(c) => c,
         Err(e) => {
             log_error!(Subsystem::Lifecycle, Some(name.as_str()), "failed to spawn wasmtime for {name}: {e}");
-            inbox.lock().unwrap().remove(&name);
+            lock_or_recover(&inbox).remove(&name);
             return None;
         }
     };
@@ -385,10 +386,10 @@ pub fn spawn_app(entry: &BootEntry, inbox: &Inbox, app_registry: &AppRegistry) -
     // T053: enqueue Open animation so the window fades in on spawn
     {
         use crate::display::animator::{Animation, AnimKind, now_ms};
-        state.lock().unwrap().pending_anim =
+        lock_or_recover(&state).pending_anim =
             Some(Animation::new(AnimKind::Open, now_ms()));
     }
-    app_registry.lock().unwrap().insert(name.clone(), state);
+    lock_or_recover(&app_registry).insert(name.clone(), state);
     crate::workspace::register_app(&name);
 
     Some(SpawnedApp { entry: entry.clone(), name, child, msg_rx, child_stdin, child_stdout,
@@ -412,9 +413,9 @@ pub fn wait_app(
         };
 
         let (had_display, old_win_region) = {
-            let reg = app_registry.lock().unwrap();
+            let reg = lock_or_recover(&app_registry);
             if let Some(st) = reg.get(&name) {
-                let mut st = st.lock().unwrap();
+                let mut st = lock_or_recover(&st);
                 st.status = AppStatus::Stopped(exit_code);
                 st.child_pid = None;
                 (st.has_display, st.win_region)
@@ -424,7 +425,7 @@ pub fn wait_app(
         #[cfg(target_os = "linux")]
         if let (true, Some((wx, wy, ww, wh))) = (had_display, old_win_region) {
             if let Some(fb_lock) = crate::display::get() {
-                let mut fb = fb_lock.lock().unwrap();
+                let mut fb = lock_or_recover(&fb_lock);
                 fb.fill_rect(wx, wy, ww, wh, 0x1C1C1EFF);
                 fb.flush();
             }
@@ -456,8 +457,8 @@ pub fn wait_app(
         match spawn_app(&entry, &inbox, &app_registry) {
             Some(app) => {
                 restart_count += 1;
-                { let reg = app_registry.lock().unwrap();
-                  if let Some(st) = reg.get(&name) { st.lock().unwrap().restart_count = restart_count; } }
+                { let reg = lock_or_recover(&app_registry);
+                  if let Some(st) = reg.get(&name) { lock_or_recover(&st).restart_count = restart_count; } }
                 if app.has_display {
                     apply_tiling_layout(&app_registry);
                     #[cfg(target_os = "linux")]
@@ -478,16 +479,16 @@ pub fn wait_app(
 pub fn run_watchdog(registry: AppRegistry) {
     loop {
         thread::sleep(std::time::Duration::from_secs(1));
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         for (name, state_arc) in reg.iter() {
-            let st = state_arc.lock().unwrap();
+            let st = lock_or_recover(&state_arc);
             let wsecs = st.watchdog_secs;
             if wsecs == 0 { continue; }
             {
-                let mut backoff = st.watchdog_backoff.lock().unwrap();
+                let mut backoff = lock_or_recover(&st.watchdog_backoff);
                 if *backoff > 0 { *backoff -= 1; continue; }
             }
-            let elapsed = st.last_output.lock().unwrap().elapsed();
+            let elapsed = lock_or_recover(&st.last_output).elapsed();
             if elapsed.as_secs() >= wsecs as u64 {
                 if let Some(pid) = st.child_pid {
                     log_warn!(Subsystem::Lifecycle, Some(name.as_str()),
@@ -497,8 +498,8 @@ pub fn run_watchdog(registry: AppRegistry) {
                     unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
                 }
                 let restarts = st.restart_count;
-                *st.watchdog_backoff.lock().unwrap() = watchdog_next_backoff(wsecs, restarts);
-                *st.last_output.lock().unwrap() = Instant::now();
+                *lock_or_recover(&st.watchdog_backoff) = watchdog_next_backoff(wsecs, restarts);
+                *lock_or_recover(&st.last_output) = Instant::now();
             }
         }
     }

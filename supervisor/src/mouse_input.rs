@@ -4,6 +4,7 @@
 //! Mouse hardware discovery and mouse-event dispatch (P22, P32, P33).
 
 use std::sync::Mutex;
+use crate::lock_or_recover;
 
 use crate::{log_info, log_error, AppRegistry, AppStatus, FocusedApp, Inbox};
 use crate::{HOVERED_APP, Z_ORDER};
@@ -85,17 +86,17 @@ pub fn dispatch_mouse(
 
     // Snapshot z-order before locking registry (avoids lock ordering issues)
     let z_snapshot: Vec<String> = Z_ORDER.get()
-        .map(|m| m.lock().unwrap().clone())
+        .map(|m| lock_or_recover(&m).clone())
         .unwrap_or_default();
 
     // Title-bar hover highlight (motion only, no button press)
     if btn == 0 {
         let new_hover: Option<String> = {
-            let reg = app_registry.lock().unwrap();
+            let reg = lock_or_recover(&app_registry);
             let mut found: Option<String> = None;
             for name in &z_snapshot {
                 let Some(state_arc) = reg.get(name) else { continue };
-                let st = state_arc.lock().unwrap();
+                let st = lock_or_recover(&state_arc);
                 let Some((wx, wy, ww, _wh)) = st.win_region else { continue };
                 if cx >= wx as i32 && cx < (wx + ww) as i32
                     && cy >= wy as i32 && cy < (wy + TITLEBAR_H) as i32
@@ -103,7 +104,7 @@ pub fn dispatch_mouse(
             }
             if found.is_none() {
                 for (name, state_arc) in reg.iter() {
-                    let st = state_arc.lock().unwrap();
+                    let st = lock_or_recover(&state_arc);
                     let Some((wx, wy, ww, _wh)) = st.win_region else { continue };
                     if cx >= wx as i32 && cx < (wx + ww) as i32
                         && cy >= wy as i32 && cy < (wy + TITLEBAR_H) as i32
@@ -112,16 +113,16 @@ pub fn dispatch_mouse(
             }
             found
         };
-        let old_hover = HOVERED_APP.get_or_init(|| Mutex::new(None)).lock().unwrap().clone();
+        let old_hover = lock_or_recover(&HOVERED_APP.get_or_init(|| Mutex::new(None))).clone();
 
         if new_hover != old_hover {
-            *HOVERED_APP.get_or_init(|| Mutex::new(None)).lock().unwrap() = new_hover.clone();
-            let focused_name = focused.lock().unwrap().clone();
+            *lock_or_recover(&HOVERED_APP.get_or_init(|| Mutex::new(None))) = new_hover.clone();
+            let focused_name = lock_or_recover(&focused).clone();
             let mut to_redraw: Vec<(String, u32, u32, u32)> = Vec::new();
-            let reg = app_registry.lock().unwrap();
+            let reg = lock_or_recover(&app_registry);
             for candidate in old_hover.iter().chain(new_hover.iter()) {
                 if let Some(state_arc) = reg.get(candidate.as_str()) {
-                    let st = state_arc.lock().unwrap();
+                    let st = lock_or_recover(&state_arc);
                     if let Some((wx, wy, ww, _wh)) = st.win_region {
                         if ww >= 60 { to_redraw.push((candidate.clone(), wx, wy, ww)); }
                     }
@@ -131,7 +132,7 @@ pub fn dispatch_mouse(
 
             if !to_redraw.is_empty() {
                 if let Some(fb_lock) = display::get() {
-                    let mut fb = fb_lock.lock().unwrap();
+                    let mut fb = lock_or_recover(&fb_lock);
                     for (name, wx, wy, ww) in &to_redraw {
                         let is_focused = focused_name.as_deref() == Some(name.as_str());
                         let is_hovered = new_hover.as_deref() == Some(name.as_str());
@@ -147,10 +148,10 @@ pub fn dispatch_mouse(
     if btn != 0 && cy >= 0 && cy < crate::chrome::MENUBAR_H as i32 {
         use supervisor::windows::menubar_hit_app;
         let display_apps: Vec<String> = {
-            let reg = app_registry.lock().unwrap();
+            let reg = lock_or_recover(&app_registry);
             let mut v: Vec<String> = reg.iter()
                 .filter_map(|(name, st)| {
-                    let st = st.lock().unwrap();
+                    let st = lock_or_recover(&st);
                     if st.has_display && matches!(st.status, AppStatus::Running) {
                         Some(name.clone())
                     } else {
@@ -165,15 +166,15 @@ pub fn dispatch_mouse(
         if let Some(name) = menubar_hit_app(cx, cy, crate::chrome::MENUBAR_H, &app_refs) {
             let name = name.to_string();
             z_order_push_front(&name);
-            *focused.lock().unwrap() = Some(name.clone());
+            *lock_or_recover(&focused) = Some(name.clone());
             log_info!(Subsystem::Input, Some(name.as_str()), "menubar click: focus → {name}");
             repaint_all_borders(app_registry, focused);
             // T061: Load menu_items from app manifest into dropdown
             let items: Vec<(String, String)> = {
-                let reg = app_registry.lock().unwrap();
+                let reg = lock_or_recover(&app_registry);
                 reg.get(&name)
                     .map(|st| {
-                        st.lock().unwrap().menu_items.iter()
+                        lock_or_recover(&st).menu_items.iter()
                             .filter(|mi| mi.enabled)
                             .map(|mi| (mi.label.clone(), mi.action.clone()))
                             .collect()
@@ -197,10 +198,10 @@ pub fn dispatch_mouse(
 
     if btn & 2 != 0 {
         let over_window = {
-            let reg = app_registry.lock().unwrap();
+            let reg = lock_or_recover(&app_registry);
             z_snapshot.iter().any(|name| {
                 let Some(state_arc) = reg.get(name) else { return false };
-                let st = state_arc.lock().unwrap();
+                let st = lock_or_recover(&state_arc);
                 let Some((wx, wy, ww, wh)) = st.win_region else { return false };
                 cx >= wx as i32 && cy >= wy as i32
                     && cx < (wx + ww) as i32 && cy < (wy + wh) as i32
@@ -221,11 +222,11 @@ pub fn dispatch_mouse(
     // falling through to the focus/raise and mouse-event dispatch logic.
     if btn != 0 {
         let tl_hit = {
-            let reg = app_registry.lock().unwrap();
+            let reg = lock_or_recover(&app_registry);
             let mut result: Option<(String, TrafficLight)> = None;
             for name in &z_snapshot {
                 let Some(state_arc) = reg.get(name) else { continue };
-                let st = state_arc.lock().unwrap();
+                let st = lock_or_recover(&state_arc);
                 let Some((wx, wy, _ww, _wh)) = st.win_region else { continue };
                 if let Some(dot) = traffic_light_hit(cx, cy, wx, wy) {
                     result = Some((name.clone(), dot));
@@ -239,10 +240,10 @@ pub fn dispatch_mouse(
                 TrafficLight::Close => {
                     // T054: enqueue Close animation before killing
                     let pid = {
-                        let reg = app_registry.lock().unwrap();
+                        let reg = lock_or_recover(&app_registry);
                         if let Some(st) = reg.get(&name) {
                             use crate::display::animator::{Animation, AnimKind, now_ms};
-                            let mut st = st.lock().unwrap();
+                            let mut st = lock_or_recover(&st);
                             st.pending_anim = Some(Animation::new(AnimKind::Close, now_ms()));
                             st.child_pid
                         } else {
@@ -269,11 +270,11 @@ pub fn dispatch_mouse(
     // On click, raise topmost window under cursor and set keyboard focus
     if btn != 0 {
         let raise_target = {
-            let reg = app_registry.lock().unwrap();
+            let reg = lock_or_recover(&app_registry);
             let mut found: Option<String> = None;
             for name in &z_snapshot {
                 let Some(state_arc) = reg.get(name) else { continue };
-                let st = state_arc.lock().unwrap();
+                let st = lock_or_recover(&state_arc);
                 let Some((wx, wy, ww, wh)) = st.win_region else { continue };
                 if cx >= wx as i32 && cy >= wy as i32
                     && cx < (wx + ww) as i32 && cy < (wy + wh) as i32 {
@@ -285,19 +286,19 @@ pub fn dispatch_mouse(
         };
         if let Some(ref name) = raise_target {
             z_order_push_front(name);
-            *focused.lock().unwrap() = Some(name.clone());
+            *lock_or_recover(&focused) = Some(name.clone());
             repaint_all_borders(app_registry, focused);
         }
     }
 
     // Dispatch mouse event to topmost mouse-capable app under cursor (z-order aware)
     let target = {
-        let reg = app_registry.lock().unwrap();
+        let reg = lock_or_recover(&app_registry);
         let mut found: Option<(String, i32, i32)> = None;
         // Try z-order first (preserves topmost-window semantics when windows overlap)
         for name in &z_snapshot {
             let Some(state_arc) = reg.get(name) else { continue };
-            let st = state_arc.lock().unwrap();
+            let st = lock_or_recover(&state_arc);
             if !st.has_mouse { continue; }
             let Some((wx, wy, ww, wh)) = st.win_region else { continue };
             if cx >= wx as i32 && cy >= wy as i32
@@ -311,7 +312,7 @@ pub fn dispatch_mouse(
         // Fallback: apps not in z_order (no window region) still get events
         if found.is_none() {
             for (name, state_arc) in reg.iter() {
-                let st = state_arc.lock().unwrap();
+                let st = lock_or_recover(&state_arc);
                 if !st.has_mouse { continue; }
                 let Some((wx, wy, ww, wh)) = st.win_region else { continue };
                 if cx >= wx as i32 && cy >= wy as i32
@@ -340,11 +341,11 @@ pub fn dispatch_mouse(
 #[cfg(target_os = "linux")]
 fn try_begin_titlebar_drag(cx: i32, cy: i32, registry: &AppRegistry) {
     let z_snap: Vec<String> = crate::Z_ORDER.get()
-        .map(|m| m.lock().unwrap().clone()).unwrap_or_default();
-    let reg = registry.lock().unwrap();
+        .map(|m| lock_or_recover(&m).clone()).unwrap_or_default();
+    let reg = lock_or_recover(&registry);
     for name in &z_snap {
         let Some(st_arc) = reg.get(name) else { continue };
-        let st = st_arc.lock().unwrap();
+        let st = lock_or_recover(&st_arc);
         let Some((wx, wy, ww, _wh)) = st.win_region else { continue };
         if cy >= wy as i32 && cy < (wy + TITLEBAR_H) as i32
             && cx >= wx as i32 && cx < (wx + ww) as i32
@@ -353,7 +354,7 @@ fn try_begin_titlebar_drag(cx: i32, cy: i32, registry: &AppRegistry) {
             let region = st.win_region.unwrap();
             drop(st);
             drop(reg);
-            *drag_state().lock().unwrap() = Some(DragState {
+            *lock_or_recover(&drag_state()) = Some(DragState {
                 app_name: name.clone(), cursor_start: (cx, cy), win_start: region,
             });
             return;
@@ -453,7 +454,7 @@ pub fn run_mouse_input(inbox: Inbox, focused: FocusedApp, registry: AppRegistry)
                 display::set_cursor_pos(cx, cy);
                 if pending_click_mask != 0 {
                     if pending_click_mask & 1 != 0 {
-                        *crate::mouse_drag_start().lock().unwrap() = Some((cx, cy));
+                        *lock_or_recover(&crate::mouse_drag_start()) = Some((cx, cy));
                         // Check resize edge first, then titlebar drag
                         if !crate::resize::try_begin_resize_from_click(cx, cy, &registry) {
                             try_begin_titlebar_drag(cx, cy, &registry);
@@ -478,7 +479,7 @@ pub fn run_mouse_input(inbox: Inbox, focused: FocusedApp, registry: AppRegistry)
                 }
                 if pending_release_mask != 0 {
                     if pending_release_mask & 1 != 0 {
-                        *crate::mouse_drag_start().lock().unwrap() = None;
+                        *lock_or_recover(&crate::mouse_drag_start()) = None;
                         if crate::resize::is_resizing() {
                             crate::resize::finish_resize(&registry, &focused, &inbox);
                         } else {

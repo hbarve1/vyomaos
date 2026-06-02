@@ -4,6 +4,7 @@
 //! Process management IPC handlers: kill, restart, update, reload.
 
 use std::{fs, sync::Arc};
+use crate::lock_or_recover;
 
 use sha2::{Digest, Sha256};
 
@@ -33,9 +34,9 @@ pub fn handle_kill(
         }
     };
     let (pid, running_names, manifest_path) = {
-        let reg = app_registry.lock().unwrap();
+        let reg = lock_or_recover(&app_registry);
         let (pid, mfst) = reg.get(&app_name).map(|st| {
-            let s = st.lock().unwrap();
+            let s = lock_or_recover(&st);
             (s.child_pid, s.entry.manifest.clone())
         }).unwrap_or((None, String::new()));
         (pid, reg.keys().cloned().collect::<Vec<_>>(), mfst)
@@ -49,9 +50,9 @@ pub fn handle_kill(
     match pid {
         Some(pid) => {
             // T054: enqueue Close animation before killing
-            if let Some(st) = app_registry.lock().unwrap().get(&app_name) {
+            if let Some(st) = lock_or_recover(&app_registry).get(&app_name) {
                 use crate::display::animator::{Animation, AnimKind, now_ms};
-                st.lock().unwrap().pending_anim = Some(Animation::new(AnimKind::Close, now_ms()));
+                lock_or_recover(&st).pending_anim = Some(Animation::new(AnimKind::Close, now_ms()));
             }
             #[cfg(target_os = "linux")]
             unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
@@ -82,10 +83,10 @@ pub fn handle_restart(
         }
     };
     let (pid, entry) = {
-        let reg = app_registry.lock().unwrap();
+        let reg = lock_or_recover(&app_registry);
         match reg.get(&app_name) {
             Some(st) => {
-                let st = st.lock().unwrap();
+                let st = lock_or_recover(&st);
                 (st.child_pid, st.entry.clone())
             }
             None => {
@@ -132,8 +133,8 @@ pub fn handle_update(
         }
     };
     let entry = {
-        let reg = app_registry.lock().unwrap();
-        reg.get(&app_name).map(|st| st.lock().unwrap().entry.clone())
+        let reg = lock_or_recover(&app_registry);
+        reg.get(&app_name).map(|st| lock_or_recover(&st).entry.clone())
     };
     let entry = match entry {
         Some(e) => e,
@@ -197,9 +198,9 @@ pub fn handle_update(
 
         // Kill old instance then respawn
         {
-            let reg = registry_bg.lock().unwrap();
+            let reg = lock_or_recover(&registry_bg);
             if let Some(st) = reg.get(&app_name) {
-                if let Some(pid) = st.lock().unwrap().child_pid {
+                if let Some(pid) = lock_or_recover(&st).child_pid {
                     #[cfg(target_os = "linux")]
                     unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
                 }
@@ -251,9 +252,9 @@ pub fn handle_reload(
         };
         // Skip already-running apps
         let already_running = {
-            let reg = app_registry.lock().unwrap();
+            let reg = lock_or_recover(&app_registry);
             reg.get(&name).map(|st| {
-                matches!(st.lock().unwrap().status, AppStatus::Running)
+                matches!(lock_or_recover(&st).status, AppStatus::Running)
             }).unwrap_or(false)
         };
         if already_running { continue; }

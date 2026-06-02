@@ -5,6 +5,7 @@
 //! Extracted into its own module to respect the 500-line file limit.
 
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 use crate::{log_info, AppRegistry, FocusedApp, Inbox};
 use supervisor::logging::Subsystem;
@@ -93,14 +94,14 @@ pub fn resize_drag() -> &'static Mutex<Option<ResizeDrag>> {
 
 /// Returns true if a resize drag is currently in progress.
 pub fn is_resizing() -> bool {
-    resize_drag().lock().unwrap().is_some()
+    lock_or_recover(&resize_drag()).is_some()
 }
 
 // ── Begin / update / finish ──────────────────────────────────────────────────
 
 /// Start a resize drag for the given app.
 pub fn begin_resize(app: String, edge: ResizeEdge, mx: i32, my: i32, region: (u32, u32, u32, u32)) {
-    *resize_drag().lock().unwrap() = Some(ResizeDrag {
+    *lock_or_recover(&resize_drag()) = Some(ResizeDrag {
         app,
         edge,
         start_mx: mx,
@@ -122,7 +123,7 @@ pub fn apply_resize_update(
     focused: &FocusedApp,
 ) {
     let snap = {
-        let guard = resize_drag().lock().unwrap();
+        let guard = lock_or_recover(&resize_drag());
         guard.as_ref().map(|rd| ResizeDrag {
             app:         rd.app.clone(),
             edge:        rd.edge,
@@ -140,9 +141,9 @@ pub fn apply_resize_update(
     let (nx, ny, nw, nh) = compute_new_geometry(rd.edge, ox, oy, ow, oh, dx, dy, screen_w, screen_h);
 
     {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         if let Some(st_arc) = reg.get(&rd.app) {
-            st_arc.lock().unwrap().win_region = Some((nx, ny, nw, nh));
+            lock_or_recover(&st_arc).win_region = Some((nx, ny, nw, nh));
         }
     }
     crate::draw_cmd::force_repaint(registry, focused);
@@ -156,13 +157,13 @@ pub fn finish_resize(
     focused: &FocusedApp,
     inbox: &Inbox,
 ) {
-    let finished = resize_drag().lock().unwrap().take();
+    let finished = lock_or_recover(&resize_drag()).take();
     let Some(rd) = finished else { return };
 
     let region = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         reg.get(&rd.app)
-            .and_then(|st| st.lock().unwrap().win_region)
+            .and_then(|st| lock_or_recover(&st).win_region)
             .unwrap_or(rd.orig_region)
     };
     let (_, _, nw, nh) = region;
@@ -259,13 +260,13 @@ pub fn try_begin_resize_from_click(
     registry: &AppRegistry,
 ) -> bool {
     let z_snap: Vec<String> = crate::Z_ORDER.get()
-        .map(|m| m.lock().unwrap().clone()).unwrap_or_default();
+        .map(|m| lock_or_recover(&m).clone()).unwrap_or_default();
     let hit: Option<(String, ResizeEdge, (u32, u32, u32, u32))> = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         let mut found = None;
         for name in &z_snap {
             let Some(st_arc) = reg.get(name) else { continue };
-            let st = st_arc.lock().unwrap();
+            let st = lock_or_recover(&st_arc);
             let Some((wx, wy, ww, wh)) = st.win_region else { continue };
             if let Some(edge) = detect_resize_edge(cx, cy, wx, wy, ww, wh) {
                 found = Some((name.clone(), edge, (wx, wy, ww, wh)));

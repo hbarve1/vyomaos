@@ -6,6 +6,7 @@
 //! manager z-order, but participate in IPC and appear in `ps` / `ps-raw`
 //! output with a `[bg]` marker.
 
+use crate::lock_or_recover;
 use crate::{
     log_info,
     AppRegistry, AppStatus, FocusedApp, Inbox,
@@ -21,7 +22,7 @@ pub fn is_background(app_name: &str, registry: &AppRegistry) -> bool {
         .lock()
         .unwrap()
         .get(app_name)
-        .map(|st| st.lock().unwrap().is_background)
+        .map(|st| lock_or_recover(&st).is_background)
         .unwrap_or(false)
 }
 
@@ -38,11 +39,11 @@ pub fn handle_bg_command(
     match verb {
         "bg-list" => {
             let entries: Vec<String> = {
-                let reg = app_registry.lock().unwrap();
+                let reg = lock_or_recover(&app_registry);
                 let mut rows: Vec<String> = reg
                     .iter()
                     .filter_map(|(name, st)| {
-                        let st = st.lock().unwrap();
+                        let st = lock_or_recover(&st);
                         if st.is_background {
                             let status = match &st.status {
                                 AppStatus::Running    => "running",
@@ -91,9 +92,9 @@ pub fn handle_bg_command(
                     // Mark as background in the registry (in case the manifest
                     // did not already set background = true).
                     {
-                        let reg = app_registry.lock().unwrap();
+                        let reg = lock_or_recover(&app_registry);
                         if let Some(st) = reg.get(&app_name) {
-                            st.lock().unwrap().is_background = true;
+                            lock_or_recover(&st).is_background = true;
                         }
                     }
                     launch_app_threads(app, inbox, focused, app_registry);
@@ -126,10 +127,10 @@ pub fn handle_bg_command(
             };
 
             let pid = {
-                let reg = app_registry.lock().unwrap();
+                let reg = lock_or_recover(&app_registry);
                 match reg.get(&app_name) {
                     Some(st) => {
-                        let st = st.lock().unwrap();
+                        let st = lock_or_recover(&st);
                         if !st.is_background {
                             send_reply(
                                 sender,

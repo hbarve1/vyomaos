@@ -5,6 +5,7 @@
 
 use crate::{AppRegistry, FocusedApp};
 use crate::chrome::{draw_chrome_onto, TITLEBAR_H, Z_DOCK};
+use crate::lock_or_recover;
 
 #[cfg(target_os = "linux")]
 use crate::display;
@@ -19,7 +20,7 @@ pub fn render_wallpaper(fb: &mut display::Framebuffer, fb_w: u32, fb_h: u32) {
         crate::wallpaper::Wallpaper::Image(ref path) => {
             // Fill with dark fallback first, then overlay the image.
             fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
-            let mut ic = crate::image_cache().lock().unwrap();
+            let mut ic = lock_or_recover(&crate::image_cache());
             if let Some(img) = ic.get(path) {
                 let (iw, ih, rgba_data) = (img.width, img.height, img.rgba.clone());
                 drop(ic);
@@ -36,13 +37,13 @@ pub fn render_wallpaper(fb: &mut display::Framebuffer, fb_w: u32, fb_h: u32) {
 pub fn blit_all_surfaces(fb: &mut display::Framebuffer, registry: &AppRegistry) {
     // Collect app info and workspace visibility in a single lock to avoid
     // deadlock (is_visible also locks registry).
-    let current_ws = crate::workspace::manager().lock().unwrap().current;
+    let current_ws = lock_or_recover(&crate::workspace::manager()).current;
     let mut apps_sorted: Vec<(u32, String, (u32, u32, u32, u32))> = {
-        let reg = registry.lock().unwrap();
-        let ws_mgr = crate::workspace::manager().lock().unwrap();
+        let reg = lock_or_recover(&registry);
+        let ws_mgr = lock_or_recover(&crate::workspace::manager());
         reg.iter()
             .filter_map(|(name, st)| {
-                let st = st.lock().unwrap();
+                let st = lock_or_recover(&st);
                 st.win_region.map(|r| (st.win_z, name.clone(), r))
             })
             .filter(|(z, name, _)| {
@@ -57,14 +58,14 @@ pub fn blit_all_surfaces(fb: &mut display::Framebuffer, registry: &AppRegistry) 
     let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
     for (z, name, (wx, wy, ww, _wh)) in &apps_sorted {
         let (surface_arc, alpha) = {
-            let reg = registry.lock().unwrap();
+            let reg = lock_or_recover(&registry);
             let st_opt = reg.get(name.as_str());
-            let surface = st_opt.and_then(|st| st.lock().unwrap().surface.clone());
-            let a = st_opt.map(|st| crate::chrome::sample_and_clear_anim(&mut st.lock().unwrap().pending_anim)).unwrap_or(255);
+            let surface = st_opt.and_then(|st| lock_or_recover(&st).surface.clone());
+            let a = st_opt.map(|st| crate::chrome::sample_and_clear_anim(&mut lock_or_recover(&st).pending_anim)).unwrap_or(255);
             (surface, a)
         };
         if let Some(arc) = surface_arc {
-            let surface = arc.lock().unwrap();
+            let surface = lock_or_recover(&arc);
             let blit_y = if *z >= Z_DOCK { *wy } else { wy + TITLEBAR_H };
             if *ww > 0 {
                 display::blit_surface(&mut fb.back, &surface, *wx, blit_y, alpha, fs, fw, fh);
@@ -78,7 +79,7 @@ pub fn blit_all_surfaces(fb: &mut display::Framebuffer, registry: &AppRegistry) 
 #[cfg(target_os = "linux")]
 pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
     let Some(fb_lock) = display::get() else { return };
-    let mut fb = fb_lock.lock().unwrap();
+    let mut fb = lock_or_recover(&fb_lock);
     let (fb_w, fb_h) = (fb.width, fb.height);
     render_wallpaper(&mut *fb, fb_w, fb_h);
     blit_all_surfaces(&mut *fb, registry);
@@ -96,16 +97,16 @@ pub fn run_compositor_tick(registry: &AppRegistry, focused: &FocusedApp) {
     loop {
         std::thread::sleep(std::time::Duration::from_millis(16)); // ~60 Hz
         let any_dirty = {
-            let reg = registry.lock().unwrap();
+            let reg = lock_or_recover(&registry);
             reg.values().any(|st| {
-                let s = st.lock().unwrap();
+                let s = lock_or_recover(&st);
                 s.frame_ready || s.pending_anim.is_some()
             })
         };
         if !any_dirty { continue; }
         {
-            let reg = registry.lock().unwrap();
-            for st in reg.values() { st.lock().unwrap().frame_ready = false; }
+            let reg = lock_or_recover(&registry);
+            for st in reg.values() { lock_or_recover(&st).frame_ready = false; }
         }
         force_repaint(registry, focused);
     }

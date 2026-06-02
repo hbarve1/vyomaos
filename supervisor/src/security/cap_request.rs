@@ -10,6 +10,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 use crate::{log_info, log_warn, send_reply, AppRegistry, Inbox};
 use supervisor::logging::Subsystem;
@@ -89,7 +90,7 @@ pub fn grant_cap(app: &str, cap: &str) {
 
 /// Remove a runtime capability from an app. Returns true if it was present.
 pub fn revoke_cap(app: &str, cap: &str) -> bool {
-    let mut map = runtime_caps().lock().unwrap();
+    let mut map = lock_or_recover(&runtime_caps());
     if let Some(set) = map.get_mut(app) {
         return set.remove(cap);
     }
@@ -98,7 +99,7 @@ pub fn revoke_cap(app: &str, cap: &str) -> bool {
 
 /// List all runtime-granted capabilities for an app.
 pub fn list_caps(app: &str) -> Vec<String> {
-    let map = runtime_caps().lock().unwrap();
+    let map = lock_or_recover(&runtime_caps());
     match map.get(app) {
         Some(set) => {
             let mut v: Vec<String> = set.iter().cloned().collect();
@@ -111,7 +112,7 @@ pub fn list_caps(app: &str) -> Vec<String> {
 
 /// Check whether an app has a specific runtime-granted capability.
 pub fn has_cap(app: &str, cap: &str) -> bool {
-    let map = runtime_caps().lock().unwrap();
+    let map = lock_or_recover(&runtime_caps());
     map.get(app).map(|s| s.contains(cap)).unwrap_or(false)
 }
 
@@ -134,7 +135,7 @@ pub fn handle_request_cap(
 
     // Check if the app is registered.
     {
-        let reg = app_registry.lock().unwrap();
+        let reg = lock_or_recover(&app_registry);
         if !reg.contains_key(sender) {
             send_reply(
                 sender,
@@ -269,10 +270,10 @@ fn broadcast_cap_change(
     app_registry: &AppRegistry,
 ) {
     let msg = format!("VYOMA_SYSTEM:cap-change:{app}:{cap}:{action}");
-    let reg = app_registry.lock().unwrap();
-    let inb = inbox.lock().unwrap();
+    let reg = lock_or_recover(&app_registry);
+    let inb = lock_or_recover(&inbox);
     for (name, state_arc) in reg.iter() {
-        let st = state_arc.lock().unwrap();
+        let st = lock_or_recover(&state_arc);
         if matches!(st.status, crate::AppStatus::Running) {
             if let Some(tx) = inb.get(name) {
                 let _ = tx.send(msg.clone());

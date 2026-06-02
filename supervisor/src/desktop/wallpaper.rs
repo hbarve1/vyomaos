@@ -4,6 +4,7 @@
 //! Wallpaper state: solid color or PNG image path.
 
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 /// The current desktop wallpaper — either a solid RGBA color or a path to a PNG image.
 #[derive(Debug, Clone, PartialEq)]
@@ -25,12 +26,12 @@ fn wallpaper_lock() -> &'static Mutex<Wallpaper> {
 
 /// Return the current wallpaper setting.
 pub fn current() -> Wallpaper {
-    wallpaper_lock().lock().unwrap().clone()
+    lock_or_recover(&wallpaper_lock()).clone()
 }
 
 /// Set a new wallpaper (solid color or image path).
 pub fn set(wp: Wallpaper) {
-    *wallpaper_lock().lock().unwrap() = wp;
+    *lock_or_recover(&wallpaper_lock()) = wp;
 }
 
 /// Parse a wallpaper argument string.

@@ -4,6 +4,7 @@
 //! macOS-inspired UI chrome: title bars, menu bar, status bar, Z-order helpers.
 
 use std::sync::Mutex;
+use crate::lock_or_recover;
 
 use crate::{AppRegistry, AppStatus, FocusedApp, HOVERED_APP, Z_ORDER, BOOT_INSTANT};
 
@@ -47,9 +48,9 @@ const TL_GRAY:          u32 = 0x4D4D4DFF; // inactive traffic lights
 
 /// Return all windowed app names sorted alphabetically.
 pub fn windowed_apps_sorted(registry: &AppRegistry) -> Vec<String> {
-    let reg = registry.lock().unwrap();
+    let reg = lock_or_recover(&registry);
     let mut v: Vec<String> = reg.iter()
-        .filter(|(_, st)| st.lock().unwrap().win_region.is_some())
+        .filter(|(_, st)| lock_or_recover(&st).win_region.is_some())
         .map(|(n, _)| n.clone()).collect();
     v.sort(); v
 }
@@ -77,7 +78,7 @@ pub fn cycle_focus_backward(names: &[String], current: Option<&str>) -> Option<S
 
 pub fn z_order_push_front(name: &str) {
     if let Some(m) = Z_ORDER.get() {
-        let mut v = m.lock().unwrap();
+        let mut v = lock_or_recover(&m);
         v.retain(|n| n != name);
         v.insert(0, name.to_string());
     }
@@ -85,7 +86,7 @@ pub fn z_order_push_front(name: &str) {
 
 pub fn z_order_push_back(name: &str) {
     if let Some(m) = Z_ORDER.get() {
-        let mut v = m.lock().unwrap();
+        let mut v = lock_or_recover(&m);
         v.retain(|n| n != name);
         v.push(name.to_string());
     }
@@ -112,7 +113,7 @@ fn draw_glyph_str(
     let mut cx = x;
     for ch in text.chars() {
         let (gw, gh, adv, bear_y, cov) = {
-            let mut fc = crate::font_cache().lock().unwrap();
+            let mut fc = lock_or_recover(&crate::font_cache());
             let g = fc.rasterize(ch, pt, bold, mono);
             (g.width, g.height, g.advance_x, g.bearing_y, g.coverage.clone())
         };
@@ -196,7 +197,7 @@ pub fn draw_titlebar(
     // App name centered — 16pt regular Inter (scaled for 1080p)
     let nlen = name.len().min(20);
     let display_name = &name[..nlen];
-    let name_w_est = crate::font_cache().lock().unwrap()
+    let name_w_est = lock_or_recover(&crate::font_cache())
         .measure_str(display_name, 16, false, false);
     if ww > name_w_est + 60 {
         let nx = (wx + (ww - name_w_est) / 2) as i32;
@@ -253,7 +254,7 @@ pub fn draw_menubar(
     if let Some(name) = focused {
         let nlen = name.len().min(20);
         let display_name = &name[..nlen];
-        let name_w_est = crate::font_cache().lock().unwrap()
+        let name_w_est = lock_or_recover(&crate::font_cache())
             .measure_str(display_name, 15, false, false);
         let nx = sw.saturating_sub(name_w_est) / 2;
         draw_glyph_str(fb, display_name, nx as i32, ty, mac_label(), 15, false, false);
@@ -264,7 +265,7 @@ pub fn draw_menubar(
     let m = (elapsed_secs % 3600) / 60;
     let s = elapsed_secs % 60;
     let clock = format!("{h:02}:{m:02}:{s:02}");
-    let cw = crate::font_cache().lock().unwrap()
+    let cw = lock_or_recover(&crate::font_cache())
         .measure_str(&clock, 13, false, false);
     let clock_x = if sw > cw + 12 { sw - cw - 12 } else { 0 };
     if clock_x > 0 {
@@ -276,7 +277,7 @@ pub fn draw_menubar(
     let tray_gap = 14_u32;
     let mut tray_x = clock_x.saturating_sub(tray_gap);
     for item in tray_items.iter().rev() {
-        let tw = crate::font_cache().lock().unwrap()
+        let tw = lock_or_recover(&crate::font_cache())
             .measure_str(&item.text, 13, false, false);
         tray_x = tray_x.saturating_sub(tw);
         if tray_x > 0 {
@@ -288,7 +289,7 @@ pub fn draw_menubar(
 
 /// Immediately repaint title bars for all windowed apps (called on focus changes).
 pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
-    let focused_name = focused.lock().unwrap().clone();
+    let focused_name = lock_or_recover(&focused).clone();
     let hovered_name = HOVERED_APP
         .get_or_init(|| Mutex::new(None))
         .lock()
@@ -297,11 +298,11 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     // Collect (win_z, name, region) then sort by win_z ascending so lower-z
     // windows are painted first (appear behind higher-z windows).
     let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         let mut regions_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = Vec::new();
         let mut display_apps: Vec<String> = reg.iter()
             .filter_map(|(name, st)| {
-                let st = st.lock().unwrap();
+                let st = lock_or_recover(&st);
                 if st.has_display && matches!(st.status, AppStatus::Running) {
                     Some(name.clone())
                 } else {
@@ -311,7 +312,7 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
             .collect();
         display_apps.sort();
         for (name, st) in reg.iter() {
-            let st = st.lock().unwrap();
+            let st = lock_or_recover(&st);
             if let Some(r) = st.win_region {
                 regions_with_z.push((st.win_z, name.clone(), r));
             }
@@ -324,7 +325,7 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
     #[cfg(target_os = "linux")]
     {
         let Some(fb_lock) = display::get() else { return };
-        let mut fb = fb_lock.lock().unwrap();
+        let mut fb = lock_or_recover(&fb_lock);
         for (name, (wx, wy, ww, wh)) in &regions {
             if *ww < 60 { continue; }
             let is_focused = focused_name.as_deref() == Some(name.as_str());
@@ -355,16 +356,15 @@ pub fn draw_chrome_onto(
     registry: &AppRegistry,
     focused: &FocusedApp,
 ) {
-    let focused_name = focused.lock().unwrap().clone();
-    let hovered_name = HOVERED_APP
-        .get_or_init(|| Mutex::new(None))
-        .lock().unwrap().clone();
+    let focused_name = lock_or_recover(&focused).clone();
+    let hovered_name = lock_or_recover(HOVERED_APP
+        .get_or_init(|| Mutex::new(None))).clone();
     let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
-        let reg = registry.lock().unwrap();
+        let reg = lock_or_recover(&registry);
         let mut regions_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = Vec::new();
         let mut display_apps: Vec<String> = reg.iter()
             .filter_map(|(name, st)| {
-                let st = st.lock().unwrap();
+                let st = lock_or_recover(&st);
                 if st.has_display && matches!(st.status, AppStatus::Running) {
                     Some(name.clone())
                 } else { None }
@@ -372,7 +372,7 @@ pub fn draw_chrome_onto(
             .collect();
         display_apps.sort();
         for (name, st) in reg.iter() {
-            let st = st.lock().unwrap();
+            let st = lock_or_recover(&st);
             if let Some(r) = st.win_region {
                 regions_with_z.push((st.win_z, name.clone(), r));
             }
@@ -386,10 +386,10 @@ pub fn draw_chrome_onto(
         // Skip windows not on the current workspace (inline check to avoid
         // potential deadlock if registry is held by caller).
         {
-            let ws_mgr = crate::workspace::manager().lock().unwrap();
+            let ws_mgr = lock_or_recover(&crate::workspace::manager());
             let is_system_z = {
-                let reg = registry.lock().unwrap();
-                reg.get(name.as_str()).map(|st| st.lock().unwrap().win_z >= Z_DOCK).unwrap_or(false)
+                let reg = lock_or_recover(&registry);
+                reg.get(name.as_str()).map(|st| lock_or_recover(&st).win_z >= Z_DOCK).unwrap_or(false)
             };
             if !is_system_z {
                 let app_ws = ws_mgr.app_workspace.get(name.as_str()).copied().unwrap_or(0);
@@ -399,8 +399,8 @@ pub fn draw_chrome_onto(
         let is_focused = focused_name.as_deref() == Some(name.as_str());
         let is_hovered = hovered_name.as_deref() == Some(name.as_str());
         let is_system = {
-            let reg = registry.lock().unwrap();
-            reg.get(name.as_str()).map(|st| st.lock().unwrap().win_z >= Z_DOCK).unwrap_or(false)
+            let reg = lock_or_recover(&registry);
+            reg.get(name.as_str()).map(|st| lock_or_recover(&st).win_z >= Z_DOCK).unwrap_or(false)
         };
         if !is_system {
             draw_titlebar(fb, *wx, *wy, *ww, is_focused, is_hovered, name);

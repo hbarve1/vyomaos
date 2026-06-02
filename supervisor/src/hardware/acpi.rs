@@ -7,6 +7,7 @@
 
 use crate::{log_warn, AppRegistry, AppStatus, Inbox};
 use supervisor::logging::Subsystem;
+use crate::lock_or_recover;
 
 // ── ACPI table discovery ────────────────────────────────────────────────────
 
@@ -217,10 +218,10 @@ pub fn check_thermal_zones(inbox: &Inbox, registry: &AppRegistry) -> ThermalLeve
 /// Broadcast `VYOMA_SYSTEM:thermal:<level>` to all running apps.
 fn broadcast_thermal_event(inbox: &Inbox, registry: &AppRegistry, level: &str) {
     let msg = format!("VYOMA_SYSTEM:thermal:{level}");
-    let reg = registry.lock().unwrap();
-    let inb = inbox.lock().unwrap();
+    let reg = lock_or_recover(&registry);
+    let inb = lock_or_recover(&inbox);
     for (name, state_arc) in reg.iter() {
-        let st = state_arc.lock().unwrap();
+        let st = lock_or_recover(&state_arc);
         if matches!(st.status, AppStatus::Running) {
             if let Some(tx) = inb.get(name) {
                 let _ = tx.send(msg.clone());

@@ -10,6 +10,7 @@
 //! the originating app via a background reader thread.
 
 use std::sync::Arc;
+use crate::lock_or_recover;
 
 use crate::{log_info, log_warn, Inbox, WS_CONNS, WS_NEXT_ID};
 use crate::send_reply;
@@ -43,7 +44,7 @@ pub fn handle_ws(verb: &str, parts: &[&str], sender: &str, inbox: &Inbox) -> boo
                         }
                     };
 
-                    WS_CONNS.get().unwrap().lock().unwrap().insert(id, conn);
+                    lock_or_recover(&WS_CONNS.get().unwrap()).insert(id, conn);
                     send_reply(sender, &format!("REPLY:ws-connect {id}"), inbox);
 
                     // Spawn a background thread to read incoming frames and
@@ -70,7 +71,7 @@ pub fn handle_ws(verb: &str, parts: &[&str], sender: &str, inbox: &Inbox) -> boo
                     return true;
                 }
             };
-            let mut map = WS_CONNS.get().unwrap().lock().unwrap();
+            let mut map = lock_or_recover(&WS_CONNS.get().unwrap());
             if let Some(conn) = map.get_mut(&id) {
                 match websocket::ws_send(conn, message) {
                     Ok(()) => {
@@ -87,7 +88,7 @@ pub fn handle_ws(verb: &str, parts: &[&str], sender: &str, inbox: &Inbox) -> boo
 
         "ws-close" => {
             let id: u32 = parts.get(1).unwrap_or(&"0").trim().parse().unwrap_or(0);
-            let mut map = WS_CONNS.get().unwrap().lock().unwrap();
+            let mut map = lock_or_recover(&WS_CONNS.get().unwrap());
             if let Some(mut conn) = map.remove(&id) {
                 let _ = websocket::ws_close(&mut conn);
                 log_info!(Subsystem::Ipc, None, "ws-close id={id}");
@@ -139,7 +140,7 @@ fn ws_reader_loop(
 
                 // Clean up the connection from the map if still present.
                 if let Some(map) = WS_CONNS.get() {
-                    map.lock().unwrap().remove(&conn_id);
+                    lock_or_recover(&map).remove(&conn_id);
                 }
                 break;
             }
@@ -147,7 +148,7 @@ fn ws_reader_loop(
 
         // Check if the connection was removed (e.g. via ws-close command).
         let still_open = WS_CONNS.get()
-            .map(|m| m.lock().unwrap().contains_key(&conn_id))
+            .map(|m| lock_or_recover(&m).contains_key(&conn_id))
             .unwrap_or(false);
         if !still_open {
             break;

@@ -4,6 +4,7 @@
 //! Log-related IPC handlers: log, logs, logf.
 
 use std::fs;
+use crate::lock_or_recover;
 
 use crate::{AppRegistry, Inbox, LOG_DIR, LOG_TAIL_LINES};
 use crate::send_reply;
@@ -23,10 +24,10 @@ pub fn handle_log(
         }
     };
     let reply = {
-        let reg = app_registry.lock().unwrap();
+        let reg = lock_or_recover(&app_registry);
         match reg.get(&app_name) {
             Some(st) => {
-                let st = st.lock().unwrap();
+                let st = lock_or_recover(&st);
                 if st.log_buf.is_empty() {
                     format!("REPLY:no output captured for {app_name}")
                 } else {

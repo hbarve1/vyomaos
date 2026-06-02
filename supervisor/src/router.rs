@@ -9,6 +9,7 @@
 //   - @<app>: → specific app inbox
 //   - anything else → println to console
 
+use crate::lock_or_recover;
 use crate::{
     AppRegistry, FocusedApp, Inbox,
     EXEC_REPLY_CHANNELS, LAST_SENDER,
@@ -27,9 +28,9 @@ pub fn route_or_print(
     if has_display {
         if let Some(cmd) = line.strip_prefix("VYOMA_DRAW:") {
             {
-                let reg = app_registry.lock().unwrap();
+                let reg = lock_or_recover(&app_registry);
                 if let Some(st) = reg.get(sender) {
-                    st.lock().unwrap().draw_ticks += 1;
+                    lock_or_recover(&st).draw_ticks += 1;
                 }
             }
             #[cfg(target_os = "linux")]
@@ -43,9 +44,9 @@ pub fn route_or_print(
     }
     // VYOMA_AUDIO protocol — apps with audio capability can send audio commands.
     if let Some(cmd) = line.strip_prefix("VYOMA_AUDIO:") {
-        let has_audio = app_registry.lock().unwrap()
+        let has_audio = lock_or_recover(&app_registry)
             .get(sender)
-            .map(|st| st.lock().unwrap().has_audio)
+            .map(|st| lock_or_recover(&st).has_audio)
             .unwrap_or(false);
         if has_audio {
             crate::audio::handle_audio_command(cmd, sender);
@@ -72,7 +73,7 @@ pub fn route_or_print(
             // spec-044: route replies to the management exec handler.
             if target == "__mgmt__" {
                 if let Some(channels) = EXEC_REPLY_CHANNELS.get() {
-                    let map = channels.lock().unwrap();
+                    let map = lock_or_recover(&channels);
                     if let Some(tx) = map.get(sender) {
                         let _ = tx.send(msg.to_string());
                     }
@@ -80,7 +81,7 @@ pub fn route_or_print(
                 return;
             }
             if supervisor::ipc::is_broadcast_target(target) {
-                let map = inbox.lock().unwrap();
+                let map = lock_or_recover(&inbox);
                 for tx in map.values() {
                     let _ = tx.send(msg.to_string());
                 }
@@ -99,14 +100,14 @@ pub fn route_or_print(
                     Some(orig) if orig == "__mgmt__" => {
                         // Route to exec handler channel.
                         if let Some(channels) = EXEC_REPLY_CHANNELS.get() {
-                            let map = channels.lock().unwrap();
+                            let map = lock_or_recover(&channels);
                             if let Some(tx) = map.get(sender) {
                                 let _ = tx.send(msg.to_string());
                             }
                         }
                     }
                     Some(orig) => {
-                        let map = inbox.lock().unwrap();
+                        let map = lock_or_recover(&inbox);
                         if let Some(tx) = map.get(&orig) {
                             let _ = tx.send(msg.to_string());
                         }
@@ -125,7 +126,7 @@ pub fn route_or_print(
                     map.insert(target.to_string(), sender.to_string());
                 }
             }
-            let map = inbox.lock().unwrap();
+            let map = lock_or_recover(&inbox);
             if let Some(tx) = map.get(target) {
                 if tx.send(msg.to_string()).is_ok() {
                     return;
@@ -137,7 +138,7 @@ pub fn route_or_print(
 }
 
 pub fn send_reply(target: &str, msg: &str, inbox: &Inbox) {
-    if let Some(tx) = inbox.lock().unwrap().get(target) {
+    if let Some(tx) = lock_or_recover(&inbox).get(target) {
         let _ = tx.send(msg.to_string());
     }
 }

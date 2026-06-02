@@ -13,6 +13,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use crate::lock_or_recover;
+
 use crate::manifest::Capabilities;
 use super::{ExitCode, ModuleInstance, RuntimeConfig, WasmRuntime};
 
@@ -168,7 +170,7 @@ impl WasmRuntime for WasmtimeAdapter {
         let inst = unsafe {
             &*(instance as *const dyn ModuleInstance as *const WasmtimeInstance)
         };
-        *inst.mem_bytes.lock().unwrap()
+        *lock_or_recover(&inst.mem_bytes)
     }
 
     fn fuel_remaining(&self, _instance: &dyn ModuleInstance) -> Option<u64> {

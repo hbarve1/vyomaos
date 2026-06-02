@@ -5,6 +5,7 @@
 //! network connections, and disk usage.
 
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 use crate::user::{current_user, is_admin, load_users, UserRole};
 use crate::{log_info, log_warn, send_reply, Inbox};
@@ -143,13 +144,13 @@ fn save_profiles(profs: &[UserCapProfile]) -> Result<(), String> {
 // ── Profile lookup ──────────────────────────────────────────────────────────
 
 pub fn get_profile(username: &str) -> UserCapProfile {
-    let profs = profiles().lock().unwrap();
+    let profs = lock_or_recover(&profiles());
     profs.iter().find(|p| p.username == username).cloned()
         .unwrap_or_else(|| default_profile_for(username))
 }
 
 fn upsert_profile(profile: UserCapProfile) -> Result<(), String> {
-    let mut profs = profiles().lock().unwrap();
+    let mut profs = lock_or_recover(&profiles());
     if let Some(existing) = profs.iter_mut().find(|p| p.username == profile.username) {
         *existing = profile;
     } else {

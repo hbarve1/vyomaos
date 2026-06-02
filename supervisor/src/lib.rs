@@ -1,4 +1,18 @@
 // Supervisor library root — exposes pure modules for integration tests and tools.
+
+use std::sync::{Mutex, MutexGuard};
+
+/// Lock a mutex, recovering from poison instead of panicking.
+/// In a PID 1 supervisor, a poisoned mutex means a thread panicked while
+/// holding the lock. We recover the inner data and log a warning rather
+/// than cascading the panic.
+pub fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| {
+        eprintln!("[WARN] mutex poisoned, recovering");
+        poisoned.into_inner()
+    })
+}
+
 pub mod manifest;
 pub mod logging;
 pub mod ipc;

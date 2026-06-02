@@ -11,6 +11,7 @@
 use std::fs;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
+use crate::lock_or_recover;
 
 use crate::{log_info, log_warn, send_reply, Inbox};
 use supervisor::logging::Subsystem;
@@ -241,7 +242,7 @@ pub fn handle_jit_command(
     match verb {
         // jit-config — show current configuration
         "jit-config" => {
-            let cfg = config().lock().unwrap();
+            let cfg = lock_or_recover(&config());
             send_reply(sender, &format!("REPLY:{}", cfg.summary()), inbox);
             log_info!(Subsystem::Lifecycle, None, "jit-config query from {sender}");
         }
@@ -251,7 +252,7 @@ pub fn handle_jit_command(
             let arg = parts.get(1).unwrap_or(&"").trim();
             match OptLevel::from_str_loose(arg) {
                 Some(level) => {
-                    let mut cfg = config().lock().unwrap();
+                    let mut cfg = lock_or_recover(&config());
                     cfg.optimization_level = level;
                     if let Err(e) = cfg.save() {
                         log_warn!(Subsystem::Lifecycle, None, "jit-config save failed: {e}");
@@ -276,7 +277,7 @@ pub fn handle_jit_command(
 
         // jit-cache-clear — remove all files in the cache directory
         "jit-cache-clear" => {
-            let dir = config().lock().unwrap().cache_dir.clone();
+            let dir = lock_or_recover(&config()).cache_dir.clone();
             let removed = clear_cache_dir(&dir);
             log_info!(Subsystem::Lifecycle, None,
                 "jit cache cleared: {removed} file(s) removed from {dir}");
@@ -293,7 +294,7 @@ pub fn handle_jit_command(
             let fuel = parse_fuel_arg(arg);
             match fuel {
                 Some(limit) => {
-                    let mut cfg = config().lock().unwrap();
+                    let mut cfg = lock_or_recover(&config());
                     cfg.fuel_limit = limit;
                     if let Err(e) = cfg.save() {
                         log_warn!(Subsystem::Lifecycle, None, "jit-config save failed: {e}");

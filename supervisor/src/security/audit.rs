@@ -10,6 +10,7 @@
 use std::collections::VecDeque;
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+use crate::lock_or_recover;
 
 // ── Audit event model ────────────────────────────────────────────────────────
 
@@ -102,7 +103,7 @@ pub fn log_audit(app: &str, action: &str, detail: &str, result: AuditResult) {
     let _ = append_to_file(&json_line);
 
     // Append to ring buffer.
-    let mut buf = audit_log().lock().unwrap();
+    let mut buf = lock_or_recover(&audit_log());
     if buf.len() >= MAX_EVENTS {
         buf.pop_front();
     }
@@ -111,20 +112,20 @@ pub fn log_audit(app: &str, action: &str, detail: &str, result: AuditResult) {
 
 /// Return the last `count` audit events (most recent last).
 pub fn last_events(count: usize) -> Vec<AuditEvent> {
-    let buf = audit_log().lock().unwrap();
+    let buf = lock_or_recover(&audit_log());
     let skip = buf.len().saturating_sub(count);
     buf.iter().skip(skip).cloned().collect()
 }
 
 /// Return audit events filtered by app name.
 pub fn search_by_app(app: &str) -> Vec<AuditEvent> {
-    let buf = audit_log().lock().unwrap();
+    let buf = lock_or_recover(&audit_log());
     buf.iter().filter(|e| e.app_name == app).cloned().collect()
 }
 
 /// Clear all events from the ring buffer and truncate the log file.
 pub fn clear_log() {
-    let mut buf = audit_log().lock().unwrap();
+    let mut buf = lock_or_recover(&audit_log());
     buf.clear();
     let _ = std::fs::write(AUDIT_LOG_PATH, b"");
 }

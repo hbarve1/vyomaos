@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::thread;
+use crate::lock_or_recover;
 
 use crate::{log_info, log_warn, send_reply, AppRegistry, FocusedApp, Inbox};
 use supervisor::logging::Subsystem;
@@ -42,9 +43,9 @@ pub fn handle(
                 .or_else(|| rest.split_once(' ').map(|(a, b)| (a.to_string(), b.to_string())))
                 .unwrap_or_else(|| (rest.clone(), String::new()));
             let icon_path: Option<String> = {
-                let reg = app_registry.lock().unwrap();
+                let reg = lock_or_recover(&app_registry);
                 reg.get(sender).and_then(|st| {
-                    let st = st.lock().unwrap();
+                    let st = lock_or_recover(&st);
                     let manifest_path = &st.entry.manifest;
                     let raw = std::fs::read_to_string(manifest_path).ok()?;
                     let m: supervisor::manifest::AppManifest = toml::from_str(&raw).ok()?;

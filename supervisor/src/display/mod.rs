@@ -28,6 +28,8 @@ use std::{
     time::Duration,
 };
 
+use crate::lock_or_recover;
+
 pub struct Framebuffer {
     _file: std::fs::File, // keeps the fd alive
     pub width: u32,
@@ -79,7 +81,7 @@ pub fn get() -> Option<&'static Mutex<Framebuffer>> {
 /// Returns `None` on headless boots where `/dev/fb0` was not opened.
 pub fn screen_size() -> Option<(u32, u32)> {
     FB.get().map(|m| {
-        let fb = m.lock().unwrap();
+        let fb = lock_or_recover(&m);
         (fb.width, fb.height)
     })
 }
@@ -87,7 +89,7 @@ pub fn screen_size() -> Option<(u32, u32)> {
 /// Update cursor position (clamped to screen bounds).
 pub fn set_cursor_pos(cx: i32, cy: i32) {
     if let Some(m) = FB.get() {
-        let mut fb = m.lock().unwrap();
+        let mut fb = lock_or_recover(&m);
         let max_x = fb.width  as i32 - 1;
         let max_y = fb.height as i32 - 1;
         fb.cursor.cx = cx.clamp(0, max_x);
@@ -98,7 +100,7 @@ pub fn set_cursor_pos(cx: i32, cy: i32) {
 /// Enable cursor visibility (called once a mouse device is found).
 pub fn enable_cursor() {
     if let Some(m) = FB.get() {
-        let mut fb = m.lock().unwrap();
+        let mut fb = lock_or_recover(&m);
         fb.cursor.visible = true;
         let (cx, cy) = (fb.cursor.cx, fb.cursor.cy);
         eprintln!("cursor: sprite enabled at ({cx},{cy})");
