@@ -12,6 +12,9 @@ mod display;
 mod font;
 mod image;
 
+mod types;
+pub(crate) use types::*;
+
 #[allow(dead_code)] mod accessibility;
 mod archive_ipc;
 mod app_threads;
@@ -79,10 +82,9 @@ mod win_actions;
 #[allow(dead_code)] mod store;
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
     fs,
     path::Path,
-    process::{Child, ChildStdin, ChildStdout},
     sync::{mpsc, Arc, Mutex, OnceLock},
     thread,
     time::Instant,
@@ -110,62 +112,6 @@ macro_rules! log_error {
         eprintln!("{}", supervisor::logging::format_log(supervisor::logging::Level::Error, $sub, $app, &format!($($arg)*)))
     };
 }
-
-// ── P13T01: per-app runtime state ─────────────────────────────────────────────
-
-const LOG_BUF_SIZE: usize = 20;
-
-#[derive(Clone, Debug)]
-enum AppStatus {
-    Running,
-    Stopped(i32),
-}
-
-struct AppState {
-    entry:            BootEntry,
-    status:           AppStatus,
-    start_time:       Instant,
-    restart_count:    u32,
-    log_buf:          VecDeque<String>,
-    child_pid:        Option<u32>,
-    // P19: watchdog fields
-    watchdog_secs:    u32,
-    last_output:      Arc<Mutex<Instant>>,
-    watchdog_backoff: Arc<Mutex<u64>>,   // seconds until next restart allowed
-    has_mouse:   bool,
-    has_display: bool,
-    has_audio:   bool,
-    is_background: bool,
-    win_region:  Option<(u32, u32, u32, u32)>,  // supervisor-assigned; updated by apply_tiling_layout
-    win_z:       u32,  // z-layer; 0=desktop, 10=default, 100=dock, 200+=system
-    min_size:    (u32, u32),                     // (min_w, min_h) hint from manifest [window]
-    draw_ticks:      u64,           // incremented each time the app issues a VYOMA_DRAW command
-    last_cpu_reset:  std::time::Instant, // when draw_ticks was last zeroed
-    // spec-042: minimize/restore state
-    minimized:           bool,
-    pre_minimize_region: Option<(u32, u32, u32, u32)>,
-    // P82: fullscreen toggle — stores the tiled region before going fullscreen
-    pub is_fullscreen:       bool,
-    pre_fullscreen_region: Option<(u32, u32, u32, u32)>,
-    // T052: pending window animation (Open/Close/Minimize)
-    pub pending_anim: Option<crate::display::animator::Animation>,
-    /// Per-window pixel surface buffer (content area only, no chrome).
-    /// None until the first tiling layout assigns a win_region.
-    pub surface: Option<std::sync::Arc<std::sync::Mutex<crate::display::Surface>>>,
-    /// P31: set to true when the app sends `present` or `flush`, cleared after composite.
-    pub frame_ready: bool,
-    /// Declarative menu items from the app manifest (T058).
-    menu_items: Vec<supervisor::manifest::MenuItem>,
-    // spec-044: management server live log subscribers
-    log_subscribers: Vec<mpsc::Sender<String>>,
-}
-
-type AppRegistry = Arc<Mutex<HashMap<String, Arc<Mutex<AppState>>>>>;
-
-// ── IPC inbox map + focus state ───────────────────────────────────────────────
-
-type Inbox = Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>;
-type FocusedApp = Arc<Mutex<Option<String>>>;
 
 // ── Global statics ────────────────────────────────────────────────────────────
 
@@ -238,19 +184,6 @@ static IMAGE_CACHE: OnceLock<Mutex<image::ImageCache>> = OnceLock::new();
 
 pub fn image_cache() -> &'static Mutex<image::ImageCache> {
     IMAGE_CACHE.get_or_init(|| Mutex::new(image::ImageCache::new()))
-}
-
-// ── Spawned app descriptor ────────────────────────────────────────────────────
-
-struct SpawnedApp {
-    entry:        BootEntry,
-    name:         String,
-    child:        Child,
-    msg_rx:       mpsc::Receiver<String>,
-    child_stdin:  ChildStdin,
-    child_stdout: ChildStdout,
-    has_display:  bool,
-    is_shell:     bool,
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
