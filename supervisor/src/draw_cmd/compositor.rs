@@ -10,12 +10,17 @@ use crate::lock_or_recover;
 #[cfg(target_os = "linux")]
 use crate::display;
 
-/// Render the desktop wallpaper (solid color or scaled PNG image) onto the framebuffer.
+/// Render the desktop wallpaper (solid color, gradient, or scaled PNG image)
+/// onto the framebuffer.
 #[cfg(target_os = "linux")]
 pub fn render_wallpaper(fb: &mut display::Framebuffer, fb_w: u32, fb_h: u32) {
     match crate::wallpaper::current() {
         crate::wallpaper::Wallpaper::SolidColor(rgba) => {
             fb.fill_rect(0, 0, fb_w, fb_h, rgba);
+        }
+        crate::wallpaper::Wallpaper::Gradient(ref stops) => {
+            let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
+            display::draw_multi_gradient(&mut fb.back, 0, 0, fw, fh, stops, fs, fw, fh);
         }
         crate::wallpaper::Wallpaper::Image(ref path) => {
             // Fill with dark fallback first, then overlay the image.

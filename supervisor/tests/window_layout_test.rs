@@ -271,7 +271,7 @@ fn test_dock_excluded_from_tile_pool() {
     // Pure math test: 1 tiled app should fill the height between menubar and dock strip.
     // The supervisor's apply_tiling_layout is tested via smoke test; this validates math.
     use supervisor::windows::compute_tiling_with_hints;
-    const MENUBAR_H: u32 = 32;
+    const MENUBAR_H: u32 = 24;
     const DOCK_STRIP_H: u32 = 72;
     let sw = 1920u32;
     let sh = 1080u32;
@@ -295,7 +295,7 @@ fn test_dock_excluded_from_tile_pool() {
 #[test]
 fn test_two_regular_apps_with_dock() {
     use supervisor::windows::compute_tiling_with_hints;
-    const MENUBAR_H: u32 = 32;
+    const MENUBAR_H: u32 = 24;
     const DOCK_STRIP_H: u32 = 72;
     let sw = 1920u32;
     let sh = 1080u32;

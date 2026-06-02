@@ -406,3 +406,56 @@ pub fn parse_fill_rect_r(
         log_error!(Subsystem::Display, Some(sender), "bad fill_rect_r args: {args}");
     }
 }
+
+#[cfg(target_os = "linux")]
+pub fn parse_fill_gradient(
+    args: &str,
+    sender: &str,
+    win: Option<(u32, u32, u32, u32)>,
+    chrome_h: u32,
+    fb_lock: &Mutex<display::Framebuffer>,
+    app_registry: &AppRegistry,
+) {
+    // Format: x,y,w,h,rgba_top,rgba_bottom  (splitn 6)
+    let parts: Vec<&str> = args.splitn(6, ',').collect();
+    if parts.len() == 6 {
+        if let (Ok(lx), Ok(ly), Ok(gw), Ok(gh), Some(top), Some(bot)) = (
+            parts[0].parse::<u32>(),
+            parts[1].parse::<u32>(),
+            parts[2].parse::<u32>(),
+            parts[3].parse::<u32>(),
+            parse_color(parts[4]),
+            parse_color(parts[5]),
+        ) {
+            if let Some(surface_arc) = get_surface(sender, app_registry) {
+                let mut surface = lock_or_recover(&surface_arc);
+                let (sw, sh, ss) = (surface.width, surface.height, surface.stride);
+                display::draw_vertical_gradient(
+                    &mut surface.buf, lx, ly, gw, gh, top, bot, ss, sw, sh,
+                );
+            } else {
+                let (ax, ay, aw, ah) = match win {
+                    None => (lx, ly, gw, gh),
+                    Some((wx, wy, ww, wh)) => {
+                        let content_wy = wy + chrome_h;
+                        let ax = wx + lx;
+                        let ay = content_wy + ly;
+                        let win_right = wx + ww;
+                        let win_bottom = wy + wh;
+                        if ax >= win_right || ay >= win_bottom { return; }
+                        (ax, ay, gw.min(win_right - ax), gh.min(win_bottom - ay))
+                    }
+                };
+                let mut fb = lock_or_recover(&fb_lock);
+                let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
+                display::draw_vertical_gradient(
+                    &mut fb.back, ax, ay, aw, ah, top, bot, fs, fw, fh,
+                );
+            }
+        } else {
+            log_error!(Subsystem::Display, Some(sender), "bad fill_gradient args: {args}");
+        }
+    } else {
+        log_error!(Subsystem::Display, Some(sender), "bad fill_gradient args: {args}");
+    }
+}

@@ -29,6 +29,11 @@ pub fn handle(
                     log_info!(Subsystem::Display, None, "wallpaper set to image {reply_path}");
                     send_reply(sender, &format!("REPLY:wallpaper {reply_path}"), inbox);
                 }
+                Some(wp @ crate::wallpaper::Wallpaper::Gradient(_)) => {
+                    crate::wallpaper::set(wp);
+                    log_info!(Subsystem::Display, None, "wallpaper set to gradient");
+                    send_reply(sender, "REPLY:wallpaper gradient", inbox);
+                }
                 None => {
                     let rgba = 0x0D1117FFu32;
                     crate::wallpaper::set(crate::wallpaper::Wallpaper::SolidColor(rgba));

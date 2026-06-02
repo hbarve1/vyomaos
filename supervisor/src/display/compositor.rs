@@ -343,6 +343,119 @@ pub fn composite_frame(
     }
 }
 
+/// Fill a rectangular region with a vertical linear gradient interpolating
+/// between `top_rgba` and `bottom_rgba`. Each row is a single blended color.
+pub fn draw_vertical_gradient(
+    back: &mut Vec<u8>,
+    x: u32, y: u32, w: u32, h: u32,
+    top_rgba: u32, bottom_rgba: u32,
+    stride: u32, sw: u32, sh: u32,
+) {
+    if h == 0 || w == 0 { return; }
+    let (tr, tg, tb, ta) = unpack(top_rgba);
+    let (br, bg, bb, ba) = unpack(bottom_rgba);
+    let denom = (h - 1).max(1) as f32;
+    for row in 0..h {
+        let py = y + row;
+        if py >= sh { break; }
+        let t = row as f32 / denom;
+        let r = (tr as f32 + (br as f32 - tr as f32) * t) as u8;
+        let g = (tg as f32 + (bg as f32 - tg as f32) * t) as u8;
+        let b = (tb as f32 + (bb as f32 - tb as f32) * t) as u8;
+        let a = (ta as f32 + (ba as f32 - ta as f32) * t) as u8;
+        let row_color = pack(r, g, b, a);
+        for col in 0..w {
+            let px = x + col;
+            if px >= sw { break; }
+            let fb_off = (py * stride + px * 4) as usize;
+            if fb_off + 4 > back.len() { continue; }
+            if a == 255 {
+                write_bgra(back, fb_off, row_color);
+            } else if a > 0 {
+                let dst = read_bgra(back, fb_off);
+                let blended = blend_over(row_color, dst);
+                write_bgra(back, fb_off, blended);
+            }
+        }
+    }
+}
+
+/// Fill a region with a multi-stop vertical gradient.
+/// `stops` is a slice of `(position_0_to_1, rgba)` pairs, sorted by position.
+pub fn draw_multi_gradient(
+    back: &mut Vec<u8>,
+    x: u32, y: u32, w: u32, h: u32,
+    stops: &[(f32, u32)],
+    stride: u32, sw: u32, sh: u32,
+) {
+    if h == 0 || w == 0 || stops.is_empty() { return; }
+    if stops.len() == 1 {
+        // Single stop: solid fill with that color.
+        let rgba = stops[0].1;
+        for row in 0..h {
+            let py = y + row;
+            if py >= sh { break; }
+            for col in 0..w {
+                let px = x + col;
+                if px >= sw { break; }
+                let fb_off = (py * stride + px * 4) as usize;
+                if fb_off + 4 > back.len() { continue; }
+                write_bgra(back, fb_off, rgba);
+            }
+        }
+        return;
+    }
+    let denom = (h - 1).max(1) as f32;
+    for row in 0..h {
+        let py = y + row;
+        if py >= sh { break; }
+        let t = row as f32 / denom;
+        // Find the two stops that bracket `t`.
+        let (lo_pos, lo_rgba, hi_pos, hi_rgba) = find_bracket(stops, t);
+        let seg_t = if (hi_pos - lo_pos).abs() < 1e-6 { 0.0 }
+                    else { (t - lo_pos) / (hi_pos - lo_pos) };
+        let row_color = lerp_rgba(lo_rgba, hi_rgba, seg_t);
+        let (_, _, _, a) = unpack(row_color);
+        for col in 0..w {
+            let px = x + col;
+            if px >= sw { break; }
+            let fb_off = (py * stride + px * 4) as usize;
+            if fb_off + 4 > back.len() { continue; }
+            if a == 255 {
+                write_bgra(back, fb_off, row_color);
+            } else if a > 0 {
+                let dst = read_bgra(back, fb_off);
+                let blended = blend_over(row_color, dst);
+                write_bgra(back, fb_off, blended);
+            }
+        }
+    }
+}
+
+/// Find the two gradient stops that bracket parameter `t` (0..1).
+fn find_bracket(stops: &[(f32, u32)], t: f32) -> (f32, u32, f32, u32) {
+    if t <= stops[0].0 { return (stops[0].0, stops[0].1, stops[0].0, stops[0].1); }
+    let last = stops.len() - 1;
+    if t >= stops[last].0 { return (stops[last].0, stops[last].1, stops[last].0, stops[last].1); }
+    for i in 0..last {
+        if t >= stops[i].0 && t <= stops[i + 1].0 {
+            return (stops[i].0, stops[i].1, stops[i + 1].0, stops[i + 1].1);
+        }
+    }
+    (stops[last].0, stops[last].1, stops[last].0, stops[last].1)
+}
+
+/// Linearly interpolate between two RGBA colors.
+fn lerp_rgba(a: u32, b: u32, t: f32) -> u32 {
+    let (ar, ag, ab, aa) = unpack(a);
+    let (br, bg, bb, ba) = unpack(b);
+    let r = (ar as f32 + (br as f32 - ar as f32) * t) as u8;
+    let g = (ag as f32 + (bg as f32 - ag as f32) * t) as u8;
+    let bl = (ab as f32 + (bb as f32 - ab as f32) * t) as u8;
+    let al = (aa as f32 + (ba as f32 - aa as f32) * t) as u8;
+    pack(r, g, bl, al)
+}
+
 /// Composite a fontdue glyph bitmap onto the framebuffer back-buffer.
 ///
 /// `coverage`: alpha mask from fontdue (one byte per pixel, row-major).
