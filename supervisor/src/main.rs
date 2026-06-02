@@ -14,6 +14,8 @@ mod image;
 
 mod types;
 pub(crate) use types::*;
+mod globals;
+pub(crate) use globals::*;
 
 #[allow(dead_code)] mod accessibility;
 mod archive_ipc;
@@ -111,79 +113,6 @@ macro_rules! log_error {
     ($sub:expr, $app:expr, $($arg:tt)*) => {
         eprintln!("{}", supervisor::logging::format_log(supervisor::logging::Level::Error, $sub, $app, &format!($($arg)*)))
     };
-}
-
-// ── Global statics ────────────────────────────────────────────────────────────
-
-static Z_ORDER: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
-static LAST_SENDER: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
-static TCP_CONNS: OnceLock<Mutex<std::collections::HashMap<u32, std::net::TcpStream>>> =
-    OnceLock::new();
-static TCP_NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
-static WS_CONNS: OnceLock<Mutex<std::collections::HashMap<u32, websocket::WsConnection>>> =
-    OnceLock::new();
-static WS_NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
-static CLIPBOARD: OnceLock<Mutex<String>> = OnceLock::new();
-/// Lock screen state: when true, keyboard input is only routed to screen-lock.
-pub static LOCKED: OnceLock<Mutex<bool>> = OnceLock::new();
-pub fn is_locked() -> bool { *LOCKED.get_or_init(|| Mutex::new(false)).lock().unwrap() }
-pub fn set_locked(v: bool) { *LOCKED.get_or_init(|| Mutex::new(false)).lock().unwrap() = v; }
-static FONT_SIZE: OnceLock<Mutex<String>> = OnceLock::new();
-static MOUSE_DRAG_START: OnceLock<Mutex<Option<(i32, i32)>>> = OnceLock::new();
-fn mouse_drag_start() -> &'static Mutex<Option<(i32, i32)>> {
-    MOUSE_DRAG_START.get_or_init(|| Mutex::new(None))
-}
-/// Shared inbox Arc reference for the exec handler (set once after inbox is created).
-static MGMT_INBOX: OnceLock<Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>> = OnceLock::new();
-/// One-shot reply channels registered by the exec handler, keyed by app name.
-static EXEC_REPLY_CHANNELS: OnceLock<Mutex<HashMap<String, mpsc::Sender<String>>>> =
-    OnceLock::new();
-static BOOT_INSTANT: OnceLock<std::time::Instant> = OnceLock::new();
-#[allow(dead_code)]
-static LAST_MENUBAR_DRAW: OnceLock<Mutex<(std::time::Instant, Option<String>)>> = OnceLock::new();
-static APP_DIRTY: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
-static HOVERED_APP: OnceLock<Mutex<Option<String>>> = OnceLock::new();
-static APP_LOG_LEVELS: OnceLock<Mutex<HashMap<String, supervisor::ipc::LogLevel>>> = OnceLock::new();
-fn app_log_levels() -> &'static Mutex<HashMap<String, supervisor::ipc::LogLevel>> {
-    APP_LOG_LEVELS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-static FLUSH_COUNTS: OnceLock<Mutex<HashMap<String, (u64, std::time::Instant)>>> = OnceLock::new();
-fn flush_counts() -> &'static Mutex<HashMap<String, (u64, std::time::Instant)>> {
-    FLUSH_COUNTS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-/// Gate: false = suppress menu bar rendering on non-desktop profiles.
-pub static SHOW_MENU_BAR: OnceLock<bool> = OnceLock::new();
-/// Gate: false = suppress dock strip rendering on profiles without a dock.
-pub static SHOW_DOCK: OnceLock<bool> = OnceLock::new();
-/// Gate: false = single-app fullscreen mode (phone, watch, TV profiles).
-pub static WINDOWED_MODE: OnceLock<bool> = OnceLock::new();
-/// Gate: true = draw a focus ring around the focused window (TV/Vision).
-pub static FOCUS_RING: OnceLock<bool> = OnceLock::new();
-/// Active display profile name broadcast to apps via VYOMA_SYSTEM:display_profile.
-pub static DISPLAY_PROFILE: OnceLock<String> = OnceLock::new();
-/// P29: cached screen resolution set once during display init, queried by broadcast.
-pub static SCREEN_SIZE: OnceLock<(u32, u32)> = OnceLock::new();
-
-// ── T023: Scalable font cache (Linux-only) ────────────────────────────────────
-#[cfg(target_os = "linux")]
-static FONT_CACHE: OnceLock<Mutex<font::cache::FontCache>> = OnceLock::new();
-
-#[cfg(target_os = "linux")]
-pub fn font_cache() -> &'static Mutex<font::cache::FontCache> {
-    FONT_CACHE.get_or_init(|| {
-        Mutex::new(font::cache::FontCache::load(
-            "/fonts/Inter-Regular.ttf",
-            "/fonts/Inter-Bold.ttf",
-            "/fonts/IBMPlexMono-Regular.ttf",
-        ))
-    })
-}
-
-// ── T030/T031: PNG image cache ────────────────────────────────────────────────
-static IMAGE_CACHE: OnceLock<Mutex<image::ImageCache>> = OnceLock::new();
-
-pub fn image_cache() -> &'static Mutex<image::ImageCache> {
-    IMAGE_CACHE.get_or_init(|| Mutex::new(image::ImageCache::new()))
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
