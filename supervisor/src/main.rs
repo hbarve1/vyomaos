@@ -1,4 +1,3 @@
-#![allow(unused_imports, unused_variables)]
 // Copyright (c) 2025-2026 Himank Barve. Licensed under the VyomaOS Community License.
 // See LICENSE (community) and LICENSE-COMMERCIAL (commercial) at the repository root.
 
@@ -40,8 +39,6 @@ mod system;
 pub(crate) use system::mount;
 #[cfg(target_os = "linux")]
 pub(crate) use system::seccomp;
-#[cfg(target_os = "linux")]
-pub(crate) use system::namespace;
 pub(crate) use system::recovery;
 pub(crate) use system::ota_update;
 pub(crate) use system::auto_update;
@@ -53,8 +50,7 @@ pub(crate) use system::bg_service;
 pub(crate) use system::mgmt_protocol;
 pub(crate) use system::mgmt_server;
 pub(crate) use system::mgmt_handlers;
-#[allow(dead_code)] mod audio;
-#[allow(dead_code)]
+mod audio;
 mod hardware;
 pub(crate) use hardware::acpi;
 pub(crate) use hardware::battery;
@@ -78,10 +74,10 @@ pub(crate) use storage::pkg_registry;
 pub(crate) use storage::trash;
 mod verify;
 mod router;
-#[allow(dead_code)] mod share;
-#[allow(dead_code)] mod undo;
-#[allow(dead_code)] mod file_assoc;
-#[allow(dead_code)] mod security;
+mod share;
+mod undo;
+mod file_assoc;
+mod security;
 pub(crate) use security::secure_boot;
 pub(crate) use security::firewall;
 pub(crate) use security::cap_request;
@@ -90,16 +86,14 @@ pub(crate) use security::user_caps;
 pub(crate) use security::totp;
 pub(crate) use security::audit;
 pub(crate) use security::encrypted_store;
-#[allow(dead_code)]
 pub(crate) use network::vnc;
 
 use std::{
     collections::HashMap,
     fs,
     path::Path,
-    sync::{mpsc, Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex},
     thread,
-    time::Instant,
 };
 
 use supervisor::logging::Subsystem;

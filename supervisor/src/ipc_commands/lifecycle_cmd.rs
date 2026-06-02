@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::thread;
 
 use crate::{log_info, log_warn, send_reply, AppRegistry, FocusedApp, Inbox};

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 pub mod vfs;
 pub mod backup;
 pub mod store;

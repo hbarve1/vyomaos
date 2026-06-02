@@ -21,8 +21,6 @@ use crate::display;
 #[cfg(target_os = "linux")]
 pub use compositor::{force_repaint, run_compositor_tick};
 
-#[cfg(target_os = "linux")]
-pub use parser::parse_color;
 
 #[cfg(target_os = "linux")]
 pub fn handle_draw_command(

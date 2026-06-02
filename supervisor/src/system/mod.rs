@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 pub mod mount;
 #[cfg(target_os = "linux")]
 pub mod seccomp;

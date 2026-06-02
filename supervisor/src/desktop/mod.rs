@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Desktop/UI domain modules
 //
 // Gathered from the flat supervisor/src/ layout into a single domain directory.
