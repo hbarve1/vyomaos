@@ -60,12 +60,10 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
 
     const DOCK_STRIP_H: u32 = 72;
 
-    const DEFAULT_SCREEN_W: u32 = 1920;
-    const DEFAULT_SCREEN_H: u32 = 1080;
     #[cfg(target_os = "linux")]
-    let (sw, sh) = crate::display::screen_size().unwrap_or((DEFAULT_SCREEN_W, DEFAULT_SCREEN_H));
+    let (sw, sh) = crate::display::screen_size().unwrap_or((crate::DEFAULT_SCREEN_W, crate::DEFAULT_SCREEN_H));
     #[cfg(not(target_os = "linux"))]
-    let (sw, sh) = (DEFAULT_SCREEN_W, DEFAULT_SCREEN_H);
+    let (sw, sh) = (crate::DEFAULT_SCREEN_W, crate::DEFAULT_SCREEN_H);
 
     // Collect all running display apps with z-layer and min-size hints.
     let apps: Vec<(String, u32, u32, u32)> = {

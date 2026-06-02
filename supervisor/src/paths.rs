@@ -8,3 +8,5 @@ pub const LOG_DIR: &str = "/data/logs";
 pub const LOG_TAIL_LINES: usize = 30;
 pub const PLATFORM_PROFILE_DIR: &str = "/etc/vyoma/profiles";
 pub const DEFAULT_PROFILE_NAME: &str = "desktop-full";
+pub const DEFAULT_SCREEN_W: u32 = 2560;
+pub const DEFAULT_SCREEN_H: u32 = 1440;

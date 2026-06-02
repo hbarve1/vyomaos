@@ -20,8 +20,8 @@ const _: () = assert!(Z_DESKTOP < Z_APP && Z_APP < Z_DOCK && Z_DOCK < Z_OVERLAY)
 
 // ── macOS-inspired chrome constants ──────────────────────────────────────────
 
-pub const MENUBAR_H:    u32 = 32;   // global menu bar height (scaled for 1080p)
-pub const TITLEBAR_H:   u32 = 36;   // per-window title bar height (scaled for 1080p)
+pub const MENUBAR_H:    u32 = 32;   // global menu bar height (scaled for 1440p)
+pub const TITLEBAR_H:   u32 = 36;   // per-window title bar height (scaled for 1440p)
 const TL_DOT:           u32 = 15;   // traffic-light dot diameter (px)
 
 fn mac_menubar()     -> u32 { crate::theme::current_theme().menubar }
@@ -194,7 +194,7 @@ pub fn draw_titlebar(
         draw_rounded_rect(&mut fb.back, wx + 51, tl_y, TL_DOT, TL_DOT, c3, r, fs, sw, sh);
     }
 
-    // App name centered — 16pt regular Inter (scaled for 1080p)
+    // App name centered — 16pt regular Inter (scaled for 1440p)
     let nlen = name.len().min(20);
     let display_name = &name[..nlen];
     let name_w_est = lock_or_recover(&crate::font_cache())
@@ -230,7 +230,7 @@ pub fn draw_menubar(
 
     let ty = (MENUBAR_H / 2) as i32; // vertical center baseline for 15pt font
 
-    // Left: brand — 15pt regular (scaled for 1080p)
+    // Left: brand — 15pt regular (scaled for 1440p)
     draw_glyph_str(fb, crate::i18n::t("brand"), 12, ty, mac_label(), 15, false, false);
 
     // Workspace indicator (e.g. "● ○ ○ ○") right after brand
@@ -250,7 +250,7 @@ pub fn draw_menubar(
         lx += menubar_label_width(app.len()) as i32;
     }
 
-    // Center: focused app name — 15pt regular (scaled for 1080p)
+    // Center: focused app name — 15pt regular (scaled for 1440p)
     if let Some(name) = focused {
         let nlen = name.len().min(20);
         let display_name = &name[..nlen];
@@ -260,7 +260,7 @@ pub fn draw_menubar(
         draw_glyph_str(fb, display_name, nx as i32, ty, mac_label(), 15, false, false);
     }
 
-    // Right: clock HH:MM:SS — 13pt regular (status text, scaled for 1080p)
+    // Right: clock HH:MM:SS — 13pt regular (status text, scaled for 1440p)
     let h = elapsed_secs / 3600;
     let m = (elapsed_secs % 3600) / 60;
     let s = elapsed_secs % 60;
