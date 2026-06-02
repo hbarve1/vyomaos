@@ -367,7 +367,7 @@ fn main() {
         thread::Builder::new()
             .name("screen-poll".into())
             .spawn(move || {
-                let mut last = display::screen_size().unwrap_or((1920, 1080)); // DEFAULT_SCREEN_W/H fallback
+                let mut last = display::screen_size().unwrap_or((2560, 1440)); // DEFAULT_SCREEN_W/H fallback
                 loop {
                     thread::sleep(std::time::Duration::from_secs(1));
                     if let Some((w, h)) = display::screen_size() {

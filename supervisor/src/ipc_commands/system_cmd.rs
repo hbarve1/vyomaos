@@ -46,8 +46,8 @@ pub fn handle(
             log_info!(Subsystem::Ipc, None, "version query from {sender}: {v}");
         }
         "screen-size" => {
-            const DEFAULT_SCREEN_W: u32 = 1920;
-            const DEFAULT_SCREEN_H: u32 = 1080;
+            const DEFAULT_SCREEN_W: u32 = 2560;
+            const DEFAULT_SCREEN_H: u32 = 1440;
             #[cfg(target_os = "linux")]
             let (w, h) = crate::display::screen_size().unwrap_or((DEFAULT_SCREEN_W, DEFAULT_SCREEN_H));
             #[cfg(not(target_os = "linux"))]

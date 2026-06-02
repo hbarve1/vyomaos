@@ -124,7 +124,7 @@ pub fn do_minimize(
     registry: &AppRegistry,
     focused: &FocusedApp,
 ) {
-    let (scr_w, scr_h) = display::screen_size().unwrap_or((1920, 1080)); // DEFAULT_SCREEN_W/H fallback
+    let (scr_w, scr_h) = display::screen_size().unwrap_or((2560, 1440)); // DEFAULT_SCREEN_W/H fallback
     let strip_pos: Option<(u32, u32)> = {
         let reg = lock_or_recover(&registry);
         let minimized_count = reg.values()
