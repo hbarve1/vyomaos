@@ -11,7 +11,7 @@
 
 use std::io::{self, BufRead, Write};
 
-const DEFAULT_SW: u32 = 1440;
+const DEFAULT_SW: u32 = 2560;
 
 // Colors
 const C_BG:      u32 = 0x161B22EE;
