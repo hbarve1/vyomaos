@@ -56,11 +56,16 @@ mod mouse_input;
 mod network;
 pub(crate) use network::net;
 pub(crate) use network::websocket;
-mod packages;
+mod storage;
+pub(crate) use storage::packages;
+pub(crate) use storage::vfs;
+pub(crate) use storage::backup;
+pub(crate) use storage::store;
+pub(crate) use storage::pkg_registry;
+pub(crate) use storage::trash;
 #[allow(dead_code)] mod recovery;
 #[cfg(target_os = "linux")]
 mod seccomp;
-#[allow(dead_code)] mod trash;
 mod verify;
 mod mgmt_protocol;
 mod mgmt_server;
@@ -72,8 +77,6 @@ mod auto_update;
 #[allow(dead_code)] mod share;
 #[allow(dead_code)] mod undo;
 #[allow(dead_code)] mod file_assoc;
-#[allow(dead_code)] mod vfs;
-#[allow(dead_code)] mod pkg_registry;
 #[allow(dead_code)] mod security;
 pub(crate) use security::secure_boot;
 pub(crate) use security::firewall;
@@ -85,11 +88,9 @@ pub(crate) use security::audit;
 pub(crate) use security::encrypted_store;
 #[allow(dead_code)] mod installer;
 #[allow(dead_code)] mod jit_config;
-#[allow(dead_code)] mod backup;
 #[allow(dead_code)] mod virtualization;
 #[allow(dead_code)]
 pub(crate) use network::vnc;
-#[allow(dead_code)] mod store;
 
 use std::{
     collections::HashMap,
