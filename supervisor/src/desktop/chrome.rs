@@ -297,7 +297,7 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
         .clone();
     // Collect (win_z, name, region) then sort by win_z ascending so lower-z
     // windows are painted first (appear behind higher-z windows).
-    let (regions, display_apps): (Vec<(String, (u32, u32, u32, u32))>, Vec<String>) = {
+    let (regions, display_apps): (Vec<(u32, String, (u32, u32, u32, u32))>, Vec<String>) = {
         let reg = lock_or_recover(&registry);
         let mut regions_with_z: Vec<(u32, String, (u32, u32, u32, u32))> = Vec::new();
         let mut display_apps: Vec<String> = reg.iter()
@@ -319,15 +319,16 @@ pub fn repaint_all_borders(registry: &AppRegistry, focused: &FocusedApp) {
         }
         // Sort ascending by z so lowest-z windows are painted first (background first).
         regions_with_z.sort_by_key(|(z, _, _)| *z);
-        let regions = regions_with_z.into_iter().map(|(_, n, r)| (n, r)).collect();
-        (regions, display_apps)
+        (regions_with_z, display_apps)
     };
     #[cfg(target_os = "linux")]
     {
         let Some(fb_lock) = display::get() else { return };
         let mut fb = lock_or_recover(&fb_lock);
-        for (name, (wx, wy, ww, wh)) in &regions {
+        for (z, name, (wx, wy, ww, wh)) in &regions {
             if *ww < 60 { continue; }
+            // Skip chrome for system layers (dock/overlay) and desktop background.
+            if *z >= Z_DOCK || *z == Z_DESKTOP { continue; }
             let is_focused = focused_name.as_deref() == Some(name.as_str());
             let is_hovered = hovered_name.as_deref() == Some(name.as_str());
             draw_titlebar(&mut *fb, *wx, *wy, *ww, is_focused, is_hovered, name);
@@ -389,7 +390,10 @@ pub fn draw_chrome_onto(
             let ws_mgr = lock_or_recover(&crate::workspace::manager());
             let is_system_z = {
                 let reg = lock_or_recover(&registry);
-                reg.get(name.as_str()).map(|st| lock_or_recover(&st).win_z >= Z_DOCK).unwrap_or(false)
+                reg.get(name.as_str()).map(|st| {
+                    let z = lock_or_recover(&st).win_z;
+                    z >= Z_DOCK || z == Z_DESKTOP
+                }).unwrap_or(false)
             };
             if !is_system_z {
                 let app_ws = ws_mgr.app_workspace.get(name.as_str()).copied().unwrap_or(0);
@@ -398,11 +402,12 @@ pub fn draw_chrome_onto(
         }
         let is_focused = focused_name.as_deref() == Some(name.as_str());
         let is_hovered = hovered_name.as_deref() == Some(name.as_str());
-        let is_system = {
+        let app_z = {
             let reg = lock_or_recover(&registry);
-            reg.get(name.as_str()).map(|st| lock_or_recover(&st).win_z >= Z_DOCK).unwrap_or(false)
+            reg.get(name.as_str()).map(|st| lock_or_recover(&st).win_z).unwrap_or(Z_APP)
         };
-        if !is_system {
+        // Skip chrome for system layers (dock/overlay) and desktop background.
+        if app_z < Z_DOCK && app_z != Z_DESKTOP {
             draw_titlebar(fb, *wx, *wy, *ww, is_focused, is_hovered, name);
         }
         // Draw focus ring for focused window (TV/Vision profiles).

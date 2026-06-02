@@ -33,9 +33,9 @@ fn notify_wm(msg: &str, inbox: &Inbox) {
 /// implied by `region`.  Content area = region height minus chrome (title bar +
 /// status strip) unless this is a system-layer window (z >= Z_DOCK).
 fn init_surface_for_region(st: &mut AppState, region: (u32, u32, u32, u32)) {
-    use crate::chrome::{TITLEBAR_H, Z_DOCK};
+    use crate::chrome::{TITLEBAR_H, Z_DESKTOP, Z_DOCK};
     let (_, _, ww, wh) = region;
-    let is_system = st.win_z >= Z_DOCK;
+    let is_system = st.win_z >= Z_DOCK || st.win_z == Z_DESKTOP;
     let chrome_h = if is_system { 0u32 } else { TITLEBAR_H };
     let content_h = wh.saturating_sub(chrome_h);
     if ww == 0 || content_h == 0 { return; }
@@ -56,7 +56,7 @@ fn init_surface_for_region(st: &mut AppState, region: (u32, u32, u32, u32)) {
 /// `DOCK_STRIP_H`.  All other display apps tile in the remaining usable area.
 pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
     use supervisor::windows::compute_tiling_with_hints;
-    use crate::chrome::{MENUBAR_H, Z_DOCK};
+    use crate::chrome::{MENUBAR_H, Z_DESKTOP, Z_DOCK};
 
     const DOCK_STRIP_H: u32 = 72;
 
@@ -81,9 +81,13 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
     };
     if apps.is_empty() { return; }
 
-    // Partition: system-layer (dock, overlay) vs. regular tiled apps.
+    // Partition into three layers:
+    //   - desktop: z == Z_DESKTOP (0) — fullscreen background
+    //   - pinned:  z >= Z_DOCK (100)  — dock strip at bottom
+    //   - tiled:   everything else    — regular app windows
     let show_dock = crate::SHOW_DOCK.get().copied().unwrap_or(true);
-    let (pinned, tiled): (Vec<_>, Vec<_>) = apps.iter().partition(|(_, z, _, _)| *z >= Z_DOCK);
+    let (pinned, rest): (Vec<_>, Vec<_>) = apps.iter().partition(|(_, z, _, _)| *z >= Z_DOCK);
+    let (desktop_apps, tiled): (Vec<_>, Vec<_>) = rest.iter().partition(|(_, z, _, _)| *z == Z_DESKTOP);
 
     // Assign pinned apps to the reserved bottom strip (skipped when dock is hidden).
     let dock_h_reserved: u32 = if pinned.is_empty() || !show_dock { 0 } else { DOCK_STRIP_H };
@@ -102,16 +106,33 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
         }
     }
 
-    // Tile remaining apps in usable area above the dock strip.
-    if tiled.is_empty() { return; }
-    let windowed = crate::WINDOWED_MODE.get().copied().unwrap_or(true);
+    // Desktop (z=0) gets fullscreen background: entire usable area.
     let menubar_h = if crate::SHOW_MENU_BAR.get().copied().unwrap_or(true) { MENUBAR_H } else { 0 };
     let usable_h = sh.saturating_sub(menubar_h).saturating_sub(dock_h_reserved);
+    {
+        let reg = lock_or_recover(&registry);
+        for &&(ref name, _, _, _) in &desktop_apps {
+            if let Some(st) = reg.get(name.as_str()) {
+                let region = (0, menubar_h, sw, usable_h);
+                let mut st_guard = lock_or_recover(&st);
+                st_guard.win_region = Some(region);
+                init_surface_for_region(&mut st_guard, region);
+                log_info!(Subsystem::Display, Some(name.as_str()),
+                    "tiling: fullscreen background ({},{},{},{})",
+                    region.0, region.1, region.2, region.3);
+            }
+        }
+    }
+
+    // Tile remaining apps (z=Z_APP) in usable area above the dock strip.
+    // These render ON TOP of the desktop background due to higher z-order.
+    if tiled.is_empty() { return; }
+    let windowed = crate::WINDOWED_MODE.get().copied().unwrap_or(true);
     let regions: Vec<(u32, u32, u32, u32)> = if !windowed {
         // Fullscreen mode: every app gets the full usable area (only focused is visible).
         tiled.iter().map(|_| (0, menubar_h, sw, usable_h)).collect()
     } else {
-        let min_sizes: Vec<(u32, u32)> = tiled.iter().map(|(_, _, mw, mh)| (*mw, *mh)).collect();
+        let min_sizes: Vec<(u32, u32)> = tiled.iter().map(|&&(_, _, mw, mh)| (mw, mh)).collect();
         compute_tiling_with_hints(tiled.len(), sw, usable_h, &min_sizes)
             .into_iter()
             .map(|(x, y, w, h)| (x, y + menubar_h, w, h))
@@ -119,7 +140,7 @@ pub(crate) fn apply_tiling_layout(registry: &AppRegistry) {
     };
     {
         let reg = lock_or_recover(&registry);
-        for (i, (name, _, _, _)) in tiled.iter().enumerate() {
+        for (i, &&(ref name, _, _, _)) in tiled.iter().enumerate() {
             if let Some(&region) = regions.get(i) {
                 if let Some(st) = reg.get(name.as_str()) {
                     let mut st_guard = lock_or_recover(&st);

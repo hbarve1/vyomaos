@@ -4,7 +4,7 @@
 //! Compositor functions: surface blitting, wallpaper rendering, repaint loop.
 
 use crate::{AppRegistry, FocusedApp};
-use crate::chrome::{draw_chrome_onto, TITLEBAR_H, Z_DOCK};
+use crate::chrome::{draw_chrome_onto, TITLEBAR_H, Z_DESKTOP, Z_DOCK};
 use crate::lock_or_recover;
 
 #[cfg(target_os = "linux")]
@@ -52,8 +52,8 @@ pub fn blit_all_surfaces(fb: &mut display::Framebuffer, registry: &AppRegistry) 
                 st.win_region.map(|r| (st.win_z, name.clone(), r))
             })
             .filter(|(z, name, _)| {
-                // System apps (dock, overlay) visible on all workspaces
-                if *z >= Z_DOCK { return true; }
+                // System apps (dock, overlay, desktop) visible on all workspaces
+                if *z >= Z_DOCK || *z == Z_DESKTOP { return true; }
                 let app_ws = ws_mgr.app_workspace.get(name.as_str()).copied().unwrap_or(0);
                 app_ws == current_ws
             })
@@ -71,7 +71,7 @@ pub fn blit_all_surfaces(fb: &mut display::Framebuffer, registry: &AppRegistry) 
         };
         if let Some(arc) = surface_arc {
             let surface = lock_or_recover(&arc);
-            let blit_y = if *z >= Z_DOCK { *wy } else { wy + TITLEBAR_H };
+            let blit_y = if *z >= Z_DOCK || *z == Z_DESKTOP { *wy } else { wy + TITLEBAR_H };
             if *ww > 0 {
                 display::blit_surface(&mut fb.back, &surface, *wx, blit_y, alpha, fs, fw, fh);
             }
