@@ -46,12 +46,10 @@ pub fn handle(
             log_info!(Subsystem::Ipc, None, "version query from {sender}: {v}");
         }
         "screen-size" => {
-            const DEFAULT_SCREEN_W: u32 = 2560;
-            const DEFAULT_SCREEN_H: u32 = 1440;
             #[cfg(target_os = "linux")]
-            let (w, h) = crate::display::screen_size().unwrap_or((DEFAULT_SCREEN_W, DEFAULT_SCREEN_H));
+            let (w, h) = crate::display::screen_size().unwrap_or((crate::DEFAULT_SCREEN_W, crate::DEFAULT_SCREEN_H));
             #[cfg(not(target_os = "linux"))]
-            let (w, h) = (DEFAULT_SCREEN_W, DEFAULT_SCREEN_H);
+            let (w, h) = (crate::DEFAULT_SCREEN_W, crate::DEFAULT_SCREEN_H);
             let reply = format!("REPLY:{}x{}", w, h);
             log_info!(Subsystem::Display, None, "screen-size query from {sender}: {w}x{h}");
             send_reply(sender, &reply, inbox);
