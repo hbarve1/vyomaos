@@ -5,6 +5,7 @@
 //! Silent no-op when `/dev/fb0` is absent (headless boot).
 
 mod cursor;
+mod drm;
 mod fb_ioctl;
 mod helpers;
 mod compositor;
@@ -43,17 +44,21 @@ pub struct Framebuffer {
     mmaped: bool,         // false for test-only heap-allocated instances
     dirty_top: u32,       // first dirty row since last flush (> dirty_bottom = clean)
     dirty_bottom: u32,    // one past last dirty row
+    drm: Option<drm::DrmDisplay>, // DRM/KMS backend (None = fbdev path)
 }
 
-// All mutable access is serialised through `Mutex<Framebuffer>`.
-unsafe impl Send for Framebuffer {}
-
+unsafe impl Send for Framebuffer {} // all mutable access serialised via Mutex
 static FB: OnceLock<Mutex<Framebuffer>> = OnceLock::new();
 
-// ── Public API ────────────────────────────────────────────────────────────────
-
-/// Open `/dev/fb0`, mmap the pixel buffer. Retries up to 5x.
+/// Try DRM/KMS first (`/dev/dri/card0`), fall back to fbdev (`/dev/fb0`).
 pub fn init() -> bool {
+    // Try DRM dumb-buffer backend first (tear-free page flip).
+    if let Some(drm_dev) = drm::DrmDisplay::open() {
+        let fb = framebuffer_from_drm(drm_dev);
+        let _ = FB.set(Mutex::new(fb));
+        return true;
+    }
+    // Fall back to fbdev mmap path.
     for attempt in 0..5u32 {
         match open_fb() {
             Ok(fb) => {
@@ -90,10 +95,8 @@ pub fn screen_size() -> Option<(u32, u32)> {
 pub fn set_cursor_pos(cx: i32, cy: i32) {
     if let Some(m) = FB.get() {
         let mut fb = lock_or_recover(&m);
-        let max_x = fb.width  as i32 - 1;
-        let max_y = fb.height as i32 - 1;
-        fb.cursor.cx = cx.clamp(0, max_x);
-        fb.cursor.cy = cy.clamp(0, max_y);
+        fb.cursor.cx = cx.clamp(0, fb.width as i32 - 1);
+        fb.cursor.cy = cy.clamp(0, fb.height as i32 - 1);
     }
 }
 
@@ -102,67 +105,69 @@ pub fn enable_cursor() {
     if let Some(m) = FB.get() {
         let mut fb = lock_or_recover(&m);
         fb.cursor.visible = true;
-        let (cx, cy) = (fb.cursor.cx, fb.cursor.cy);
-        eprintln!("cursor: sprite enabled at ({cx},{cy})");
+        eprintln!("cursor: sprite enabled at ({},{})", fb.cursor.cx, fb.cursor.cy);
     }
 }
-
-// ── Framebuffer open + mmap ───────────────────────────────────────────────────
 
 fn open_fb() -> io::Result<Framebuffer> {
     let file = OpenOptions::new().read(true).write(true).open("/dev/fb0")?;
     let fd = file.as_raw_fd();
-
     let mut var: FbVarScreeninfo = unsafe { std::mem::zeroed() };
-
     let (width, height, bpp) = if unsafe {
-        libc::ioctl(fd, FBIOGET_VSCREENINFO,
-                    &mut var as *mut FbVarScreeninfo as *mut libc::c_void)
+        libc::ioctl(fd, FBIOGET_VSCREENINFO, &mut var as *mut _ as *mut libc::c_void)
     } >= 0 && var.xres > 0 {
         (var.xres, var.yres, var.bits_per_pixel)
     } else {
-        eprintln!("vyoma-display: FBIOGET_VSCREENINFO failed, using 1024×768 defaults");
+        eprintln!("vyoma-display: FBIOGET_VSCREENINFO failed, using 1024x768 defaults");
         (1024, 768, 32)
     };
-
     let stride = width * bpp.max(8) / 8;
     let buf_len = (stride * height) as usize;
-
     let buf = unsafe {
         libc::mmap(std::ptr::null_mut(), buf_len,
             libc::PROT_READ | libc::PROT_WRITE, libc::MAP_SHARED, fd, 0)
     };
+    if buf == libc::MAP_FAILED { return Err(io::Error::last_os_error()); }
+    eprintln!("vyoma-display: {width}x{height} {bpp}bpp stride={stride} ({} KiB mmaped)", buf_len / 1024);
+    Ok(Framebuffer {
+        _file: file, width, height, stride, bpp, buf: buf as *mut u8, buf_len,
+        back: vec![0u8; buf_len], cursor: new_cursor(width, height, false),
+        mmaped: true, dirty_top: height, dirty_bottom: 0, drm: None,
+    })
+}
 
-    if buf == libc::MAP_FAILED {
-        return Err(io::Error::last_os_error());
-    }
-
-    eprintln!(
-        "vyoma-display: {}×{} {}bpp stride={} ({} KiB mmaped)",
-        width, height, bpp, stride, buf_len / 1024
-    );
-
+/// Construct a Framebuffer backed by a DRM dumb-buffer display.
+fn framebuffer_from_drm(drm_dev: drm::DrmDisplay) -> Framebuffer {
+    let (width, height, stride) = (drm_dev.width, drm_dev.height, drm_dev.stride);
+    let buf_len = (stride * height) as usize;
     let back = vec![0u8; buf_len];
-    let cursor = CursorState {
-        cx:          (width / 2) as i32,
-        cy:          (height / 2) as i32,
-        visible:     false,
-        saved_under: vec![0u8; (CURSOR_W * CURSOR_H * 4) as usize],
-        drawn:       false,
-    };
-    Ok(Framebuffer { _file: file, width, height, stride, bpp, buf: buf as *mut u8, buf_len, back, cursor, mmaped: true, dirty_top: height, dirty_bottom: 0 })
+    // Dummy buf pointer — fbdev mmap path is never reached when drm is Some.
+    use std::alloc::{alloc_zeroed, Layout};
+    let buf = unsafe { alloc_zeroed(Layout::from_size_align(4, 4).unwrap()) };
+    let file = std::fs::File::open("/dev/null").unwrap();
+    Framebuffer {
+        _file: file, width, height, stride, bpp: 32, buf, buf_len, back,
+        cursor: new_cursor(width, height, false),
+        mmaped: false, dirty_top: height, dirty_bottom: 0, drm: Some(drm_dev),
+    }
+}
+
+fn new_cursor(width: u32, height: u32, visible: bool) -> CursorState {
+    CursorState {
+        cx: (width / 2) as i32, cy: (height / 2) as i32, visible,
+        saved_under: vec![0u8; (CURSOR_W * CURSOR_H * 4) as usize], drawn: false,
+    }
 }
 
 impl Drop for Framebuffer {
     fn drop(&mut self) {
-        if self.mmaped {
+        use std::alloc::{dealloc, Layout};
+        if self.drm.is_some() {
+            unsafe { dealloc(self.buf, Layout::from_size_align(4, 4).unwrap()); }
+        } else if self.mmaped {
             unsafe { libc::munmap(self.buf as *mut libc::c_void, self.buf_len); }
-        } else {
-            use std::alloc::{dealloc, Layout};
-            if self.buf_len > 0 {
-                let layout = Layout::from_size_align(self.buf_len, 4).unwrap();
-                unsafe { dealloc(self.buf, layout); }
-            }
+        } else if self.buf_len > 0 {
+            unsafe { dealloc(self.buf, Layout::from_size_align(self.buf_len, 4).unwrap()); }
         }
     }
 }
@@ -370,7 +375,8 @@ impl Framebuffer {
         self.cursor.drawn = false;
     }
 
-    /// Blit dirty rows + cursor rows from back-buffer to the mmap'd framebuffer.
+    /// Blit dirty rows + cursor rows from back-buffer to the display.
+    /// Uses DRM page flip when available, otherwise falls back to fbdev memcpy.
     pub fn flush(&mut self) {
         self.restore_under_cursor();
         self.draw_cursor();
@@ -382,14 +388,20 @@ impl Framebuffer {
         let row_bot = self.dirty_bottom.max(cur_bot);
 
         if row_top < row_bot {
-            let start = (row_top * self.stride) as usize;
-            let end   = ((row_bot * self.stride) as usize).min(self.buf_len);
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    self.back.as_ptr().add(start),
-                    self.buf.add(start),
-                    end - start,
-                );
+            if let Some(ref mut drm) = self.drm {
+                // DRM path: copy dirty rows to DRM back buffer, then page flip.
+                drm.flip_with_dirty(&self.back, row_top, row_bot);
+            } else {
+                // fbdev path: copy dirty rows to mmap'd framebuffer.
+                let start = (row_top * self.stride) as usize;
+                let end   = ((row_bot * self.stride) as usize).min(self.buf_len);
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        self.back.as_ptr().add(start),
+                        self.buf.add(start),
+                        end - start,
+                    );
+                }
             }
         }
 
@@ -399,19 +411,12 @@ impl Framebuffer {
         self.restore_under_cursor();
     }
 
-    /// Composite surfaces onto the back-buffer and flip to the mmap'd fb.
+    /// Composite surfaces onto the back-buffer and flip.
     #[allow(dead_code)]
-    pub fn composite_and_flip(
-        &mut self,
-        bg_color: u32,
-        surfaces: &[compositor::CompositeEntry<'_>],
-    ) {
+    pub fn composite_and_flip(&mut self, bg_color: u32, surfaces: &[compositor::CompositeEntry<'_>]) {
         let (w, h) = (self.width, self.height);
         self.fill_rect(0, 0, w, h, bg_color);
-        compositor::composite_frame(
-            &mut self.back, surfaces, self.stride, self.width, self.height,
-        );
-        // Mark entire screen dirty so flush copies everything.
+        compositor::composite_frame(&mut self.back, surfaces, self.stride, self.width, self.height);
         self.dirty_top = 0;
         self.dirty_bottom = self.height;
         self.flush();
@@ -420,10 +425,10 @@ impl Framebuffer {
     /// Draw a 1-pixel border rectangle (no fill).
     pub fn rect_border(&mut self, x: u32, y: u32, w: u32, h: u32, rgba: u32) {
         if w == 0 || h == 0 { return; }
-        self.fill_rect(x, y, w, 1, rgba);              // top
-        self.fill_rect(x, y + h - 1, w, 1, rgba);      // bottom
-        self.fill_rect(x, y, 1, h, rgba);              // left
-        self.fill_rect(x + w - 1, y, 1, h, rgba);      // right
+        self.fill_rect(x, y, w, 1, rgba);
+        self.fill_rect(x, y + h - 1, w, 1, rgba);
+        self.fill_rect(x, y, 1, h, rgba);
+        self.fill_rect(x + w - 1, y, 1, h, rgba);
     }
 
     /// Fill a region with solid black (clear).
@@ -436,21 +441,15 @@ impl Framebuffer {
     #[allow(dead_code)]
     pub fn new_for_test(width: u32, height: u32) -> (Self, Vec<u8>) {
         use std::alloc::{alloc_zeroed, Layout};
-        let bpp = 32u32;
         let stride = width * 4;
         let buf_len = (stride * height) as usize;
-        let layout = Layout::from_size_align(buf_len, 4).unwrap();
-        let buf = unsafe { alloc_zeroed(layout) };
-        let back = vec![0u8; buf_len];
-        let cursor = CursorState {
-            cx:          (width / 2) as i32,
-            cy:          (height / 2) as i32,
-            visible:     true,
-            saved_under: vec![0u8; (CURSOR_W * CURSOR_H * 4) as usize],
-            drawn:       false,
-        };
+        let buf = unsafe { alloc_zeroed(Layout::from_size_align(buf_len, 4).unwrap()) };
         let file = std::fs::File::open("/dev/null").unwrap();
-        let fb = Self { _file: file, width, height, stride, bpp, buf, buf_len, back, cursor, mmaped: false, dirty_top: height, dirty_bottom: 0 };
+        let fb = Self {
+            _file: file, width, height, stride, bpp: 32, buf, buf_len,
+            back: vec![0u8; buf_len], cursor: new_cursor(width, height, true),
+            mmaped: false, dirty_top: height, dirty_bottom: 0, drm: None,
+        };
         (fb, vec![0u8; buf_len])
     }
 
