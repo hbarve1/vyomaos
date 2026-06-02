@@ -16,6 +16,8 @@ mod types;
 pub(crate) use types::*;
 mod globals;
 pub(crate) use globals::*;
+mod paths;
+pub(crate) use paths::*;
 
 #[allow(dead_code)] mod accessibility;
 mod archive_ipc;
@@ -116,17 +118,6 @@ macro_rules! log_error {
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-
-const BOOT_CONFIG_PATH:  &str = "/etc/vyoma/boot.toml";
-const USER_BOOT_PATH:    &str = "/data/installed.txt";
-const DATA_APPS_DIR:     &str = "/data/apps";
-const LOG_DIR:           &str = "/data/logs";
-const LOG_TAIL_LINES:    usize = 30;
-
-// ── T017: Platform profile loader ────────────────────────────────────────────
-
-const PLATFORM_PROFILE_DIR: &str = "/etc/vyoma/profiles";
-const DEFAULT_PROFILE_NAME: &str = "desktop-full";
 
 /// Load the active platform profile (`PLATFORM` env var, default `desktop-full`).
 fn load_platform_profile() -> Option<profile::PlatformProfile> {
