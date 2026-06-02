@@ -36,7 +36,7 @@ pub struct CursorState {
     pub cx:          i32,
     pub cy:          i32,
     pub visible:     bool,
-    /// Pixels saved from the back-buffer before the cursor was drawn (BGRA).
-    pub saved_under: Vec<u8>,
-    pub drawn:       bool,
+    /// Previous cursor position (for damage tracking).
+    pub prev_cx:     i32,
+    pub prev_cy:     i32,
 }

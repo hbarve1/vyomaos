@@ -10,30 +10,49 @@ use crate::lock_or_recover;
 #[cfg(target_os = "linux")]
 use crate::display;
 
-/// Render the desktop wallpaper (solid color, gradient, or scaled PNG image)
-/// onto the framebuffer.
+/// Render the desktop wallpaper using the cached buffer.
+/// When `fb.wallpaper_dirty` is true, re-render into `fb.wallpaper_cache`
+/// then mark clean. Always memcpy the cache into `fb.back` (fast ~3ms).
 #[cfg(target_os = "linux")]
 pub fn render_wallpaper(fb: &mut display::Framebuffer, fb_w: u32, fb_h: u32) {
-    match crate::wallpaper::current() {
-        crate::wallpaper::Wallpaper::SolidColor(rgba) => {
-            fb.fill_rect(0, 0, fb_w, fb_h, rgba);
-        }
-        crate::wallpaper::Wallpaper::Gradient(ref stops) => {
-            let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
-            display::draw_multi_gradient(&mut fb.back, 0, 0, fw, fh, stops, fs, fw, fh);
-        }
-        crate::wallpaper::Wallpaper::Image(ref path) => {
-            // Fill with dark fallback first, then overlay the image.
-            fb.fill_rect(0, 0, fb_w, fb_h, 0x1C1C1EFF);
-            let mut ic = lock_or_recover(&crate::image_cache());
-            if let Some(img) = ic.get(path) {
-                let (iw, ih, rgba_data) = (img.width, img.height, img.rgba.clone());
-                drop(ic);
+    if fb.wallpaper_dirty {
+        // Render wallpaper into cache buffer (expensive, done once or on change).
+        match crate::wallpaper::current() {
+            crate::wallpaper::Wallpaper::SolidColor(rgba) => {
+                let a = (rgba & 0xFF) as u8;
+                let r = ((rgba >> 24) & 0xFF) as u8;
+                let g = ((rgba >> 16) & 0xFF) as u8;
+                let b = ((rgba >>  8) & 0xFF) as u8;
+                let pixel = if a == 255 { [b, g, r, 0xFF] } else { [b, g, r, a] };
+                for off in (0..fb.wallpaper_cache.len()).step_by(4) {
+                    fb.wallpaper_cache[off..off + 4].copy_from_slice(&pixel);
+                }
+            }
+            crate::wallpaper::Wallpaper::Gradient(ref stops) => {
                 let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
-                display::blit_image(&mut fb.back, &rgba_data, iw, ih, 0, 0, fw, fh, fs, fw, fh);
+                display::draw_multi_gradient(&mut fb.wallpaper_cache, 0, 0, fw, fh, stops, fs, fw, fh);
+            }
+            crate::wallpaper::Wallpaper::Image(ref path) => {
+                // Fill with dark fallback first.
+                let pixel: [u8; 4] = [0x1E, 0x1C, 0x1C, 0xFF]; // BGRA for 0x1C1C1EFF
+                for off in (0..fb.wallpaper_cache.len()).step_by(4) {
+                    fb.wallpaper_cache[off..off + 4].copy_from_slice(&pixel);
+                }
+                let mut ic = lock_or_recover(&crate::image_cache());
+                if let Some(img) = ic.get(path) {
+                    let (iw, ih, rgba_data) = (img.width, img.height, img.rgba.clone());
+                    drop(ic);
+                    let (fw, fh, fs) = (fb.width, fb.height, fb.stride);
+                    display::blit_image(&mut fb.wallpaper_cache, &rgba_data, iw, ih, 0, 0, fw, fh, fs, fw, fh);
+                }
             }
         }
+        fb.wallpaper_dirty = false;
     }
+    // Fast memcpy of pre-rendered wallpaper into back-buffer.
+    let len = fb.wallpaper_cache.len().min(fb.back.len());
+    fb.back[..len].copy_from_slice(&fb.wallpaper_cache[..len]);
+    let _ = (fb_w, fb_h); // suppress unused warnings
 }
 
 /// Blit all app surfaces in Z-order onto the framebuffer back-buffer.
@@ -81,6 +100,7 @@ pub fn blit_all_surfaces(fb: &mut display::Framebuffer, registry: &AppRegistry) 
 
 /// Full compositor pass for supervisor-side repaints (drag, snap) that bypass
 /// the normal app `flush` path.
+/// Pipeline: wallpaper -> surfaces -> chrome -> overlays -> cursor -> flush
 #[cfg(target_os = "linux")]
 pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
     let Some(fb_lock) = display::get() else { return };
@@ -92,15 +112,18 @@ pub fn force_repaint(registry: &AppRegistry, focused: &FocusedApp) {
     crate::chrome::render_dropdown_if_open(&mut *fb);
     crate::chrome::render_context_menu_if_open(&mut *fb);
     crate::toast::render_banners(&mut *fb);
-    fb.flush();
+    // Cursor is the absolute LAST step before flush (no save/restore needed).
+    fb.draw_cursor();
+    fb.flush_no_cursor();
 }
 
-/// P31: compositor tick loop -- polls `frame_ready` flags and recomposites.
-/// Called from a dedicated thread spawned in `main()`.
+/// P31: deadline-aware compositor tick loop -- polls `frame_ready` flags and
+/// recomposites. Achieves true 60fps by sleeping only the remaining budget
+/// after work completes (16ms - elapsed), instead of a fixed 16ms sleep.
 #[cfg(target_os = "linux")]
 pub fn run_compositor_tick(registry: &AppRegistry, focused: &FocusedApp) {
     loop {
-        std::thread::sleep(std::time::Duration::from_millis(16)); // ~60 Hz
+        let tick_start = std::time::Instant::now();
         let any_dirty = {
             let reg = lock_or_recover(&registry);
             reg.values().any(|st| {
@@ -108,11 +131,16 @@ pub fn run_compositor_tick(registry: &AppRegistry, focused: &FocusedApp) {
                 s.frame_ready || s.pending_anim.is_some()
             })
         };
-        if !any_dirty { continue; }
-        {
-            let reg = lock_or_recover(&registry);
-            for st in reg.values() { lock_or_recover(&st).frame_ready = false; }
+        if any_dirty {
+            {
+                let reg = lock_or_recover(&registry);
+                for st in reg.values() { lock_or_recover(&st).frame_ready = false; }
+            }
+            force_repaint(registry, focused);
         }
-        force_repaint(registry, focused);
+        // Sleep for the remaining frame budget (true 60fps).
+        let elapsed = tick_start.elapsed();
+        let remaining = std::time::Duration::from_millis(16).saturating_sub(elapsed);
+        if !remaining.is_zero() { std::thread::sleep(remaining); }
     }
 }

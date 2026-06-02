@@ -18,19 +18,29 @@ pub struct Surface {
     pub width:  u32,
     pub height: u32,
     pub stride: u32,  // bytes per scanline = width * 4
+    /// When false (default), compositor uses memcpy fast path for blitting.
+    /// Set to true by clear_region (auto-detect) or VYOMA_DRAW:set_transparent.
+    pub has_transparency: bool,
+    /// True when any draw command has modified the surface since last compositor read.
+    pub dirty: bool,
 }
 
 #[allow(dead_code)]
 impl Surface {
     /// Create a zeroed surface of the given pixel dimensions.
+    /// Default: opaque (compositor uses memcpy fast path).
     pub fn new(width: u32, height: u32) -> Self {
         let stride = width * 4;
-        Self { buf: vec![0u8; (stride * height) as usize], width, height, stride }
+        Self {
+            buf: vec![0u8; (stride * height) as usize], width, height, stride,
+            has_transparency: false, dirty: true,
+        }
     }
 
     /// Fill a rectangle with an RGBA colour (packed 0xRRGGBBAA).
     /// Fully opaque fill uses a fast path; semi-transparent blends via Porter-Duff "over".
     pub fn fill_rect(&mut self, x: u32, y: u32, w: u32, h: u32, rgba: u32) {
+        self.dirty = true;
         let a = (rgba & 0xFF) as u8;
         let x1 = (x + w).min(self.width);
         let y1 = (y + h).min(self.height);
@@ -62,6 +72,7 @@ impl Surface {
 
     /// Render a string at (x, y) using the embedded 8×16 bitmap font.
     pub fn draw_text_bitmap(&mut self, x: u32, y: u32, text: &str, rgba: u32) {
+        self.dirty = true;
         let r = ((rgba >> 24) & 0xFF) as u8;
         let g = ((rgba >> 16) & 0xFF) as u8;
         let b = ((rgba >>  8) & 0xFF) as u8;
@@ -95,6 +106,7 @@ impl Surface {
 
     /// Draw a 1-pixel border rectangle (no fill).
     pub fn rect_border(&mut self, x: u32, y: u32, w: u32, h: u32, rgba: u32) {
+        self.dirty = true;
         if w == 0 || h == 0 { return; }
         self.fill_rect(x, y, w, 1, rgba);
         self.fill_rect(x, y + h - 1, w, 1, rgba);
@@ -103,7 +115,10 @@ impl Surface {
     }
 
     /// Clear a region to transparent black.
+    /// Auto-detects transparency: sets `has_transparency = true`.
     pub fn clear_region(&mut self, x: u32, y: u32, w: u32, h: u32) {
+        self.has_transparency = true;
+        self.dirty = true;
         self.fill_rect(x, y, w, h, 0x00000000);
     }
 
@@ -129,8 +144,8 @@ pub fn blit_surface(
 ) {
     if global_alpha == 0 { return; }
 
-    if global_alpha == 255 {
-        // Fast path: row-level memcpy. Surface and fb are both BGRA — no conversion needed.
+    if global_alpha == 255 && !surface.has_transparency {
+        // Fast path: row-level memcpy. Opaque surface, no blending needed.
         let visible_w = surface.width.min(fb_width.saturating_sub(dx));
         if visible_w == 0 { return; }
         let copy_bytes = (visible_w * 4) as usize;
@@ -145,7 +160,7 @@ pub fn blit_surface(
                 .copy_from_slice(&surface.buf[src_start..src_start + copy_bytes]);
         }
     } else {
-        // Slow path for animation fades: per-pixel alpha blend.
+        // Slow path: per-pixel alpha blend (transparent surface or animation fade).
         for row in 0..surface.height {
             let screen_y = dy + row;
             if screen_y >= fb_height { break; }
@@ -158,7 +173,10 @@ pub fn blit_surface(
                 if fb_off + 4 > fb_back.len() { continue; }
                 let src = read_bgra(&surface.buf, src_off);
                 let (sr, sg, sb, sa) = super::compositor::unpack(src);
-                let eff_a = (sa as u32 * global_alpha as u32 / 255) as u8;
+                let eff_a = if global_alpha == 255 { sa } else {
+                    (sa as u32 * global_alpha as u32 / 255) as u8
+                };
+                if eff_a == 0 { continue; } // skip fully transparent pixels
                 let attenuated = super::compositor::pack(sr, sg, sb, eff_a);
                 let dst = read_bgra(fb_back, fb_off);
                 write_bgra(fb_back, fb_off, blend_over(attenuated, dst));
