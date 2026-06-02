@@ -162,9 +162,8 @@ fn handle_fullscreen_toggle(
 #[cfg(target_os = "linux")]
 pub fn run_input_router(inbox: Inbox, focused: FocusedApp, registry: AppRegistry) {
     use crate::chrome::{cycle_focus_backward, cycle_focus_forward, repaint_all_borders,
-                        windowed_apps_sorted, MENUBAR_H};
+                        windowed_apps_sorted};
     use crate::{log_error, log_info, log_warn};
-    use crate::display;
     use std::io::Read;
     use std::os::unix::io::AsRawFd;
 

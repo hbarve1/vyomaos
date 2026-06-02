@@ -12,7 +12,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::OnceLock;
 
-use crate::{log_info, log_warn, log_error};
+use crate::{log_info, log_error};
 use supervisor::logging::Subsystem;
 
 // ── Constants ────────────────────────────────────────────────────────────────

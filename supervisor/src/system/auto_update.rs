@@ -293,7 +293,7 @@ pub fn handle_auto_update(
 /// seconds (1 hour). If updates are found, sends a notification via the IPC
 /// `@supervisor: notify` mechanism.
 pub fn spawn_background_checker(inbox: &Inbox, app_registry: &AppRegistry) {
-    let inbox = Arc::clone(inbox);
+    let _inbox = Arc::clone(inbox);
     let registry = Arc::clone(app_registry);
 
     thread::Builder::new()

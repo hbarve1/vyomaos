@@ -16,7 +16,7 @@ use crate::{
 use crate::send_reply;
 use crate::app_threads::{spawn_app, launch_app_threads};
 use supervisor::logging::Subsystem;
-use supervisor::manifest::{AppManifest, BootConfig, BootEntry};
+use supervisor::manifest::{AppManifest, BootConfig};
 use crate::net::http_get;
 
 /// Handle `kill <app>` -- send SIGKILL to a running app.

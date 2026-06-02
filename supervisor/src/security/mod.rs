@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 pub mod secure_boot;
 pub mod firewall;
 pub mod cap_request;

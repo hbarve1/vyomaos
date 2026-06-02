@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 pub mod acpi;
 pub mod battery;
 pub mod cpu;
