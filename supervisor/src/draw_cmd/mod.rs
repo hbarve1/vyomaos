@@ -52,24 +52,11 @@ pub fn handle_draw_command(
     }
 
     if cmd == "flush" || cmd == "present" {
-        // P31: mark frame as ready for the compositor tick.
+        // Mark frame as ready for the compositor tick (sole render path).
+        // No inline compositor pass — run_compositor_tick() handles all rendering.
         if let Some(st) = lock_or_recover(&app_registry).get(sender) {
             lock_or_recover(&st).frame_ready = true;
         }
-        let mut fb = lock_or_recover(&fb_lock);
-        let (fb_w, fb_h) = (fb.width, fb.height);
-
-        // -- Compositor pass --
-        compositor::render_wallpaper(&mut *fb, fb_w, fb_h);
-        compositor::blit_all_surfaces(&mut *fb, app_registry);
-        crate::chrome::draw_chrome_onto(&mut *fb, app_registry, focused);
-
-        // Draw overlay menus (dropdown, context menu, banners) on top of chrome
-        crate::chrome::render_dropdown_if_open(&mut *fb);
-        crate::chrome::render_context_menu_if_open(&mut *fb);
-        crate::toast::render_banners(&mut *fb);
-
-        fb.flush();
 
         // FPS tracking
         {
@@ -132,6 +119,22 @@ pub fn handle_draw_command(
 
     // set_layer_alpha: animation alpha applied automatically by blit_all_surfaces.
     if cmd.starts_with("set_layer_alpha:") { return; }
+
+    // Compositor v2: surface transparency hints (opaque surfaces use memcpy fast path).
+    if cmd == "set_transparent" {
+        if let Some(surface_arc) = lock_or_recover(&app_registry).get(sender)
+            .and_then(|st| lock_or_recover(&st).surface.clone()) {
+            lock_or_recover(&surface_arc).has_transparency = true;
+        }
+        return;
+    }
+    if cmd == "set_opaque" {
+        if let Some(surface_arc) = lock_or_recover(&app_registry).get(sender)
+            .and_then(|st| lock_or_recover(&st).surface.clone()) {
+            lock_or_recover(&surface_arc).has_transparency = false;
+        }
+        return;
+    }
 
     log_warn!(Subsystem::Display, Some(sender), "unknown command: {cmd}");
 }

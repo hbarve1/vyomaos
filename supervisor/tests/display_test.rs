@@ -98,74 +98,46 @@ fn trailing_space_does_not_produce_empty_line() {
     assert_eq!(wrap_words("hello ", 10), vec!["hello"]);
 }
 
-// ── Cursor draw / restore ─────────────────────────────────────────────────────
+// ── Cursor draw ──────────────────────────────────────────────────────────────
+// Compositor v2: no save/restore — cursor is painted as the last compositor step.
+// The test verifies draw_cursor() modifies pixels at the cursor position.
 
 #[test]
-fn test_cursor_draw_restore() {
+fn test_cursor_draw_paints_pixels() {
     let (mut fb, _) = Framebuffer::new_for_test(100, 80);
     // Position cursor at (10, 10) and fill back-buffer with a known pattern.
     fb.cursor.cx = 10;
     fb.cursor.cy = 10;
-    // Write a distinctive pattern under the cursor region.
-    let cw = CURSOR_W as usize;
-    let ch = CURSOR_H as usize;
     let stride = 100usize * 4;
-    for row in 0..ch {
-        for col in 0..cw {
-            let py = 10 + row;
-            let px = 10 + col;
-            let off = py * stride + px * 4;
-            fb.back[off]     = (row  * 13) as u8;
-            fb.back[off + 1] = (col  * 7)  as u8;
-            fb.back[off + 2] = 0xAB;
-            fb.back[off + 3] = 0xFF;
-        }
-    }
-    // Snapshot original back-buffer pixels under the cursor region.
-    let mut original = vec![0u8; cw * ch * 4];
-    for row in 0..ch {
-        for col in 0..cw {
-            let py = 10 + row;
-            let px = 10 + col;
-            let off = py * stride + px * 4;
-            let dst = (row * cw + col) * 4;
-            original[dst..dst + 4].copy_from_slice(&fb.back[off..off + 4]);
-        }
-    }
+    // Fill with zeroes (default), snapshot before draw.
+    let snapshot = fb.back.clone();
 
-    // Draw cursor — saved_under must match original pixels.
+    // Draw cursor — some pixels under cursor region must change.
     fb.draw_cursor();
-    assert!(fb.cursor.drawn, "drawn flag must be set after draw_cursor");
-    for (i, (&saved, &orig)) in fb.cursor.saved_under.iter().zip(original.iter()).enumerate() {
-        assert_eq!(saved, orig, "saved_under mismatch at byte {i}");
-    }
-
-    // Restore — back-buffer must match original again.
-    fb.restore_under_cursor();
-    assert!(!fb.cursor.drawn, "drawn flag must be cleared after restore");
-    for row in 0..ch {
-        for col in 0..cw {
-            let py = 10 + row;
+    let mut changed = false;
+    for row in 0..CURSOR_H as usize {
+        let py = 10 + row;
+        for col in 0..CURSOR_W as usize {
             let px = 10 + col;
             let off = py * stride + px * 4;
-            let dst = (row * cw + col) * 4;
-            assert_eq!(
-                fb.back[off..off + 4],
-                original[dst..dst + 4],
-                "pixel ({px},{py}) not restored"
-            );
+            if fb.back[off..off + 4] != snapshot[off..off + 4] {
+                changed = true;
+                break;
+            }
         }
+        if changed { break; }
     }
+    assert!(changed, "draw_cursor must modify at least some pixels in the cursor region");
 }
 
 #[test]
-fn test_restore_noop_when_not_drawn() {
+fn test_cursor_invisible_is_noop() {
     let (mut fb, _) = Framebuffer::new_for_test(50, 50);
-    // Fill back with known bytes.
+    fb.cursor.visible = false;
     fb.back.iter_mut().enumerate().for_each(|(i, b)| *b = (i % 251) as u8);
     let snapshot = fb.back.clone();
-    fb.restore_under_cursor(); // drawn=false → must be a no-op
-    assert_eq!(fb.back, snapshot, "restore_under_cursor must not modify back-buffer when not drawn");
+    fb.draw_cursor();
+    assert_eq!(fb.back, snapshot, "draw_cursor with visible=false must not modify back-buffer");
 }
 
 // ── app_accent_color tests ────────────────────────────────────────────────────

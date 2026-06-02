@@ -45,6 +45,8 @@ pub struct Framebuffer {
     dirty_top: u32,       // first dirty row since last flush (> dirty_bottom = clean)
     dirty_bottom: u32,    // one past last dirty row
     drm: Option<drm::DrmDisplay>, // DRM/KMS backend (None = fbdev path)
+    pub wallpaper_cache: Vec<u8>,  // pre-rendered wallpaper, same size as back
+    pub wallpaper_dirty: bool,     // true = must re-render into cache
 }
 
 unsafe impl Send for Framebuffer {} // all mutable access serialised via Mutex
@@ -133,6 +135,7 @@ fn open_fb() -> io::Result<Framebuffer> {
         _file: file, width, height, stride, bpp, buf: buf as *mut u8, buf_len,
         back: vec![0u8; buf_len], cursor: new_cursor(width, height, false),
         mmaped: true, dirty_top: height, dirty_bottom: 0, drm: None,
+        wallpaper_cache: vec![0u8; buf_len], wallpaper_dirty: true,
     })
 }
 
@@ -145,17 +148,19 @@ fn framebuffer_from_drm(drm_dev: drm::DrmDisplay) -> Framebuffer {
     use std::alloc::{alloc_zeroed, Layout};
     let buf = unsafe { alloc_zeroed(Layout::from_size_align(4, 4).unwrap()) };
     let file = std::fs::File::open("/dev/null").unwrap();
+    let wallpaper_cache = vec![0u8; buf_len];
     Framebuffer {
         _file: file, width, height, stride, bpp: 32, buf, buf_len, back,
         cursor: new_cursor(width, height, false),
         mmaped: false, dirty_top: height, dirty_bottom: 0, drm: Some(drm_dev),
+        wallpaper_cache, wallpaper_dirty: true,
     }
 }
 
 fn new_cursor(width: u32, height: u32, visible: bool) -> CursorState {
     CursorState {
         cx: (width / 2) as i32, cy: (height / 2) as i32, visible,
-        saved_under: vec![0u8; (CURSOR_W * CURSOR_H * 4) as usize], drawn: false,
+        prev_cx: (width / 2) as i32, prev_cy: (height / 2) as i32,
     }
 }
 
@@ -304,28 +309,13 @@ impl Framebuffer {
         }
     }
 
-    /// Save pixels under cursor hotspot then paint the arrow sprite.
+    /// Paint the arrow cursor sprite onto the back-buffer (no save/restore).
+    /// Called as the absolute LAST step before flush so the compositor never
+    /// corrupts the cursor.
     pub fn draw_cursor(&mut self) {
         if !self.cursor.visible || self.bpp != 32 { return; }
         let cx = self.cursor.cx as u32;
         let cy = self.cursor.cy as u32;
-
-        let mut saved_idx = 0usize;
-        for row in 0..CURSOR_H {
-            let py = cy + row;
-            if py >= self.height { break; }
-            for col in 0..CURSOR_W {
-                let px = cx + col;
-                if px >= self.width { break; }
-                let off = (py * self.stride + px * 4) as usize;
-                if off + 4 <= self.buf_len && saved_idx + 4 <= self.cursor.saved_under.len() {
-                    self.cursor.saved_under[saved_idx..saved_idx + 4]
-                        .copy_from_slice(&self.back[off..off + 4]);
-                }
-                saved_idx += 4;
-            }
-        }
-        self.cursor.drawn = true;
 
         for row in 0..CURSOR_H as usize {
             let py = cy + row as u32;
@@ -352,47 +342,48 @@ impl Framebuffer {
         }
     }
 
-    /// Restore pixels saved by the most recent `draw_cursor()` call.
-    pub fn restore_under_cursor(&mut self) {
-        if !self.cursor.drawn { return; }
-        let cx = self.cursor.cx as u32;
-        let cy = self.cursor.cy as u32;
-        let mut saved_idx = 0usize;
-        for row in 0..CURSOR_H {
-            let py = cy + row;
-            if py >= self.height { break; }
-            for col in 0..CURSOR_W {
-                let px = cx + col;
-                if px >= self.width { break; }
-                let off = (py * self.stride + px * 4) as usize;
-                if off + 4 <= self.buf_len && saved_idx + 4 <= self.cursor.saved_under.len() {
-                    self.back[off..off + 4]
-                        .copy_from_slice(&self.cursor.saved_under[saved_idx..saved_idx + 4]);
-                }
-                saved_idx += 4;
+    /// Blit dirty rows from back-buffer to the display (raw flip, no cursor logic).
+    /// Used by the compositor after it has already drawn the cursor as the last step.
+    pub fn flush_no_cursor(&mut self) {
+        // Always flush full screen since compositor rebuilds everything each frame.
+        let row_top = 0u32;
+        let row_bot = self.height;
+
+        if let Some(ref mut drm) = self.drm {
+            drm.flip_with_dirty(&self.back, row_top, row_bot);
+        } else {
+            let start = (row_top * self.stride) as usize;
+            let end   = ((row_bot * self.stride) as usize).min(self.buf_len);
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    self.back.as_ptr().add(start),
+                    self.buf.add(start),
+                    end - start,
+                );
             }
         }
-        self.cursor.drawn = false;
+
+        self.dirty_top    = self.height;
+        self.dirty_bottom = 0;
     }
 
     /// Blit dirty rows + cursor rows from back-buffer to the display.
-    /// Uses DRM page flip when available, otherwise falls back to fbdev memcpy.
+    /// Draws cursor as absolute last step before flip (no save/restore needed).
     pub fn flush(&mut self) {
-        self.restore_under_cursor();
         self.draw_cursor();
 
         // Expand dirty bounds to include the cursor sprite rows.
         let cur_top = self.cursor.cy.max(0) as u32;
         let cur_bot = (self.cursor.cy as u32 + CURSOR_H).min(self.height);
-        let row_top = self.dirty_top.min(cur_top);
-        let row_bot = self.dirty_bottom.max(cur_bot);
+        let prev_top = self.cursor.prev_cy.max(0) as u32;
+        let prev_bot = (self.cursor.prev_cy as u32 + CURSOR_H).min(self.height);
+        let row_top = self.dirty_top.min(cur_top).min(prev_top);
+        let row_bot = self.dirty_bottom.max(cur_bot).max(prev_bot);
 
         if row_top < row_bot {
             if let Some(ref mut drm) = self.drm {
-                // DRM path: copy dirty rows to DRM back buffer, then page flip.
                 drm.flip_with_dirty(&self.back, row_top, row_bot);
             } else {
-                // fbdev path: copy dirty rows to mmap'd framebuffer.
                 let start = (row_top * self.stride) as usize;
                 let end   = ((row_bot * self.stride) as usize).min(self.buf_len);
                 unsafe {
@@ -405,10 +396,11 @@ impl Framebuffer {
             }
         }
 
-        // Reset dirty tracking; restore cursor pixels in back-buffer.
+        // Update previous cursor position for next frame damage tracking.
+        self.cursor.prev_cx = self.cursor.cx;
+        self.cursor.prev_cy = self.cursor.cy;
         self.dirty_top    = self.height;
         self.dirty_bottom = 0;
-        self.restore_under_cursor();
     }
 
     /// Composite surfaces onto the back-buffer and flip.
@@ -449,6 +441,7 @@ impl Framebuffer {
             _file: file, width, height, stride, bpp: 32, buf, buf_len,
             back: vec![0u8; buf_len], cursor: new_cursor(width, height, true),
             mmaped: false, dirty_top: height, dirty_bottom: 0, drm: None,
+            wallpaper_cache: vec![0u8; buf_len], wallpaper_dirty: true,
         };
         (fb, vec![0u8; buf_len])
     }
