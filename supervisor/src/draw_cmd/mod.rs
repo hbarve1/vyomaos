@@ -20,7 +20,7 @@ use crate::display;
 
 // Re-export public API used by other modules.
 #[cfg(target_os = "linux")]
-pub use compositor::{force_repaint, run_compositor_tick};
+pub use compositor::{force_repaint, render_wallpaper, run_compositor_tick};
 
 
 #[cfg(target_os = "linux")]
@@ -122,6 +122,11 @@ pub fn handle_draw_command(
 
     if let Some(args) = cmd.strip_prefix("fill_rect_r:") {
         parser::parse_fill_rect_r(args, sender, win, chrome_h, &fb_lock, app_registry);
+        return;
+    }
+
+    if let Some(args) = cmd.strip_prefix("fill_gradient:") {
+        parser::parse_fill_gradient(args, sender, win, chrome_h, &fb_lock, app_registry);
         return;
     }
 

@@ -186,7 +186,8 @@ fn main() {
         if let Some(fb_lock) = display::get() {
             let mut fb = lock_or_recover(&fb_lock);
             let (w, h) = (fb.width, fb.height);
-            fb.fill_rect(0, 0, w, h, 0x1C1C1EFF);
+            // Paint default wallpaper (Sonoma gradient)
+            draw_cmd::render_wallpaper(&mut *fb, w, h);
             // Draw initial menu bar (no focused app yet, no apps yet)
             chrome::draw_menubar(&mut *fb, w, 0, None, &[]);
             fb.flush();
@@ -198,7 +199,7 @@ fn main() {
     {
         let fc = font_cache();
         let mut cache = lock_or_recover(&fc);
-        for &pt in &[13u32, 15, 16] {
+        for &pt in &[13u32, 14, 15] {
             for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789:".chars() {
                 cache.rasterize(ch, pt, false, false);
             }
