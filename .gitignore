@@ -25,3 +25,4 @@ tools/*/target/
 
 # Local git worktrees
 .worktrees/
+/target/
