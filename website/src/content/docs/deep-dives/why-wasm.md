@@ -193,7 +193,7 @@ This design means a vulnerability in a WASM app cannot compromise hardware. The 
 | Deterministic compilation | Yes | No | Partial | Partial |
 | No garbage collector required | Yes | Yes | No | No |
 | Binary size (hello world) | ~2 KB | ~300 KB (static) | ~1 KB + 200 MB JRE | ~3 KB + 100 MB CLR |
-| Startup time | <10ms (JIT) | <1ms | 50-500ms (JVM warmup) | 20-200ms (CLR warmup) |
+| Startup time | &lt;10ms (JIT) | &lt;1ms | 50-500ms (JVM warmup) | 20-200ms (CLR warmup) |
 | Memory overhead | ~1 MB (runtime) | ~0 (no runtime) | 50-200 MB (JVM heap) | 20-100 MB (CLR) |
 | Embedded viable (128 KB RAM) | Yes (wasm3 interpreter) | Yes | No | No |
 | Threads | Limited (proposal) | Full | Full | Full |

@@ -245,7 +245,7 @@ The supervisor codebase provides concrete evidence for Rust's suitability:
 | C dependencies | 0 |
 | GC pauses | 0 (no garbage collector) |
 | Memory safety CVEs | 0 (by construction) |
-| Boot to all-apps-running | <5 seconds |
+| Boot to all-apps-running | &lt;5 seconds |
 | Concurrent WASM apps supported | 10+ (one thread each) |
 
 ### Module Organization
