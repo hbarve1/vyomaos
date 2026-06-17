@@ -25,3 +25,5 @@ tools/*/target/
 
 # Local git worktrees
 .worktrees/
+.claude/worktrees
+/.idea/inspectionProfiles/Project_Default.xml
