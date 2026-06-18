@@ -29,6 +29,16 @@ const DRM_MODE_CONNECTED: u32 = 1;
 const DRM_MODE_TYPE_PREFERRED: u32 = 1 << 3;
 const DRM_MODE_PAGE_FLIP_EVENT: u32 = 0x01;
 
+/// Wrapper for libc::ioctl — handles type mismatch between glibc (c_ulong) and musl (c_int).
+#[inline]
+unsafe fn drm_ioctl(fd: i32, request: libc::c_ulong, arg: *mut libc::c_void) -> libc::c_int {
+    libc::ioctl(fd, request as libc::Ioctl, arg)
+}
+#[inline]
+unsafe fn drm_ioctl0(fd: i32, request: libc::c_ulong) -> libc::c_int {
+    libc::ioctl(fd, request as libc::Ioctl)
+}
+
 // ── DRM ioctl structures ─────────────────────────────────────────────────────
 
 #[repr(C)]
@@ -195,7 +205,7 @@ impl DrmDisplay {
         std::mem::forget(file);
 
         // Try to become DRM master (not fatal if it fails).
-        unsafe { libc::ioctl(fd, DRM_IOCTL_SET_MASTER); }
+        unsafe { drm_ioctl0(fd, DRM_IOCTL_SET_MASTER); }
 
         let (crtc_id, connector_id, mode) = find_connected_output(fd)?;
         let width = mode.hdisplay as u32;
@@ -266,7 +276,7 @@ impl DrmDisplay {
             user_data: 0,
         };
         let ret = unsafe {
-            libc::ioctl(
+            drm_ioctl(
                 self.fd,
                 DRM_IOCTL_MODE_PAGE_FLIP,
                 &mut flip as *mut _ as *mut libc::c_void,
@@ -310,7 +320,7 @@ impl DrmDisplay {
 fn find_connected_output(fd: i32) -> Option<(u32, u32, DrmModeModeinfo)> {
     // First call: get counts.
     let mut res: DrmModeCardRes = unsafe { std::mem::zeroed() };
-    if unsafe { libc::ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &mut res as *mut _ as *mut _) } < 0 {
+    if unsafe { drm_ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &mut res as *mut _ as *mut libc::c_void) } < 0 {
         return None;
     }
 
@@ -328,7 +338,7 @@ fn find_connected_output(fd: i32) -> Option<(u32, u32, DrmModeModeinfo)> {
     res.encoder_id_ptr = encoder_ids.as_mut_ptr() as u64;
 
     // Second call: fill arrays.
-    if unsafe { libc::ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &mut res as *mut _ as *mut _) } < 0 {
+    if unsafe { drm_ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &mut res as *mut _ as *mut libc::c_void) } < 0 {
         return None;
     }
 
@@ -350,7 +360,7 @@ fn try_connector(
     // First call to get counts.
     let mut conn: DrmModeGetConnector = unsafe { std::mem::zeroed() };
     conn.connector_id = conn_id;
-    if unsafe { libc::ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &mut conn as *mut _ as *mut _) } < 0 {
+    if unsafe { drm_ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &mut conn as *mut _ as *mut libc::c_void) } < 0 {
         return None;
     }
 
@@ -364,7 +374,7 @@ fn try_connector(
     conn.modes_ptr = modes.as_mut_ptr() as u64;
     conn.encoders_ptr = encoder_ids.as_mut_ptr() as u64;
 
-    if unsafe { libc::ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &mut conn as *mut _ as *mut _) } < 0 {
+    if unsafe { drm_ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &mut conn as *mut _ as *mut libc::c_void) } < 0 {
         return None;
     }
 
@@ -388,7 +398,7 @@ fn try_connector(
 fn get_encoder_crtc(fd: i32, encoder_id: u32) -> Option<u32> {
     let mut enc: DrmModeGetEncoder = unsafe { std::mem::zeroed() };
     enc.encoder_id = encoder_id;
-    if unsafe { libc::ioctl(fd, DRM_IOCTL_MODE_GETENCODER, &mut enc as *mut _ as *mut _) } < 0 {
+    if unsafe { drm_ioctl(fd, DRM_IOCTL_MODE_GETENCODER, &mut enc as *mut _ as *mut libc::c_void) } < 0 {
         return None;
     }
     if enc.crtc_id != 0 { Some(enc.crtc_id) } else { None }
@@ -405,7 +415,7 @@ fn create_dumb_buffer(fd: i32, width: u32, height: u32) -> Option<(u32, *mut u8,
         pitch: 0,
         size: 0,
     };
-    if unsafe { libc::ioctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &mut create as *mut _ as *mut _) } < 0 {
+    if unsafe { drm_ioctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &mut create as *mut _ as *mut libc::c_void) } < 0 {
         return None;
     }
 
@@ -419,7 +429,7 @@ fn create_dumb_buffer(fd: i32, width: u32, height: u32) -> Option<(u32, *mut u8,
         depth: 24,
         handle: create.handle,
     };
-    if unsafe { libc::ioctl(fd, DRM_IOCTL_MODE_ADDFB, &mut fb_cmd as *mut _ as *mut _) } < 0 {
+    if unsafe { drm_ioctl(fd, DRM_IOCTL_MODE_ADDFB, &mut fb_cmd as *mut _ as *mut libc::c_void) } < 0 {
         return None;
     }
 
@@ -429,7 +439,7 @@ fn create_dumb_buffer(fd: i32, width: u32, height: u32) -> Option<(u32, *mut u8,
         _pad: 0,
         offset: 0,
     };
-    if unsafe { libc::ioctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &mut map as *mut _ as *mut _) } < 0 {
+    if unsafe { drm_ioctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &mut map as *mut _ as *mut libc::c_void) } < 0 {
         return None;
     }
 
@@ -471,7 +481,7 @@ fn set_crtc(
         mode_valid: 1,
         mode: *mode,
     };
-    if unsafe { libc::ioctl(fd, DRM_IOCTL_MODE_SETCRTC, &mut crtc as *mut _ as *mut _) } < 0 {
+    if unsafe { drm_ioctl(fd, DRM_IOCTL_MODE_SETCRTC, &mut crtc as *mut _ as *mut libc::c_void) } < 0 {
         return None;
     }
     Some(())
