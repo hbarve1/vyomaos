@@ -8,7 +8,7 @@ build_kernel() {
     [[ -f "$KERNEL_FILE" ]] && { log_info "Kernel already built, skipping."; return 0; }
     log_info "Building kernel..."
 
-    download_file "$KERNEL_SOURCE_URL" "$KERNEL_TAR_FILE" "kernel source" || return 1
+    download_file "$KERNEL_SOURCE_URL" "$KERNEL_TAR_FILE" "kernel source" "$KERNEL_SHA256" || return 1
 
     mkdir -p "$OUTDIR"
     tar -xJf "$KERNEL_TAR_FILE" -C "$OUTDIR"

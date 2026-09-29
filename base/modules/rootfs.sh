@@ -9,42 +9,17 @@ source "$(dirname "${BASH_SOURCE[0]}")/../config.sh"
 ROOTFS="$OUTDIR/rootfs"
 
 # ── Wasmtime musl-static binary ──────────────────────────────────────────────
-WASMTIME_VERSION="43.0.0"
 WASMTIME_TARBALL="wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz"
 WASMTIME_URL="https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/${WASMTIME_TARBALL}"
-WASMTIME_SHA256="e75a4933253fbc7b027c670b699490f163e3c86784f1db66581ae80fc0eb652c"
 WASMTIME_CACHE="$OUTDIR/cache/${WASMTIME_TARBALL}"
 
 # ── BusyBox musl-static binary ────────────────────────────────────────────────
-BUSYBOX_VERSION="1.35.0"
 BUSYBOX_URL="https://www.busybox.net/downloads/binaries/${BUSYBOX_VERSION}-x86_64-linux-musl/busybox"
-BUSYBOX_SHA256="6e123e7f3202a8c1e9b1f94d8941580a25135382b99e8d3e34fb858bba311348"
 BUSYBOX_CACHE="$OUTDIR/cache/busybox-${BUSYBOX_VERSION}-x86_64-musl"
 
 # ── Download with SHA-256 verification ───────────────────────────────────────
 download_verified() {
-    local url="$1" dest="$2" expected="$3"
-
-    if [[ -f "$dest" ]]; then
-        log_info "Using cached: $(basename "$dest")"
-    else
-        mkdir -p "$(dirname "$dest")"
-        log_info "Downloading: $url"
-        wget --quiet --show-progress -O "$dest.tmp" "$url"
-        mv "$dest.tmp" "$dest"
-    fi
-
-    log_info "Verifying SHA-256..."
-    local actual
-    actual="$(sha256sum "$dest" | awk '{print $1}')"
-    if [[ "$actual" != "$expected" ]]; then
-        log_error "SHA-256 mismatch for $(basename "$dest")"
-        log_error "  Expected: $expected"
-        log_error "  Actual:   $actual"
-        rm -f "$dest"
-        return 1
-    fi
-    log_info "SHA-256 OK"
+    download_file "$1" "$2" "$(basename "$2")" "$3"
 }
 
 build_rootfs() {

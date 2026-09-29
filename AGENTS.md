@@ -18,6 +18,8 @@ VyomaOS is a WASM-first OS. The core development loop involves two Rust targets:
 
 The hermetic build system uses Docker (`make build`), but local `cargo check` / `cargo test` works for fast iteration.
 
+Use [docs/local-build.md](docs/local-build.md) for the pinned builder, Python setup and full local validation. Honor `rust-toolchain.toml`, run Cargo with `--locked`, and commit standalone app/tool lockfiles. Dependency changes must be deliberate; normal builds must not update resolution.
+
 ### Quick reference
 
 | Task | Command |

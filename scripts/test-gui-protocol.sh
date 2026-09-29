@@ -11,7 +11,7 @@ DOCK_WASM="apps/dock/target/wasm32-wasip2/release/dock.wasm"
 # Build gui-test checker if needed.
 if [ ! -f "$GUI_TEST_BIN" ]; then
     echo "[gui-test] building checker..."
-    RUSTFLAGS="-D warnings" cargo build \
+    RUSTFLAGS="-D warnings" cargo build --locked \
         --manifest-path tools/gui-test/Cargo.toml \
         --target x86_64-unknown-linux-musl \
         --release

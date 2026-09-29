@@ -93,7 +93,7 @@ KVM ?=
         test-unit-apps test-gui-protocol test-e2e-gui test-gui test-e2e
 
 # ── Docker image ──────────────────────────────────────────────────────────────
-image: $(DOCKERFILE)
+image: $(DOCKERFILE) rust-toolchain.toml
 	docker build --platform linux/amd64 -t $(IMAGE):$(IMAGE_TAG) -f $(DOCKERFILE) .
 
 # ── kernel ────────────────────────────────────────────────────────────────────
@@ -110,9 +110,9 @@ $(BZIMAGE): $(KERNEL_STAMP)
 # ── supervisor ───────────────────────────────────────────────────────────────
 supervisor: $(SUPERVISOR_STAMP)
 
-$(SUPERVISOR_STAMP): supervisor/Cargo.toml supervisor/.cargo/config.toml $(SUPERVISOR_SRC) | image
+$(SUPERVISOR_STAMP): Cargo.toml Cargo.lock rust-toolchain.toml supervisor/Cargo.toml supervisor/.cargo/config.toml $(SUPERVISOR_SRC) | image
 	@mkdir -p $(OUT)
-	$(DOCKER_RUN) cargo build \
+	$(DOCKER_RUN) cargo build --locked \
 	  --manifest-path supervisor/Cargo.toml \
 	  --target x86_64-unknown-linux-musl \
 	  --release
@@ -126,9 +126,9 @@ $(SUPERVISOR_STAMP): supervisor/Cargo.toml supervisor/.cargo/config.toml $(SUPER
 # RUSTFLAGS=-D warnings is enforced per-app (T039 zero-warning gate).
 
 define APP_RULE
-$(OUT)/.apps/$(1).stamp: $$(wildcard apps/$(1)/src/*.rs) apps/$(1)/Cargo.toml | image
+$(OUT)/.apps/$(1).stamp: $$(wildcard apps/$(1)/src/*.rs) apps/$(1)/Cargo.toml apps/$(1)/Cargo.lock rust-toolchain.toml | image
 	@mkdir -p $(OUT)/.apps
-	$$(DOCKER_RUN) env RUSTFLAGS="$$(WASM_FLAGS)" cargo build \
+	$$(DOCKER_RUN) env RUSTFLAGS="$$(WASM_FLAGS)" cargo build --locked \
 	  --manifest-path apps/$(1)/Cargo.toml \
 	  --target wasm32-wasip2 --release
 	@touch $$@
@@ -176,7 +176,7 @@ data:
 # ── unit-test (T027): supervisor cargo test inside Docker, RUSTFLAGS enforced ─
 unit-test: | image
 	$(DOCKER_RUN) env RUSTFLAGS="$(RUSTFLAGS)" \
-	  cargo test --manifest-path supervisor/Cargo.toml \
+	  cargo test --locked --manifest-path supervisor/Cargo.toml \
 	  --target x86_64-unknown-linux-musl
 
 # ── smoke (T026): headless QEMU boot test — requires make build first ────────
@@ -188,7 +188,7 @@ test: build unit-test smoke
 
 # ── check-manifests (T034): validate all apps/*/vyoma.toml files ─────────────
 check-manifests: | image
-	$(DOCKER_RUN) cargo run --manifest-path tools/check-manifests/Cargo.toml
+	$(DOCKER_RUN) cargo run --locked --manifest-path tools/check-manifests/Cargo.toml
 
 # ── check-profiles (T062): validate all platform profile TOML files ──────────
 # Verifies that every expected profile file exists and is valid TOML.
@@ -211,7 +211,7 @@ check-profiles: | image
 	done; \
 	if [ "$$fail" -eq 0 ]; then \
 	  $(DOCKER_RUN) env RUSTFLAGS="$(RUSTFLAGS)" \
-	    cargo test --manifest-path supervisor/Cargo.toml \
+	    cargo test --locked --manifest-path supervisor/Cargo.toml \
 	    --target x86_64-unknown-linux-musl \
 	    -- profile 2>&1 | tail -5; \
 	  echo "PROFILES: OK"; \
@@ -328,9 +328,9 @@ shell: | image
 # ── test-unit-apps: run unit tests for display apps (desktop, dock) ──────────
 test-unit-apps: | image
 	$(DOCKER_RUN) env RUSTFLAGS="$(RUSTFLAGS)" \
-	  cargo test --manifest-path apps/desktop/Cargo.toml
+	  cargo test --locked --manifest-path apps/desktop/Cargo.toml
 	$(DOCKER_RUN) env RUSTFLAGS="$(RUSTFLAGS)" \
-	  cargo test --manifest-path apps/dock/Cargo.toml
+	  cargo test --locked --manifest-path apps/dock/Cargo.toml
 
 # ── test-gui-protocol: WASM app protocol output tests ────────────────────────
 # Requires 'make apps' first to build WASM binaries.
@@ -344,7 +344,8 @@ test-e2e-gui: build
 
 # ── test-e2e: pytest E2E harness (requires make build first) ──────────────────
 test-e2e: build
-	cd tests/e2e && pip install -r requirements.txt -q && pytest -v
+	bash scripts/setup-tests.sh
+	out/test-venv/bin/python -m pytest tests/e2e -v
 
 # ── test-gui: all GUI tests (unit + protocol) — does not require QEMU ────────
 test-gui: test-unit-apps test-gui-protocol
