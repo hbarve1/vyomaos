@@ -24,11 +24,12 @@ Keep Linux for hardware, memory and scheduling, Rust for trusted services, and W
 |---|---|---|---|---|
 | R1 planning | Merged into `develop` | [PR #215](https://github.com/hbarve1/vyomaos/pull/215), `548bc134` | [Source review](docs/reviews/2026-09-29-complete-os-review.md) | Plan is the active R1 backlog |
 | T0-01 | Merged into `develop` | [PR #216](https://github.com/hbarve1/vyomaos/pull/216), `e447db5c` | [Build/test evidence](docs/validation/2026-09-29-t0-01.md); compilation gate accepted | Complete; broader T0 failures remain tracked below |
-| T0-02 | Implementation verified locally; awaiting merge | `build/t0-pinned-inputs` | [Clean-builder evidence](docs/validation/2026-09-29-t0-02.md); 1,154 Rust tests pass, existing Python failures remain | Review/merge; continue with T0-03, stacking on this tested tip if needed |
+| T0-02 | Implementation verified locally; awaiting merge | [PR #217](https://github.com/hbarve1/vyomaos/pull/217), `build/t0-pinned-inputs` | [Clean-builder evidence](docs/validation/2026-09-29-t0-02.md); 1,154 Rust tests pass, existing Python failures remain | Review/merge; continue with T0-03, stacking on this tested tip if needed |
+| Continuous local worker | Prepared and locally tested; not enabled | `ops/continuous-worker`, stacked on PR #217 at `baab51b5` | [Operating plan](docs/codex-work-loop.md); explicit run limits and real pilot still pending | Review the child PR after its parent; configure limits/pilot before activation |
 | T0-05 / T0-06 | Existing harness failures confirmed; pending | Not started | Same evidence report: assertion API mismatch, shared serial-log deletion, black window capture | Repair API/state/readiness checks; retain failures until verified |
 | T0-04 / T0-GATE | Guest health blocker confirmed; pending | Not started | `clock.wasm` panics on thread creation and repeatedly restarts; weak smoke checks still pass | Define R1 app set and assert sustained guest health; see T2-07 for restart limits |
 
-Continuous implementation and scheduled jobs have **not** been configured by this documentation change. See the [proposed Codex work loop](docs/codex-work-loop.md).
+The local continuous-worker implementation and systemd templates are prepared but **not enabled**. See the [operating plan](docs/codex-work-loop.md) for controls, stacked PRs and activation steps. No background model job is running from these files.
 
 ## T0 — Make build and verification reliable
 

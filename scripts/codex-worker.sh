@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # One bounded local Codex cycle. The timer is installed/enabled separately.
 set -euo pipefail
+umask 077
 control_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${VYOMA_REPO:?Set the absolute repository path}"
 : "${VYOMA_MAX_RUNS_PER_DAY:?Set an explicit daily run limit}"
