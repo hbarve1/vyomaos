@@ -1,0 +1,3 @@
+# Required R1 image payload. Optional desktop/demo apps are deliberately absent.
+# The shell still needs T1 terminal I/O work; selection is not console acceptance.
+shell
