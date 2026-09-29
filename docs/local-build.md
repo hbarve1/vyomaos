@@ -156,3 +156,22 @@ Run `PYTHONDONTWRITEBYTECODE=1 python3 tests/build/test_rootfs.py` for isolated
 assembly regressions. They use local fixture binaries and real tar/cpio/gzip;
 real production builds and missing-artifact checks are recorded in the T0-04
 validation report.
+
+## Validation entry points (T0-05)
+
+`make smoke` now requires kernel and rootfs builds; the CI workflow also names
+its kernel build explicitly before smoke. Actions remain billing-blocked: do not
+dispatch the workflow until the maintainer authorizes it. `make check-profiles`
+propagates a failing Cargo exit code through its output-tail pipeline.
+
+Python E2E defaults and relative `BZIMAGE`, `INITRAMFS`, and optional `DISK`
+overrides resolve from the repository root. Shell smoke/GUI/protocol scripts
+also locate their repository independently of the caller's working directory.
+Missing/empty required images, configured disks, GUI prerequisites and protocol
+WASM fixtures are failures, not passing skips. The known harness API/shared-state
+failures and weak guest-readiness checks still require T0-06 work.
+
+With the pinned pytest dependencies available, run
+`PYTHONDONTWRITEBYTECODE=1 python3 tests/build/test_validation_entrypoints.py`.
+This tests Make build ordering and failure propagation plus real missing-input
+and path resolution behavior; real boot results are recorded separately.

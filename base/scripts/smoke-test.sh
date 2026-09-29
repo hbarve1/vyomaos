@@ -4,16 +4,18 @@
 # Exit 1 = timeout, kernel panic, or QEMU error.
 set -euo pipefail
 
-BZIMAGE="${BZIMAGE:-out/bzImage}"
-INITRAMFS="${INITRAMFS:-out/initramfs.cpio.gz}"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$PROJECT_ROOT"
+BZIMAGE="${BZIMAGE:-$PROJECT_ROOT/out/bzImage}"
+INITRAMFS="${INITRAMFS:-$PROJECT_ROOT/out/initramfs.cpio.gz}"
 LOG_FILE="/tmp/smoke-$(date +%s).log"
 TIMEOUT_SECS=30
 
-if [[ ! -f "$BZIMAGE" ]]; then
+if [[ ! -s "$BZIMAGE" ]]; then
     echo "SMOKE: FAIL: kernel not found: $BZIMAGE" >&2
     exit 1
 fi
-if [[ ! -f "$INITRAMFS" ]]; then
+if [[ ! -s "$INITRAMFS" ]]; then
     echo "SMOKE: FAIL: initramfs not found: $INITRAMFS" >&2
     exit 1
 fi

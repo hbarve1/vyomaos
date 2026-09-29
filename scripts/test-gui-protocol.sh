@@ -3,10 +3,16 @@
 # verifies VYOMA_DRAW protocol output using gui-test checker.
 set -euo pipefail
 
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_ROOT"
 WASMTIME="${WASMTIME:-wasmtime}"
 GUI_TEST_BIN="tools/gui-test/target/x86_64-unknown-linux-musl/release/gui-test"
 DESKTOP_WASM="apps/desktop/target/wasm32-wasip2/release/desktop.wasm"
 DOCK_WASM="apps/dock/target/wasm32-wasip2/release/dock.wasm"
+
+for required in "$DESKTOP_WASM" "$DOCK_WASM"; do
+    [[ -s "$required" ]] || { echo "[gui-test] FAIL: required WASM missing: $required (run make test-gui-protocol)" >&2; exit 1; }
+done
 
 # Build gui-test checker if needed.
 if [ ! -f "$GUI_TEST_BIN" ]; then
