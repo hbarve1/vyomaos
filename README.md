@@ -6,6 +6,7 @@ A **WASM-first operating system** with the long-term goal of becoming a lightwei
 
 ## Documentation
 
+- [TODOS.md](TODOS.md) — First release: terminal desktop checklist, acceptance gates, and implementation order
 - [docs/INDEX.md](docs/INDEX.md) — Full documentation index
 - [CONTRIBUTING.md](CONTRIBUTING.md) — How to contribute
 - [docs/git-workflow.md](docs/git-workflow.md) — Git branching model

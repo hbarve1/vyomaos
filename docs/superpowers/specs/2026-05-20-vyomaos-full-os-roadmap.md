@@ -1,5 +1,7 @@
 # VyomaOS — Full OS Roadmap (P31–P112)
 
+> Reviewed 2026-09-29: retain this document as feature/design history. The [proposed execution roadmap](../../complete-os-roadmap.md) sequences work by release gates; the [readiness review](../../reviews/2026-09-29-complete-os-review.md) distinguishes implemented paths from placeholders and unverified claims.
+
 **Date:** 2026-05-20
 **Status:** active planning
 **Current phase:** P23 complete (TUI widget primitives); P24–P26 next

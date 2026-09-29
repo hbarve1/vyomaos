@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## Current release plan
+
+Read [TODOS.md](TODOS.md) before selecting implementation work. R1 is a terminal-first desktop OS; that checklist controls release scope, task dependencies, acceptance evidence, and handoff state. The graphical desktop and broader device roadmap remain later work. See [docs/codex-work-loop.md](docs/codex-work-loop.md) for the proposed sustained-work process; documenting it does not activate a scheduler or grant merge/release authority.
+
 ## Cursor Cloud specific instructions
 
 ### Overview

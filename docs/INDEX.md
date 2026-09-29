@@ -29,13 +29,19 @@ VyomaOS supports six platform profiles (mcu-minimal, iot-edge, robotics-rt, mobi
 
 ## Vision & Roadmap
 
+- [R1 Terminal Desktop Checklist](../TODOS.md) -- Active release scope, dependency-ordered tasks, acceptance gates, and progress handoff
+- [Codex Work-Loop Proposal](codex-work-loop.md) -- Bounded milestone runs, persistent evidence, PR workflow, and prerequisites for recurring work
+- [Complete OS Roadmap](complete-os-roadmap.md) -- Long-term graphical desktop and device expansion after terminal-first R1 (2026-09-29)
+- [Complete OS Readiness Review](reviews/2026-09-29-complete-os-review.md) -- Source-backed gaps, executed checks, and review of existing plans
+- [80-Subsystem Delivery Mapping](reviews/2026-09-29-subsystem-matrix.csv) -- Design status separated from implementation evidence and proposed milestones
+- [Application Inventory](reviews/2026-09-29-app-inventory.csv) -- All 208 app manifests, source counts, capabilities, and proposed audit priorities
 - [Comparison Matrix](comparison-matrix.md) -- VyomaOS vs Alpine, Flatcar, MirageOS positioning
 - [Desktop OS Vision](superpowers/specs/desktop-os-vision/master-spec.md) -- 80-subsystem desktop OS master specification
 - [Full OS Roadmap](superpowers/specs/2026-05-20-vyomaos-full-os-roadmap.md) -- Long-term roadmap for a complete general-purpose OS
 
 ## Implementation Plans
 
-- [Implementation Tracker](../.context/plans/plan-vyomaos/README.md) -- Canonical phase-by-phase implementation tracker (P01--P17 complete, P18+ planned)
+- [Historical Implementation Tracker](../.context/plans/plan-vyomaos/README.md) -- Original phase-by-phase tracker; phase checkmarks are not current release acceptance evidence
 
 ## Design Explorations (Archive)
 
