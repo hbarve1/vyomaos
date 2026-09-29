@@ -23,7 +23,7 @@ Keep Linux for hardware, memory and scheduling, Rust for trusted services, and W
 | Task | State | Branch / PR | Evidence / blocker | Next action |
 |---|---|---|---|---|
 | R1 planning | Merged into `develop` | [PR #215](https://github.com/hbarve1/vyomaos/pull/215), `548bc134` | [Source review](docs/reviews/2026-09-29-complete-os-review.md) | Plan is the active R1 backlog |
-| T0-01 | Implementation verified locally; awaiting merge | `fix/t0-build-baseline` | [Build/test evidence](docs/validation/2026-09-29-t0-01.md); musl/CLI build gate passes, full Python suite remains red | Review/merge; then check this item and start `T0-02` |
+| T0-01 | Implementation verified locally; awaiting merge | [PR #216](https://github.com/hbarve1/vyomaos/pull/216), `fix/t0-build-baseline` | [Build/test evidence](docs/validation/2026-09-29-t0-01.md); musl/CLI build gate passes, full Python suite remains red | Review/merge; then check this item and start `T0-02` |
 | T0-05 / T0-06 | Existing harness failures confirmed; pending | Not started | Same evidence report: assertion API mismatch, shared serial-log deletion, black window capture | Repair API/state/readiness checks; retain failures until verified |
 | T0-04 / T0-GATE | Guest health blocker confirmed; pending | Not started | `clock.wasm` panics on thread creation and repeatedly restarts; weak smoke checks still pass | Define R1 app set and assert sustained guest health; see T2-07 for restart limits |
 
