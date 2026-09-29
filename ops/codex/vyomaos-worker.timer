@@ -1,0 +1,10 @@
+[Unit]
+Description=Run bounded VyomaOS work while capacity is available
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=5min
+Unit=vyomaos-worker.service
+
+[Install]
+WantedBy=timers.target

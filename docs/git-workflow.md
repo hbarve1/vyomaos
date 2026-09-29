@@ -25,7 +25,12 @@ main          ← stable, release-ready code
 
 ### Short-lived branches
 
-Created from `develop`, merged back into `develop` via PR, then deleted.
+Independent branches start from `develop` and integrate there via PR. Since
+2026-09-29 the maintainer also authorizes stacked PRs: a dependent branch starts
+from its tested parent and targets that parent for review. Record the parent PR
+and exact base/head SHAs; after the parent merges, restack/retest and retarget the
+child to `develop`. Never merge a child into a temporary feature branch. See
+[the continuous work plan](codex-work-loop.md) for squash-safe restacking.
 
 | Prefix      | Use case                          | Example                          |
 |-------------|-----------------------------------|----------------------------------|
@@ -86,7 +91,7 @@ git rebase origin/develop
 
 ### 3. Open a Pull Request
 
-- **Always target `develop`** — never `main` directly.
+- Target `develop` for independent PRs; an authorized stacked child targets its immediate parent until restacked after the parent merges. Never target `main` directly for feature work.
 - Use a clear title and description.
 - Link related issues if any.
 

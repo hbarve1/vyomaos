@@ -1,0 +1,72 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "progress",
+        "waiting_review",
+        "blocked"
+      ]
+    },
+    "task": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "base_sha": {
+      "type": "string"
+    },
+    "head_sha": {
+      "type": "string"
+    },
+    "parent_pr": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pr_url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tests": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "next_action": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "task",
+    "branch",
+    "base_sha",
+    "head_sha",
+    "parent_pr",
+    "pr_url",
+    "tests",
+    "evidence",
+    "blockers",
+    "next_action"
+  ]
+}

@@ -1,0 +1,14 @@
+[Unit]
+Description=Bounded local VyomaOS Codex worker
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=%h/.config/vyomaos-worker.env
+WorkingDirectory=/home/hbarve1/codes/vyomaos
+ExecStart=/bin/bash /home/hbarve1/codes/vyomaos/scripts/codex-worker.sh
+TimeoutStartSec=47min
+TimeoutStopSec=45s
+KillMode=control-group
+Nice=10
+UMask=0077
