@@ -22,7 +22,7 @@ class KernelBuildTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / "base/modules").mkdir(parents=True)
         (self.root / "base/patches/kernel").mkdir(parents=True)
-        for name in ("base/config.sh", "base/modules/kernel.sh", "Makefile"):
+        for name in ("base/config.sh", "base/modules/kernel.sh", "base/image-apps.sh", "base/r1-apps.txt", "Makefile"):
             shutil.copy2(REPO / name, self.root / name)
         self.config = self.root / "base/kernel.config"
         self.config.write_text("CONFIG_TEST_ONE=y\n")

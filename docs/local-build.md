@@ -63,7 +63,7 @@ vyoma_builder cargo run --locked --manifest-path tools/check-manifests/Cargo.tom
 bash tests/build/download_test.sh
 ```
 
-To build all images, `make build IMAGE_TAG=t0-02` uses the pinned Dockerfile and locked Cargo resolution. Kernel input propagation and cache checks are described below; R1 image selection remains T0-04. For a clean gate use a new worktree; do not reuse another branch's compiled kernel/initramfs. Download archives may be reused only because the scripts recheck their digests. A corrupt cache fails explicitly; remove/replace that file before retrying.
+To build all images, `make build IMAGE_TAG=t0-02` uses the pinned Dockerfile and locked Cargo resolution. Kernel input propagation, cache checks and the R1 image allowlist are described below. For a clean gate use a new worktree; do not reuse another branch's compiled kernel/initramfs. Download archives may be reused only because the scripts recheck their digests. A corrupt cache fails explicitly; remove/replace that file before retrying.
 
 Python on the host:
 
@@ -126,3 +126,33 @@ Run `PYTHONDONTWRITEBYTECODE=1 python3 tests/build/test_kernel.py` for the isola
 build regressions and `bash tests/build/download_test.sh` for download validation.
 These fixture tests use the production builder but do not replace a real Linux
 compile/config-switch/boot test; see the T0-03 evidence report.
+
+## R1 image payload (T0-04)
+
+`base/r1-apps.txt` is the explicit required app allowlist. `make apps` builds
+only those apps, and rootfs assembly installs only those apps even when optional
+WASM artifacts remain from earlier development. The initial payload is `shell`.
+Desktop, dock, clock and GUI/demo apps are excluded. `make test-gui-protocol`
+explicitly builds its optional desktop/dock fixtures without adding them to R1.
+
+`make rootfs` builds the supervisor and selected apps before assembly; direct
+`bash base/modules/rootfs.sh` requires those artifacts already built. Every
+assembly checks the supervisor is nonempty/executable and each selected WASM
+binary and manifest is nonempty. Missing artifacts cause an actionable failure
+before downloads/output replacement. Invalid, duplicate or empty allowlists
+also fail. Existing initramfs files cannot bypass preflight. Packing failure
+preserves the previous image but returns failure; do not treat that old image as
+acceptance for the failed invocation.
+
+Boot configuration is generated from the same allowlist with `restart="never"`,
+and the list is embedded at `/etc/vyoma/r1-apps.txt`. The old desktop boot template
+is retained as historical development input, but is not copied into R1. This
+change establishes payload selection only: the current shell still emits the
+legacy drawing protocol, the supervisor still initializes display services,
+and usable local/serial terminal sessions remain T1 work. Excluding clock also
+does not resolve its thread/restart defect or the general T2-07 restart policy.
+
+Run `PYTHONDONTWRITEBYTECODE=1 python3 tests/build/test_rootfs.py` for isolated
+assembly regressions. They use local fixture binaries and real tar/cpio/gzip;
+real production builds and missing-artifact checks are recorded in the T0-04
+validation report.

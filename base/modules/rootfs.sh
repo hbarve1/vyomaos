@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # VyomaOS Root Filesystem Module
-# Builds out/initramfs.cpio.gz using a musl-static BusyBox binary.
+# Builds the explicit R1 payload; every selected artifact is mandatory.
 
 set -euo pipefail
 
@@ -23,7 +23,30 @@ download_verified() {
 }
 
 build_rootfs() {
-    log_info "Building rootfs..."
+    log_info "Building R1 rootfs..."
+    local supervisor_bin="$PROJECT_ROOT/target/x86_64-unknown-linux-musl/release/supervisor"
+    local selected_apps
+    selected_apps="$(bash "$PROJECT_ROOT/base/image-apps.sh")"
+    local apps=()
+    mapfile -t apps <<< "$selected_apps"
+    local app_name required
+    # Fail before downloads or replacing an existing rootfs/image.
+    for required in "$supervisor_bin"; do
+        [[ -s "$required" && -x "$required" ]] || {
+            log_error "Required R1 supervisor missing, empty or not executable: $required (run make supervisor)"
+            return 1
+        }
+    done
+    for app_name in "${apps[@]}"; do
+        for required in \
+            "$PROJECT_ROOT/apps/$app_name/vyoma.toml" \
+            "$PROJECT_ROOT/apps/$app_name/target/wasm32-wasip2/release/$app_name.wasm"; do
+            [[ -s "$required" ]] || {
+                log_error "Required R1 app artifact missing or empty: $required (run make apps)"
+                return 1
+            }
+        done
+    done
 
     # ── Directory skeleton ────────────────────────────────────────────────────
     rm -rf "$ROOTFS"
@@ -72,19 +95,13 @@ build_rootfs() {
 
     # ── /init (PID 1 bootstrap) ───────────────────────────────────────────────
     # Mounts virtual filesystems then execs the Rust supervisor.
-    # Falls back to a shell if the supervisor isn't built yet.
     cat > "$ROOTFS/init" << 'INIT_EOF'
 #!/bin/sh
 set -e
 /bin/mount -t proc  none /proc
 /bin/mount -t sysfs none /sys
 echo "VyomaOS booting..."
-if [ -x /usr/bin/supervisor ]; then
-    exec /usr/bin/supervisor
-else
-    echo "WARNING: supervisor not found, dropping to shell"
-    exec /bin/sh
-fi
+exec /usr/bin/supervisor
 INIT_EOF
     chmod 0755 "$ROOTFS/init"
 
@@ -93,29 +110,22 @@ INIT_EOF
     printf 'root:x:0:\n'                     > "$ROOTFS/etc/group"
 
     # ── Boot configuration ────────────────────────────────────────────────────
-    cp "$PROJECT_ROOT/base/modules/scripts/boot.toml" "$ROOTFS/etc/vyoma/boot.toml"
-    log_info "Installed boot.toml"
+    # Boot entries and installed payload derive from the same allowlist.
+    printf '# Generated from base/r1-apps.txt; T1 console integration pending.\n' > "$ROOTFS/etc/vyoma/boot.toml"
+    for app_name in "${apps[@]}"; do
+        printf '\n[[apps]]\nmanifest = "/apps/%s/vyoma.toml"\nrestart = "never"\n' "$app_name" >> "$ROOTFS/etc/vyoma/boot.toml"
+    done
+    cp "$PROJECT_ROOT/base/r1-apps.txt" "$ROOTFS/etc/vyoma/r1-apps.txt"
 
     # ── Rust supervisor binary ────────────────────────────────────────────────
-    local supervisor_bin="$PROJECT_ROOT/target/x86_64-unknown-linux-musl/release/supervisor"
-    if [[ -f "$supervisor_bin" ]]; then
-        cp -f "$supervisor_bin" "$ROOTFS/usr/bin/supervisor"
-        chmod 0755 "$ROOTFS/usr/bin/supervisor"
-        log_info "Installed supervisor ($(du -h "$supervisor_bin" | cut -f1))"
-    else
-        log_info "WARNING: supervisor binary not found, /init will fall back to shell"
-    fi
+    cp "$supervisor_bin" "$ROOTFS/usr/bin/supervisor"
+    chmod 0755 "$ROOTFS/usr/bin/supervisor"
 
-    # ── WASM apps ─────────────────────────────────────────────────────────────
-    # Each app gets its own subdirectory: /apps/<name>/<name>.wasm + vyoma.toml
-    # This layout matches the manifest paths declared in boot.toml.
-    for app_src_dir in "$PROJECT_ROOT/apps"/*/; do
-        local app_name
-        app_name="$(basename "$app_src_dir")"
-        local wasm_file="$app_src_dir/target/wasm32-wasip2/release/${app_name}.wasm"
+    # ── Selected WASM apps ────────────────────────────────────────────────────
+    for app_name in "${apps[@]}"; do
+        local app_src_dir="$PROJECT_ROOT/apps/$app_name"
+        local wasm_file="$app_src_dir/target/wasm32-wasip2/release/$app_name.wasm"
         local manifest_file="$app_src_dir/vyoma.toml"
-
-        [[ -f "$wasm_file" && -f "$manifest_file" ]] || continue
 
         mkdir -p "$ROOTFS/apps/${app_name}"
         cp "$wasm_file"     "$ROOTFS/apps/${app_name}/${app_name}.wasm"
@@ -129,14 +139,17 @@ INIT_EOF
 
     # ── Font files for scalable rendering ────────────────────────────────────
     mkdir -p "$ROOTFS/fonts"
-    cp -r base/fonts/*.ttf "$ROOTFS/fonts/" 2>/dev/null || true
+    cp -r "$PROJECT_ROOT"/base/fonts/*.ttf "$ROOTFS/fonts/" 2>/dev/null || true
 
     # ── Pack initramfs ────────────────────────────────────────────────────────
     log_info "Packing initramfs -> $INITRAMFS_FILE"
+    local packed
+    packed="$(mktemp "$OUTDIR/initramfs.cpio.gz.tmp.XXXXXX")"
     (
         cd "$ROOTFS"
         find . | cpio --quiet -H newc -o
-    ) | gzip -9 > "$INITRAMFS_FILE"
+    ) | gzip -9 > "$packed" || { rm -f "$packed"; return 1; }
+    mv "$packed" "$INITRAMFS_FILE"
 
     log_success "Rootfs built: $INITRAMFS_FILE ($(du -sh "$INITRAMFS_FILE" | cut -f1))"
 }

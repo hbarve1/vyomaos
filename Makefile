@@ -33,7 +33,11 @@ SUPERVISOR_SRC   := $(shell find supervisor/src -name '*.rs' 2>/dev/null)
 SUPERVISOR_BIN   := supervisor/target/x86_64-unknown-linux-musl/release/supervisor
 SUPERVISOR_STAMP := $(OUT)/.supervisor.stamp
 
-APP_NAMES        := $(sort $(notdir $(patsubst %/Cargo.toml,%,$(wildcard apps/*/Cargo.toml))))
+ALL_APP_NAMES    := $(sort $(notdir $(patsubst %/Cargo.toml,%,$(wildcard apps/*/Cargo.toml))))
+APP_NAMES        := $(shell bash base/image-apps.sh)
+ifneq ($(.SHELLSTATUS),0)
+  $(error Invalid R1 image allowlist; see diagnostic above)
+endif
 APPS_STAMP       := $(OUT)/.apps.stamp
 
 RUSTFLAGS        := -D warnings
@@ -105,20 +109,21 @@ $(OUT)/.apps/$(1).stamp: $$(wildcard apps/$(1)/src/*.rs) apps/$(1)/Cargo.toml ap
 	@touch $$@
 endef
 
-$(foreach app,$(APP_NAMES),$(eval $(call APP_RULE,$(app))))
+$(foreach app,$(ALL_APP_NAMES),$(eval $(call APP_RULE,$(app))))
 
 # Meta-stamp: touches when all per-app stamps are current (used by rootfs dep).
-$(APPS_STAMP): $(foreach app,$(APP_NAMES),$(OUT)/.apps/$(app).stamp)
+$(APPS_STAMP): base/r1-apps.txt base/image-apps.sh $(foreach app,$(APP_NAMES),$(OUT)/.apps/$(app).stamp)
 	@touch $@
 
 apps: check-manifests $(APPS_STAMP)
 
 # ── rootfs ────────────────────────────────────────────────────────────────────
-rootfs: $(INITRAMFS)
-
-$(INITRAMFS): $(ROOTFS_SCRIPT) $(SUPERVISOR_STAMP) $(APPS_STAMP) | image
-	@mkdir -p $(OUT)
+# Always preflight selected artifacts, even if an older image exists.
+rootfs: supervisor apps | image
 	$(DOCKER_RUN) bash $(ROOTFS_SCRIPT)
+
+$(INITRAMFS): rootfs
+	@test -s $(INITRAMFS) || { echo "ERROR: rootfs did not produce $(INITRAMFS)"; exit 1; }
 
 # ── data disk (ext4, 64 MB) ───────────────────────────────────────────────────
 # Created inside the builder so mkfs.ext4 is available.
@@ -304,8 +309,8 @@ test-unit-apps: | image
 	  cargo test --locked --manifest-path apps/dock/Cargo.toml
 
 # ── test-gui-protocol: WASM app protocol output tests ────────────────────────
-# Requires 'make apps' first to build WASM binaries.
-test-gui-protocol: apps | image
+# Build optional protocol fixtures explicitly; they are excluded from the R1 image.
+test-gui-protocol: $(OUT)/.apps/desktop.stamp $(OUT)/.apps/dock.stamp | image
 	$(DOCKER_RUN) bash scripts/test-gui-protocol.sh
 
 # ── test-e2e-gui: QEMU screendump visual test (requires make build) ───────────
