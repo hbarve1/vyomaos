@@ -4,6 +4,8 @@
 
 Read [TODOS.md](TODOS.md) before selecting implementation work. R1 is a terminal-first desktop OS; that checklist controls release scope, task dependencies, acceptance evidence, and handoff state. The graphical desktop and broader device roadmap remain later work. See [docs/codex-work-loop.md](docs/codex-work-loop.md) for the proposed sustained-work process; documenting it does not activate a scheduler or grant merge/release authority.
 
+The maintainer authorized stacked implementation PRs on 2026-09-29. Independent PRs target `develop`; dependent PRs may target the tested parent branch, with parent PR/base SHA/head SHA and local evidence recorded. Keep at most three open PRs per stack, integrate parent-first, and restack/retest children after parent merges. See the work-loop document for exact rebase and local worker controls. The continuous runner is prepared but not enabled; never infer activation from these files.
+
 ## Local validation while Actions is blocked
 
 GitHub Actions is blocked by billing (maintainer instruction, 2026-09-29). Run all build/test validation locally, using Docker for the production musl target and host QEMU/Python for VM tests. Do not dispatch or rerun Actions as a substitute. Include commands, toolchain, results and known failures in each PR; never count a skipped test as passing. Preserve logs under `out/validation/` and commit a concise evidence report. See [the T0-01 baseline](docs/validation/2026-09-29-t0-01.md) for commands and current harness failures.
@@ -17,6 +19,8 @@ VyomaOS is a WASM-first OS. The core development loop involves two Rust targets:
 - **WASM apps** (`apps/*/`): `wasm32-wasip2` — individual applications
 
 The hermetic build system uses Docker (`make build`), but local `cargo check` / `cargo test` works for fast iteration.
+
+Use [docs/local-build.md](docs/local-build.md) for the pinned builder, Python setup and full local validation. Honor `rust-toolchain.toml`, run Cargo with `--locked`, and commit standalone app/tool lockfiles. Dependency changes must be deliberate; normal builds must not update resolution.
 
 ### Quick reference
 

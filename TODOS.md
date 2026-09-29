@@ -23,17 +23,19 @@ Keep Linux for hardware, memory and scheduling, Rust for trusted services, and W
 | Task | State | Branch / PR | Evidence / blocker | Next action |
 |---|---|---|---|---|
 | R1 planning | Merged into `develop` | [PR #215](https://github.com/hbarve1/vyomaos/pull/215), `548bc134` | [Source review](docs/reviews/2026-09-29-complete-os-review.md) | Plan is the active R1 backlog |
-| T0-01 | Implementation verified locally; awaiting merge | [PR #216](https://github.com/hbarve1/vyomaos/pull/216), `fix/t0-build-baseline` | [Build/test evidence](docs/validation/2026-09-29-t0-01.md); musl/CLI build gate passes, full Python suite remains red | Review/merge; then check this item and start `T0-02` |
+| T0-01 | Merged into `develop` | [PR #216](https://github.com/hbarve1/vyomaos/pull/216), `e447db5c` | [Build/test evidence](docs/validation/2026-09-29-t0-01.md); compilation gate accepted | Complete; broader T0 failures remain tracked below |
+| T0-02 | Implementation verified locally; awaiting merge | [PR #217](https://github.com/hbarve1/vyomaos/pull/217), `build/t0-pinned-inputs` | [Clean-builder evidence](docs/validation/2026-09-29-t0-02.md); 1,154 Rust tests pass, existing Python failures remain | Review/merge; continue with T0-03, stacking on this tested tip if needed |
+| Continuous local worker | Prepared and locally tested; not enabled | [PR #218](https://github.com/hbarve1/vyomaos/pull/218), `ops/continuous-worker`, stacked on PR #217 at `baab51b5` | [Operating plan](docs/codex-work-loop.md); [wrapper evidence](docs/validation/2026-09-29-continuous-worker.md); explicit run limits and real pilot still pending | Review the child PR after its parent; configure limits/pilot before activation |
 | T0-05 / T0-06 | Existing harness failures confirmed; pending | Not started | Same evidence report: assertion API mismatch, shared serial-log deletion, black window capture | Repair API/state/readiness checks; retain failures until verified |
 | T0-04 / T0-GATE | Guest health blocker confirmed; pending | Not started | `clock.wasm` panics on thread creation and repeatedly restarts; weak smoke checks still pass | Define R1 app set and assert sustained guest health; see T2-07 for restart limits |
 
-Continuous implementation and scheduled jobs have **not** been configured by this documentation change. See the [proposed Codex work loop](docs/codex-work-loop.md).
+The local continuous-worker implementation and systemd templates are prepared but **not enabled**. See the [operating plan](docs/codex-work-loop.md) for controls, stacked PRs and activation steps. No background model job is running from these files.
 
 ## T0 — Make build and verification reliable
 
 Dependencies: none. Start here. Reuse the review baseline at local commit `418359d3`; recheck it against current `develop` when implementation begins.
 
-- [ ] **T0-01** Fix the host CLI's missing Clap `env` feature and the supervisor warning; move release profiles to the workspace root. **Accept:** CLI and production-target supervisor compile under the documented warning gate.
+- [x] **T0-01** Fix the host CLI's missing Clap `env` feature and the supervisor warning; move release profiles to the workspace root. **Accept:** CLI and production-target supervisor compile under the documented warning gate. **Evidence:** [PR #216](https://github.com/hbarve1/vyomaos/pull/216), merged as `e447db5c`; [local results](docs/validation/2026-09-29-t0-01.md).
 - [ ] **T0-02** Pin the supported Rust/kernel/runtime/container inputs and lock dependency resolution; document Docker, musl and Python test setup. **Accept:** a clean builder runs the same declared toolchain without relying on host caches or floating Rust `stable`.
 - [ ] **T0-03** Repair kernel rebuild/config propagation and stale-artifact reuse; make unsupported target names fail explicitly. **Accept:** changing the selected kernel input rebuilds the correct artifact.
 - [ ] **T0-04** Define an R1 image/app allowlist; make rootfs assembly fail on missing selected binaries/manifests. **Accept:** deleting a required artifact causes an actionable build failure; optional GUI/demo apps are excluded from the R1 image.
