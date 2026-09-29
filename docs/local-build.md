@@ -63,7 +63,7 @@ vyoma_builder cargo run --locked --manifest-path tools/check-manifests/Cargo.tom
 bash tests/build/download_test.sh
 ```
 
-To build all images, `make build IMAGE_TAG=t0-02` uses the pinned Dockerfile and locked Cargo resolution. T0-03/T0-04 still need to repair kernel input propagation, stale artifact handling and image selection. For a clean gate use a new worktree; do not reuse another branch's compiled kernel/initramfs. Download archives may be reused only because the scripts recheck their digests. A corrupt cache fails explicitly; remove/replace that file before retrying.
+To build all images, `make build IMAGE_TAG=t0-02` uses the pinned Dockerfile and locked Cargo resolution. Kernel input propagation and cache checks are described below; R1 image selection remains T0-04. For a clean gate use a new worktree; do not reuse another branch's compiled kernel/initramfs. Download archives may be reused only because the scripts recheck their digests. A corrupt cache fails explicitly; remove/replace that file before retrying.
 
 Python on the host:
 
@@ -94,3 +94,35 @@ The [T0-01 report](validation/2026-09-29-t0-01.md) records known Python API/shar
 3. Run Cargo's lockfile update explicitly only for intended dependency changes. Commit standalone lockfiles; a normal build must not rewrite them.
 4. Resolve Python requirements on supported Python versions, collect artifact SHA-256 values from PyPI release metadata, and reinstall into an empty venv with `--require-hashes`. Do not replace pins with minimum versions.
 5. Build a new image with `--no-cache`, run the local suites, record image ID/package inventory/commit/artifact hashes, then open a focused PR. Never substitute a cached successful binary for a failing rebuild.
+
+## Kernel selection and rebuilds (T0-03)
+
+`make kernel` and `make kernel PLATFORM=desktop-x86` use `base/kernel.config`.
+Other platform names fail explicitly: the ARM/MCU profile directories are roadmap
+placeholders, not supported cross-compilation targets. The desktop placeholder
+config/rootfs files are not used. Override the fragment with
+`make kernel KERNEL_CONFIG=path/to/fragment.config`; relative paths resolve from
+the repository root. The direct `base/modules/kernel.sh` entry point accepts the
+same environment variables. `KERNEL_JOBS` bounds direct-script compile parallelism.
+
+Every invocation checks config path/content, pinned source version/digest,
+lexically ordered `base/patches/kernel/*.patch` paths/content, build scripts and
+GCC/binutils/Make identities. It also verifies the published image and effective
+config digests. Unchanged input/output content reuses the image; switching configs,
+editing a file with an old timestamp, or deleting/corrupting output cannot reuse a
+stale image. Patches apply with `patch -p1 --batch` to a source tree keyed by source,
+patch and toolchain identity; removing a patch returns to an unpatched tree.
+
+The builder serializes concurrent invocations with `flock`, regenerates config
+with `allnoconfig`, and publishes `out/bzImage`, `out/kernel.config`,
+`out/kernel.inputs` and `out/.kernel.stamp` only after successful compilation.
+A failed rebuild removes the acceptance stamp; any previous image is retained for
+diagnosis and must not be treated as a successful current build. Source/download
+caches live only under `out/`; a corrupt download still fails digest verification.
+No bit-for-bit reproducibility claim is made. Inspect the effective config to
+check Linux's dependency resolution for a custom fragment.
+
+Run `PYTHONDONTWRITEBYTECODE=1 python3 tests/build/test_kernel.py` for the isolated
+build regressions and `bash tests/build/download_test.sh` for download validation.
+These fixture tests use the production builder but do not replace a real Linux
+compile/config-switch/boot test; see the T0-03 evidence report.
