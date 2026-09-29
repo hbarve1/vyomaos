@@ -9,7 +9,7 @@ mod compositor;
 use std::sync::Mutex;
 use crate::lock_or_recover;
 
-use crate::{log_info, log_warn, AppRegistry, FocusedApp};
+use crate::{log_info, log_warn, AppRegistry};
 use crate::chrome::{TITLEBAR_H, Z_DOCK};
 use crate::APP_DIRTY;
 use crate::flush_counts;
@@ -28,7 +28,6 @@ pub fn handle_draw_command(
     cmd: &str,
     sender: &str,
     win: Option<(u32, u32, u32, u32)>,
-    focused: &FocusedApp,
     app_registry: &AppRegistry,
 ) {
     // Skip draw commands for minimized windows (content area is hidden).

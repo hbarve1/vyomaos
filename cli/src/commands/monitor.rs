@@ -18,7 +18,7 @@ use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyModifiers},
     execute,
-    style::{Color, Print, ResetColor, SetForegroundColor},
+    style::{Color, ResetColor, SetForegroundColor},
     terminal::{self, ClearType},
 };
 
@@ -35,7 +35,6 @@ struct AppHandle {
     uptime_s:   u64,
     mem_kb:     u64,
     last_error: String,
-    seen_at:    Instant,
 }
 
 // ── redraw ────────────────────────────────────────────────────────────────────
@@ -148,7 +147,6 @@ pub fn run(conn: &mut VyomaConnection, host: &str, port: u16) -> anyhow::Result<
                         uptime_s,
                         mem_kb,
                         last_error,
-                        seen_at: Instant::now(),
                     });
                 }
                 Ok(MgmtResponse::Error { code, message }) => {

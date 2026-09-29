@@ -26,10 +26,3 @@ webpki-roots = "0.26"
 [dev-dependencies]
 tempfile   = "3"
 serde_json = "1"
-
-[profile.release]
-opt-level     = "z"      # optimise for binary size
-lto           = true     # link-time optimisation
-codegen-units = 1        # single CGU improves LTO effectiveness
-strip         = true     # strip debug symbols
-panic         = "abort"  # no unwinding (~50 KB saving in musl builds)

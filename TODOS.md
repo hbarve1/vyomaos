@@ -14,6 +14,7 @@ Keep Linux for hardware, memory and scheduling, Rust for trusted services, and W
 - Mark an implementation item complete only when its acceptance evidence is recorded and the change is merged into `develop`. A PR may say “implementation verified; awaiting merge” while its box stays unchecked.
 - Evidence must identify the task, commit, commands, target/configuration, result and artifact/log location. A proposed design, mock reply or screenshot alone does not prove completion.
 - Run tests through production code and actual WASM/VM paths where the contract crosses those boundaries. Mandatory release tests must fail when artifacts are missing, not silently skip.
+- GitHub Actions is billing-blocked: run all validation locally until the maintainer changes this instruction. Record local commands/results in PRs; remote CI success is not available evidence.
 - Follow repository worktree/PR conventions. Keep security, persistence and recovery requirements when reducing interface scope.
 - `T0`–`T7` are the R1 execution order. Existing `M*`, `P*` and `OS-*` numbers remain historical/long-term references, not competing R1 queues.
 
@@ -21,7 +22,10 @@ Keep Linux for hardware, memory and scheduling, Rust for trusted services, and W
 
 | Task | State | Branch / PR | Evidence / blocker | Next action |
 |---|---|---|---|---|
-| R1 planning | Checklist prepared; awaiting merge | `docs/complete-os-roadmap` | [Source review](docs/reviews/2026-09-29-complete-os-review.md) | Start `T0-01` after the plan is integrated |
+| R1 planning | Merged into `develop` | [PR #215](https://github.com/hbarve1/vyomaos/pull/215), `548bc134` | [Source review](docs/reviews/2026-09-29-complete-os-review.md) | Plan is the active R1 backlog |
+| T0-01 | Implementation verified locally; awaiting merge | [PR #216](https://github.com/hbarve1/vyomaos/pull/216), `fix/t0-build-baseline` | [Build/test evidence](docs/validation/2026-09-29-t0-01.md); musl/CLI build gate passes, full Python suite remains red | Review/merge; then check this item and start `T0-02` |
+| T0-05 / T0-06 | Existing harness failures confirmed; pending | Not started | Same evidence report: assertion API mismatch, shared serial-log deletion, black window capture | Repair API/state/readiness checks; retain failures until verified |
+| T0-04 / T0-GATE | Guest health blocker confirmed; pending | Not started | `clock.wasm` panics on thread creation and repeatedly restarts; weak smoke checks still pass | Define R1 app set and assert sustained guest health; see T2-07 for restart limits |
 
 Continuous implementation and scheduled jobs have **not** been configured by this documentation change. See the [proposed Codex work loop](docs/codex-work-loop.md).
 
