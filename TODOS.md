@@ -24,7 +24,7 @@ Keep Linux for hardware, memory and scheduling, Rust for trusted services, and W
 |---|---|---|---|---|
 | R1 planning | Merged into `develop` | [PR #215](https://github.com/hbarve1/vyomaos/pull/215), `548bc134` | [Source review](docs/reviews/2026-09-29-complete-os-review.md) | Plan is the active R1 backlog |
 | T0-01 | Merged into `develop` | [PR #216](https://github.com/hbarve1/vyomaos/pull/216), `e447db5c` | [Build/test evidence](docs/validation/2026-09-29-t0-01.md); compilation gate accepted | Complete; broader T0 failures remain tracked below |
-| T0-02 | Implementation in progress; local validation running | `build/t0-pinned-inputs` | [Pinned build instructions](docs/local-build.md) | Verify a clean builder and all local suites, then open PR |
+| T0-02 | Implementation verified locally; awaiting merge | `build/t0-pinned-inputs` | [Clean-builder evidence](docs/validation/2026-09-29-t0-02.md); 1,154 Rust tests pass, existing Python failures remain | Review/merge; continue with T0-03, stacking on this tested tip if needed |
 | T0-05 / T0-06 | Existing harness failures confirmed; pending | Not started | Same evidence report: assertion API mismatch, shared serial-log deletion, black window capture | Repair API/state/readiness checks; retain failures until verified |
 | T0-04 / T0-GATE | Guest health blocker confirmed; pending | Not started | `clock.wasm` panics on thread creation and repeatedly restarts; weak smoke checks still pass | Define R1 app set and assert sustained guest health; see T2-07 for restart limits |
 
