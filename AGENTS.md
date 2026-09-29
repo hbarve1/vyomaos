@@ -4,6 +4,10 @@
 
 Read [TODOS.md](TODOS.md) before selecting implementation work. R1 is a terminal-first desktop OS; that checklist controls release scope, task dependencies, acceptance evidence, and handoff state. The graphical desktop and broader device roadmap remain later work. See [docs/codex-work-loop.md](docs/codex-work-loop.md) for the proposed sustained-work process; documenting it does not activate a scheduler or grant merge/release authority.
 
+## Local validation while Actions is blocked
+
+GitHub Actions is blocked by billing (maintainer instruction, 2026-09-29). Run all build/test validation locally, using Docker for the production musl target and host QEMU/Python for VM tests. Do not dispatch or rerun Actions as a substitute. Include commands, toolchain, results and known failures in each PR; never count a skipped test as passing. Preserve logs under `out/validation/` and commit a concise evidence report. See [the T0-01 baseline](docs/validation/2026-09-29-t0-01.md) for commands and current harness failures.
+
 ## Cursor Cloud specific instructions
 
 ### Overview
@@ -29,8 +33,9 @@ See `CLAUDE.md` and the root `Makefile` for the full command reference.
 
 ### Gotchas
 
-- **Workspace target directory**: The root `Cargo.toml` defines a workspace with `supervisor` and `cli`. When building via `cargo build --manifest-path supervisor/Cargo.toml`, the output goes to `/workspace/target/x86_64-unknown-linux-musl/release/supervisor` (workspace root), **not** `supervisor/target/`. However, `base/modules/rootfs.sh` expects the binary at `supervisor/target/x86_64-unknown-linux-musl/release/supervisor`. After building the supervisor (either locally or via Docker `make supervisor`), you may need to copy the binary: `cp target/x86_64-unknown-linux-musl/release/supervisor supervisor/target/x86_64-unknown-linux-musl/release/supervisor`.
-- **Docker daemon**: Docker must be started manually (`sudo dockerd &`) since the VM doesn't use systemd. After starting, run `sudo chmod 666 /var/run/docker.sock` to allow non-root Docker usage.
-- **QEMU without KVM**: The cloud VM runs inside Firecracker, so KVM is unavailable. QEMU runs in TCG (software emulation) mode, making the smoke test ~2 minutes instead of seconds. Use a 120s+ timeout for smoke tests.
-- **`tools/check-manifests`**: Has a duplicate `[workspace]` key in its `Cargo.toml` (lines 1 and 18) which newer Rust versions reject. To build apps without triggering this, build them directly rather than through `make apps` (which depends on `check-manifests`).
-- **`cli/` (vyoma CLI)**: Has pre-existing build errors with current Rust stable. Not part of the core OS development loop.
+- **Workspace target directory**: Supervisor and CLI outputs are under root `target/`; `base/modules/rootfs.sh` already uses that path. Release profiles belong in root `Cargo.toml`.
+- **musl linking**: Use Rust's default linker with its bundled musl CRT. Forcing `musl-gcc` as Cargo's linker in the current builder produced binaries with a dynamic interpreter that crashed at startup. The compiler remains available for native C dependencies.
+- **Disposable test state**: Some Rust tests write absolute `/data` and `/apps` paths. Run them in a non-root container with writable tmpfs mounts for those paths, not against host data. Run serially because tests share global state.
+- **Docker and KVM**: Check the current host rather than assuming daemon/KVM availability. The T0-01 run used an existing Docker daemon; Python VM tests used KVM, while shell smoke/GUI scripts used TCG.
+- **WASM protocol tests**: Set `XDG_CACHE_HOME` to a writable temporary directory in a non-root builder, and provide the verified Wasmtime binary through `WASMTIME`.
+- **Python harness**: The full suite has API mismatches and shared `/tmp` paths; its harness unit tests can unlink a running VM's serial log. Record full-suite failures and run VM-only tests separately for diagnosis until T0-05/T0-06 repairs this.
