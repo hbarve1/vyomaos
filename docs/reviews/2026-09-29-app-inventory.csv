@@ -1,0 +1,209 @@
+app,manifest,rust_source_files,rust_source_lines,enabled_boolean_capabilities,default_autostart,proposed_audit_priority,source_search_hints,functional_validation
+2048,apps/2048/vyoma.toml,1,270,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+activity-monitor,apps/activity-monitor/vyoma.toml,1,216,display shell stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+alarm,apps/alarm/vyoma.toml,1,421,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+anagram,apps/anagram/vyoma.toml,1,453,display shell stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+app-launcher,apps/app-launcher/vyoma.toml,1,243,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+app-store,apps/app-store/vyoma.toml,1,344,display filesystem network shell stdio,false,core candidate; consolidate variants,prototype_word_present; fixed_dimension_constant_present,not runtime-tested in this review
+app-switcher,apps/app-switcher/vyoma.toml,1,148,display shell stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+archiver,apps/archiver/vyoma.toml,1,416,display filesystem stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+ascii-art,apps/ascii-art/vyoma.toml,1,291,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+ascii-table,apps/ascii-table/vyoma.toml,1,299,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+asteroids,apps/asteroids/vyoma.toml,1,383,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+astronomy,apps/astronomy/vyoma.toml,1,414,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+audio-player,apps/audio-player/vyoma.toml,1,188,display filesystem shell stdio,false,core candidate; consolidate variants,prototype_word_present; fixed_dimension_constant_present,not runtime-tested in this review
+base-conv,apps/base-conv/vyoma.toml,1,216,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+bezier,apps/bezier/vyoma.toml,1,194,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+bin-tree,apps/bin-tree/vyoma.toml,1,243,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+binary-clock,apps/binary-clock/vyoma.toml,1,156,display shell stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+breakout,apps/breakout/vyoma.toml,1,277,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+browser,apps/browser/vyoma.toml,1,245,display network shell stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+budget,apps/budget/vyoma.toml,1,297,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+budget2,apps/budget2/vyoma.toml,1,350,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+calculator,apps/calculator/vyoma.toml,1,22,stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+calendar,apps/calendar/vyoma.toml,1,181,display filesystem stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+cellular,apps/cellular/vyoma.toml,1,144,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+chat,apps/chat/vyoma.toml,1,272,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+chess,apps/chess/vyoma.toml,1,324,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+chess-puzzles,apps/chess-puzzles/vyoma.toml,1,294,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+circuit,apps/circuit/vyoma.toml,1,412,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+clipboard-history,apps/clipboard-history/vyoma.toml,1,169,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+clipboard-pro,apps/clipboard-pro/vyoma.toml,1,377,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+clock,apps/clock/vyoma.toml,1,127,display stdio,true,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+clock-tower,apps/clock-tower/vyoma.toml,1,194,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+code-diff,apps/code-diff/vyoma.toml,1,444,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+code-editor,apps/code-editor/vyoma.toml,1,385,display filesystem shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+code-runner,apps/code-runner/vyoma.toml,1,343,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+color-gen,apps/color-gen/vyoma.toml,1,233,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+color-picker,apps/color-picker/vyoma.toml,1,204,display mouse shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+color-picker2,apps/color-picker2/vyoma.toml,1,280,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+color-wheel,apps/color-wheel/vyoma.toml,1,238,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+context-menu,apps/context-menu/vyoma.toml,1,163,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+countdown,apps/countdown/vyoma.toml,1,270,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+crossword,apps/crossword/vyoma.toml,1,308,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+crypto-ticker,apps/crypto-ticker/vyoma.toml,1,281,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+csv-viewer,apps/csv-viewer/vyoma.toml,1,220,display filesystem stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+cube3d,apps/cube3d/vyoma.toml,1,181,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+desktop,apps/desktop/vyoma.toml,1,322,display filesystem mouse shell stdio,true,core candidate; consolidate variants,,not runtime-tested in this review
+dice,apps/dice/vyoma.toml,1,206,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+diff-viewer,apps/diff-viewer/vyoma.toml,1,294,display filesystem stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+dns-resolver,apps/dns-resolver/vyoma.toml,1,135,display network shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+dock,apps/dock/vyoma.toml,1,289,display mouse shell stdio,true,core candidate; consolidate variants,,not runtime-tested in this review
+download-manager,apps/download-manager/vyoma.toml,1,481,display filesystem network shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+draw-pad,apps/draw-pad/vyoma.toml,1,182,display shell stdio,false,optional portfolio; audit on demand,prototype_word_present; fixed_dimension_constant_present,not runtime-tested in this review
+draw2,apps/draw2/vyoma.toml,1,399,display filesystem stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+ebook,apps/ebook/vyoma.toml,1,324,display stdio,false,optional portfolio; audit on demand,prototype_word_present; fixed_dimension_constant_present,not runtime-tested in this review
+emoji-art,apps/emoji-art/vyoma.toml,1,354,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+emoji-picker,apps/emoji-picker/vyoma.toml,1,227,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+expense-split,apps/expense-split/vyoma.toml,1,348,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+factorial,apps/factorial/vyoma.toml,1,43,stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+fib-viz,apps/fib-viz/vyoma.toml,1,323,display shell stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+fifteen-puzzle,apps/fifteen-puzzle/vyoma.toml,1,206,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+file-diff,apps/file-diff/vyoma.toml,1,262,display filesystem shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+file-manager,apps/file-manager/vyoma.toml,1,490,display filesystem shell stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+finder,apps/finder/vyoma.toml,1,319,display filesystem shell stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+fireworks,apps/fireworks/vyoma.toml,1,174,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+flashcard,apps/flashcard/vyoma.toml,1,213,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+fluid,apps/fluid/vyoma.toml,1,224,display stdio,false,optional portfolio; audit on demand,prototype_word_present,not runtime-tested in this review
+font-chooser,apps/font-chooser/vyoma.toml,1,112,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+font-editor,apps/font-editor/vyoma.toml,1,319,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+font-preview,apps/font-preview/vyoma.toml,1,118,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+fourier,apps/fourier/vyoma.toml,1,240,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+fractal,apps/fractal/vyoma.toml,1,232,display mouse stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+genealogy,apps/genealogy/vyoma.toml,1,236,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+geo-puzzle,apps/geo-puzzle/vyoma.toml,1,252,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+geo-quiz,apps/geo-quiz/vyoma.toml,2,547,display mouse stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+gravity,apps/gravity/vyoma.toml,1,205,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+gui-demo,apps/gui-demo/vyoma.toml,1,309,display filesystem mouse stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+habit-streak,apps/habit-streak/vyoma.toml,1,309,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+habit-tracker,apps/habit-tracker/vyoma.toml,1,191,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+hangman,apps/hangman/vyoma.toml,1,287,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+hello-world,apps/hello-world/vyoma.toml,1,6,stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+hex-editor,apps/hex-editor/vyoma.toml,1,304,display filesystem shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+http-server,apps/http-server/vyoma.toml,1,147,filesystem network stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+image-gallery,apps/image-gallery/vyoma.toml,1,253,display filesystem shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+image-viewer,apps/image-viewer/vyoma.toml,2,554,display filesystem shell stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+irc,apps/irc/vyoma.toml,1,359,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+json-viewer,apps/json-viewer/vyoma.toml,1,278,display filesystem stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+kakuro,apps/kakuro/vyoma.toml,1,333,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+kanban,apps/kanban/vyoma.toml,1,316,display filesystem shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+kanban2,apps/kanban2/vyoma.toml,1,255,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+lang-flash,apps/lang-flash/vyoma.toml,1,355,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+life,apps/life/vyoma.toml,1,198,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+life-evo,apps/life-evo/vyoma.toml,1,171,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+lissajous,apps/lissajous/vyoma.toml,1,188,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+log-viewer,apps/log-viewer/vyoma.toml,1,264,display filesystem stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+logic-gates,apps/logic-gates/vyoma.toml,1,282,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+mandala,apps/mandala/vyoma.toml,1,267,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+map-viewer,apps/map-viewer/vyoma.toml,1,308,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+markdown-viewer,apps/markdown-viewer/vyoma.toml,1,331,display filesystem stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+markov-text,apps/markov-text/vyoma.toml,1,212,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+math-quiz,apps/math-quiz/vyoma.toml,1,268,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+maze,apps/maze/vyoma.toml,1,197,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+md-editor,apps/md-editor/vyoma.toml,1,426,display filesystem stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+memory-game,apps/memory-game/vyoma.toml,1,238,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+menu-bar,apps/menu-bar/vyoma.toml,1,151,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+mind-map,apps/mind-map/vyoma.toml,1,312,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+minesweeper,apps/minesweeper/vyoma.toml,1,291,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+mission-control,apps/mission-control/vyoma.toml,1,176,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+morse,apps/morse/vyoma.toml,1,264,display shell stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+morse-live,apps/morse-live/vyoma.toml,1,189,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+mouse-demo,apps/mouse-demo/vyoma.toml,1,50,display mouse stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+music-composer,apps/music-composer/vyoma.toml,1,281,display filesystem shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+music-player,apps/music-player/vyoma.toml,1,284,display filesystem shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+music-theory,apps/music-theory/vyoma.toml,3,535,display mouse stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+music-viz,apps/music-viz/vyoma.toml,1,151,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+net-graph,apps/net-graph/vyoma.toml,1,225,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+net-monitor,apps/net-monitor/vyoma.toml,1,307,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+network-config,apps/network-config/vyoma.toml,1,452,display filesystem network shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+notes,apps/notes/vyoma.toml,2,525,display filesystem mouse stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+notification-center,apps/notification-center/vyoma.toml,1,399,display filesystem shell stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+oscilloscope,apps/oscilloscope/vyoma.toml,1,192,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+paint,apps/paint/vyoma.toml,1,191,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+paint-pro,apps/paint-pro/vyoma.toml,1,296,display filesystem shell stdio,false,optional portfolio; audit on demand,prototype_word_present; fixed_dimension_constant_present,not runtime-tested in this review
+pass-gen,apps/pass-gen/vyoma.toml,1,253,display stdio,false,security review before inclusion,,not runtime-tested in this review
+password-manager,apps/password-manager/vyoma.toml,1,355,display filesystem stdio,false,security review before inclusion,fixed_dimension_constant_present; xor_cipher_present,not runtime-tested in this review
+periodic-table,apps/periodic-table/vyoma.toml,1,372,display stdio,false,optional portfolio; audit on demand,prototype_word_present,not runtime-tested in this review
+permissions,apps/permissions/vyoma.toml,1,484,display shell stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+photo-editor,apps/photo-editor/vyoma.toml,3,540,display filesystem stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+photo-filter,apps/photo-filter/vyoma.toml,1,293,display filesystem shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+piano,apps/piano/vyoma.toml,1,268,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+ping,apps/ping/vyoma.toml,1,34,stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+pixel-art,apps/pixel-art/vyoma.toml,1,217,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+pixel-clock,apps/pixel-clock/vyoma.toml,1,174,display shell stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+pixel-rain,apps/pixel-rain/vyoma.toml,1,153,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+pomodoro,apps/pomodoro/vyoma.toml,1,225,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+pomodoro-pro,apps/pomodoro-pro/vyoma.toml,1,388,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+pong,apps/pong/vyoma.toml,1,236,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+presentation,apps/presentation/vyoma.toml,1,251,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+prime-sieve,apps/prime-sieve/vyoma.toml,1,239,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+process-inspector,apps/process-inspector/vyoma.toml,1,226,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+qr-viewer,apps/qr-viewer/vyoma.toml,1,219,display shell stdio,false,optional portfolio; audit on demand,prototype_word_present; fixed_dimension_constant_present,not runtime-tested in this review
+quick-look,apps/quick-look/vyoma.toml,1,246,display filesystem shell stdio,false,optional portfolio; audit on demand,prototype_word_present; fixed_dimension_constant_present,not runtime-tested in this review
+quiz,apps/quiz/vyoma.toml,1,293,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+ray-march,apps/ray-march/vyoma.toml,1,200,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+recipe,apps/recipe/vyoma.toml,1,343,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+recipe-gen,apps/recipe-gen/vyoma.toml,1,254,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+recipe-planner,apps/recipe-planner/vyoma.toml,1,376,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+rgb-mixer,apps/rgb-mixer/vyoma.toml,1,198,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+roman,apps/roman/vyoma.toml,1,384,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+rss-reader,apps/rss-reader/vyoma.toml,1,314,display stdio,false,optional portfolio; audit on demand,prototype_word_present; fixed_dimension_constant_present,not runtime-tested in this review
+sand,apps/sand/vyoma.toml,1,275,display stdio,false,optional portfolio; audit on demand,prototype_word_present,not runtime-tested in this review
+sci-calculator,apps/sci-calculator/vyoma.toml,1,311,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+screen-lock,apps/screen-lock/vyoma.toml,1,323,display shell stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+settings,apps/settings/vyoma.toml,1,283,display filesystem mouse shell stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+shell,apps/shell/vyoma.toml,5,1042,display mouse shell stdio,false,core candidate; consolidate variants,,not runtime-tested in this review
+shortcut-overlay,apps/shortcut-overlay/vyoma.toml,1,209,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+simon,apps/simon/vyoma.toml,1,271,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+sine-gen,apps/sine-gen/vyoma.toml,1,159,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+snake,apps/snake/vyoma.toml,1,248,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+snippets,apps/snippets/vyoma.toml,3,743,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+sort-viz,apps/sort-viz/vyoma.toml,1,257,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+space-invaders,apps/space-invaders/vyoma.toml,1,307,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+spaces-switcher,apps/spaces-switcher/vyoma.toml,1,148,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+speed-test,apps/speed-test/vyoma.toml,1,399,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+spirograph,apps/spirograph/vyoma.toml,1,204,display shell stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+spotlight,apps/spotlight/vyoma.toml,2,522,display filesystem mouse shell stdio,false,core candidate; consolidate variants,prototype_word_present; fixed_dimension_constant_present,not runtime-tested in this review
+spreadsheet,apps/spreadsheet/vyoma.toml,1,384,display filesystem shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+spreadsheet2,apps/spreadsheet2/vyoma.toml,1,396,display filesystem stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+ssh-client,apps/ssh-client/vyoma.toml,1,326,display network shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+star-map,apps/star-map/vyoma.toml,1,382,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+stock-chart,apps/stock-chart/vyoma.toml,1,276,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+stopwatch,apps/stopwatch/vyoma.toml,1,192,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+storage-demo,apps/storage-demo/vyoma.toml,1,50,filesystem stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+sudoku,apps/sudoku/vyoma.toml,1,318,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+syntax-demo,apps/syntax-demo/vyoma.toml,2,557,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+syslog,apps/syslog/vyoma.toml,1,306,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+system-info,apps/system-info/vyoma.toml,1,343,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+system-monitor,apps/system-monitor/vyoma.toml,1,435,display shell stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+system-preferences,apps/system-preferences/vyoma.toml,1,484,display filesystem shell stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+system-repl,apps/system-repl/vyoma.toml,1,426,display filesystem shell stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+tarot,apps/tarot/vyoma.toml,1,223,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+task-manager,apps/task-manager/vyoma.toml,1,244,display filesystem stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+taskbar,apps/taskbar/vyoma.toml,1,151,display mouse shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+term2,apps/term2/vyoma.toml,1,363,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+terminal,apps/terminal/vyoma.toml,1,298,display shell stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+terrain,apps/terrain/vyoma.toml,1,189,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+tetris,apps/tetris/vyoma.toml,1,376,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+text-adventure,apps/text-adventure/vyoma.toml,1,469,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+text-editor,apps/text-editor/vyoma.toml,1,497,display filesystem shell stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+ticker,apps/ticker/vyoma.toml,1,62,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+tictactoe,apps/tictactoe/vyoma.toml,1,224,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+timeline,apps/timeline/vyoma.toml,1,359,display stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+tmux,apps/tmux/vyoma.toml,1,221,display shell stdio,false,optional portfolio; audit on demand,prototype_word_present; fixed_dimension_constant_present,not runtime-tested in this review
+type-stats,apps/type-stats/vyoma.toml,1,253,display stdio,false,optional portfolio; audit on demand,prototype_word_present,not runtime-tested in this review
+typing-practice,apps/typing-practice/vyoma.toml,1,305,display shell stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+typing-race,apps/typing-race/vyoma.toml,1,294,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+typing-speed2,apps/typing-speed2/vyoma.toml,1,276,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+typing-tutor,apps/typing-tutor/vyoma.toml,1,267,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+unit-converter,apps/unit-converter/vyoma.toml,1,287,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+video-player,apps/video-player/vyoma.toml,1,272,display stdio,false,core candidate; consolidate variants,fixed_dimension_constant_present,not runtime-tested in this review
+virtual-keyboard,apps/virtual-keyboard/vyoma.toml,1,119,display mouse shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+weather,apps/weather/vyoma.toml,1,213,display filesystem stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+weather-dash,apps/weather-dash/vyoma.toml,1,367,display stdio,false,optional portfolio; audit on demand,prototype_word_present,not runtime-tested in this review
+widget-board,apps/widget-board/vyoma.toml,1,216,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+window-manager,apps/window-manager/vyoma.toml,1,228,shell stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+word-counter,apps/word-counter/vyoma.toml,1,232,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+word-search,apps/word-search/vyoma.toml,1,293,display stdio,false,optional portfolio; audit on demand,,not runtime-tested in this review
+wordle,apps/wordle/vyoma.toml,1,288,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
+world-clock,apps/world-clock/vyoma.toml,1,154,display shell stdio,false,optional portfolio; audit on demand,fixed_dimension_constant_present,not runtime-tested in this review
