@@ -35,7 +35,7 @@ pub fn route_or_print(
             }
             #[cfg(target_os = "linux")]
             {
-                crate::draw_cmd::handle_draw_command(cmd, sender, win_region, focused, app_registry);
+                crate::draw_cmd::handle_draw_command(cmd, sender, win_region, app_registry);
             }
             #[cfg(not(target_os = "linux"))]
             let _ = cmd;

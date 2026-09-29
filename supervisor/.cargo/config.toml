@@ -3,6 +3,5 @@
 # Override per-invocation with: cargo build --target <other>
 target = "x86_64-unknown-linux-musl"
 
-[target.x86_64-unknown-linux-musl]
-# musl-gcc is provided by musl-tools in the Docker build environment (P01T03).
-linker = "musl-gcc"
+# Use Rust's default linker with its bundled musl CRT. Forcing musl-gcc can
+# inject a dynamic interpreter into static PIE binaries and crash at startup.
