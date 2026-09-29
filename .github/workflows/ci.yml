@@ -40,6 +40,9 @@ jobs:
       - name: Build apps
         run: make apps
 
+      - name: Build kernel
+        run: make kernel
+
       - name: Build rootfs
         run: make rootfs
 

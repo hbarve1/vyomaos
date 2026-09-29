@@ -7,8 +7,10 @@
 # Designed for Linux CI; on macOS requires homebrew qemu.
 set -euo pipefail
 
-BZIMAGE="${BZIMAGE:-out/bzImage}"
-INITRAMFS="${INITRAMFS:-out/initramfs.cpio.gz}"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$PROJECT_ROOT"
+BZIMAGE="${BZIMAGE:-$PROJECT_ROOT/out/bzImage}"
+INITRAMFS="${INITRAMFS:-$PROJECT_ROOT/out/initramfs.cpio.gz}"
 MONITOR_SOCK="/tmp/vyoma-mon-$$.sock"
 SERIAL_LOG="/tmp/vyoma-serial-$$.log"
 SCREENSHOT="/tmp/vyoma-screen-$$.ppm"
@@ -18,11 +20,11 @@ MIN_COLORS=20
 
 # Require build artifacts.
 for f in "$BZIMAGE" "$INITRAMFS"; do
-    [ -f "$f" ] || { echo "E2E-GUI: SKIP: $f not found (run make build first)"; exit 0; }
+    [ -s "$f" ] || { echo "E2E-GUI: FAIL: $f not found (run make build first)"; exit 1; }
 done
 
 # Require socat for monitor communication.
-command -v socat >/dev/null 2>&1 || { echo "E2E-GUI: SKIP: socat not installed"; exit 0; }
+command -v socat >/dev/null 2>&1 || { echo "E2E-GUI: FAIL: socat not installed"; exit 1; }
 
 cleanup() {
     kill "$QEMU_PID" 2>/dev/null || true

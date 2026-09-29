@@ -7,12 +7,25 @@ screenshot fixture that captures the current display state.
 import os
 import sys
 import time
+from pathlib import Path
 import pytest
 
 # Ensure the tests/e2e directory is on the path for local imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from harness import QmpClient
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def artifact_path(variable, default):
+    """Resolve defaults and relative overrides from the repository, never cwd."""
+    value = os.environ.get(variable, default)
+    if value is None:
+        return None
+    path = Path(value)
+    return str(path if path.is_absolute() else REPO_ROOT / path)
 
 
 @pytest.fixture(scope="session")
@@ -24,14 +37,17 @@ def vm():
         INITRAMFS: Path to initramfs (default: out/initramfs.cpio.gz)
         DISK: Path to data disk image (optional)
     """
-    kernel = os.environ.get("BZIMAGE", "out/bzImage")
-    initrd = os.environ.get("INITRAMFS", "out/initramfs.cpio.gz")
-    disk = os.environ.get("DISK", None)
+    kernel = artifact_path("BZIMAGE", "out/bzImage")
+    initrd = artifact_path("INITRAMFS", "out/initramfs.cpio.gz")
+    disk = artifact_path("DISK", None)
 
-    if not os.path.exists(kernel):
-        pytest.skip(f"Kernel not found: {kernel} (run 'make build' first)")
-    if not os.path.exists(initrd):
-        pytest.skip(f"Initramfs not found: {initrd} (run 'make build' first)")
+    if not os.path.isfile(kernel) or os.path.getsize(kernel) == 0:
+        pytest.fail(f"Kernel not found: {kernel} (run 'make build' first)")
+    if not os.path.isfile(initrd) or os.path.getsize(initrd) == 0:
+        pytest.fail(f"Initramfs not found: {initrd} (run 'make build' first)")
+
+    if disk is not None and (not os.path.isfile(disk) or os.path.getsize(disk) == 0):
+        pytest.fail(f"Configured disk not found or empty: {disk}")
 
     client = QmpClient(kernel=kernel, initrd=initrd, disk=disk)
     client.start()

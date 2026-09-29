@@ -155,8 +155,8 @@ unit-test: | image
 	  cargo test --locked --manifest-path supervisor/Cargo.toml \
 	  --target x86_64-unknown-linux-musl
 
-# ── smoke (T026): headless QEMU boot test — requires make build first ────────
-smoke: | image
+# ── smoke (T026): build required images, then boot headless QEMU ────────
+smoke: kernel rootfs | image
 	$(DOCKER_RUN) bash base/scripts/smoke-test.sh
 
 # ── test (T028): unit-test + smoke — full test suite ─────────────────────────
@@ -175,7 +175,7 @@ PROFILE_NAMES := mcu-minimal iot-edge robotics-rt mobile desktop-full server-hea
 
 check-profiles: | image
 	@echo "Checking platform profile TOML files..."
-	@fail=0; \
+	@set -o pipefail; fail=0; \
 	for name in $(PROFILE_NAMES); do \
 	  f="$(PROFILE_DIR)/$$name.toml"; \
 	  if [ -f "$$f" ]; then \
@@ -189,7 +189,7 @@ check-profiles: | image
 	  $(DOCKER_RUN) env RUSTFLAGS="$(RUSTFLAGS)" \
 	    cargo test --locked --manifest-path supervisor/Cargo.toml \
 	    --target x86_64-unknown-linux-musl \
-	    -- profile 2>&1 | tail -5; \
+	    -- profile 2>&1 | tail -5 || exit $$?; \
 	  echo "PROFILES: OK"; \
 	else \
 	  exit 1; \
@@ -199,10 +199,6 @@ check-profiles: | image
 # Single command to validate everything without requiring QEMU.
 test-all-platforms: unit-test check-profiles check-manifests
 	@echo "ALL-PLATFORMS: OK"
-
-# ── test-e2e-gui: QEMU screendump visual test — saves out/screenshots/latest.ppm
-test-e2e-gui: $(BZIMAGE) $(INITRAMFS)
-	bash base/scripts/test-e2e-gui.sh
 
 # ── build (all) ───────────────────────────────────────────────────────────────
 build: kernel supervisor apps rootfs disk data
