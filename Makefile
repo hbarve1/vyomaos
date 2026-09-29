@@ -28,7 +28,7 @@ DOCKERFILE  := docker/Dockerfile
 
 KERNEL_SCRIPT    := base/modules/kernel.sh
 ROOTFS_SCRIPT    := base/modules/rootfs.sh
-KERNEL_CONFIG    := base/kernel.config
+KERNEL_CONFIG    ?= base/kernel.config
 SUPERVISOR_SRC   := $(shell find supervisor/src -name '*.rs' 2>/dev/null)
 SUPERVISOR_BIN   := supervisor/target/x86_64-unknown-linux-musl/release/supervisor
 SUPERVISOR_STAMP := $(OUT)/.supervisor.stamp
@@ -39,40 +39,13 @@ APPS_STAMP       := $(OUT)/.apps.stamp
 RUSTFLAGS        := -D warnings
 WASM_FLAGS       :=
 
-# ── T019: Platform profile selection ─────────────────────────────────────────
-# Pass PLATFORM=<name> to select a target from platforms/<name>/.
-# Supported values: desktop-x86 (default), iot-rpi, mcu-arm-cortex-m, server-arm64
-#
-# When PLATFORM is set and platforms/<PLATFORM>/kernel.config exists, the
-# platform-specific kernel config and rootfs script are used in place of the
-# base/ defaults.  The PLATFORM value is passed as an environment variable to
-# the supervisor via the QEMU kernel command line.
-#
-# Example:
-#   make build PLATFORM=desktop-x86
-#   make run   PLATFORM=desktop-x86
-PLATFORM ?=
-
-# Select kernel config and rootfs script based on PLATFORM.
-# Falls back to base/ defaults when PLATFORM is empty or the platform dir
-# does not provide its own files.
-ifneq ($(PLATFORM),)
-  PLATFORM_DIR := platforms/$(PLATFORM)
-  ifneq ($(wildcard $(PLATFORM_DIR)/kernel.config),)
-    KERNEL_CONFIG := $(PLATFORM_DIR)/kernel.config
-  endif
-  ifneq ($(wildcard $(PLATFORM_DIR)/rootfs.sh),)
-    ROOTFS_SCRIPT := $(PLATFORM_DIR)/rootfs.sh
-  endif
-  PLATFORM_KERNEL_ARG := PLATFORM=$(PLATFORM)
-else
-  PLATFORM_KERNEL_ARG :=
+# R1 currently supports only the x86-64 image. The desktop platform files
+# are migration placeholders; both names use the working base image recipe.
+PLATFORM ?= desktop-x86
+ifneq ($(PLATFORM),desktop-x86)
+  $(error Unsupported PLATFORM '$(PLATFORM)'; supported: desktop-x86)
 endif
-
-# ── kernel source tracking ────────────────────────────────────────────────────
-KERNEL_PATCHES := $(wildcard base/patches/kernel/*.patch)
-KERNEL_DEPS    := $(KERNEL_SCRIPT) $(KERNEL_CONFIG) $(KERNEL_PATCHES)
-KERNEL_STAMP   := $(OUT)/.kernel.stamp
+PLATFORM_KERNEL_ARG := PLATFORM=$(PLATFORM)
 
 # ── Docker run helper ─────────────────────────────────────────────────────────
 # Mounts the project root read-write at /work inside the container.
@@ -97,15 +70,13 @@ image: $(DOCKERFILE) rust-toolchain.toml
 	docker build --platform linux/amd64 -t $(IMAGE):$(IMAGE_TAG) -f $(DOCKERFILE) .
 
 # ── kernel ────────────────────────────────────────────────────────────────────
-kernel: $(KERNEL_STAMP)
+# Always ask the kernel builder to validate its content-addressed inputs and
+# output digest. A timestamp cannot detect config switches or deleted outputs.
+kernel: | image
+	$(DOCKER_RUN) env PLATFORM="$(PLATFORM)" KERNEL_CONFIG="$(KERNEL_CONFIG)" bash $(KERNEL_SCRIPT)
 
-$(KERNEL_STAMP): $(KERNEL_DEPS) | image
-	@mkdir -p $(OUT)
-	$(DOCKER_RUN) bash $(KERNEL_SCRIPT)
-	@touch $(KERNEL_STAMP)
-
-$(BZIMAGE): $(KERNEL_STAMP)
-	@test -f $(BZIMAGE) || { echo "ERROR: $(BZIMAGE) not produced by kernel.sh"; exit 1; }
+$(BZIMAGE): kernel
+	@test -s $(BZIMAGE) || { echo "ERROR: $(BZIMAGE) not produced by kernel.sh"; exit 1; }
 
 # ── supervisor ───────────────────────────────────────────────────────────────
 supervisor: $(SUPERVISOR_STAMP)
